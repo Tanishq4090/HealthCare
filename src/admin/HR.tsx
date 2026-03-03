@@ -1,0 +1,483 @@
+import { useState, useEffect } from 'react';
+import { Users, Clock, FileText, CheckCircle2, Building, Send, Loader2, X } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+export default function HR() {
+    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('payroll');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [workers, setWorkers] = useState<any[]>([]);
+    const [payrollItems, setPayrollItems] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Modal State
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+    const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [formData, setFormData] = useState({
+        name: '',
+        role: '',
+        assigned_client: '',
+        hourly_rate: '',
+        status: 'Available'
+    });
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            // Fetch Workers
+            const { data: workersData, error: workersError } = await supabase
+                .from('workers')
+                .select('*')
+                .order('name');
+            if (workersError) throw workersError;
+            setWorkers(workersData || []);
+
+            // Fetch Payroll
+            const { data: payrollData, error: payrollError } = await supabase
+                .from('payroll')
+                .select('*, workers(name)')
+                .order('created_at', { ascending: false });
+
+            if (payrollError) throw payrollError;
+
+            // Format payroll data to include worker name from the join
+            const formattedPayroll = (payrollData || []).map(item => ({
+                ...item,
+                worker: item.workers?.name || 'Unknown Worker'
+            }));
+
+            setPayrollItems(formattedPayroll);
+        } catch (error) {
+            console.error('Error fetching HR data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const openAddModal = () => {
+        setModalMode('add');
+        setEditingWorkerId(null);
+        setFormData({ name: '', role: '', assigned_client: '', hourly_rate: '', status: 'Available' });
+        setIsModalOpen(true);
+    };
+
+    const openEditModal = (worker: any) => {
+        setModalMode('edit');
+        setEditingWorkerId(worker.id);
+        setFormData({
+            name: worker.name,
+            role: worker.role,
+            assigned_client: worker.assigned_client || '',
+            hourly_rate: worker.hourly_rate.toString(),
+            status: worker.status
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleWorkerSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+
+        try {
+            const payload = {
+                name: formData.name,
+                role: formData.role,
+                assigned_client: formData.assigned_client || null,
+                hourly_rate: parseFloat(formData.hourly_rate) || 0,
+                status: formData.status
+            };
+
+            if (modalMode === 'add') {
+                const { error } = await supabase.from('workers').insert([payload]);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('workers').update(payload).eq('id', editingWorkerId);
+                if (error) throw error;
+            }
+
+            setIsModalOpen(false);
+            fetchData(); // Refresh list
+        } catch (error: any) {
+            console.error("Error saving worker:", error);
+            alert(`Error saving worker: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleGeneratePayroll = async () => {
+        const testEmail = window.prompt("Resend Sandbox limits testing to your verified email. Enter the email you used to sign up for Resend:");
+        if (!testEmail) return;
+
+        setIsGenerating(true);
+        try {
+            const { error } = await supabase.functions.invoke('resend-email', {
+                body: {
+                    to: testEmail,
+                    subject: 'HealthFirst AI HR - October Invoices & Payslips',
+                    html: `
+                        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2>HealthFirst AI Payroll Execution</h2>
+                            <p>This is an automated message from the HealthFirst Admin Dashboard.</p>
+                            <p><strong>Status:</strong> The October billing cycle has been processed based on the logged hours.</p>
+                            <p>In a production application, the attached PDF payslips and client invoices would be included here.</p>
+                        </div>
+                    `
+                },
+            });
+
+            if (error) throw error;
+            alert(`Success! Real emails have been dispatched via Resend to ${testEmail}`);
+        } catch (error: any) {
+            console.error('Error generating payroll emails:', error);
+            alert(`Error: ${error.message || 'Failed to send email'}. Ensure you used your verified Resend email!`);
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    return (
+        <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">AI HR & Billing</h1>
+                    <p className="text-slate-500 mt-1">Manage worker allocation, automated attendance, and payroll dispatch.</p>
+                </div>
+
+                {/* Module Tabs */}
+                <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0">
+                    <button
+                        onClick={() => setActiveTab('allocation')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'allocation' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                        Worker Allocation
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('attendance')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'attendance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                        Live Attendance
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('payroll')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'payroll' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                        Auto-Payroll & Invoicing
+                    </button>
+                </div>
+            </div>
+
+            {activeTab === 'allocation' ? (
+                /* Worker Allocation View */
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                    <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                        <h2 className="font-semibold text-slate-900">Active Workforce Directory</h2>
+                        <button onClick={openAddModal} className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors">
+                            + Add Worker
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-auto">
+                        {isLoading ? (
+                            <div className="flex flex-col items-center justify-center py-20">
+                                <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+                                <span className="text-slate-500 font-medium">Loading workforce directory...</span>
+                            </div>
+                        ) : (
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 text-sm text-slate-500 bg-white">
+                                        <th className="font-medium py-4 px-6">Worker Name</th>
+                                        <th className="font-medium py-4 px-6">Assigned Client</th>
+                                        <th className="font-medium py-4 px-6">Pay Rate</th>
+                                        <th className="font-medium py-4 px-6">Client Confirmation</th>
+                                        <th className="font-medium py-4 px-6">Status</th>
+                                        <th className="font-medium py-4 px-6">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {workers.map((worker) => (
+                                        <tr key={worker.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="py-4 px-6">
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-slate-900">{worker.name}</span>
+                                                    <span className="text-xs text-slate-500">{worker.role}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-2">
+                                                    <Building className="w-4 h-4 text-slate-400" />
+                                                    <span className="text-sm text-slate-700">{worker.assigned_client || 'Unassigned'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6 text-sm text-slate-700">₹{worker.hourly_rate}/hr</td>
+                                            <td className="py-4 px-6">
+                                                {worker.assigned_client ? (
+                                                    <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                                                        <Clock className="w-3 h-3" /> Awaiting Confirmation
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400">-</span>
+                                                )}
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${worker.status === 'Active' ? 'bg-emerald-100 text-emerald-800' :
+                                                    worker.status === 'Available' ? 'bg-blue-100 text-blue-800' :
+                                                        'bg-amber-100 text-amber-800'
+                                                    }`}>
+                                                    {worker.status}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-3">
+                                                    {worker.assigned_client && worker.status === 'Available' && (
+                                                        <button
+                                                            onClick={() => alert(`Profile of ${worker.name} seamlessly shared with ${worker.assigned_client} via WhatsApp/Email!`)}
+                                                            className="text-sm font-medium text-purple-600 hover:text-purple-800 transition-colors flex items-center gap-1"
+                                                            title="Share profile to client for confirmation"
+                                                        >
+                                                            <Send className="w-3.5 h-3.5" /> Share Profile
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => openEditModal(worker)} className="text-sm font-medium text-primary hover:text-primary/80 transition-colors">
+                                                        Edit
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            ) : activeTab === 'attendance' ? (
+                /* Attendance View */
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                    <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">Live Attendance Log</h2>
+                            <p className="text-sm text-slate-500 mt-1">Populated automatically via Staff/Client "Fill Duty" links.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+                                Filter: Today
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex-1 p-8 text-center flex flex-col items-center justify-center">
+                        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+                            <Clock className="w-8 h-8 text-blue-500" />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-900 mb-2">Awaiting Duty Starts</h3>
+                        <p className="text-slate-500 max-w-sm">No duty starts logged for today yet. Staff or clients can use their unique tracking links to submit attendance automatically.</p>
+                        <button className="mt-6 px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2">
+                            <FileText className="w-4 h-4" /> Generate Attendance Report
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                /* Payroll & Invoicing View */
+                <div className="grid lg:grid-cols-3 gap-6 flex-1">
+                    {/* Main List */}
+                    <div className="lg:col-span-2 flex flex-col gap-6">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
+                            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                                <h2 className="font-semibold text-slate-900">Current Billing Cycle (October)</h2>
+                                <span className="text-sm text-slate-500 border border-slate-200 px-3 py-1 rounded-full bg-white">Auto-calculating from active hours</span>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                                {isLoading ? (
+                                    <div className="flex flex-col items-center justify-center py-20">
+                                        <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+                                        <span className="text-slate-500 font-medium">Loading payroll calculations...</span>
+                                    </div>
+                                ) : payrollItems.length === 0 ? (
+                                    <div className="p-8 text-center text-slate-500">
+                                        No active payroll entries found for this cycle.
+                                    </div>
+                                ) : (
+                                    payrollItems.map((item) => (
+                                        <div key={item.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                            <div className="flex items-start gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                                                    <Users className="w-5 h-5 text-slate-500" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-bold text-slate-900">{item.worker}</h4>
+                                                    <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+                                                        <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {item.hours_logged} hours logged</span>
+                                                        <span>•</span>
+                                                        <span className="flex items-center gap-1"><Building className="w-3.5 h-3.5" /> {item.client_name}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-lg font-bold text-emerald-600">₹{item.total_amount}</p>
+                                                <p className="text-xs text-slate-400 uppercase tracking-wider font-medium mt-1">{item.status}</p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Panel */}
+                    <div className="flex flex-col gap-6">
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
+                            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Send className="w-8 h-8 text-primary ml-1" />
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 mb-2">Run Automation</h3>
+                            <p className="text-sm text-slate-500 mb-6">
+                                Clicking this will generate <strong>2 Worker Payslips</strong> and <strong>2 Client Monthly Bills</strong> based on the verified attendance hours.
+                            </p>
+                            <button
+                                onClick={handleGeneratePayroll}
+                                disabled={isGenerating}
+                                className={`w-full py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isGenerating
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-primary text-white hover:bg-primary/90 hover:shadow-lg hover:-translate-y-0.5'
+                                    }`}
+                            >
+                                {isGenerating ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                                        Generating PDFs...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileText className="w-5 h-5" />
+                                        Dispatch Payslips & Invoices
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-4">
+                            <h3 className="font-semibold text-slate-900 flex items-center gap-2 mb-3">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                Automation Checklist
+                            </h3>
+                            <div className="flex items-center gap-3 text-sm">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                <span className="text-slate-700">Attendance manually verified by HR</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                <span className="text-slate-700">Salary rates verified</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                <span className="text-slate-700">Client billing active</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add/Edit Worker Modal */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                                    <Users className="w-5 h-5 text-primary" />
+                                </div>
+                                <h2 className="text-lg font-bold text-slate-900">
+                                    {modalMode === 'add' ? 'Add New Worker' : 'Edit Allocation'}
+                                </h2>
+                            </div>
+                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleWorkerSubmit} className="p-5 space-y-4 text-left">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                                    placeholder="e.g. Dr. Emily Carter"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Role / Specialization</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.role}
+                                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                                    placeholder="e.g. Specialist Consultant"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Assigned Client (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={formData.assigned_client}
+                                    onChange={(e) => setFormData({ ...formData, assigned_client: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                                    placeholder="e.g. Apex Medical or Leave Blank"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Hourly Rate (₹)</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.hourly_rate}
+                                        onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                                        placeholder="e.g. 120.00"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Status</label>
+                                    <select
+                                        value={formData.status}
+                                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                    >
+                                        <option value="Available">Available</option>
+                                        <option value="Active">Active</option>
+                                        <option value="On Leave">On Leave</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="pt-2 flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center"
+                                >
+                                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save Worker'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
