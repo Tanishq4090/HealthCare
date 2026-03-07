@@ -16,21 +16,35 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { OtpModal } from '@/components/ui/otp-modal';
 
 const Contact = () => {
   const { ref: sectionRef, isVisible } = useScrollReveal<HTMLElement>({ threshold: 0.1 });
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    phone: '',
     subject: '',
     message: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
+    if (!formData.phone || formData.phone.length < 5) {
+      setErrorMessage('Please enter a valid WhatsApp number.');
+      return;
+    }
+
+    setShowOtpModal(true);
+  };
+
+  const submitToDatabase = async () => {
     setIsSubmitting(true);
     setErrorMessage(null);
 
@@ -48,8 +62,25 @@ const Contact = () => {
 
       if (error) throw error;
 
+      // Also generate a CRM Lead for this user since they are verified
+      const { error: leadError } = await supabase
+        .from('crm_leads')
+        .insert([
+          {
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            source: 'Contact Form',
+            status: 'Verified',
+            pipeline_stage: 'New Lead',
+            estimated_value_monthly: 2000
+          }
+        ]);
+
+      if (leadError) console.error("Error creating accompanying lead:", leadError);
+
       setIsSubmitted(true);
-      setFormData({ name: '', email: '', subject: '', message: '' });
+      setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
 
       // Reset success message after 5 seconds
       setTimeout(() => setIsSubmitted(false), 5000);
@@ -191,6 +222,23 @@ const Contact = () => {
                       required
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone" className="text-[#002a5c]">
+                      WhatsApp Number <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#285fe2]/50" />
+                      <Input
+                        id="phone"
+                        type="tel"
+                        placeholder="+1 (555) 000-0000"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        className="form-input-glow pl-10 border-[#285fe2]/20 focus:border-[#285fe2]"
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -251,6 +299,13 @@ const Contact = () => {
               </form>
             )}
           </div>
+
+          <OtpModal
+            isOpen={showOtpModal}
+            onClose={() => setShowOtpModal(false)}
+            phoneNumber={formData.phone}
+            onVerified={submitToDatabase}
+          />
 
           {/* Map & Social */}
           <div className="space-y-8">

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Bot, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { toast } from 'sonner';
 
 interface Message {
   id: string;
@@ -17,8 +18,9 @@ export default function Chatbot() {
   const [isTyping, setIsTyping] = useState(false);
 
   // Lead Capture State
-  const [captureStage, setCaptureStage] = useState<'name' | 'phone' | 'inquiry'>('name');
+  const [captureStage, setCaptureStage] = useState<'name' | 'phone' | 'otp' | 'inquiry'>('name');
   const [leadData, setLeadData] = useState({ name: '', phone: '' });
+  const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +44,7 @@ export default function Chatbot() {
       if (captureStage === 'name') {
         setLeadData(prev => ({ ...prev, name: userMsg.text }));
         setTimeout(() => {
-          setMessages(prev => [...prev, { id: Date.now().toString(), text: `Nice to meet you, ${userMsg.text}! What's the best mobile number to reach you at?`, isBot: true }]);
+          setMessages(prev => [...prev, { id: Date.now().toString(), text: `Nice to meet you, ${userMsg.text}! What's your WhatsApp number so we can securely reach you?`, isBot: true }]);
           setCaptureStage('phone');
           setIsTyping(false);
         }, 1000);
@@ -51,24 +53,66 @@ export default function Chatbot() {
         const phone = userMsg.text;
         setLeadData(prev => ({ ...prev, phone }));
 
-        // Save Lead to Supabase
-        const { error } = await supabase.from('crm_leads').insert([{
-          name: leadData.name,
-          email: '', // Not collected in this flow
-          phone: phone,
-          source: 'Web Chat',
-          status: 'Lead Captured',
-          pipeline_stage: 'New Lead',
-          estimated_value_monthly: Math.floor(Math.random() * (5000 - 1000 + 1) + 1000) // Mock value
-        }]);
-
-        if (error) console.error("Error saving lead:", error);
+        const mockOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        setGeneratedOtp(mockOtp);
 
         setTimeout(() => {
-          setMessages(prev => [...prev, { id: Date.now().toString(), text: `Thanks! I've securely saved your details. How can I help you today?`, isBot: true }]);
-          setCaptureStage('inquiry');
+          toast.success(`WhatsApp OTP Ready!`, {
+            description: `Check your WhatsApp tab to send the verification code ${mockOtp}`,
+            duration: 6000,
+          });
+
+          window.open(`https://api.whatsapp.com/send?phone=${phone.replace(/\D/g, '')}&text=Your+HealthFirst+verification+code+is:+${mockOtp}`, '_blank');
+
+          setMessages(prev => [...prev, { id: Date.now().toString(), text: `I've opened WhatsApp to send you a 4-digit OTP to your number. Please enter it below to verify.`, isBot: true }]);
+          setCaptureStage('otp');
           setIsTyping(false);
         }, 1500);
+      }
+      else if (captureStage === 'otp') {
+        if (userMsg.text.toLowerCase().trim() === 'resend') {
+          const mockOtp = Math.floor(1000 + Math.random() * 9000).toString();
+          setGeneratedOtp(mockOtp);
+          setTimeout(() => {
+            toast.success(`New WhatsApp Message Ready!`, {
+              description: `Check your WhatsApp tab to send the new verification code ${mockOtp}`,
+              duration: 6000,
+            });
+
+            window.open(`https://api.whatsapp.com/send?phone=${leadData.phone.replace(/\D/g, '')}&text=Your+new+HealthFirst+verification+code+is:+${mockOtp}`, '_blank');
+
+            setMessages(prev => [...prev, { id: Date.now().toString(), text: `A new 4-digit OTP has been prepared. Please enter it below.`, isBot: true }]);
+            setIsTyping(false);
+          }, 1000);
+          return;
+        }
+
+        // Remove all but letters for checks:
+        if (userMsg.text.replace(/\D/g, '') === generatedOtp && generatedOtp !== null) {
+          // Save Lead to Supabase
+          const { error } = await supabase.from('crm_leads').insert([{
+            name: leadData.name,
+            email: '', // Not collected in this flow
+            phone: leadData.phone,
+            source: 'Web Chat',
+            status: 'Verified',
+            pipeline_stage: 'New Lead',
+            estimated_value_monthly: Math.floor(Math.random() * (5000 - 1000 + 1) + 1000) // Mock value
+          }]);
+
+          if (error) console.error("Error saving lead:", error);
+
+          setTimeout(() => {
+            setMessages(prev => [...prev, { id: Date.now().toString(), text: `Thanks! I've verified your WhatsApp and securely saved your details. How can I help you today?`, isBot: true }]);
+            setCaptureStage('inquiry');
+            setIsTyping(false);
+          }, 1000);
+        } else {
+          setTimeout(() => {
+            setMessages(prev => [...prev, { id: Date.now().toString(), text: `That code doesn't match. Please try again, or type 'resend' to get a new one.`, isBot: true }]);
+            setIsTyping(false);
+          }, 500);
+        }
       }
       else {
         // Normal chatbot behavior

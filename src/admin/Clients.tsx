@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, Star, MessageSquare, Search, Building } from 'lucide-react';
+import { Search, Filter, Download, Plus, Mail, Phone, Calendar, Building2, MapPin, CheckCircle2, AlertCircle, FileText, Upload, Star, Edit2, Users, Building, MessageSquare, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function Clients() {
     const [clients, setClients] = useState<any[]>([]);
@@ -8,8 +9,24 @@ export default function Clients() {
         reviewCollection: true,
     });
 
+    // Edit Modal State
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingClient, setEditingClient] = useState<any>(null);
+
     const toggleWorkflow = (key: keyof typeof workflows) => {
         setWorkflows(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const openEditModal = (client: any) => {
+        setEditingClient({ ...client });
+        setIsEditModalOpen(true);
+    };
+
+    const handleSaveClient = (e: React.FormEvent) => {
+        e.preventDefault();
+        setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
+        setIsEditModalOpen(false);
+        toast.success(`${editingClient.name} details updated successfully!`);
     };
 
     const fetchClients = async () => {
@@ -74,13 +91,16 @@ export default function Clients() {
                                         <p className="text-xs text-slate-400 font-medium uppercase mb-1">Email</p>
                                         <p className="text-sm text-slate-700 truncate" title={client.email}>{client.email}</p>
                                     </div>
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium uppercase mb-1">Phone</p>
-                                        <p className="text-sm text-slate-700 truncate">{client.phone}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium uppercase mb-1">Joined</p>
-                                        <p className="text-sm text-slate-700">{client.joined}</p>
+                                    <div className="col-span-2 flex flex-col gap-1">
+                                        <button
+                                            onClick={() => toast.success(`Review Request sent! \n\n"Hi ${client.contact}, thank you for choosing HealthFirst. We would love to hear about your experience! Please leave us a review here: [Google Local Link]"`)}
+                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                                        >
+                                            <Star className="w-4 h-4 text-amber-500" /> Request Google Review
+                                        </button>
+                                        <button onClick={() => openEditModal(client)} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2">
+                                            <Edit2 className="w-4 h-4 text-slate-400" /> Edit Details
+                                        </button>
                                     </div>
                                     <div>
                                         <p className="text-xs text-slate-400 font-medium uppercase mb-1">LTV</p>
@@ -139,6 +159,78 @@ export default function Clients() {
                     </div>
                 </div>
             </div>
+
+            {/* Edit Client Modal */}
+            {isEditModalOpen && editingClient && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
+                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-white/50 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                                    <Building className="w-5 h-5 text-primary" />
+                                </div>
+                                <h2 className="text-lg font-bold text-slate-900">Edit Client Details</h2>
+                            </div>
+                            <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveClient} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Company Name</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={editingClient.name}
+                                    onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Primary Contact Name</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={editingClient.contact}
+                                    onChange={(e) => setEditingClient({ ...editingClient, contact: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={editingClient.email}
+                                        onChange={(e) => setEditingClient({ ...editingClient, email: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Status</label>
+                                    <select
+                                        value={editingClient.status}
+                                        onChange={(e) => setEditingClient({ ...editingClient, status: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                    >
+                                        <option value="Active">Active</option>
+                                        <option value="Inactive">Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="pt-2 flex gap-3">
+                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                                    Cancel
+                                </button>
+                                <button type="submit" className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

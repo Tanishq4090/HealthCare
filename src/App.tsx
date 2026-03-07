@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import LandingPage from './LandingPage';
 import AdminLayout from './admin/AdminLayout';
 import Dashboard from './admin/Dashboard';
@@ -11,6 +12,7 @@ import './App.css';
 function App() {
   return (
     <Router>
+      <Toaster position="bottom-right" theme="light" />
       <Routes>
         {/* Public Landing Page */}
         <Route path="/" element={<LandingPage />} />
