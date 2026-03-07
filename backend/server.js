@@ -34,6 +34,12 @@ app.use(
 // Meta webhooks send JSON bodies, so we just use the global JSON parser
 app.use(express.json());
 
+// Bypass ngrok browser warning interstitial for all API requests
+app.use((req, res, next) => {
+  res.setHeader("ngrok-skip-browser-warning", "true");
+  next();
+});
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/whatsapp", whatsappRoutes);
 

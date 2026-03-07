@@ -15,15 +15,6 @@ import { processMessageAsync as getAiResponse, getAllSessions, addAdminReplyToHi
 
 const router = express.Router();
 
-const {
-  META_ACCESS_TOKEN,
-  META_PHONE_NUMBER_ID,
-  META_WEBHOOK_VERIFY_TOKEN,
-  DEV_MODE,
-} = process.env;
-
-const META_API_URL = `https://graph.facebook.com/v19.0/${META_PHONE_NUMBER_ID}/messages`;
-
 /**
  * Send a WhatsApp text message via Meta Cloud API.
  * @param {string} to   - E.164 with "+", e.g. "+14155552671"
@@ -32,11 +23,13 @@ const META_API_URL = `https://graph.facebook.com/v19.0/${META_PHONE_NUMBER_ID}/m
 async function sendWhatsApp(to, body) {
   const cleanNumber = to.replace(/^\+/, "");
 
+  const META_API_URL = `https://graph.facebook.com/v19.0/${process.env.META_PHONE_NUMBER_ID}/messages`;
+
   const res = await fetch(META_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${META_ACCESS_TOKEN}`,
+      Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
     },
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -71,7 +64,7 @@ router.post("/send-otp", async (req, res) => {
   const code = generateOTP(phone);
 
   // DEV MODE: log to terminal instead of sending
-  if (DEV_MODE?.trim().toLowerCase() === "true") {
+  if (process.env.DEV_MODE?.trim().toLowerCase() === "true") {
     console.log(`\n==========================================`);
     console.log(`🚀 [DEV MODE MOCK WHATSAPP MESSAGE TO ${phone}]:`);
     console.log(`Your HealthFirst verification code is: *${code}*`);
@@ -115,12 +108,14 @@ router.get("/webhook", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === META_WEBHOOK_VERIFY_TOKEN) {
+  if (mode === "subscribe" && token === process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()) {
     console.log("[Webhook] Meta verification successful.");
     return res.status(200).send(challenge);
   }
 
-  console.warn("[Webhook] Verification failed — token mismatch.");
+  console.warn(`[Webhook] Verification failed — token mismatch.`);
+  console.warn(`[Webhook] Expected: "${process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()}"`);
+  console.warn(`[Webhook] Received: "${token}"`);
   return res.sendStatus(403);
 });
 

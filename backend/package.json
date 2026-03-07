@@ -5,11 +5,12 @@
   "description": "HealthFirst WhatsApp OTP + AI chatbot backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node --env-file=.env server.js",
+    "dev": "nodemon --env-file=.env server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@google/genai": "^1.44.0",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
