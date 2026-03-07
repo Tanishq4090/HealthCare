@@ -31,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import WhatsAppOTPVerification from '@/components/ui/WhatsAppOTPVerification';
 
 const Appointment = () => {
   const { ref: sectionRef, isVisible } = useScrollReveal<HTMLElement>({ threshold: 0.1 });
@@ -38,6 +39,7 @@ const Appointment = () => {
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -97,38 +99,66 @@ const Appointment = () => {
     setSelectedTime(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (selectedDate && selectedTime && formData.firstName && formData.lastName) {
-      setIsSubmitting(true);
-
-      try {
-        const { error } = await supabase
-          .from('appointments')
-          .insert([
-            {
-              first_name: formData.firstName,
-              last_name: formData.lastName,
-              email: formData.email,
-              phone: formData.phone,
-              doctor: formData.doctor,
-              reason: formData.reason,
-              appointment_date: selectedDate.toISOString().split('T')[0],
-              appointment_time: selectedTime,
-            }
-          ]);
-
-        if (error) throw error;
-
-        setShowSuccess(true);
-      } catch (error: any) {
-        console.error('Error saving appointment:', error);
-        setErrorMessage(error.message || 'Failed to book appointment. Please try again.');
-      } finally {
-        setIsSubmitting(false);
+      if (!formData.phone || formData.phone.length < 5) {
+        setErrorMessage('Please enter a valid WhatsApp number.');
+        return;
       }
+
+      // Open OTP Modal instead of directly submitting
+      setShowOtpModal(true);
+    }
+  };
+
+  const submitToDatabase = async () => {
+    setIsSubmitting(true);
+
+    try {
+      // 1. Save Appointment
+      const { error } = await supabase
+        .from('appointments')
+        .insert([
+          {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            email: formData.email,
+            phone: formData.phone,
+            doctor: formData.doctor,
+            reason: formData.reason,
+            appointment_date: selectedDate!.toISOString().split('T')[0],
+            appointment_time: selectedTime,
+          }
+        ]);
+
+      if (error) throw error;
+
+      // 2. Also generate a CRM Lead for this user since they are verified
+      const { error: leadError } = await supabase
+        .from('crm_leads')
+        .insert([
+          {
+            name: `${formData.firstName} ${formData.lastName}`,
+            email: formData.email,
+            phone: formData.phone,
+            source: 'Appointment Form',
+            status: 'Verified',
+            pipeline_stage: 'New Lead',
+            estimated_value_monthly: 5000
+          }
+        ]);
+
+      if (leadError) console.error("Error creating accompanying lead:", leadError);
+
+      setShowSuccess(true);
+    } catch (error: any) {
+      console.error('Error saving appointment:', error);
+      setErrorMessage(error.message || 'Failed to book appointment. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -343,7 +373,7 @@ const Appointment = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone" className="text-[#002a5c]">
-                    Phone Number <span className="text-red-500">*</span>
+                    WhatsApp Number <span className="text-red-500">*</span>
                   </Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#285fe2]/50" />
@@ -451,12 +481,25 @@ const Appointment = () => {
                     </svg>
                     Booking...
                   </>
-                ) : isFormValid() ? 'Confirm Appointment' : 'Please fill all required fields'}
+                ) : isFormValid() ? 'Verify WhatsApp & Book' : 'Please fill all required fields'}
               </Button>
             </form>
           </div>
         </div>
       </div>
+
+      {/* OTP Verification Modal */}
+      {showOtpModal && (
+        <WhatsAppOTPVerification
+          initialPhone={formData.phone}
+          onClose={() => setShowOtpModal(false)}
+          onVerified={(verifiedPhone) => {
+            setFormData(prev => ({ ...prev, phone: verifiedPhone }));
+            setShowOtpModal(false);
+            submitToDatabase();
+          }}
+        />
+      )}
 
       {/* Success Dialog */}
       <Dialog open={showSuccess} onOpenChange={setShowSuccess}>

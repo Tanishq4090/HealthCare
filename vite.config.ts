@@ -6,6 +6,11 @@ import { inspectAttr } from 'kimi-plugin-inspect-react'
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3001'
+    }
+  },
   plugins: [inspectAttr(), react()],
   resolve: {
     alias: {

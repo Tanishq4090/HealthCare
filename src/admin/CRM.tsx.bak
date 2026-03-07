@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import Client from '@vapi-ai/web';
@@ -8,7 +8,7 @@ const VAPI_PUBLIC_KEY = "3cd76924-ad95-4b41-8018-26d22b309bbf";
 const VAPI_ASSISTANT_ID = "2de7804c-6087-43bf-8098-dfc787aa3dee";
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'whatsapp'>('pipeline');
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>('pipeline');
     const [leads, setLeads] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSendingFolio, setIsSendingFolio] = useState(false);
@@ -27,56 +27,6 @@ export default function CRM() {
     const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent'>('inquiry');
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
-
-    // Live WhatsApp Chat State
-    const [activeChatPhone, setActiveChatPhone] = useState<string | null>(null);
-    const [chatHistory, setChatHistory] = useState<any[]>([]);
-    const [adminReply, setAdminReply] = useState('');
-    const [chatSessions, setChatSessions] = useState<{ [phone: string]: any[] }>({});
-
-    // Poll for live WhatsApp messages
-    useEffect(() => {
-        if (activeTab !== 'whatsapp') return;
-        const fetchSessions = async () => {
-            try {
-                // We will add an endpoint to our backend to fetch all active sessions
-                const res = await fetch('http://localhost:3001/api/whatsapp/sessions');
-                if (res.ok) {
-                    const data = await res.json();
-                    setChatSessions(data.sessions || {});
-                    if (activeChatPhone && data.sessions[activeChatPhone]) {
-                        setChatHistory(data.sessions[activeChatPhone]);
-                    }
-                }
-            } catch (err) {
-                console.error("Error fetching sessions", err);
-            }
-        };
-        fetchSessions();
-        const interval = setInterval(fetchSessions, 3000); // poll every 3 seconds
-        return () => clearInterval(interval);
-    }, [activeTab, activeChatPhone]);
-
-    const handleSendAdminReply = async () => {
-        if (!activeChatPhone || !adminReply.trim()) return;
-        const tempReply = adminReply;
-        setAdminReply('');
-
-        // Optimistically add to UI
-        setChatHistory(prev => [...prev, { role: 'assistant', content: tempReply, isAdmin: true }]);
-
-        try {
-            const res = await fetch('http://localhost:3001/api/whatsapp/admin-reply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: activeChatPhone, message: tempReply })
-            });
-            if (!res.ok) throw new Error("Failed to send reply");
-        } catch (err) {
-            toast.error("Failed to send WhatsApp message");
-            setAdminReply(tempReply); // restore on fail
-        }
-    };
 
     const [workflows, setWorkflows] = useState({
         greeting: true,
@@ -537,111 +487,10 @@ export default function CRM() {
                     >
                         Voice AI Calls
                     </button>
-                    <button
-                        onClick={() => setActiveTab('whatsapp')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'whatsapp' ? 'bg-[#25D366] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'} `}
-                    >
-                        <div className="flex items-center gap-1.5">
-                            <MessageCircle className="w-4 h-4" /> WhatsApp Chat
-                        </div>
-                    </button>
                 </div>
             </div>
 
-            {activeTab === 'whatsapp' ? (
-                /* Live WhatsApp Converation Screen */
-                <div className="flex-1 flex gap-6 overflow-hidden pb-4">
-                    {/* Left Pane: Contacts List */}
-                    <div className="w-1/3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <h2 className="font-bold text-slate-900 flex items-center gap-2">
-                                <MessageCircle className="w-5 h-5 text-[#25D366]" /> Live Chats
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-1">Active WhatsApp AI conversations</p>
-                        </div>
-                        <div className="flex-1 overflow-y-auto">
-                            {Object.keys(chatSessions).length === 0 ? (
-                                <div className="p-8 text-center text-slate-500 text-sm">No active WhatsApp conversations.</div>
-                            ) : (
-                                Object.keys(chatSessions).map(phoneNum => (
-                                    <button
-                                        key={phoneNum}
-                                        onClick={() => {
-                                            setActiveChatPhone(phoneNum);
-                                            setChatHistory(chatSessions[phoneNum]);
-                                        }}
-                                        className={`w-full text-left p-4 border-b border-slate-100 transition-colors ${activeChatPhone === phoneNum ? 'bg-[#25D366]/10 border-l-4 border-l-[#25D366]' : 'hover:bg-slate-50'}`}
-                                    >
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="font-semibold text-slate-900">{phoneNum}</span>
-                                            <span className="text-xs text-slate-400">
-                                                {chatSessions[phoneNum].length} msgs
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 truncate">
-                                            {chatSessions[phoneNum][chatSessions[phoneNum].length - 1]?.content || "..."}
-                                        </p>
-                                    </button>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right Pane: Chat Window */}
-                    <div className="flex-1 bg-slate-50 rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
-                        {activeChatPhone ? (
-                            <>
-                                <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
-                                    <h3 className="font-bold text-slate-900">{activeChatPhone}</h3>
-                                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded flex items-center gap-1">
-                                        <Bot className="w-3.5 h-3.5" /> AI Active
-                                    </span>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundRepeat: 'repeat' }}>
-                                    {chatHistory.map((msg, i) => (
-                                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
-                                            <div className={`max-w-[70%] p-3 rounded-lg shadow-sm ${msg.role === 'user' ? 'bg-white text-slate-800 rounded-tl-none' : msg.isAdmin ? 'bg-blue-100 text-blue-900 rounded-tr-none' : 'bg-[#e7ffdb] text-slate-900 rounded-tr-none'}`}>
-                                                {msg.role === 'assistant' && !msg.isAdmin && (
-                                                    <div className="text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1">
-                                                        <Bot className="w-3 h-3" /> Claude AI
-                                                    </div>
-                                                )}
-                                                {msg.isAdmin && (
-                                                    <div className="text-[10px] font-bold text-blue-500 mb-1 flex items-center gap-1">
-                                                        <Users className="w-3 h-3" /> Admin (You)
-                                                    </div>
-                                                )}
-                                                <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="p-4 bg-white border-t border-slate-200 flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Type manual reply (overrides AI)..."
-                                        className="flex-1 border border-slate-200 rounded-full px-4 text-sm outline-none focus:border-[#25D366] transition-colors bg-slate-50"
-                                        value={adminReply}
-                                        onChange={(e) => setAdminReply(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSendAdminReply()}
-                                    />
-                                    <button
-                                        onClick={handleSendAdminReply}
-                                        className="w-10 h-10 rounded-full bg-[#25D366] text-white flex items-center justify-center hover:bg-[#128C7E] transition-colors"
-                                    >
-                                        <Send className="w-4 h-4 ml-0.5" />
-                                    </button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-                                <MessageCircle className="w-16 h-16 mb-4 text-slate-200" />
-                                <p>Select a conversation from the left to view history.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            ) : activeTab === 'pipeline' ? (
+            {activeTab === 'pipeline' ? (
                 /* Kanban Pipeline View */
                 <div className="flex-1 flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
                     {isLoading ? (
