@@ -9,15 +9,14 @@
  * with an OpenAI / Anthropic API call and keep the same signature.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 
-// Initialize Anthropic Client
-// Make sure ANTHROPIC_API_KEY is in your .env
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
+// Initialize Gemini Client
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY || "",
 });
 
-/** @typedef {{ role: "user"|"assistant", content: string }} Message */
+/** @typedef {{ role: "user"|"model", parts: [{ text: string }] }} Message */
 
 /**
  * In-memory session store: maps phone → conversation history.
@@ -55,30 +54,29 @@ If they want to speak to a human, let them know an agent will call them shortly.
 `;
 
 /**
- * Return the bot reply for an incoming message using Claude AI.
+ * Return the bot reply for an incoming message using Gemini AI.
  * @param {string} message
  * @param {Message[]} history - prior conversation messages
  * @returns {Promise<string>}
  */
 async function getBotReplyAsync(message, history) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return "The clinic AI is currently offline (Missing ANTHROPIC_API_KEY in backend). Please contact us directly at +1 (800) 555-HLTH.";
+  if (!process.env.GEMINI_API_KEY) {
+    return "The clinic AI is currently offline (Missing GEMINI_API_KEY in backend). Please contact us directly at +1 (800) 555-HLTH.";
   }
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 300,
-      temperature: 0.7,
-      system: SYSTEM_PROMPT,
-      messages: history,
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: history,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        temperature: 0.7,
+      }
     });
 
-    // For text-only output, extract the actual block text:
-    const contentText = response.content.find(c => c.type === 'text')?.text || "";
-    return contentText.trim();
+    return response.text.trim();
   } catch (error) {
-    console.error("[Claude Setup Error]", error);
+    console.error("[Gemini Setup Error]", error);
     return "I'm sorry, our system is currently experiencing issues. Please try again later or call +1 (800) 555-HLTH.";
   }
 }
@@ -98,13 +96,13 @@ export async function processMessageAsync(phone, message) {
   resetSessionTimer(phone);
 
   // Add user message to history
-  history.push({ role: "user", content: message });
+  history.push({ role: "user", parts: [{ text: message }] });
 
-  // Get bot reply from Claude
+  // Get bot reply from Gemini
   const reply = await getBotReplyAsync(message, history);
 
   // Add assistant reply to history
-  history.push({ role: "assistant", content: reply });
+  history.push({ role: "model", parts: [{ text: reply }] });
 
   // Cap history at 40 messages to avoid context bloat
   if (history.length > 40) history.splice(0, history.length - 40);
@@ -119,8 +117,8 @@ export function addAdminReplyToHistory(phone, message) {
   if (!sessions.has(phone)) sessions.set(phone, []);
   const history = sessions.get(phone);
   resetSessionTimer(phone);
-  // Mark as assistant but add a special flag so the UI knows an admin sent it
-  history.push({ role: "assistant", content: message, isAdmin: true });
+  // Mark as model but add a special flag so the UI knows an admin sent it
+  history.push({ role: "model", parts: [{ text: message }], isAdmin: true });
 }
 
 export function getAllSessions() {
