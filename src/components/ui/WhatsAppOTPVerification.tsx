@@ -20,7 +20,7 @@ export default function WhatsAppOTPVerification({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
-  const [verified, setVerified] = useState(false);
+  const [, setVerified] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

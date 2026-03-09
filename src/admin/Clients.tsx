@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Download, Plus, Mail, Phone, Calendar, Building2, MapPin, CheckCircle2, AlertCircle, FileText, Upload, Star, Edit2, Users, Building, MessageSquare, X } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Clients() {

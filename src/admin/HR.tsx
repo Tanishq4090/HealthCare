@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Download, Plus, Mail, Phone, Calendar, UserCheck, MapPin, CheckCircle2, AlertCircle, FileText, Upload, Star, MessageSquare, Bot, Edit3, X, MessageCircle, Globe, Send, Users, Clock, Building, Loader2 } from 'lucide-react';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 
@@ -21,10 +21,11 @@ export default function HR() {
         assigned_client: '',
         hourly_rate: '',
         status: 'Available',
-        aadhaar_number: '',
         phone: '',
         address: '',
-        dob: ''
+        dob: '',
+        aadhaar_number: '',
+        documents: [] as File[]
     });
 
     // Payroll Edit Modal State
@@ -99,7 +100,7 @@ export default function HR() {
     const openAddModal = () => {
         setModalMode('add');
         setEditingWorkerId(null);
-        setFormData({ name: '', role: '', assigned_client: '', hourly_rate: '', status: 'Available', aadhaar_number: '', phone: '', address: '', dob: '' });
+        setFormData({ name: '', role: '', assigned_client: '', hourly_rate: '', status: 'Available', aadhaar_number: '', phone: '', address: '', dob: '', documents: [] });
         setIsModalOpen(true);
     };
 
@@ -115,7 +116,8 @@ export default function HR() {
             aadhaar_number: worker.aadhaar_number || '',
             phone: worker.phone || '',
             address: worker.address || '',
-            dob: worker.dob || ''
+            dob: worker.dob || '',
+            documents: []
         });
         setIsModalOpen(true);
     };
@@ -137,12 +139,18 @@ export default function HR() {
                 dob: formData.dob || null
             };
 
+            // In a real application, you would upload formData.documents to Supabase Storage here
+
             if (modalMode === 'add') {
                 const { error } = await supabase.from('workers').insert([payload]);
                 if (error) throw error;
             } else {
                 const { error } = await supabase.from('workers').update(payload).eq('id', editingWorkerId);
                 if (error) throw error;
+            }
+
+            if (formData.documents && formData.documents.length > 0) {
+                toast.success(`${formData.documents.length} document(s) simulated upload for ${formData.name}`);
             }
 
             setIsModalOpen(false);
@@ -614,6 +622,65 @@ export default function HR() {
                                         placeholder="Full address..."
                                     />
                                 </div>
+                            </div>
+
+                            {/* Document Upload Section */}
+                            <div className="border-t border-slate-100 pt-4 mt-4">
+                                <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-primary" />
+                                    Verification Documents
+                                </h3>
+
+                                <div className="border-2 border-dashed border-slate-200 hover:border-primary/50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center bg-slate-50 cursor-pointer text-center relative overflow-hidden group">
+                                    <input
+                                        type="file"
+                                        multiple
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                        onChange={(e) => {
+                                            if (e.target.files && e.target.files.length > 0) {
+                                                const newFiles = Array.from(e.target.files);
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    documents: [...(prev.documents || []), ...newFiles]
+                                                }));
+                                            }
+                                        }}
+                                    />
+                                    <div className="w-12 h-12 bg-white shadow-sm rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <Upload className="w-6 h-6 text-primary" />
+                                    </div>
+                                    <p className="font-semibold text-slate-700 mb-1">Upload ID proofs & Certifications</p>
+                                    <p className="text-xs text-slate-500 max-w-xs">Drag and drop files here, or click to browse. Supports PDF, JPG, PNG (Max 5MB).</p>
+                                </div>
+
+                                {formData.documents && formData.documents.length > 0 && (
+                                    <div className="mt-4 flex flex-col gap-2">
+                                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Attached Files ({formData.documents.length})</h4>
+                                        <div className="max-h-32 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                                            {formData.documents.map((file, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-white">
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <FileText className="w-4 h-4 text-primary shrink-0" />
+                                                        <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                documents: prev.documents.filter((_, i) => i !== idx)
+                                                            }));
+                                                        }}
+                                                        className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded transition-colors shrink-0"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="pt-2 flex gap-3 border-t border-slate-100 mt-2">

@@ -1,5 +1,8 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { AuthProvider } from './contexts/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Login from './Login';
 import LandingPage from './LandingPage';
 import AdminLayout from './admin/AdminLayout';
 import Dashboard from './admin/Dashboard';
@@ -7,25 +10,83 @@ import CRM from './admin/CRM';
 import HR from './admin/HR';
 import Clients from './admin/Clients';
 import Billing from './admin/Billing';
+import AccessControl from './admin/AccessControl';
 import './App.css';
 
 function App() {
   return (
     <Router>
-      <Toaster position="bottom-right" theme="light" />
-      <Routes>
-        {/* Public Landing Page */}
-        <Route path="/" element={<LandingPage />} />
+      <AuthProvider>
+        <Toaster position="bottom-right" theme="light" />
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<Login />} />
 
-        {/* Private Admin Dashboard */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="crm" element={<CRM />} />
-          <Route path="clients" element={<Clients />} />
-          <Route path="hr" element={<HR />} />
-          <Route path="billing" element={<Billing />} />
-        </Route>
-      </Routes>
+          {/* Private Admin Dashboard */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
+            {/* Anyone with dashboard access can see the default index */}
+            <Route index element={<Dashboard />} />
+
+            {/* Role-Restricted Modules */}
+            <Route
+              path="crm"
+              element={
+                <ProtectedRoute requiredModule="crm">
+                  <CRM />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="clients"
+              element={
+                <ProtectedRoute requiredModule="clients">
+                  <Clients />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="hr"
+              element={
+                <ProtectedRoute requiredModule="hr">
+                  <HR />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="billing"
+              element={
+                <ProtectedRoute requiredModule="finance">
+                  <Billing />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* System Admin Only */}
+            <Route
+              path="settings"
+              element={
+                <ProtectedRoute>
+                  <AccessControl />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Catch-all relative to /admin */}
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Route>
+
+          {/* Global Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
     </Router>
   );
 }
