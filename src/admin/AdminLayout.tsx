@@ -1,16 +1,31 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Receipt } from 'lucide-react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Receipt, Settings } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import type { AccessModule } from '../contexts/AuthContext';
 
 export default function AdminLayout() {
     const location = useLocation();
+    const navigate = useNavigate();
+    const { user, logout, hasAccess } = useAuth();
 
+    // Navigation items linked to their required module (null means always visible)
     const navigation = [
-        { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-        { name: 'AI CRM', href: '/admin/crm', icon: Users },
-        { name: 'Clients', href: '/admin/clients', icon: Users },
-        { name: 'AI HR', href: '/admin/hr', icon: UserCog },
-        { name: 'Finance', href: '/admin/billing', icon: Receipt },
+        { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, requiredModule: null },
+        { name: 'AI CRM', href: '/admin/crm', icon: Users, requiredModule: 'crm' as AccessModule },
+        { name: 'Clients', href: '/admin/clients', icon: Users, requiredModule: 'clients' as AccessModule },
+        { name: 'AI HR', href: '/admin/hr', icon: UserCog, requiredModule: 'hr' as AccessModule },
+        { name: 'Finance', href: '/admin/billing', icon: Receipt, requiredModule: 'finance' as AccessModule },
     ];
+
+    const filteredNavigation = navigation.filter(item => {
+        if (!item.requiredModule) return true; // Everyone sees Dashboard
+        return hasAccess(item.requiredModule);
+    });
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
 
     return (
         <div className="min-h-screen bg-slate-50 flex">
@@ -28,7 +43,7 @@ export default function AdminLayout() {
 
                 {/* Navigation */}
                 <nav className="flex-1 p-4 space-y-1">
-                    {navigation.map((item) => {
+                    {filteredNavigation.map((item) => {
                         const isActive = location.pathname === item.href;
                         return (
                             <Link
@@ -46,18 +61,34 @@ export default function AdminLayout() {
                     })}
                 </nav>
 
+                {/* Settings Link for Admins */}
+                {user?.role === 'admin' && (
+                    <div className="px-4 pb-2">
+                        <Link
+                            to="/admin/settings"
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${location.pathname === '/admin/settings'
+                                    ? 'bg-primary/10 text-primary'
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                }`}
+                        >
+                            <Settings className={`w-5 h-5 ${location.pathname === '/admin/settings' ? 'text-primary' : 'text-slate-400'}`} />
+                            Access Control
+                        </Link>
+                    </div>
+                )}
+
                 {/* User Info & Logout */}
                 <div className="p-4 border-t border-slate-100">
                     <div className="flex items-center gap-3 px-3 py-2 mb-2">
                         <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                            <span className="font-semibold text-slate-600 text-sm">JD</span>
+                            <span className="font-semibold text-slate-600 text-sm">{user?.avatar || 'U'}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 truncate">Jane Doe</p>
-                            <p className="text-xs text-slate-500 truncate">Administrator</p>
+                            <p className="text-sm font-semibold text-slate-900 truncate">{user?.name || 'User'}</p>
+                            <p className="text-xs text-slate-500 truncate capitalize">{user?.role?.replace('_', ' ') || 'Guest'}</p>
                         </div>
                     </div>
-                    <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors font-medium">
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors font-medium">
                         <LogOut className="w-5 h-5" />
                         Sign Out
                     </button>

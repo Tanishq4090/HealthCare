@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import Client from '@vapi-ai/web';
+import WhatsAppChatPanel from './WhatsAppChatPanel';
 
 const VAPI_PUBLIC_KEY = "3cd76924-ad95-4b41-8018-26d22b309bbf";
 const VAPI_ASSISTANT_ID = "2de7804c-6087-43bf-8098-dfc787aa3dee";
@@ -28,55 +29,17 @@ export default function CRM() {
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
 
-    // Live WhatsApp Chat State
-    const [activeChatPhone, setActiveChatPhone] = useState<string | null>(null);
-    const [chatHistory, setChatHistory] = useState<any[]>([]);
-    const [adminReply, setAdminReply] = useState('');
-    const [chatSessions, setChatSessions] = useState<{ [phone: string]: any[] }>({});
+    const [pipelineStages, setPipelineStages] = useState<string[]>([
+        'New Lead', 'Confirmation Form', 'Work Form', 'Patient Visit', 'Caregiver Allocated', 'Deposit Paid', 'Closed Won'
+    ]);
+    const [isAddingStage, setIsAddingStage] = useState(false);
+    const [newStageName, setNewStageName] = useState('');
+    const [editingStageIdx, setEditingStageIdx] = useState<number | null>(null);
+    const [editingStageName, setEditingStageName] = useState('');
 
-    // Poll for live WhatsApp messages
-    useEffect(() => {
-        if (activeTab !== 'whatsapp') return;
-        const fetchSessions = async () => {
-            try {
-                // We will add an endpoint to our backend to fetch all active sessions
-                const res = await fetch('http://localhost:3001/api/whatsapp/sessions');
-                if (res.ok) {
-                    const data = await res.json();
-                    setChatSessions(data.sessions || {});
-                    if (activeChatPhone && data.sessions[activeChatPhone]) {
-                        setChatHistory(data.sessions[activeChatPhone]);
-                    }
-                }
-            } catch (err) {
-                console.error("Error fetching sessions", err);
-            }
-        };
-        fetchSessions();
-        const interval = setInterval(fetchSessions, 3000); // poll every 3 seconds
-        return () => clearInterval(interval);
-    }, [activeTab, activeChatPhone]);
+    // Predefined stages that cannot be deleted or renamed easily (or you can allow all to be deleted)
+    const PROTECTED_STAGES = ['New Lead', 'Closed Won'];
 
-    const handleSendAdminReply = async () => {
-        if (!activeChatPhone || !adminReply.trim()) return;
-        const tempReply = adminReply;
-        setAdminReply('');
-
-        // Optimistically add to UI
-        setChatHistory(prev => [...prev, { role: 'assistant', content: tempReply, isAdmin: true }]);
-
-        try {
-            const res = await fetch('http://localhost:3001/api/whatsapp/admin-reply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: activeChatPhone, message: tempReply })
-            });
-            if (!res.ok) throw new Error("Failed to send reply");
-        } catch (err) {
-            toast.error("Failed to send WhatsApp message");
-            setAdminReply(tempReply); // restore on fail
-        }
-    };
 
     const [workflows, setWorkflows] = useState({
         greeting: true,
@@ -197,7 +160,7 @@ export default function CRM() {
             id: Date.now(),
             type: 'system',
             icon: Bot,
-            title: `Workflow ${isTurningOn ? 'Activated' : 'Paused'}`,
+            title: `Workflow ${isTurningOn ? 'Activated' : 'Paused'} `,
             desc: `${name} has been ${isTurningOn ? 'enabled' : 'disabled'} by Admin.`,
             time: 'Just now',
             status: 'success'
@@ -216,15 +179,15 @@ export default function CRM() {
                     to: testEmail,
                     subject: 'Your Requested HealthFirst Services Folio',
                     html: `
-                        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+    < div style = "font-family: sans-serif; max-width: 600px; margin: 0 auto;" >
                             <h2>Hi there! 👋</h2>
                             <p>You recently inquired about our services at HealthFirst. Our AI agent has automatically dispatched our current digital folio for your review.</p>
                             <p><strong>Note:</strong> In a production environment, the actual PDF brochure would be attached to this email.</p>
                             <br/>
                             <p>Let us know if you want to schedule a quick call!</p>
                             <p>- The HealthFirst Team</p>
-                        </div>
-                    `
+                        </div >
+    `
                 },
             });
 
@@ -242,7 +205,7 @@ export default function CRM() {
             };
             setAutomationLogs(prev => [newLog, ...prev]);
 
-            toast.success(`Success! The automated Folio email was sent to ${testEmail}`);
+            toast.success(`Success! The automated Folio email was sent to ${testEmail} `);
         } catch (error: any) {
             console.error('Error sending folio:', error);
             toast.error(`Error: ${error.message || 'Failed to send email'}. Ensure you used your verified Resend email!`);
@@ -262,7 +225,7 @@ export default function CRM() {
             return;
         }
 
-        const testEmail = window.prompt(`We will simulate sending the Instant Greeting to all ${leads.length} captured leads.\n\nEnter your verified Resend email to receive the mock emails on their behalf:`);
+        const testEmail = window.prompt(`We will simulate sending the Instant Greeting to all ${leads.length} captured leads.\n\nEnter your verified Resend email to receive the mock emails on their behalf: `);
         if (!testEmail) return;
 
         setIsSimulatingInquiry(true);
@@ -277,7 +240,7 @@ export default function CRM() {
                     to: testEmail,
                     subject: 'HealthFirst Instant Greeting Batch Sent',
                     html: `
-                        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+    < div style = "font-family: sans-serif; max-width: 600px; margin: 0 auto;" >
                             <h2>Hello Admin, 👋</h2>
                             <p>This is a simulated batch execution of the <strong>Instant Greeting & Triage</strong> automation.</p>
                             <p>In a live environment, the following tailored welcome emails would have been dispatched directly to the clients' actual email addresses:</p>
@@ -286,8 +249,8 @@ export default function CRM() {
                             </ul>
                             <br/>
                             <p><small><em>This is an automated batch summary generated by the HealthFirst CRM.</em></small></p>
-                        </div>
-                    `
+                        </div >
+    `
                 },
             });
 
@@ -299,16 +262,16 @@ export default function CRM() {
                 type: 'greeting',
                 icon: MessageSquare,
                 title: 'Bulk Auto-Greeting Executed',
-                desc: `Processed batch of captured leads. Emailed triage greetings for: ${leadNames.join(', ')}.`,
+                desc: `Processed batch of captured leads.Emailed triage greetings for: ${leadNames.join(', ')}.`,
                 time: 'Just now',
                 status: 'success'
             }, ...prev]);
 
-            toast.success(`Execution Complete!\nBatch Auto-greeting emails triggered for ${leadNames.length} leads. Summaries sent to ${testEmail}.`);
+            toast.success(`Execution Complete!\nBatch Auto - greeting emails triggered for ${leadNames.length} leads.Summaries sent to ${testEmail}.`);
 
         } catch (error: any) {
             console.error("Bulk greeting error", error);
-            toast.error(`Bulk greeting failed: ${error.message}`);
+            toast.error(`Bulk greeting failed: ${error.message} `);
         } finally {
             setIsSimulatingInquiry(false);
         }
@@ -319,10 +282,10 @@ export default function CRM() {
         // Instant load for demonstration (bypassing the slow timeout)
         setLeads([
             { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Lead', created_at: new Date().toISOString(), estimated_value_monthly: 5000 },
-            { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'In Discussion', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000 },
-            { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Quotation Sent', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000 },
-            { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Form Submitted', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000 },
-            { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'In Discussion', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000 }
+            { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Confirmation Form', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000 },
+            { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Work Form', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000 },
+            { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Patient Visit', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000 },
+            { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Caregiver Allocated', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000 }
         ]);
         setIsLoading(false);
     };
@@ -330,7 +293,7 @@ export default function CRM() {
     // AI WhatsApp Agent Logic
     const generateWhatsappDraft = (leadName: string, action: string, lang: string) => {
         if (action === 'inquiry') {
-            if (lang === 'Hinglish') return `Hello ${leadName} sir/ma'am, HealthFirst se baat kar raha hu. Aapki inquiry mili hume. Agar koi doubts hai toh bataye, humara AI care team hamesha available hai aapki help ke liye!`;
+            if (lang === 'Hinglish') return `Hello ${leadName} sir / ma'am, HealthFirst se baat kar raha hu. Aapki inquiry mili hume. Agar koi doubts hai toh bataye, humara AI care team hamesha available hai aapki help ke liye!`;
             if (lang === 'Hindi') return `Namaste ${leadName} ji, HealthFirst se sampark karne ke liye dhanyawad. Aapko koi aur jankari chahiye toh kripya batayein.`;
             return `Hi ${leadName}, thank you for inquiring at HealthFirst. This is our automated follow-up. How can our AI care team assist you today?`;
         }
@@ -421,44 +384,81 @@ export default function CRM() {
         }
     };
 
-    // Organize leads into pipeline columns
-    const columns = [
-        {
-            title: 'New Leads',
-            count: leads.filter(l => l.pipeline_stage === 'New Lead').length,
-            items: leads.filter(l => l.pipeline_stage === 'New Lead').map(l => ({
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
-            }))
-        },
-        {
-            title: 'In Discussion',
-            count: leads.filter(l => l.pipeline_stage === 'In Discussion').length,
-            items: leads.filter(l => l.pipeline_stage === 'In Discussion').map(l => ({
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
-            }))
-        },
-        {
-            title: 'Quotation Sent',
-            count: leads.filter(l => l.pipeline_stage === 'Quotation Sent').length,
-            items: leads.filter(l => l.pipeline_stage === 'Quotation Sent').map(l => ({
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
-            }))
-        },
-        {
-            title: 'Form Submitted',
-            count: leads.filter(l => l.pipeline_stage === 'Form Submitted').length,
-            items: leads.filter(l => l.pipeline_stage === 'Form Submitted').map(l => ({
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
-            }))
-        },
-        {
-            title: 'Closed Won',
-            count: leads.filter(l => l.pipeline_stage === 'Closed Won').length,
-            items: leads.filter(l => l.pipeline_stage === 'Closed Won').map(l => ({
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
-            }))
+    const handleAddStage = () => {
+        if (newStageName.trim() && !pipelineStages.includes(newStageName.trim())) {
+            setPipelineStages([...pipelineStages, newStageName.trim()]);
+            setNewStageName('');
+            setIsAddingStage(false);
+            toast.success(`Pipeline stage "${newStageName.trim()}" added!`);
         }
-    ];
+    };
+
+    const handleDeleteStage = (stageToDelete: string, idx: number) => {
+        if (PROTECTED_STAGES.includes(stageToDelete)) {
+            toast.error(`Cannot delete protected stage: ${stageToDelete}`);
+            return;
+        }
+
+        // Ensure no leads are in this stage before deleting
+        const leadsInStage = leads.filter(l => l.pipeline_stage === stageToDelete).length;
+        if (leadsInStage > 0) {
+            toast.error(`Cannot delete stage. Please move ${leadsInStage} leads to another stage first.`);
+            return;
+        }
+
+        if (window.confirm(`Are you sure you want to delete the "${stageToDelete}" stage?`)) {
+            const newStages = [...pipelineStages];
+            newStages.splice(idx, 1);
+            setPipelineStages(newStages);
+            toast.success(`Stage "${stageToDelete}" deleted successfully.`);
+        }
+    };
+
+    const handleRenameStage = (oldName: string, idx: number) => {
+        if (!editingStageName.trim() || editingStageName.trim() === oldName) {
+            setEditingStageIdx(null);
+            return;
+        }
+        if (pipelineStages.includes(editingStageName.trim())) {
+            toast.error('A stage with this name already exists.');
+            return;
+        }
+
+        // Update stage in pipeline list
+        const newStages = [...pipelineStages];
+        newStages[idx] = editingStageName.trim();
+        setPipelineStages(newStages);
+
+        // Update all leads currently in this stage (optimistic)
+        setLeads(prev => prev.map(l => l.pipeline_stage === oldName ? { ...l, pipeline_stage: editingStageName.trim() } : l));
+
+        // Note: In a real app, you would also trigger a Supabase bulk update here.
+        setEditingStageIdx(null);
+        toast.success(`Stage renamed to "${editingStageName.trim()}"`);
+    };
+
+    const handleSlideStage = (idx: number, direction: 'left' | 'right') => {
+        if ((direction === 'left' && idx === 0) || (direction === 'right' && idx === pipelineStages.length - 1)) return;
+
+        const newStages = [...pipelineStages];
+        const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+
+        // Swap
+        const temp = newStages[idx];
+        newStages[idx] = newStages[targetIdx];
+        newStages[targetIdx] = temp;
+
+        setPipelineStages(newStages);
+    };
+
+    // Organize leads into pipeline columns
+    const columns = pipelineStages.map(stage => ({
+        title: stage,
+        count: leads.filter(l => l.pipeline_stage === stage).length,
+        items: leads.filter(l => l.pipeline_stage === stage).map(l => ({
+            id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
+        }))
+    }));
 
     const convertToClient = async (leadId: string, leadName: string) => {
         if (window.confirm(`Are you sure you want to convert ${leadName} to a permanent Client Master entry?`)) {
@@ -549,98 +549,7 @@ export default function CRM() {
             </div>
 
             {activeTab === 'whatsapp' ? (
-                /* Live WhatsApp Converation Screen */
-                <div className="flex-1 flex gap-6 overflow-hidden pb-4">
-                    {/* Left Pane: Contacts List */}
-                    <div className="w-1/3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <h2 className="font-bold text-slate-900 flex items-center gap-2">
-                                <MessageCircle className="w-5 h-5 text-[#25D366]" /> Live Chats
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-1">Active WhatsApp AI conversations</p>
-                        </div>
-                        <div className="flex-1 overflow-y-auto">
-                            {Object.keys(chatSessions).length === 0 ? (
-                                <div className="p-8 text-center text-slate-500 text-sm">No active WhatsApp conversations.</div>
-                            ) : (
-                                Object.keys(chatSessions).map(phoneNum => (
-                                    <button
-                                        key={phoneNum}
-                                        onClick={() => {
-                                            setActiveChatPhone(phoneNum);
-                                            setChatHistory(chatSessions[phoneNum]);
-                                        }}
-                                        className={`w-full text-left p-4 border-b border-slate-100 transition-colors ${activeChatPhone === phoneNum ? 'bg-[#25D366]/10 border-l-4 border-l-[#25D366]' : 'hover:bg-slate-50'}`}
-                                    >
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="font-semibold text-slate-900">{phoneNum}</span>
-                                            <span className="text-xs text-slate-400">
-                                                {chatSessions[phoneNum].length} msgs
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 truncate">
-                                            {chatSessions[phoneNum][chatSessions[phoneNum].length - 1]?.content || "..."}
-                                        </p>
-                                    </button>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right Pane: Chat Window */}
-                    <div className="flex-1 bg-slate-50 rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden relative">
-                        {activeChatPhone ? (
-                            <>
-                                <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
-                                    <h3 className="font-bold text-slate-900">{activeChatPhone}</h3>
-                                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded flex items-center gap-1">
-                                        <Bot className="w-3.5 h-3.5" /> AI Active
-                                    </span>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundRepeat: 'repeat' }}>
-                                    {chatHistory.map((msg, i) => (
-                                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
-                                            <div className={`max-w-[70%] p-3 rounded-lg shadow-sm ${msg.role === 'user' ? 'bg-white text-slate-800 rounded-tl-none' : msg.isAdmin ? 'bg-blue-100 text-blue-900 rounded-tr-none' : 'bg-[#e7ffdb] text-slate-900 rounded-tr-none'}`}>
-                                                {msg.role === 'assistant' && !msg.isAdmin && (
-                                                    <div className="text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1">
-                                                        <Bot className="w-3 h-3" /> Claude AI
-                                                    </div>
-                                                )}
-                                                {msg.isAdmin && (
-                                                    <div className="text-[10px] font-bold text-blue-500 mb-1 flex items-center gap-1">
-                                                        <Users className="w-3 h-3" /> Admin (You)
-                                                    </div>
-                                                )}
-                                                <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="p-4 bg-white border-t border-slate-200 flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Type manual reply (overrides AI)..."
-                                        className="flex-1 border border-slate-200 rounded-full px-4 text-sm outline-none focus:border-[#25D366] transition-colors bg-slate-50"
-                                        value={adminReply}
-                                        onChange={(e) => setAdminReply(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSendAdminReply()}
-                                    />
-                                    <button
-                                        onClick={handleSendAdminReply}
-                                        className="w-10 h-10 rounded-full bg-[#25D366] text-white flex items-center justify-center hover:bg-[#128C7E] transition-colors"
-                                    >
-                                        <Send className="w-4 h-4 ml-0.5" />
-                                    </button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-                                <MessageCircle className="w-16 h-16 mb-4 text-slate-200" />
-                                <p>Select a conversation from the left to view history.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <WhatsAppChatPanel />
             ) : activeTab === 'pipeline' ? (
                 /* Kanban Pipeline View */
                 <div className="flex-1 flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
@@ -650,135 +559,230 @@ export default function CRM() {
                             <span className="ml-3 text-slate-500 font-medium">Loading live pipeline...</span>
                         </div>
                     ) : (
-                        columns.map((col, idx) => (
-                            <div key={idx} className="w-[320px] shrink-0 flex flex-col bg-slate-50 rounded-xl border border-slate-200">
-                                <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-white rounded-t-xl">
-                                    <h3 className="font-semibold text-slate-900">{col.title}</h3>
-                                    <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
-                                        {col.count}
-                                    </span>
-                                </div>
-
-                                <div className="p-3 flex-1 overflow-y-auto space-y-3">
-                                    {col.items.map((item) => (
-                                        <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group">
-                                            <div className="flex items-start justify-between mb-2">
-                                                <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{item.name}</h4>
-                                                <select
-                                                    value={item.pipeline_stage}
-                                                    onChange={(e) => handleMoveLead(item.id, e.target.value)}
-                                                    className="text-xs bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-slate-100 transition-colors"
+                        <>
+                            {columns.map((col, idx) => (
+                                <div key={idx} className="w-[320px] shrink-0 flex flex-col bg-slate-50 rounded-xl border border-slate-200">
+                                    <div className="p-4 border-b border-slate-200 bg-white rounded-t-xl relative group/header">
+                                        {/* Stage Header w/ Edit toggle */}
+                                        <div className="flex items-center justify-between">
+                                            {editingStageIdx === idx ? (
+                                                <input
+                                                    type="text"
+                                                    value={editingStageName}
+                                                    onChange={(e) => setEditingStageName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleRenameStage(col.title, idx);
+                                                        if (e.key === 'Escape') setEditingStageIdx(null);
+                                                    }}
+                                                    onBlur={() => handleRenameStage(col.title, idx)}
+                                                    autoFocus
+                                                    className="font-semibold text-slate-900 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded outline-none ring-2 ring-primary/20 w-[180px] text-sm"
+                                                />
+                                            ) : (
+                                                <h3
+                                                    className="font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate pr-2 w-[180px]"
+                                                    onDoubleClick={() => {
+                                                        if (!PROTECTED_STAGES.includes(col.title)) {
+                                                            setEditingStageIdx(idx);
+                                                            setEditingStageName(col.title);
+                                                        } else {
+                                                            toast.info("Protected stages cannot be renamed.");
+                                                        }
+                                                    }}
+                                                    title={PROTECTED_STAGES.includes(col.title) ? "Protected Stage" : "Double-click to rename"}
                                                 >
-                                                    <option value="New Lead">New Lead</option>
-                                                    <option value="In Discussion">In Discussion</option>
-                                                    <option value="Quotation Sent">Quotation Sent</option>
-                                                    <option value="Form Submitted">Form Submitted</option>
-                                                    <option value="Closed Won">Closed Won</option>
-                                                </select>
-                                            </div>
+                                                    {col.title}
+                                                </h3>
+                                            )}
 
-                                            <div className="flex items-center gap-4 mb-3">
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                                                    {item.source === 'Web Chat' && <MessageSquare className="w-3.5 h-3.5" />}
-                                                    {item.source === 'Email' && <Mail className="w-3.5 h-3.5" />}
-                                                    {item.source === 'Contact Form' && <FileText className="w-3.5 h-3.5" />}
-                                                    {item.source === 'Meeting' && <Phone className="w-3.5 h-3.5" />}
-                                                    {item.source === 'AI Phone Call' && <Mic className="w-3.5 h-3.5" />}
-                                                    {item.source === 'Referral' && <Users className="w-3.5 h-3.5" />}
-                                                    {item.source}
-                                                </div>
-                                                <div className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm">
-                                                    {item.value}
-                                                </div>
-                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
+                                                    {col.count}
+                                                </span>
 
-                                            <div className="pt-3 flex flex-col gap-2 border-t border-slate-100">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-1.5 cursor-help" title="Current AI Status">
-                                                        <Bot className="w-3.5 h-3.5 text-primary" />
-                                                        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">{item.status}</span>
-                                                    </div>
-                                                    <span className="text-xs text-slate-400">{item.time}</span>
-                                                </div>
+                                                {/* Header Dropdown Menu (Hover based) */}
+                                                <div className="absolute right-2 top-3 opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden">
+                                                    <button
+                                                        disabled={idx === 0}
+                                                        onClick={() => handleSlideStage(idx, 'left')}
+                                                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100" title="Slide Left"
+                                                    >
+                                                        <ArrowLeft className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        disabled={idx === pipelineStages.length - 1}
+                                                        onClick={() => handleSlideStage(idx, 'right')}
+                                                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100" title="Slide Right"
+                                                    >
+                                                        <ArrowRight className="w-3.5 h-3.5" />
+                                                    </button>
 
-                                                {/* Futuristic Progress Tracker */}
-                                                <div className="mt-3 relative pt-1">
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Process Flow</span>
-                                                    </div>
-                                                    <div className="flex gap-1 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                        <div className={`h-full ${item.pipeline_stage === 'New Lead' || item.pipeline_stage === 'In Discussion' || item.pipeline_stage === 'Quotation Sent' || item.pipeline_stage === 'Form Submitted' || item.pipeline_stage === 'Closed Won' ? 'bg-primary' : 'bg-transparent'} flex-1 transition-all duration-500`}></div>
-                                                        <div className={`h-full ${item.pipeline_stage === 'In Discussion' || item.pipeline_stage === 'Quotation Sent' || item.pipeline_stage === 'Form Submitted' || item.pipeline_stage === 'Closed Won' ? 'bg-primary' : 'bg-slate-200'} flex-1 transition-all duration-500`}></div>
-                                                        <div className={`h-full ${item.pipeline_stage === 'Quotation Sent' || item.pipeline_stage === 'Form Submitted' || item.pipeline_stage === 'Closed Won' ? 'bg-amber-400' : 'bg-slate-200'} flex-1 transition-all duration-500`}></div>
-                                                        <div className={`h-full ${item.pipeline_stage === 'Form Submitted' || item.pipeline_stage === 'Closed Won' ? 'bg-blue-400' : 'bg-slate-200'} flex-1 transition-all duration-500`}></div>
-                                                        <div className={`h-full ${item.pipeline_stage === 'Closed Won' ? 'bg-emerald-400' : 'bg-slate-200'} flex-1 transition-all duration-500`}></div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Client Process Flow Actions */}
-                                                <div className="mt-4 flex flex-col gap-2">
-                                                    {item.pipeline_stage === 'New Lead' && (
+                                                    {!PROTECTED_STAGES.includes(col.title) && (
                                                         <button
-                                                            onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'inquiry'); }}
-                                                            className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-100 text-emerald-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            onClick={() => handleDeleteStage(col.title, idx)}
+                                                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete Stage"
                                                         >
-                                                            <Bot className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                                                            AI WhatsApp Follow-up
-                                                        </button>
-                                                    )}
-
-                                                    {item.pipeline_stage === 'In Discussion' && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'quotation'); }}
-                                                            className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                        >
-                                                            <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                            Draft WhatsApp Quotation
-                                                        </button>
-                                                    )}
-
-                                                    {item.pipeline_stage === 'Quotation Sent' && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
-                                                            className="w-full bg-blue-50 hover:bg-blue-500 hover:text-white border border-blue-100 text-blue-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                        >
-                                                            <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                            WhatsApp Consent Link
-                                                        </button>
-                                                    )}
-
-                                                    {item.pipeline_stage === 'Form Submitted' && (
-                                                        <button
-                                                            onClick={async () => {
-                                                                await handleMoveLead(item.id, 'Closed Won');
-                                                                toast.success('Lead successfully secured and marked as Won!');
-                                                            }}
-                                                            className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
-                                                        >
-                                                            <CheckCircle2 className="w-3.5 h-3.5" />
-                                                            Mark as Won
-                                                        </button>
-                                                    )}
-
-                                                    {item.pipeline_stage === 'Closed Won' && (
-                                                        <button
-                                                            onClick={() => {
-                                                                convertToClient(item.id, item.name);
-                                                                toast.success(`${item.name} migrated to Client Server Master.`);
-                                                            }}
-                                                            className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
-                                                        >
-                                                            <Users className="w-3.5 h-3.5" />
-                                                            Convert to Server Master
+                                                            <Trash2 className="w-3.5 h-3.5" />
                                                         </button>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
+                                    </div>
+
+                                    <div className="p-3 flex-1 overflow-y-auto space-y-3">
+                                        {col.items.map((item) => (
+                                            <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group">
+                                                <div className="flex items-start justify-between mb-2">
+                                                    <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{item.name}</h4>
+                                                    <select
+                                                        value={item.pipeline_stage}
+                                                        onChange={(e) => handleMoveLead(item.id, e.target.value)}
+                                                        className="text-xs bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-slate-100 transition-colors"
+                                                    >
+                                                        {pipelineStages.map(stage => (
+                                                            <option key={stage} value={stage}>{stage}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                <div className="flex items-center gap-4 mb-3">
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                                        {item.source === 'Web Chat' && <MessageSquare className="w-3.5 h-3.5" />}
+                                                        {item.source === 'Email' && <Mail className="w-3.5 h-3.5" />}
+                                                        {item.source === 'Contact Form' && <FileText className="w-3.5 h-3.5" />}
+                                                        {item.source === 'Meeting' && <Phone className="w-3.5 h-3.5" />}
+                                                        {item.source === 'AI Phone Call' && <Mic className="w-3.5 h-3.5" />}
+                                                        {item.source === 'Referral' && <Users className="w-3.5 h-3.5" />}
+                                                        {item.source}
+                                                    </div>
+                                                    <div className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm">
+                                                        {item.value}
+                                                    </div>
+                                                </div>
+
+                                                <div className="pt-3 flex flex-col gap-2 border-t border-slate-100">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5 cursor-help" title="Current AI Status">
+                                                            <Bot className="w-3.5 h-3.5 text-primary" />
+                                                            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">{item.status}</span>
+                                                        </div>
+                                                        <span className="text-xs text-slate-400">{item.time}</span>
+                                                    </div>
+
+                                                    {/* Futuristic Progress Tracker */}
+                                                    <div className="mt-3 relative pt-1">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Process Flow</span>
+                                                        </div>
+                                                        <div className="flex gap-1 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                            {pipelineStages.map((stage, i) => {
+                                                                const currentIdx = pipelineStages.indexOf(item.pipeline_stage);
+                                                                const isPast = i <= currentIdx;
+                                                                return (
+                                                                    <div key={stage} className={`flex-1 transition-all duration-500 ${isPast ? (i === pipelineStages.length - 1 ? 'bg-emerald-400' : 'bg-primary') : 'bg-slate-200'}`}></div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Client Process Flow Actions */}
+                                                    <div className="mt-4 flex flex-col gap-2">
+                                                        {item.pipeline_stage === 'New Lead' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'inquiry'); }}
+                                                                className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-100 text-emerald-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            >
+                                                                <Bot className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                                                AI WhatsApp Follow-up
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'In Discussion' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'quotation'); }}
+                                                                className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            >
+                                                                <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                Draft WhatsApp Quotation
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'Quotation Sent' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
+                                                                className="w-full bg-blue-50 hover:bg-blue-500 hover:text-white border border-blue-100 text-blue-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            >
+                                                                <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                WhatsApp Consent Link
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'Form Submitted' && (
+                                                            <button
+                                                                onClick={async () => {
+                                                                    await handleMoveLead(item.id, 'Closed Won');
+                                                                    toast.success('Lead successfully secured and marked as Won!');
+                                                                }}
+                                                                className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                                            >
+                                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                                Mark as Won
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'Closed Won' && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    convertToClient(item.id, item.name);
+                                                                    toast.success(`${item.name} migrated to Client Server Master.`);
+                                                                }}
+                                                                className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
+                                                            >
+                                                                <Users className="w-3.5 h-3.5" />
+                                                                Convert to Server Master
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
+                            ))}
+                            {/* Add Column Button */}
+                            <div className="w-[320px] shrink-0 flex flex-col bg-transparent rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 transition-colors">
+                                {isAddingStage ? (
+                                    <div className="p-4 flex flex-col gap-3">
+                                        <input
+                                            type="text"
+                                            value={newStageName}
+                                            onChange={(e) => setNewStageName(e.target.value)}
+                                            placeholder="Enter column name..."
+                                            className="w-full text-sm py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                            autoFocus
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') handleAddStage();
+                                                if (e.key === 'Escape') { setIsAddingStage(false); setNewStageName(''); }
+                                            }}
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => { setIsAddingStage(false); setNewStageName(''); }} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-md">Cancel</button>
+                                            <button onClick={handleAddStage} className="px-3 py-1.5 text-xs bg-primary text-white hover:bg-primary/90 rounded-md" disabled={!newStageName.trim()}>Add</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setIsAddingStage(true)} className="flex items-center justify-center p-4 text-slate-500 hover:text-slate-800 transition-colors group flex-1">
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-slate-200 flex items-center justify-center transition-colors">
+                                                <Plus className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
+                                            </div>
+                                            <span className="font-medium">+ Create a new one</span>
+                                        </div>
+                                    </button>
+                                )}
                             </div>
-                        ))
+                        </>
                     )}
                 </div>
             ) : activeTab === 'voice' ? (
