@@ -1,16 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import Client from '@vapi-ai/web';
 import WhatsAppChatPanel from './WhatsAppChatPanel';
+import { MOCK_WORKERS } from '../data/mockWorkers';
 
 const VAPI_PUBLIC_KEY = "3cd76924-ad95-4b41-8018-26d22b309bbf";
 const VAPI_ASSISTANT_ID = "2de7804c-6087-43bf-8098-dfc787aa3dee";
 
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'whatsapp'>('pipeline');
-    const [leads, setLeads] = useState<any[]>([]);
+    const [leads, setLeads] = useState<any[]>([
+        { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Inquiry', created_at: new Date().toISOString(), estimated_value_monthly: 5000 },
+        { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Quotation Sent', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000 },
+        { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Form Submitted', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000 },
+        { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Deposit Pending', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000 },
+        { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Active Client', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000 }
+    ]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSendingFolio, setIsSendingFolio] = useState(false);
     const [isSimulatingInquiry, setIsSimulatingInquiry] = useState(false);
@@ -25,17 +32,71 @@ export default function CRM() {
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
     const [agentTargetLead, setAgentTargetLead] = useState<any>(null);
-    const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent'>('inquiry');
+    const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing'>('inquiry');
+
+    // Staff Picker State
+    const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
+    const [staffPickerTargetLead, setStaffPickerTargetLead] = useState<any>(null);
+    const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
+    const [selectedWorker, setSelectedWorker] = useState<any>(null);
+    const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
+    const [isEditingTemplate, setIsEditingTemplate] = useState(false);
+    const [templateDraftText, setTemplateDraftText] = useState('');
+
+    const [whatsappTemplates, setWhatsappTemplates] = useState<Record<string, Record<string, string>>>({
+        inquiry: {
+            Hinglish: "🌟 Welcome to 99 Care! 🌟\n{{name}} sir/ma'am, aapki inquiry mili humein. Hamari team aapke ghar par best healthcare staff provide karne ke liye ready hai!\n\nKoi bhi sawaal ho toh seedha reply karein. Hum aapki service mein!💙✨",
+            Hindi: "Namaste {{name}} ji, 99 Care mein aapka swagat hai! Aapki inquiry hamein mili hai. Humari team aapke liye best healthcare solution lekar aayegi. Kripya apni zaroorat batayein.",
+            English: "Hi {{name}}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!"
+        },
+        quotation: {
+            Hinglish: "Namaste {{name}} ji! 🙏 Aapke liye humne ek customized quotation taiyar ki hai.\n\n📋 Service details aur pricing is link pe check karein:\nhttps://99care.in/quote/{{link}}\n\nKoi bhi changes chahiye toh batayein — hum adjust kar sakte hain!",
+            Hindi: "Namaste {{name}} ji, aapki quotation taiyar hai. Kripya is link par details dekhen:\nhttps://99care.in/quote/{{link}}\n\nKoi prashn ho toh humse sampark karein.",
+            English: "Hi {{name}}, your customized quotation from 99 Care is ready! Please review the details here:\nhttps://99care.in/quote/{{link}}\n\nFeel free to reach out if you'd like any adjustments."
+        },
+        consent: {
+            Hinglish: "Hi {{name}} ji! Ek aakhri step baki hai — apna consent form yahan fill karein aur hum service start kar denge! ✅\nhttps://99care.in/consent\n\nSirf 2 minute lagenge!",
+            Hindi: "Namaste {{name}} ji, aage badhne ke liye kripya yeh consent form bharein:\nhttps://99care.in/consent",
+            English: "Hi {{name}}, just one final step — please complete the consent form below and we'll get your service started:\nhttps://99care.in/consent"
+        },
+        staff: {
+            Hinglish: "Good news {{name}} ji! 🎉 Aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai!\n\n👤 Unka profile aur joining date confirm karne ke liye yahan dekhen:\nhttps://99care.in/staff/{{link}}\n\nKoi concern ho toh hume batayein!",
+            Hindi: "Namaste {{name}} ji, aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai. Profile dekhne ke liye:\nhttps://99care.in/staff/{{link}}",
+            English: "Great news {{name}}! We have assigned {{workerName}} ({{workerRole}}) to you. Please review their profile and confirm the joining date here:\nhttps://99care.in/staff/{{link}}"
+        },
+        deposit: {
+            Hinglish: "Namaste {{name}} ji! 🙏 Aapka deposit invoice ready hai.\n\n💰 Amount aur payment details yahan dekhein:\nhttps://99care.in/invoice/{{link}}\n\nPayment complete karne ke baad service start ho jayegi!",
+            Hindi: "Namaste {{name}} ji, aapka deposit invoice taiyar hai. Kripya yahan dekhen:\nhttps://99care.in/invoice/{{link}}",
+            English: "Hi {{name}}, your deposit invoice is ready. Please review and complete the payment here:\nhttps://99care.in/invoice/{{link}}\n\nService will begin once payment is confirmed!"
+        },
+        billing: {
+            Hinglish: "Namaste {{name}} ji! 📄 Is mahine ka bill taiyar ho gaya hai.\n\nBill amount aur details yahan dekhein:\nhttps://99care.in/bill/{{link}}\n\nPayment complete karne par confirmation milegi. Shukriya! 🙏",
+            Hindi: "Namaste {{name}} ji, is mahine ka bill taiyar hai. Kripya yahan dekhen:\nhttps://99care.in/bill/{{link}}",
+            English: "Hi {{name}}, your monthly bill for this period is ready. Please review and pay here:\nhttps://99care.in/bill/{{link}}\n\nThank you for choosing 99 Care!"
+        }
+    });
+
+    useEffect(() => {
+        const saved = localStorage.getItem('whatsappTemplates');
+        if (saved) {
+            try {
+                setWhatsappTemplates(JSON.parse(saved));
+            } catch (e) { }
+        }
+    }, []);
 
     const [pipelineStages, setPipelineStages] = useState<string[]>([
-        'New Lead', 'Confirmation Form', 'Work Form', 'Patient Visit', 'Caregiver Allocated', 'Deposit Paid', 'Closed Won'
+        'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing'
     ]);
     const [isAddingStage, setIsAddingStage] = useState(false);
     const [newStageName, setNewStageName] = useState('');
     const [editingStageIdx, setEditingStageIdx] = useState<number | null>(null);
     const [editingStageName, setEditingStageName] = useState('');
+
+    const [editingLeadValueId, setEditingLeadValueId] = useState<string | null>(null);
+    const [editingLeadValueAmount, setEditingLeadValueAmount] = useState<string>('');
 
     // Predefined stages that cannot be deleted or renamed easily (or you can allow all to be deleted)
     const PROTECTED_STAGES = ['New Lead', 'Closed Won'];
@@ -216,145 +277,253 @@ export default function CRM() {
 
     const handleBulkGreeting = async () => {
         if (!workflows.greeting) {
-            toast.info("The 'Instant Greeting & Triage' workflow is currently toggled OFF. Please flip the switch to enable it first.");
+            toast.info("Toggle ON 'Instant Greeting & Triage' first before dispatching.");
             return;
         }
 
-        if (leads.length === 0) {
-            toast.info("There are no leads in the pipeline to send greetings to.");
+        // Target leads in New Inquiry stage only
+        const newInquiryLeads = leads.filter(l => l.pipeline_stage === 'New Inquiry');
+
+        if (newInquiryLeads.length === 0) {
+            toast.info("No leads in 'New Inquiry' stage to greet. Move leads into that stage first.");
             return;
         }
 
-        const testEmail = window.prompt(`We will simulate sending the Instant Greeting to all ${leads.length} captured leads.\n\nEnter your verified Resend email to receive the mock emails on their behalf: `);
-        if (!testEmail) return;
+        const confirmed = window.confirm(
+            `Send WhatsApp greeting to ${newInquiryLeads.length} lead(s) in "New Inquiry"?\n\n` +
+            newInquiryLeads.map(l => `• ${l.name}`).join('\n')
+        );
+        if (!confirmed) return;
 
         setIsSimulatingInquiry(true);
-        try {
-            // Pick the first up to 3 leads to keep it from spamming the inbox too much during a test
-            const targetLeads = leads.slice(0, 3);
-            const leadNames = targetLeads.map(l => l.name);
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-            // Send batch greeting
-            const { error: emailError } = await supabase.functions.invoke('resend-email', {
-                body: {
-                    to: testEmail,
-                    subject: 'HealthFirst Instant Greeting Batch Sent',
-                    html: `
-    < div style = "font-family: sans-serif; max-width: 600px; margin: 0 auto;" >
-                            <h2>Hello Admin, 👋</h2>
-                            <p>This is a simulated batch execution of the <strong>Instant Greeting & Triage</strong> automation.</p>
-                            <p>In a live environment, the following tailored welcome emails would have been dispatched directly to the clients' actual email addresses:</p>
-                            <ul>
-                                ${leadNames.map(name => `<li><strong>To:</strong> ${name} <br/> <strong>Subject:</strong> Welcome to HealthFirst! (Automated Greeting)</li>`).join('')}
-                            </ul>
-                            <br/>
-                            <p><small><em>This is an automated batch summary generated by the HealthFirst CRM.</em></small></p>
-                        </div >
-    `
-                },
-            });
+        let sentCount = 0;
+        let failCount = 0;
+        const progressId = `bulk-greeting-${Date.now()}`;
+        toast.loading(`Sending greetings… 0/${newInquiryLeads.length}`, { id: progressId });
 
-            if (emailError) throw emailError;
+        for (const lead of newInquiryLeads) {
+            try {
+                const phoneDigits = lead.phone?.replace(/\D/g, '') || '918000044090';
+                const message = generateWhatsappDraft(lead.name, 'inquiry', agentDraftLang);
 
-            // Log success event
-            setAutomationLogs(prev => [{
-                id: Date.now(),
-                type: 'greeting',
-                icon: MessageSquare,
-                title: 'Bulk Auto-Greeting Executed',
-                desc: `Processed batch of captured leads.Emailed triage greetings for: ${leadNames.join(', ')}.`,
-                time: 'Just now',
-                status: 'success'
-            }, ...prev]);
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY,
+                    },
+                    body: JSON.stringify({ phone: phoneDigits, message }),
+                });
 
-            toast.success(`Execution Complete!\nBatch Auto - greeting emails triggered for ${leadNames.length} leads.Summaries sent to ${testEmail}.`);
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${response.status}`);
+                }
 
-        } catch (error: any) {
-            console.error("Bulk greeting error", error);
-            toast.error(`Bulk greeting failed: ${error.message} `);
-        } finally {
-            setIsSimulatingInquiry(false);
+                sentCount++;
+                toast.loading(`Sending greetings… ${sentCount}/${newInquiryLeads.length}`, { id: progressId });
+
+                // Move lead to In Discussion after greeting
+                await handleMoveLead(lead.id, 'In Discussion');
+
+            } catch (e: any) {
+                console.warn(`Failed to greet ${lead.name}:`, e.message);
+                failCount++;
+            }
         }
+
+        toast.dismiss(progressId);
+
+        const logDesc = `Greeted ${sentCount} lead(s) via WhatsApp and moved them to "In Discussion".${failCount > 0 ? ` ${failCount} failed.` : ''}`;
+        setAutomationLogs(prev => [{
+            id: Date.now(),
+            type: 'greeting',
+            icon: MessageSquare,
+            title: `Bulk Greeting — ${sentCount}/${newInquiryLeads.length} Sent`,
+            desc: logDesc,
+            time: 'Just now',
+            status: 'success'
+        }, ...prev]);
+
+        if (sentCount > 0) {
+            toast.success(`✅ Greeted ${sentCount} lead(s)! They've been moved to "In Discussion".`);
+        }
+        if (failCount > 0) {
+            toast.error(`${failCount} greeting(s) failed — check console.`);
+        }
+
+        setIsSimulatingInquiry(false);
     };
 
     const fetchLeads = async () => {
         setIsLoading(true);
-        // Instant load for demonstration (bypassing the slow timeout)
-        setLeads([
-            { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Lead', created_at: new Date().toISOString(), estimated_value_monthly: 5000 },
-            { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Confirmation Form', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000 },
-            { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Work Form', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000 },
-            { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Patient Visit', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000 },
-            { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Caregiver Allocated', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000 }
-        ]);
-        setIsLoading(false);
+        try {
+            const { data, error } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
+            if (error) throw error;
+
+            setLeads(prev => {
+                const mockLeads = prev.filter(l => l.id.length < 10);
+                return data ? [...data, ...mockLeads] : mockLeads;
+            });
+        } catch (err: any) {
+            console.error('Error fetching leads:', err);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // AI WhatsApp Agent Logic
-    const generateWhatsappDraft = (leadName: string, action: string, lang: string) => {
-        if (action === 'inquiry') {
-            if (lang === 'Hinglish') return `Hello ${leadName} sir / ma'am, HealthFirst se baat kar raha hu. Aapki inquiry mili hume. Agar koi doubts hai toh bataye, humara AI care team hamesha available hai aapki help ke liye!`;
-            if (lang === 'Hindi') return `Namaste ${leadName} ji, HealthFirst se sampark karne ke liye dhanyawad. Aapko koi aur jankari chahiye toh kripya batayein.`;
-            return `Hi ${leadName}, thank you for inquiring at HealthFirst. This is our automated follow-up. How can our AI care team assist you today?`;
-        }
-        if (action === 'quotation') {
-            if (lang === 'Hinglish') return `Arre ${leadName} ji, aapka quotation PDF ready hai! Is secure link par click karke check kar lijiye. Custom package banaya hai specially aapke liye. 📄👇\nhttps://healthfirst.ai/quote/${Math.random().toString(36).substr(2, 6)}`;
-            if (lang === 'Hindi') return `Namaste ${leadName} ji, aapki quotation taiyar hai. Kripya is link par jankari prapt karein:\nhttps://healthfirst.ai/quote/${Math.random().toString(36).substr(2, 6)}`;
-            return `Hi ${leadName}, your custom quotation from HealthFirst is ready. Please review the attached secure link:\nhttps://healthfirst.ai/quote/${Math.random().toString(36).substr(2, 6)}`;
-        }
-        if (action === 'consent') {
-            if (lang === 'Hinglish') return `Hi ${leadName}, sab set karne ke liye bas ye final digital consent form de dijiye. Phone se hi ho jayega, 2 minute ka time lagega! ✅👇\nhttps://healthfirst.ai/consent`;
-            if (lang === 'Hindi') return `Namaste ${leadName} ji, aage badhne ke liye kripya apna samarthan (consent) form yaha bharein:\nhttps://healthfirst.ai/consent`;
-            return `Hi ${leadName}, please sign this digital consent form to proceed with your HealthFirst package:\nhttps://healthfirst.ai/consent`;
-        }
-        return '';
+    const generateWhatsappDraft = (leadName: string, action: string, lang: string, worker?: any) => {
+        const tpl = whatsappTemplates[action]?.[lang] || '';
+        return tpl
+            .replace(/\{\{name\}\}/g, leadName)
+            .replace(/\{\{link\}\}/g, Math.random().toString(36).substr(2, 6))
+            .replace(/\{\{workerName\}\}/g, worker?.name || 'your assigned staff')
+            .replace(/\{\{workerRole\}\}/g, worker?.role || 'Healthcare Worker');
     };
 
-    const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent') => {
+    const fetchWorkers = async () => {
+        setIsLoadingWorkers(true);
+        try {
+            const { data, error } = await supabase.from('workers').select('*').eq('status', 'Available');
+            if (error || !data || data.length === 0) {
+                // Fall back to the same mock data shown in HR section, filtered to Available
+                setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
+            } else {
+                setAvailableWorkers(data);
+            }
+        } catch {
+            setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
+        } finally {
+            setIsLoadingWorkers(false);
+        }
+    };
+
+    const openStaffPicker = (lead: any) => {
+        setStaffPickerTargetLead(lead);
+        setSelectedWorker(null);
+        fetchWorkers();
+        setIsStaffPickerOpen(true);
+    };
+
+    const confirmWorkerSelection = (worker: any) => {
+        setSelectedWorker(worker);
+        setIsStaffPickerOpen(false);
+        // Open WhatsApp agent modal with worker pre-filled
+        setAgentTargetLead(staffPickerTargetLead);
+        setAgentTargetAction('staff');
+        setIsEditingTemplate(false);
+        const draft = generateWhatsappDraft(staffPickerTargetLead.name, 'staff', agentDraftLang, worker);
+        setAgentDraftText(draft);
+        setIsAgentModalOpen(true);
+    };
+
+    const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing') => {
         setAgentTargetLead(lead);
         setAgentTargetAction(action);
-        const draft = generateWhatsappDraft(lead.name, action, agentDraftLang);
+        setIsEditingTemplate(false);
+        const draft = generateWhatsappDraft(lead.name, action, agentDraftLang, selectedWorker);
         setAgentDraftText(draft);
         setIsAgentModalOpen(true);
     };
 
     useEffect(() => {
-        if (agentTargetLead) {
-            setAgentDraftText(generateWhatsappDraft(agentTargetLead.name, agentTargetAction, agentDraftLang));
+        if (agentTargetLead && !isEditingTemplate) {
+            setAgentDraftText(generateWhatsappDraft(agentTargetLead.name, agentTargetAction, agentDraftLang, selectedWorker));
+        } else if (isEditingTemplate) {
+            setTemplateDraftText(whatsappTemplates[agentTargetAction]?.[agentDraftLang] || '');
         }
-    }, [agentDraftLang]);
+    }, [agentDraftLang, agentTargetAction, agentTargetLead, whatsappTemplates, isEditingTemplate, selectedWorker]);
+
+    const handleSaveTemplate = () => {
+        const updated = {
+            ...whatsappTemplates,
+            [agentTargetAction]: {
+                ...whatsappTemplates[agentTargetAction],
+                [agentDraftLang]: templateDraftText
+            }
+        };
+        setWhatsappTemplates(updated);
+        localStorage.setItem('whatsappTemplates', JSON.stringify(updated));
+
+        setIsEditingTemplate(false);
+        toast.success("Default template saved successfully!");
+    };
 
     const handleDispatchMessage = async () => {
-        // Launch real WhatsApp Web intent with drafted text
-        let phoneDigits = '917575041313'; // Default to test number
-        if (agentTargetLead?.phone) {
-            phoneDigits = agentTargetLead.phone.replace(/\D/g, ''); // Extract only digits
-        }
-        const waUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(agentDraftText)}`;
-        window.open(waUrl, '_blank');
-
-        // Move lead based on action
-        let newStage = '';
-        if (agentTargetAction === 'inquiry') newStage = 'In Discussion';
-        if (agentTargetAction === 'quotation') newStage = 'Quotation Sent';
-        if (agentTargetAction === 'consent') newStage = 'Form Submitted';
-
-        await handleMoveLead(agentTargetLead.id, newStage);
-
-        // Log action
-        const newLog = {
-            id: Date.now(),
-            type: 'system',
-            icon: Bot,
-            title: `WhatsApp Intent Launched for ${agentTargetLead.name}`,
-            desc: `AI Agent drafted response in ${agentDraftLang} and passed to WhatsApp.`,
-            time: 'Just now',
-            status: 'success'
-        };
-        setAutomationLogs(prev => [newLog, ...prev]);
-
         setIsAgentModalOpen(false);
-        toast.success(`WhatsApp intent opened for ${agentTargetLead.name}! 📱`);
+        const toastId = toast.loading("Dispatching to WhatsApp via Twilio...");
+
+        try {
+            let phoneDigits = '918000044090'; // Default to test number
+            if (agentTargetLead?.phone) {
+                phoneDigits = agentTargetLead.phone.replace(/\D/g, ''); // Extract only digits
+            }
+
+            console.log(`[Dispatch] Sending WhatsApp to: +${phoneDigits}`);
+
+            // Call Edge Function directly using fetch (bypasses SDK key format issues)
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({ phone: phoneDigits, message: agentDraftText })
+            });
+
+            const resData = await response.json().catch(() => ({ error: response.statusText }));
+            console.log('[Dispatch] Function response:', resData);
+
+            if (!response.ok) {
+                throw new Error(resData.error || resData.message || `HTTP ${response.status}`);
+            }
+
+            // Post-dispatch: move lead if staff action, and update worker assignment
+            if (agentTargetLead) {
+                // If this was a staff assignment, move lead to Staff Assigned and update worker record
+                if (agentTargetAction === 'staff' && selectedWorker) {
+                    await handleMoveLead(agentTargetLead.id, 'Staff Assigned');
+                    // Update worker's assigned_client in Supabase
+                    try {
+                        await supabase.from('workers')
+                            .update({ assigned_client: agentTargetLead.name, status: 'Active' })
+                            .eq('id', selectedWorker.id);
+                    } catch (e) {
+                        console.warn('Could not update worker in DB (may be mock):', e);
+                    }
+                    setSelectedWorker(null);
+                    toast.success(`${selectedWorker.name} assigned to ${agentTargetLead.name} and moved to Staff Assigned! 🎉`, { id: toastId, duration: 6000 });
+                } else {
+                    toast.success(`✅ WhatsApp sent to +${phoneDigits}! Check your phone. (SID: ...${resData.sid?.slice(-6) || 'ok'})`, { id: toastId, duration: 6000 });
+                }
+
+                const newLog = {
+                    id: Date.now(),
+                    type: 'system',
+                    icon: Bot,
+                    title: `WhatsApp Dispatched to ${agentTargetLead.name}`,
+                    desc: agentTargetAction === 'staff' && selectedWorker
+                        ? `Assigned ${selectedWorker.name} (${selectedWorker.role}) to ${agentTargetLead.name} via WhatsApp.`
+                        : `AI Agent dispatched message in ${agentDraftLang} via Twilio to +${phoneDigits}.`,
+                    time: 'Just now',
+                    status: 'success'
+                };
+                setAutomationLogs(prev => [newLog, ...prev]);
+            }
+
+        } catch (err: any) {
+            console.error("WhatsApp dispatch failed", err);
+            toast.error(`WhatsApp dispatch failed: ${err.message}`, { id: toastId });
+        }
     };
 
     // Fetch leads from Supabase
@@ -366,6 +535,9 @@ export default function CRM() {
         // Move instantly on frontend for immediate feedback
         setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
         toast.info(`Lead moved to ${newStage}`);
+
+        // If this is a hardcoded mock lead (ID length < 10), there's no need to update Supabase
+        if (id.length < 10) return;
 
         try {
             const { error } = await supabase
@@ -456,9 +628,41 @@ export default function CRM() {
         title: stage,
         count: leads.filter(l => l.pipeline_stage === stage).length,
         items: leads.filter(l => l.pipeline_stage === stage).map(l => ({
-            id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
+            id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
         }))
     }));
+
+    const handleUpdateLeadValue = async (leadId: string) => {
+        const newValue = parseInt(editingLeadValueAmount.replace(/\D/g, ''), 10);
+
+        if (isNaN(newValue)) {
+            setEditingLeadValueId(null);
+            return;
+        }
+
+        // Optimistic update
+        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, estimated_value_monthly: newValue } : l));
+        setEditingLeadValueId(null);
+
+        // Supabase update if not mock lead
+        if (leadId.length >= 10) {
+            try {
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .update({ estimated_value_monthly: newValue })
+                    .eq('id', leadId);
+
+                if (error) throw error;
+                toast.success('Lead value updated');
+            } catch (err: any) {
+                console.error("Error updating lead value", err);
+                toast.error("Failed to update lead value");
+                fetchLeads(); // revert
+            }
+        } else {
+            toast.success('Lead value updated (Mock lead)');
+        }
+    };
 
     const convertToClient = async (leadId: string, leadName: string) => {
         if (window.confirm(`Are you sure you want to convert ${leadName} to a permanent Client Master entry?`)) {
@@ -646,19 +850,45 @@ export default function CRM() {
                                                     </select>
                                                 </div>
 
-                                                <div className="flex items-center gap-4 mb-3">
+                                                <div className="flex items-center gap-4 mb-3" onDoubleClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingLeadValueId(item.id);
+                                                    setEditingLeadValueAmount(item.valueAmount.toString());
+                                                }}>
                                                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                                                         {item.source === 'Web Chat' && <MessageSquare className="w-3.5 h-3.5" />}
                                                         {item.source === 'Email' && <Mail className="w-3.5 h-3.5" />}
                                                         {item.source === 'Contact Form' && <FileText className="w-3.5 h-3.5" />}
+                                                        {item.source === 'Appointment Form' && <Calendar className="w-3.5 h-3.5" />}
                                                         {item.source === 'Meeting' && <Phone className="w-3.5 h-3.5" />}
                                                         {item.source === 'AI Phone Call' && <Mic className="w-3.5 h-3.5" />}
                                                         {item.source === 'Referral' && <Users className="w-3.5 h-3.5" />}
+                                                        {!['Web Chat', 'Email', 'Contact Form', 'Appointment Form', 'Meeting', 'AI Phone Call', 'Referral'].includes(item.source) && <span className="w-3.5 h-3.5" />}
                                                         {item.source}
                                                     </div>
-                                                    <div className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm">
-                                                        {item.value}
-                                                    </div>
+
+                                                    {editingLeadValueId === item.id ? (
+                                                        <div className="flex-1 flex items-center bg-emerald-50 rounded border border-emerald-200 overflow-hidden" onClick={e => e.stopPropagation()}>
+                                                            <span className="text-emerald-700 text-xs font-semibold pl-1.5 pr-0.5">₹</span>
+                                                            <input
+                                                                type="text"
+                                                                value={editingLeadValueAmount}
+                                                                onChange={e => setEditingLeadValueAmount(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleUpdateLeadValue(item.id);
+                                                                    if (e.key === 'Escape') setEditingLeadValueId(null);
+                                                                }}
+                                                                onBlur={() => handleUpdateLeadValue(item.id)}
+                                                                autoFocus
+                                                                className="w-full bg-transparent text-xs font-semibold text-emerald-700 outline-none py-0.5 leading-none"
+                                                                placeholder="Amount"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm cursor-text hover:bg-emerald-100 transition-colors" title="Double click to edit value">
+                                                            {item.value}
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="pt-3 flex flex-col gap-2 border-t border-slate-100">
@@ -688,13 +918,13 @@ export default function CRM() {
 
                                                     {/* Client Process Flow Actions */}
                                                     <div className="mt-4 flex flex-col gap-2">
-                                                        {item.pipeline_stage === 'New Lead' && (
+                                                        {item.pipeline_stage === 'New Inquiry' && (
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'inquiry'); }}
                                                                 className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-100 text-emerald-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                             >
                                                                 <Bot className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                                                                AI WhatsApp Follow-up
+                                                                Send Greeting Message
                                                             </button>
                                                         )}
 
@@ -704,7 +934,7 @@ export default function CRM() {
                                                                 className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                             >
                                                                 <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                Draft WhatsApp Quotation
+                                                                Send Quotation
                                                             </button>
                                                         )}
 
@@ -713,34 +943,65 @@ export default function CRM() {
                                                                 onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
                                                                 className="w-full bg-blue-50 hover:bg-blue-500 hover:text-white border border-blue-100 text-blue-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                             >
-                                                                <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                WhatsApp Consent Link
+                                                                <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                Send Consent Form Link
                                                             </button>
                                                         )}
 
                                                         {item.pipeline_stage === 'Form Submitted' && (
                                                             <button
-                                                                onClick={async () => {
-                                                                    await handleMoveLead(item.id, 'Closed Won');
-                                                                    toast.success('Lead successfully secured and marked as Won!');
-                                                                }}
-                                                                className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                                                onClick={(e) => { e.stopPropagation(); openStaffPicker(item); }}
+                                                                className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                             >
-                                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                                                Mark as Won
+                                                                <Users className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                                                Assign Staff Member
                                                             </button>
                                                         )}
 
-                                                        {item.pipeline_stage === 'Closed Won' && (
+                                                        {item.pipeline_stage === 'Staff Assigned' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'deposit'); }}
+                                                                className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            >
+                                                                <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                Send Deposit Invoice
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'Deposit Pending' && (
+                                                            <button
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    await handleMoveLead(item.id, 'Active Client');
+                                                                    toast.success(`${item.name} is now an Active Client! 🎉`);
+                                                                }}
+                                                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                                            >
+                                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                                Confirm Deposit Received
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'Active Client' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'billing'); }}
+                                                                className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            >
+                                                                <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                Send Monthly Bill
+                                                            </button>
+                                                        )}
+
+                                                        {item.pipeline_stage === 'Monthly Billing' && (
                                                             <button
                                                                 onClick={() => {
                                                                     convertToClient(item.id, item.name);
-                                                                    toast.success(`${item.name} migrated to Client Server Master.`);
+                                                                    toast.success(`${item.name} migrated to Client Master.`);
                                                                 }}
                                                                 className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
                                                             >
                                                                 <Users className="w-3.5 h-3.5" />
-                                                                Convert to Server Master
+                                                                Convert to Client Master
                                                             </button>
                                                         )}
                                                     </div>
@@ -1070,6 +1331,77 @@ export default function CRM() {
                     </div>
                 </div>
             )}
+            {/* Staff Picker Modal */}
+            {isStaffPickerOpen && staffPickerTargetLead && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+                        <div className="p-5 border-b border-slate-100 bg-purple-500/10 flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                                    <Users className="w-5 h-5 text-purple-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900">Assign Staff Member</h2>
+                                    <p className="text-xs text-slate-500 font-medium">FOR: {staffPickerTargetLead.name} — select an available worker below</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsStaffPickerOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-5 flex-1 overflow-y-auto">
+                            {isLoadingWorkers ? (
+                                <div className="flex flex-col items-center justify-center py-16">
+                                    <Loader2 className="w-8 h-8 text-purple-500 animate-spin mb-3" />
+                                    <p className="text-slate-500 font-medium">Loading available staff...</p>
+                                </div>
+                            ) : availableWorkers.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                        <Users className="w-8 h-8 text-slate-400" />
+                                    </div>
+                                    <h3 className="font-bold text-slate-800 mb-2">No Available Staff</h3>
+                                    <p className="text-sm text-slate-500">All workers are currently assigned. Add more staff from the HR page.</p>
+                                </div>
+                            ) : (
+                                <div className="grid sm:grid-cols-2 gap-3">
+                                    {availableWorkers.map(worker => (
+                                        <div key={worker.id} className="p-4 border-2 border-slate-200 hover:border-purple-400 rounded-xl transition-all cursor-pointer group hover:shadow-md bg-white">
+                                            <div className="flex items-start gap-3 mb-3">
+                                                <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
+                                                    {worker.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-bold text-slate-900 truncate">{worker.name}</h4>
+                                                    <p className="text-xs text-slate-500 truncate">{worker.role}</p>
+                                                </div>
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                    Available
+                                                </span>
+                                            </div>
+                                            {worker.phone && (
+                                                <p className="text-xs text-slate-500 flex items-center gap-1 mb-3">
+                                                    <Phone className="w-3 h-3" /> {worker.phone}
+                                                </p>
+                                            )}
+                                            <button
+                                                onClick={() => confirmWorkerSelection(worker)}
+                                                className="w-full py-2 bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 text-xs font-bold rounded-lg border border-purple-200 transition-all group-hover:border-purple-400 flex items-center justify-center gap-1.5"
+                                            >
+                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                Assign to {staffPickerTargetLead.name.split(' ')[0]}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* AI WhatsApp Draft Modal */}
             {isAgentModalOpen && agentTargetLead && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
@@ -1081,7 +1413,11 @@ export default function CRM() {
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-bold text-slate-900">AI WhatsApp Agent</h2>
-                                    <p className="text-xs text-slate-500 font-medium tracking-wide">DRAFTING TO: {agentTargetLead.name}</p>
+                                    <p className="text-xs text-slate-500 font-medium tracking-wide">
+                                        {agentTargetAction === 'staff' && selectedWorker
+                                            ? `ASSIGNING: ${selectedWorker.name} → ${agentTargetLead.name}`
+                                            : `DRAFTING TO: ${agentTargetLead.name}`}
+                                    </p>
                                 </div>
                             </div>
                             <button onClick={() => setIsAgentModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
@@ -1106,13 +1442,21 @@ export default function CRM() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                                    <Edit3 className="w-4 h-4 text-primary" /> Review Editable Draft
-                                </label>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                        <Edit3 className="w-4 h-4 text-primary" /> {isEditingTemplate ? 'Edit Default Template' : 'Review Editable Draft'}
+                                    </label>
+                                    <button
+                                        onClick={() => setIsEditingTemplate(!isEditingTemplate)}
+                                        className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                                    >
+                                        {isEditingTemplate ? 'Back to Draft View' : '⚙️ Edit Default Template'}
+                                    </button>
+                                </div>
                                 <div className="relative">
                                     <textarea
-                                        value={agentDraftText}
-                                        onChange={(e) => setAgentDraftText(e.target.value)}
+                                        value={isEditingTemplate ? templateDraftText : agentDraftText}
+                                        onChange={(e) => isEditingTemplate ? setTemplateDraftText(e.target.value) : setAgentDraftText(e.target.value)}
                                         className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed"
                                     />
                                     <div className="absolute bottom-3 right-3 flex gap-1">
@@ -1121,16 +1465,27 @@ export default function CRM() {
                                         <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
                                     </div>
                                 </div>
-                                <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Human conformation ensures quality outbound interactions.</p>
+
+                                {isEditingTemplate ? (
+                                    <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5 font-medium">Use <code className="px-1 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">{"{{name}}"}</code> and <code className="px-1 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">{"{{link}}"}</code> as dynamic variables.</p>
+                                ) : (
+                                    <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Human conformation ensures quality outbound interactions.</p>
+                                )}
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
                             <button onClick={() => setIsAgentModalOpen(false)} className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
                                 Cancel
                             </button>
-                            <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
-                                <Send className="w-4 h-4" /> Confirm & Dispatch
-                            </button>
+                            {isEditingTemplate ? (
+                                <button onClick={handleSaveTemplate} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                                    Save as Default
+                                </button>
+                            ) : (
+                                <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                                    <Send className="w-4 h-4" /> Confirm & Dispatch
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

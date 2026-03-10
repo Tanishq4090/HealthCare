@@ -136,6 +136,14 @@ const Appointment = () => {
 
       if (error) throw error;
 
+      // Calculate a sensible value based on the chosen doctor
+      const doctorRates: Record<string, number> = {
+        'sarah': 8000, // Cardiologist
+        'michael': 1500, // General Physician
+        'emily': 2500 // Pediatrician
+      };
+      const estimatedValue = doctorRates[formData.doctor] || 3000;
+
       // 2. Also generate a CRM Lead for this user since they are verified
       const { error: leadError } = await supabase
         .from('crm_leads')
@@ -147,7 +155,7 @@ const Appointment = () => {
             source: 'Appointment Form',
             status: 'Verified',
             pipeline_stage: 'New Lead',
-            estimated_value_monthly: 5000
+            estimated_value_monthly: estimatedValue
           }
         ]);
 
