@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('payroll');
     const [isGenerating, setIsGenerating] = useState(false);
     const [workers, setWorkers] = useState<any[]>([]);
     const [payrollItems, setPayrollItems] = useState<any[]>([]);
+    const [pipelineLeads, setPipelineLeads] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     // Modal State
@@ -40,18 +42,42 @@ export default function HR() {
 
     const fetchData = async () => {
         setIsLoading(true);
-        // Instant load
-        setWorkers([
-            { id: '1', name: 'Dr. Emily Carter', role: 'Specialist Consultant', assigned_client: 'Apex Medical Corp', hourly_rate: 120, status: 'Active', aadhaar_number: '123456789012', phone: '+919876543210', address: '123 Health Ave, Mumbai', dob: '1985-05-12' },
-            { id: '2', name: 'Sarah Jenkins', role: 'Registered Nurse', assigned_client: 'Downtown Physio', hourly_rate: 45, status: 'Available', aadhaar_number: '234567890123', phone: '+918765432109', address: '45 Care St, Delhi', dob: '1990-08-22' },
-            { id: '3', name: 'Michael Ross', role: 'Physical Therapist', assigned_client: '', hourly_rate: 85, status: 'Available', aadhaar_number: '345678901234', phone: '+917654321098', address: '78 Wellness Blvd, Bangalore', dob: '1992-11-05' },
-        ]);
+        try {
+            const { data: workerData, error: workerError } = await supabase.from('workers').select('*').order('created_at', { ascending: false });
+            const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
+            const { data: leadData } = await supabase.from('crm_leads').select('id, name, pipeline_stage').order('created_at', { ascending: false });
 
-        setPayrollItems([
-            { id: '1', worker: 'Dr. Emily Carter', hours_logged: 105, client_name: 'Apex Medical Corp', total_amount: 12600, status: 'Pending Verification' },
-            { id: '2', worker: 'Sarah Jenkins', hours_logged: 140, client_name: 'Downtown Physio', total_amount: 6300, status: 'Draft' },
-        ]);
-        setIsLoading(false);
+            if (workerError || !workerData || workerData.length === 0) {
+                setWorkers(MOCK_WORKERS);
+            } else {
+                setWorkers(workerData);
+            }
+
+            if (payrollError || !payrollData || payrollData.length === 0) {
+                setPayrollItems(MOCK_PAYROLL);
+            } else {
+                setPayrollItems(payrollData);
+            }
+
+            // Pipeline leads for client dropdown
+            if (leadData && leadData.length > 0) {
+                setPipelineLeads(leadData);
+            } else {
+                // Fallback mock pipeline clients
+                setPipelineLeads([
+                    { id: 'm1', name: 'Meet Makwana', pipeline_stage: 'Form Submitted' },
+                    { id: 'm2', name: 'John Doe', pipeline_stage: 'Quotation Sent' },
+                    { id: 'm3', name: 'Jane Smith', pipeline_stage: 'Form Submitted' },
+                    { id: 'm4', name: 'Emily Davis', pipeline_stage: 'Active Client' },
+                ]);
+            }
+        } catch {
+            setWorkers(MOCK_WORKERS);
+            setPayrollItems(MOCK_PAYROLL);
+            setPipelineLeads([]);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // AI WhatsApp Agent Logic
@@ -539,14 +565,28 @@ export default function HR() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Assigned Client (Optional)</label>
-                                <input
-                                    type="text"
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Assigned Client</label>
+                                <select
                                     value={formData.assigned_client}
-                                    onChange={(e) => setFormData({ ...formData, assigned_client: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                    placeholder="e.g. Apex Medical or Leave Blank"
-                                />
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setFormData({
+                                            ...formData,
+                                            assigned_client: val,
+                                            // Auto-update status: assigned = Active, none = Available
+                                            status: val ? 'Active' : 'Available'
+                                        });
+                                    }}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                >
+                                    <option value="">— None (Worker stays Available) —</option>
+                                    {pipelineLeads.map(lead => (
+                                        <option key={lead.id} value={lead.name}>
+                                            {lead.name} ({lead.pipeline_stage})
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-slate-400 mt-1">Selecting a client auto-sets status to Active.</p>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

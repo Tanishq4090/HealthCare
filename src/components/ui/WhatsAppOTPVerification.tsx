@@ -15,11 +15,12 @@ export default function WhatsAppOTPVerification({
 }: OTPVerificationProps) {
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState(initialPhone.replace(/\D/g, "").slice(-10)); // Strip country code if present
-  const [countryCode, setCountryCode] = useState("+1");
+  const [countryCode, setCountryCode] = useState("+91");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
+  const [generatedOTP, setGeneratedOTP] = useState(""); // Stores OTP for local verification
   const [, setVerified] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,6 +44,29 @@ export default function WhatsAppOTPVerification({
     }, 1000);
   };
 
+  const sendOTPViaWhatsApp = async (fullPhone: string) => {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOTP(code);
+
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const message = `Your HealthFirst verification code is: *${code}*\n\nThis code expires in 10 minutes. Do not share it with anyone.`;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "apikey": SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ phone: fullPhone.replace(/\D/g, ""), message }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to send OTP via WhatsApp");
+    return code;
+  };
+
   const handleSendOTP = async () => {
     if (!phone.trim() || phone.length < 7) {
       setError("Please enter a valid phone number.");
@@ -51,22 +75,10 @@ export default function WhatsAppOTPVerification({
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: `${countryCode}${phone}` }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send OTP");
+      await sendOTPViaWhatsApp(`${countryCode}${phone}`);
       setStep("otp");
       startResendTimer();
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
-
-      // DEV_MODE Support: If backend gives back a mock OTP, pre-fill it for easy testing
-      if (data.mockCode) {
-        console.log(`[DEV_MODE] Auto-filling backend OTP: ${data.mockCode}`);
-        setOtp(data.mockCode.split(""));
-      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to send OTP. Please try again.");
     } finally {
@@ -108,13 +120,10 @@ export default function WhatsAppOTPVerification({
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: `${countryCode}${phone}`, code }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Invalid code");
+      // Verify locally against the generated OTP
+      if (code !== generatedOTP) {
+        throw new Error("Incorrect code. Please check your WhatsApp and try again.");
+      }
       setVerified(true);
       setStep("verified");
       setTimeout(() => onVerified?.(`${countryCode}${phone}`), 1500);
@@ -133,13 +142,7 @@ export default function WhatsAppOTPVerification({
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: `${countryCode}${phone}` }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to resend");
+      await sendOTPViaWhatsApp(`${countryCode}${phone}`);
       startResendTimer();
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err: unknown) {

@@ -97,7 +97,7 @@ export default function Chatbot() {
             source: 'Web Chat',
             status: 'Verified',
             pipeline_stage: 'New Lead',
-            estimated_value_monthly: Math.floor(Math.random() * (5000 - 1000 + 1) + 1000) // Mock value
+            estimated_value_monthly: 1500 // Base value for Web Chat Inquiry
           }]);
 
           if (error) console.error("Error saving lead:", error);

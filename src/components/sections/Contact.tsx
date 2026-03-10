@@ -62,6 +62,16 @@ const Contact = () => {
 
       if (error) throw error;
 
+      // Derive value logically by scanning for keywords in inquiry
+      const getEstimatedValue = (subj: string, msg: string) => {
+        const text = (subj + ' ' + msg).toLowerCase();
+        if (text.includes('surgery') || text.includes('operation')) return 15000;
+        if (text.includes('emergency') || text.includes('urgent')) return 5000;
+        if (text.includes('checkup') || text.includes('test') || text.includes('scan')) return 3000;
+        if (text.includes('consult') || text.includes('visit')) return 2000;
+        return 1500; // Baseline for general inquiry
+      };
+
       // Also generate a CRM Lead for this user since they are verified
       const { error: leadError } = await supabase
         .from('crm_leads')
@@ -73,7 +83,7 @@ const Contact = () => {
             source: 'Contact Form',
             status: 'Verified',
             pipeline_stage: 'New Lead',
-            estimated_value_monthly: 2000
+            estimated_value_monthly: getEstimatedValue(formData.subject, formData.message)
           }
         ]);
 
