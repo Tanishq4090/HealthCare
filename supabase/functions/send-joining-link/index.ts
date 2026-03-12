@@ -48,9 +48,14 @@ serve(async (req: any) => {
         const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
         const authString = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
 
+        // Ensure the From number is formatted correctly for WhatsApp
+        const fromFormatted = TWILIO_WHATSAPP_NUMBER.startsWith('whatsapp:')
+            ? TWILIO_WHATSAPP_NUMBER
+            : `whatsapp:${TWILIO_WHATSAPP_NUMBER}`;
+
         const body = new URLSearchParams({
             To: toWhatsAppNumber,
-            From: TWILIO_WHATSAPP_NUMBER,
+            From: fromFormatted,
             Body: messageBody,
         });
 
