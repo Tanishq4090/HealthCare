@@ -83,9 +83,12 @@ export default function HR() {
     // AI WhatsApp Agent Logic
     const generateWhatsappDraft = (worker: any, lang: string) => {
         if (!worker) return '';
-        if (lang === 'Hinglish') return `Hello ${worker.assigned_client} team! Humne aapke liye ek excellent ${worker.role} allocate kiya hai: ${worker.name}. Please profile check karke confirm karein. ✅👇\nhttps://healthfirst.ai/staff/${worker.id}`;
-        if (lang === 'Hindi') return `Namaste ${worker.assigned_client}, aapki suvidha ke liye humne ek naye ${worker.role} (${worker.name}) ko allocate kiya hai. Kripya profile ki pushti karein:\nhttps://healthfirst.ai/staff/${worker.id}`;
-        return `Hi ${worker.assigned_client}, we have successfully allocated a highly qualified ${worker.role} (${worker.name}) to your facility. Please review and confirm their profile here:\nhttps://healthfirst.ai/staff/${worker.id}`;
+        const baseUrl = window.location.origin;
+        const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}`;
+
+        if (lang === 'Hinglish') return `Hello ${worker.assigned_client} team! Humne aapke liye ek excellent ${worker.role} allocate kiya hai: ${worker.name}. Please profile check karke confirm karein. ✅👇\n${confirmLink}`;
+        if (lang === 'Hindi') return `Namaste ${worker.assigned_client}, aapki suvidha ke liye humne ek naye ${worker.role} (${worker.name}) ko allocate kiya hai. Kripya profile ki pushti karein:\n${confirmLink}`;
+        return `Hi ${worker.assigned_client}, we have successfully allocated a highly qualified ${worker.role} (${worker.name}) to your facility. Please review and confirm their profile here:\n${confirmLink}`;
     };
 
     const openAgentModal = (worker: any) => {
@@ -373,7 +376,25 @@ export default function HR() {
                                                     )}
                                                     {worker.status === 'Active' && (
                                                         <button
-                                                            onClick={() => toast.success(`Sent uniquely generated "Fill Duty / Attendance" link to ${worker.name} and ${worker.assigned_client}.`)}
+                                                            onClick={async () => {
+                                                                toast.loading(`Sending joining link to ${worker.name}...`, { id: `joining-${worker.id}` });
+                                                                try {
+                                                                    const appUrl = window.location.origin;
+                                                                    const { error } = await supabase.functions.invoke('send-joining-link', {
+                                                                        body: {
+                                                                            workerId: worker.id,
+                                                                            workerName: worker.name,
+                                                                            workerPhone: worker.phone || '917575041313', // fallback to test number if blank
+                                                                            appUrl: appUrl
+                                                                        }
+                                                                    });
+                                                                    if (error) throw error;
+                                                                    toast.success(`Joining link sent via WhatsApp to ${worker.name}!`, { id: `joining-${worker.id}` });
+                                                                } catch (err: any) {
+                                                                    console.error("Failed to send joining link:", err);
+                                                                    toast.error(`Failed to send link: ${err.message}`, { id: `joining-${worker.id}` });
+                                                                }
+                                                            }}
                                                             className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition-colors flex items-center gap-1"
                                                         >
                                                             <Send className="w-3.5 h-3.5" /> Send Joining Link

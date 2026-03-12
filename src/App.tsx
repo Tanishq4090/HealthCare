@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './Login';
 import LandingPage from './LandingPage';
+import ClientConfirmation from './pages/ClientConfirmation';
 import AdminLayout from './admin/AdminLayout';
 import Dashboard from './admin/Dashboard';
 import CRM from './admin/CRM';
@@ -22,6 +23,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
 
           {/* Private Admin Dashboard */}
           <Route
