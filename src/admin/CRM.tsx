@@ -121,6 +121,7 @@ export default function CRM() {
             intent: "Lead Generation",
             summary: "Caller was inquiring about home healthcare services for their elderly mother. They are looking for a part-time caregiver.",
             capturedName: "Mark Johnson",
+            capturedWhatsapp: "+15559990000",
             capturedValue: 15000,
             status: "Unprocessed"
         },
@@ -133,6 +134,7 @@ export default function CRM() {
             intent: "Support",
             summary: "Current client calling to reschedule their appointment for tomorrow. Handled by AI and updated schedule.",
             capturedName: null,
+            capturedWhatsapp: null,
             capturedValue: null,
             status: "Processed"
         },
@@ -145,6 +147,7 @@ export default function CRM() {
             intent: "Follow-up",
             summary: "Follow-up call to an old lead. Lead is interested in discussing options again next week.",
             capturedName: "Emily Davis",
+            capturedWhatsapp: null,
             capturedValue: 25000,
             status: "Unprocessed"
         }
@@ -176,6 +179,7 @@ export default function CRM() {
                 intent: "Lead Gen / Demo",
                 summary: "Recent manual browser call triggered via Vapi SDK.",
                 capturedName: "Browser Guest",
+                capturedWhatsapp: null,
                 capturedValue: 5000,
                 status: "Unprocessed"
             }, ...prev]);
@@ -306,7 +310,10 @@ export default function CRM() {
 
         for (const lead of newInquiryLeads) {
             try {
-                const phoneDigits = lead.phone?.replace(/\D/g, '') || '918000044090';
+                // Prioritize dedicated WhatsApp number if Vapi captured it, otherwise use regular phone
+                let targetNumber = lead.whatsapp_number || lead.phone || '918000044090';
+                const phoneDigits = targetNumber.replace(/\D/g, '');
+
                 const message = generateWhatsappDraft(lead.name, 'inquiry', agentDraftLang);
 
                 const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
@@ -460,8 +467,12 @@ export default function CRM() {
 
         try {
             let phoneDigits = '918000044090'; // Default to test number
-            if (agentTargetLead?.phone) {
-                phoneDigits = agentTargetLead.phone.replace(/\D/g, ''); // Extract only digits
+            if (agentTargetLead) {
+                // Prioritize dedicated WhatsApp number if Vapi captured it
+                const targetNumber = agentTargetLead.whatsapp_number || agentTargetLead.phone;
+                if (targetNumber) {
+                    phoneDigits = targetNumber.replace(/\D/g, ''); // Extract only digits
+                }
             }
 
             console.log(`[Dispatch] Sending WhatsApp to: +${phoneDigits}`);
@@ -692,9 +703,11 @@ export default function CRM() {
         try {
             const { error } = await supabase.from('crm_leads').insert([{
                 name: call.capturedName,
+                phone: call.phone,
+                whatsapp_number: call.capturedWhatsapp || null,
                 source: 'AI Phone Call',
                 status: 'AI Handled',
-                pipeline_stage: 'New Lead',
+                pipeline_stage: 'New Inquiry',
                 estimated_value_monthly: call.capturedValue || 0,
             }]);
 
@@ -1168,11 +1181,18 @@ export default function CRM() {
                                             <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
                                                 <div>
                                                     <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
-                                                    <p className="text-sm text-slate-900"><span className="font-semibold">{call.capturedName}</span> • Est. Value: <span className="text-emerald-600 font-medium">₹{call.capturedValue}/mo</span></p>
+                                                    <div className="flex items-center gap-3">
+                                                        <p className="text-sm text-slate-900"><span className="font-semibold">{call.capturedName}</span> • Est. Value: <span className="text-emerald-600 font-medium">₹{call.capturedValue}/mo</span></p>
+                                                        {call.capturedWhatsapp && (
+                                                            <span className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100/50 px-2 py-0.5 rounded-full">
+                                                                <MessageCircle className="w-3 h-3" /> WhatsApp: {call.capturedWhatsapp}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <button
                                                     onClick={() => captureCallAsLead(call.id)}
-                                                    className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm"
+                                                    className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
                                                 >
                                                     <Plus className="w-4 h-4" /> Add to Pipeline
                                                 </button>
