@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2 } from 'lucide-react';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
@@ -16,6 +16,12 @@ export default function HR() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
+
+    // Live Attendance State
+    const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
+    const [attendanceLoading, setAttendanceLoading] = useState(false);
+
+    // Initial data fetch
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
@@ -123,8 +129,93 @@ export default function HR() {
     };
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        fetchWorkers();
+        fetchPayroll(); // Assuming payroll also needs to be fetched initially
+
+        // Only fetch attendance when that tab is active
+        if (activeTab === 'attendance') {
+            fetchLiveAttendance();
+        }
+    }, [activeTab]);
+
+    const fetchWorkers = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase.from('workers').select('*').order('created_at', { ascending: false });
+            const { data: leadData } = await supabase.from('crm_leads').select('id, name, pipeline_stage').order('created_at', { ascending: false });
+
+            if (error || !data || data.length === 0) {
+                setWorkers(MOCK_WORKERS);
+            } else {
+                setWorkers(data);
+            }
+
+            // Pipeline leads for client dropdown
+            if (leadData && leadData.length > 0) {
+                setPipelineLeads(leadData);
+            } else {
+                // Fallback mock pipeline clients
+                setPipelineLeads([
+                    { id: 'm1', name: 'Meet Makwana', pipeline_stage: 'Form Submitted' },
+                    { id: 'm2', name: 'John Doe', pipeline_stage: 'Quotation Sent' },
+                    { id: 'm3', name: 'Jane Smith', pipeline_stage: 'Form Submitted' },
+                    { id: 'm4', name: 'Emily Davis', pipeline_stage: 'Active Client' },
+                ]);
+            }
+        } catch (err: any) {
+            console.error('Error fetching workers:', err);
+            setWorkers(MOCK_WORKERS); // Fallback to mock data
+            setPipelineLeads([]); // Fallback for leads
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchPayroll = async () => {
+        try {
+            const { data, error } = await supabase.from('payroll').select('*');
+            if (error) throw error;
+            setPayrollItems(data || []);
+        } catch (err: any) {
+            console.error('Error fetching payroll:', err);
+            setPayrollItems(MOCK_PAYROLL); // Fallback to mock data
+        }
+    };
+
+    const fetchLiveAttendance = async () => {
+        setAttendanceLoading(true);
+        try {
+            // Get today's date boundary
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+
+            // Fetch attendance logs with joined worker details
+            const { data, error } = await supabase
+                .from('attendance')
+                .select(`
+                    id,
+                    check_in_time,
+                    check_out_time,
+                    status,
+                    worker_id,
+                    workers (
+                        name,
+                        role,
+                        assigned_client
+                    )
+                `)
+                .gte('check_in_time', startOfToday.toISOString())
+                .order('check_in_time', { ascending: false });
+
+            if (error) throw error;
+            setAttendanceLogs(data || []);
+        } catch (err: any) {
+            console.error('Error fetching live attendance:', err);
+            toast.error('Failed to load recent attendance logs');
+        } finally {
+            setAttendanceLoading(false);
+        }
+    };
 
     const openAddModal = () => {
         setModalMode('add');
@@ -183,7 +274,7 @@ export default function HR() {
             }
 
             setIsModalOpen(false);
-            fetchData(); // Refresh list
+            fetchWorkers(); // Refresh list
             toast.success(`Worker ${modalMode === 'add' ? 'added' : 'updated'} successfully`);
         } catch (error: any) {
             console.error("Error saving worker:", error);
@@ -421,21 +512,102 @@ export default function HR() {
                             <p className="text-sm text-slate-500 mt-1">Populated automatically via Staff/Client "Fill Duty" links.</p>
                         </div>
                         <div className="flex gap-2">
+                            <button
+                                onClick={fetchLiveAttendance}
+                                className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${attendanceLoading ? 'animate-spin' : ''}`} /> Refresh
+                            </button>
                             <button className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
                                 Filter: Today
                             </button>
                         </div>
                     </div>
-                    <div className="flex-1 p-8 text-center flex flex-col items-center justify-center">
-                        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-                            <Clock className="w-8 h-8 text-blue-500" />
+
+                    {attendanceLoading ? (
+                        <div className="flex-1 flex flex-col items-center justify-center py-20">
+                            <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+                            <span className="text-slate-500 font-medium">Fetching live duty logs...</span>
                         </div>
-                        <h3 className="text-lg font-bold text-slate-900 mb-2">Awaiting Duty Starts</h3>
-                        <p className="text-slate-500 max-w-sm">No duty starts logged for today yet. Staff or clients can use their unique tracking links to submit attendance automatically.</p>
-                        <button className="mt-6 px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2">
-                            <FileText className="w-4 h-4" /> Generate Attendance Report
-                        </button>
-                    </div>
+                    ) : attendanceLogs.length === 0 ? (
+                        <div className="flex-1 p-8 text-center flex flex-col items-center justify-center">
+                            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+                                <Clock className="w-8 h-8 text-blue-500" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 mb-2">Awaiting Duty Starts</h3>
+                            <p className="text-slate-500 max-w-sm">No duty starts logged for today yet. Staff or clients can use their unique tracking links to submit attendance automatically.</p>
+                            <button className="mt-6 px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2">
+                                <FileText className="w-4 h-4" /> Generate Attendance Report
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto flex-1">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-50/50 text-sm text-slate-500">
+                                        <th className="font-medium py-4 px-6">Staff Member</th>
+                                        <th className="font-medium py-4 px-6">Assigned Client</th>
+                                        <th className="font-medium py-4 px-6">Check-In Time</th>
+                                        <th className="font-medium py-4 px-6">Check-Out Time</th>
+                                        <th className="font-medium py-4 px-6">Duration (Live)</th>
+                                        <th className="font-medium py-4 px-6">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {attendanceLogs.map((log) => {
+                                        // Calculate rough duration
+                                        const start = new Date(log.check_in_time);
+                                        const end = log.check_out_time ? new Date(log.check_out_time) : new Date();
+                                        const hrs = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60));
+                                        const mins = Math.floor(((end.getTime() - start.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
+                                        const durationStr = `${hrs}h ${mins}m`;
+
+                                        return (
+                                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="py-4 px-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                                                            {log.workers?.name?.charAt(0) || '?'}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-semibold text-slate-900">{log.workers?.name || 'Unknown Staff'}</span>
+                                                            <span className="text-xs text-slate-500">{log.workers?.role || 'Worker'}</span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="py-4 px-6 text-sm text-slate-700">
+                                                    {log.workers?.assigned_client || 'Unassigned'}
+                                                </td>
+                                                <td className="py-4 px-6 font-medium text-slate-900">
+                                                    {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </td>
+                                                <td className="py-4 px-6 font-medium text-slate-900">
+                                                    {log.check_out_time ? new Date(log.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (
+                                                        <span className="text-slate-400 italic">Ongoing...</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <div className="flex items-center gap-1.5 text-sm">
+                                                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                                        <span className={!log.check_out_time ? 'font-semibold text-emerald-600' : 'text-slate-700'}>
+                                                            {durationStr}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${log.status === 'Completed' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-100 text-emerald-800'
+                                                        }`}>
+                                                        {log.status === 'On Duty' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>}
+                                                        {log.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             ) : (
                 /* Payroll & Invoicing View */
