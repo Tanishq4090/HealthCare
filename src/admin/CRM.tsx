@@ -3,14 +3,13 @@ import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, L
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import Client from '@vapi-ai/web';
-import WhatsAppChatPanel from './WhatsAppChatPanel';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 
 const VAPI_PUBLIC_KEY = "3cd76924-ad95-4b41-8018-26d22b309bbf";
 const VAPI_ASSISTANT_ID = "2de7804c-6087-43bf-8098-dfc787aa3dee";
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'whatsapp'>('pipeline');
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>('pipeline');
     const [leads, setLeads] = useState<any[]>([
         { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Inquiry', created_at: new Date().toISOString(), estimated_value_monthly: 5000 },
         { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Quotation Sent', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000 },
@@ -821,20 +820,10 @@ export default function CRM() {
                     >
                         Voice AI Calls
                     </button>
-                    <button
-                        onClick={() => setActiveTab('whatsapp')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'whatsapp' ? 'bg-[#25D366] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'} `}
-                    >
-                        <div className="flex items-center gap-1.5">
-                            <MessageCircle className="w-4 h-4" /> WhatsApp Chat
-                        </div>
-                    </button>
                 </div>
             </div>
 
-            {activeTab === 'whatsapp' ? (
-                <WhatsAppChatPanel />
-            ) : activeTab === 'pipeline' ? (
+            {activeTab === 'pipeline' ? (
                 /* Kanban Pipeline View */
                 <div className="flex-1 flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
                     {isLoading ? (
