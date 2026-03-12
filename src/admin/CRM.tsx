@@ -110,48 +110,14 @@ export default function CRM() {
         drip: false
     });
 
-    // Voice AI Call Logs Data
-    const [calls, setCalls] = useState([
-        {
-            id: 1,
-            phone: "+1 (555) 234-5678",
-            type: "Inbound",
-            duration: "3m 12s",
-            time: "10:15 AM",
-            intent: "Lead Generation",
-            summary: "Caller was inquiring about home healthcare services for their elderly mother. They are looking for a part-time caregiver.",
-            capturedName: "Mark Johnson",
-            capturedWhatsapp: "+15559990000",
-            capturedValue: 15000,
-            status: "Unprocessed"
-        },
-        {
-            id: 2,
-            phone: "+1 (555) 876-5432",
-            type: "Inbound",
-            duration: "1m 45s",
-            time: "09:30 AM",
-            intent: "Support",
-            summary: "Current client calling to reschedule their appointment for tomorrow. Handled by AI and updated schedule.",
-            capturedName: null,
-            capturedWhatsapp: null,
-            capturedValue: null,
-            status: "Processed"
-        },
-        {
-            id: 3,
-            phone: "+1 (555) 112-2334",
-            type: "Outbound",
-            duration: "4m 5s",
-            time: "Yesterday",
-            intent: "Follow-up",
-            summary: "Follow-up call to an old lead. Lead is interested in discussing options again next week.",
-            capturedName: "Emily Davis",
-            capturedWhatsapp: null,
-            capturedValue: 25000,
-            status: "Unprocessed"
-        }
-    ]);
+    // Voice AI State
+    const [calls, setCalls] = useState<any[]>([]);
+    const [isLoadingVoice, setIsLoadingVoice] = useState(true);
+    const [voiceMetrics, setVoiceMetrics] = useState({
+        totalCallsToday: 0,
+        avgDurationSeconds: 0,
+        leadsCaptured: 0
+    });
 
     // --- VAPI INTEGRATION ---
     const vapiRef = useRef<any>(null);
@@ -169,20 +135,8 @@ export default function CRM() {
         vapiRef.current.on('call-end', () => {
             setCallStatus('idle');
             console.log('Call ended');
-            // Optimistic addition to call logs
-            setCalls(prev => [{
-                id: Date.now(),
-                phone: "Browser Call",
-                type: "Outbound",
-                duration: "Just now",
-                time: new Date().toLocaleTimeString(),
-                intent: "Lead Gen / Demo",
-                summary: "Recent manual browser call triggered via Vapi SDK.",
-                capturedName: "Browser Guest",
-                capturedWhatsapp: null,
-                capturedValue: 5000,
-                status: "Unprocessed"
-            }, ...prev]);
+            // Optional: immediately refresh call logs to show the new call
+            setTimeout(() => fetchVoiceData(), 3000); // 3 sec delay to allow Vapi to process the recording/summary
         });
 
         vapiRef.current.on('speech-start', () => console.log('Assistant started speaking'));
@@ -214,6 +168,119 @@ export default function CRM() {
             }
         }
     };
+
+    // --- FETCH REAL VAPI DATA ---
+    const fetchVoiceData = async () => {
+        setIsLoadingVoice(true);
+        try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+            // 1. Fetch Calls from Vapi Edge Function
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-get-calls`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({ assistantId: VAPI_ASSISTANT_ID, limit: 30 })
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${response.status}`);
+            }
+
+            const callsData = await response.json();
+
+            // 2. Fetch Leads to cross-reference "Processed" status
+            const { data: leadsData } = await supabase
+                .from('crm_leads')
+                .select('id, name, phone, source');
+
+            const voiceLeads = leadsData?.filter(l => l.source === 'AI Phone Call') || [];
+
+            // 3. Process and format Vapi calls
+            let todayCalls = 0;
+            let totalDurationToday = 0;
+            const todayStr = new Date().toDateString();
+
+            const formattedCalls = (callsData || []).filter((call: any) => call.status === 'ended').map((call: any) => {
+                const startedAt = new Date(call.createdAt);
+                const isToday = startedAt.toDateString() === todayStr;
+
+                let durationSeconds = 0;
+                if (call.endedAt && call.startedAt) {
+                    durationSeconds = Math.round((new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000);
+                }
+
+                if (isToday) {
+                    todayCalls++;
+                    totalDurationToday += durationSeconds;
+                }
+
+                // Format duration string (e.g. "1m 45s")
+                const dMins = Math.floor(durationSeconds / 60);
+                const dSecs = durationSeconds % 60;
+                const durationStr = dMins > 0 ? `${dMins}m ${dSecs}s` : `${dSecs}s`;
+
+                // Try to extract name/whatsapp from the AI's standard output structure
+                // Alternatively, determine if there's a matching lead already created
+                let capturedName = null;
+                let capturedWhatsapp = null;
+                let capturedValue = 5000; // Baseline assumed value
+
+                // Very basic heuristic for demo: if summary mentions a name, or if we find a lead with this phone number
+                const matchingLead = voiceLeads.find(l => l.phone && call.customer?.number && l.phone.includes(call.customer.number.replace(/\D/g, '')));
+                let callStatus = 'Unprocessed';
+
+                if (matchingLead) {
+                    callStatus = 'Processed';
+                    capturedName = matchingLead.name;
+                } else if (call.summary && call.summary.length > 20) {
+                    // Try to guess a name if it's unprocessed but seems to have data
+                    const nameMatch = call.summary.match(/name is ([A-Z][a-z]+ [A-Z][a-z]+)/i);
+                    if (nameMatch) capturedName = nameMatch[1];
+                    else capturedName = "Unknown Caller";
+                }
+
+                return {
+                    id: call.id,
+                    phone: call.customer?.number || "Unknown Number",
+                    type: call.type === 'inboundPhoneCall' ? 'Inbound' : 'Outbound',
+                    duration: durationStr,
+                    time: isToday ? startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : startedAt.toLocaleDateString(),
+                    intent: call.analysis?.successEvaluation || "Inquiry",
+                    summary: call.summary || "No summary available.",
+                    recordingUrl: call.recordingUrl,
+                    capturedName,
+                    capturedWhatsapp,
+                    capturedValue,
+                    status: callStatus
+                };
+            });
+
+            setCalls(formattedCalls);
+            setVoiceMetrics({
+                totalCallsToday: todayCalls,
+                avgDurationSeconds: todayCalls > 0 ? Math.round(totalDurationToday / todayCalls) : 0,
+                leadsCaptured: voiceLeads.length
+            });
+
+        } catch (error: any) {
+            console.error("Failed to fetch voice data:", error);
+            toast.error(`Unable to load voice logs: ${error.message}`);
+        } finally {
+            setIsLoadingVoice(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'voice') {
+            fetchVoiceData();
+        }
+    }, [activeTab]);
     // -------------------------
 
     const toggleWorkflow = (key: keyof typeof workflows, name: string) => {
@@ -1068,10 +1135,10 @@ export default function CRM() {
                                 <h3 className="font-semibold text-slate-300">Total AI Calls Today</h3>
                                 <Mic className="w-5 h-5 text-emerald-400" />
                             </div>
-                            <p className="text-3xl font-bold">48</p>
+                            <p className="text-3xl font-bold">{isLoadingVoice ? '-' : voiceMetrics.totalCallsToday}</p>
                             <div className="flex items-center gap-2 mt-2 text-sm">
-                                <span className="text-emerald-400 font-medium">+12%</span>
-                                <span className="text-slate-400">vs yesterday</span>
+                                <span className="text-emerald-400 font-medium">Auto-tracked</span>
+                                <span className="text-slate-400">via Vapi</span>
                             </div>
                         </div>
                         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
@@ -1079,10 +1146,10 @@ export default function CRM() {
                                 <h3 className="font-semibold text-slate-600">Leads Captured via Voice</h3>
                                 <Users className="w-5 h-5 text-primary" />
                             </div>
-                            <p className="text-3xl font-bold text-slate-900">14</p>
+                            <p className="text-3xl font-bold text-slate-900">{isLoadingVoice ? '-' : voiceMetrics.leadsCaptured}</p>
                             <div className="flex items-center gap-2 mt-2 text-sm">
                                 <div className="w-full bg-slate-100 rounded-full h-1.5 flex-1 mt-1">
-                                    <div className="bg-primary h-1.5 rounded-full" style={{ width: '30%' }}></div>
+                                    <div className="bg-primary h-1.5 rounded-full" style={{ width: voiceMetrics.totalCallsToday > 0 ? `${Math.min(100, (voiceMetrics.leadsCaptured / voiceMetrics.totalCallsToday) * 100)}%` : '0%' }}></div>
                                 </div>
                             </div>
                         </div>
@@ -1091,7 +1158,7 @@ export default function CRM() {
                                 <h3 className="font-semibold text-slate-600">Avg. Call Duration</h3>
                                 <Phone className="w-5 h-5 text-purple-500" />
                             </div>
-                            <p className="text-3xl font-bold text-slate-900">2m 45s</p>
+                            <p className="text-3xl font-bold text-slate-900">{isLoadingVoice ? '-' : `${Math.floor(voiceMetrics.avgDurationSeconds / 60)}m ${voiceMetrics.avgDurationSeconds % 60}s`}</p>
                         </div>
                         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex items-center justify-center">
                             <button
@@ -1155,9 +1222,15 @@ export default function CRM() {
                                                 <span>•</span>
                                                 <span className="font-medium">{call.time}</span>
                                             </div>
-                                            <button className="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1.5 transition-colors">
-                                                <PlayCircle className="w-4 h-4" /> Listen to Recording
-                                            </button>
+                                            {call.recordingUrl ? (
+                                                <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-emerald-600 hover:text-emerald-500 flex items-center gap-1.5 transition-colors">
+                                                    <PlayCircle className="w-4 h-4" /> Listen to Recording
+                                                </a>
+                                            ) : (
+                                                <span className="text-sm font-medium text-slate-400 flex items-center gap-1.5">
+                                                    <PlayCircle className="w-4 h-4" /> Recording Unavailable
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -1201,9 +1274,23 @@ export default function CRM() {
                                     </div>
                                 </div>
                             ))}
-                            <div className="text-center pt-2">
-                                <button className="text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">Load Older Calls</button>
-                            </div>
+                            {calls.length === 0 && !isLoadingVoice && (
+                                <div className="text-center py-10">
+                                    <Mic className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+                                    <h3 className="text-slate-500 font-medium">No calls found for today.</h3>
+                                </div>
+                            )}
+                            {isLoadingVoice && (
+                                <div className="text-center py-10">
+                                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-3" />
+                                    <h3 className="text-slate-500 font-medium">Loading real-time voice data from Vapi...</h3>
+                                </div>
+                            )}
+                            {calls.length > 0 && (
+                                <div className="text-center pt-2">
+                                    <button className="text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">Refresh Calls</button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
