@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './Login';
 import LandingPage from './LandingPage';
 import ClientConfirmation from './pages/ClientConfirmation';
+import DutyTracker from './pages/DutyTracker';
 import AdminLayout from './admin/AdminLayout';
 import Dashboard from './admin/Dashboard';
 import CRM from './admin/CRM';
@@ -24,6 +25,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
+          <Route path="/duty/:id" element={<DutyTracker />} />
 
           {/* Private Admin Dashboard */}
           <Route
