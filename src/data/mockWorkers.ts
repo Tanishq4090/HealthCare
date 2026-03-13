@@ -8,7 +8,9 @@ export const MOCK_WORKERS = [
         name: 'Dr. Emily Carter',
         role: 'Specialist Consultant',
         assigned_client: 'Apex Medical Corp',
-        hourly_rate: 120,
+        monthly_daily_rate: 3500,
+        short_term_daily_rate: 5000,
+        deposit_received: 15000,
         status: 'Active',
         aadhaar_number: '123456789012',
         phone: '+919876543210',
@@ -20,7 +22,9 @@ export const MOCK_WORKERS = [
         name: 'Sarah Jenkins',
         role: 'Registered Nurse',
         assigned_client: '',
-        hourly_rate: 45,
+        monthly_daily_rate: 850,
+        short_term_daily_rate: 1000,
+        deposit_received: 15000,
         status: 'Available',
         aadhaar_number: '234567890123',
         phone: '+918765432109',
@@ -32,7 +36,9 @@ export const MOCK_WORKERS = [
         name: 'Michael Ross',
         role: 'Physical Therapist',
         assigned_client: '',
-        hourly_rate: 85,
+        monthly_daily_rate: 1200,
+        short_term_daily_rate: 1500,
+        deposit_received: 15000,
         status: 'Available',
         aadhaar_number: '345678901234',
         phone: '+917654321098',
@@ -42,6 +48,6 @@ export const MOCK_WORKERS = [
 ];
 
 export const MOCK_PAYROLL = [
-    { id: '1', worker: 'Dr. Emily Carter', hours_logged: 105, client_name: 'Apex Medical Corp', total_amount: 12600, status: 'Pending Verification' },
-    { id: '2', worker: 'Sarah Jenkins', hours_logged: 140, client_name: 'Downtown Physio', total_amount: 6300, status: 'Draft' },
+    { id: '1', worker: 'Dr. Emily Carter', days_worked: 25, client_name: 'Apex Medical Corp', deposit_received: 15000, daily_rate: 5000, net_balance: 110000, status: 'Pending Verification' },
+    { id: '2', worker: 'Sarah Jenkins', days_worked: 31, client_name: 'Downtown Physio', deposit_received: 15000, daily_rate: 850, net_balance: 11350, status: 'Draft' },
 ];
