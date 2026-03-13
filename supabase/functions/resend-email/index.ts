@@ -13,7 +13,7 @@ serve(async (req) => {
 
     try {
         // Parse the incoming request body
-        const { to, subject, html, text } = await req.json()
+        const { to, subject, html, text, attachments } = await req.json()
 
         // Get the API key from Supabase Secrets
         const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
@@ -34,7 +34,8 @@ serve(async (req) => {
                 to: Array.isArray(to) ? to : [to], // Resend expects an array for 'to'
                 subject: subject,
                 html: html,
-                text: text
+                text: text,
+                attachments: attachments
             })
         })
 
