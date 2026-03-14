@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import CustomCursor from './components/cursor/CustomCursor';
 import Navigation from './components/Navigation';
 import Hero from './components/sections/Hero';
 import About from './components/sections/About';
@@ -20,8 +19,7 @@ export default function LandingPage() {
     }, []);
 
     return (
-        <div className="relative cursor-none">
-            <CustomCursor />
+        <div className="relative">
             <Navigation />
 
             <main>

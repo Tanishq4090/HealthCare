@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -33,6 +31,24 @@
     --health-light: #f0f4ff;
     --health-accent: #e8f5ff;
   }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217 33% 25%;
+    --input: 217 33% 25%;
+    --health-blue-light: #1E3A5F;
+  }
 }
 
 @layer base {
@@ -46,51 +62,28 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', sans-serif;
-  }
-
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
     font-family: 'Plus Jakarta Sans', sans-serif;
+    font-weight: 400;
+    line-height: 1.7;
+  }
+
+  /* Restore default cursor */
+  * {
+    cursor: auto;
+  }
+
+  a, button, [role="button"], .cursor-pointer {
+    cursor: pointer !important;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-foreground;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
 }
 
-/* Custom Cursor Styles */
-.custom-cursor {
-  position: fixed;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--health-blue);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 9999;
-  transition: transform 0.1s ease, width 0.2s ease, height 0.2s ease, border-color 0.2s ease;
-  transform: translate(-50%, -50%);
-  mix-blend-mode: difference;
-}
-
-.custom-cursor-dot {
-  position: fixed;
-  width: 8px;
-  height: 8px;
-  background: var(--health-green);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 9999;
-  transform: translate(-50%, -50%);
-  transition: transform 0.05s ease;
-}
-
-.custom-cursor.hover {
-  width: 50px;
-  height: 50px;
-  border-color: var(--health-green);
-  background: rgba(3, 205, 105, 0.1);
-}
 
 /* Glassmorphism Card */
 .glass-card {
@@ -312,6 +305,7 @@
 .service-card {
   position: relative;
   overflow: hidden;
+  cursor: pointer !important;
 }
 
 .service-card::before {
@@ -505,12 +499,6 @@
 
 /* Responsive Typography */
 @media (max-width: 768px) {
-  body {
-    cursor: auto;
-  }
-
-  .custom-cursor,
-  .custom-cursor-dot {
-    display: none;
-  }
+  /* Default cursor behavior is restored automatically */
+  /* Custom cursor elements are removed, so no need to hide them */
 }
