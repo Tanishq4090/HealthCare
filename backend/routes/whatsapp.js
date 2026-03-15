@@ -99,6 +99,38 @@ router.post("/conversations/:phone/send", async (req, res) => {
   }
 });
 
+// ── Booking confirmation message ──────────────────────────────────────────────
+router.post("/send-booking-confirmation", async (req, res) => {
+  const { phone, name, service, date, time, location } = req.body;
+  if (!phone || !name) return res.status(400).json({ error: "phone and name required" });
+
+  const serviceName = (service || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const message =
+    `✅ *Appointment Confirmed!*\n\n` +
+    `Hi ${name}, your 99 Care appointment is booked! Here are your details:\n\n` +
+    `📅 *Date:* ${date}\n` +
+    `⏰ *Time:* ${time}\n` +
+    `🏥 *Service:* ${serviceName}\n` +
+    `📍 *Location:* ${location}\n\n` +
+    `Our team will call you within 2 hours to confirm.\n\n` +
+    `For help: *+91 9016 116 564*\n` +
+    `_99 Care — Helping Hands_ 💙`;
+
+  if (DEV_MODE?.trim() === "true") {
+    console.log(`[DEV] Booking confirmation → ${phone}:\n${message}`);
+    return res.json({ success: true });
+  }
+
+  try {
+    await sendWhatsApp(phone, message);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[Booking confirmation] Failed:", err.message);
+    // Don't fail the whole booking if WhatsApp fails
+    res.json({ success: false, warning: err.message });
+  }
+});
+
 // ── CRM: Chat (AI reply test) ─────────────────────────────────────────────────
 router.post("/chat", async (req, res) => {
   const { phone, message } = req.body;

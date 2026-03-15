@@ -9,12 +9,13 @@ import { PageTransition } from '@/components/PageTransition';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { slideLeft, slideRight, fadeUp } from '@/lib/animations';
 
-import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { SEOMeta } from '@/components/SEOMeta';
 import { GoogleMap } from '@/components/GoogleMap';
+import { GradientButton } from '@/components/ui/gradient-button';
 
 const contactSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters long"),
@@ -87,6 +88,11 @@ export default function ContactPage() {
 
   return (
     <PageTransition>
+      <SEOMeta
+        title="Contact 99 Care | Home Healthcare in Surat — +91 9016 116 564"
+        description="Contact 99 Care Surat for home nursing, caretaker, and healthcare services. Call, WhatsApp, or fill out the form. We respond within 2 hours."
+        canonical="https://99care.org/contact"
+      />
       <div className="w-full bg-brand-gray dark:bg-slate-950 min-h-screen pb-32">
         {/* SECTION 1 — HERO Minimal */}
         <section className="pt-32 pb-16 px-6 bg-white dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 text-center">
@@ -176,10 +182,10 @@ export default function ContactPage() {
                   />
 
                   <div className="pt-4">
-                    <Button 
+                    <GradientButton 
                       type="submit" 
                       disabled={isLoading}
-                      className="w-full sm:w-auto px-10 h-14 rounded-full bg-brand-blue hover:bg-brand-blue/90 text-white font-bold text-base shadow-md hover:shadow-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="w-full sm:w-auto px-10 h-14 rounded-full font-bold text-base transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       {isLoading ? (
                         <>
@@ -189,7 +195,7 @@ export default function ContactPage() {
                       ) : (
                         'Send Message'
                       )}
-                    </Button>
+                    </GradientButton>
                   </div>
                 </form>
               </Form>
@@ -311,16 +317,15 @@ export default function ContactPage() {
                   
                   <GoogleMap />
                   
-                  <motion.a 
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
-                    href="https://maps.google.com/?q=104+Fortune+Mall+Adajan+Surat+Gujarat"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-4 w-full flex items-center justify-center gap-2 group py-3 rounded-full border-2 border-brand-blue text-brand-blue font-bold hover:bg-brand-blue hover:text-white transition-all duration-300"
-                  >
-                    Get Directions
-                  </motion.a>
+                  <GradientButton asChild className="mt-4 w-full flex items-center justify-center gap-2">
+                    <a 
+                      href="https://maps.google.com/?q=104+Fortune+Mall+Adajan+Surat+Gujarat"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Get Directions
+                    </a>
+                  </GradientButton>
                 </div>
 
               </div>

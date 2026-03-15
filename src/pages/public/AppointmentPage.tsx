@@ -1,23 +1,24 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { toast } from 'sonner';
-import { Phone, Mail, MapPin, MessageCircle, Loader2 } from 'lucide-react';
+import { Phone, Mail, MapPin, MessageCircle, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon } from 'lucide-react';
 import { PageTransition } from '@/components/PageTransition';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { slideLeft, slideRight, fadeUp } from '@/lib/animations';
-
+import { GradientButton } from '@/components/ui/gradient-button';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import { CalendarScheduler } from '@/components/ui/calendar-scheduler';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
+import { SEOMeta } from '@/components/SEOMeta';
 import { cn } from '@/lib/utils';
 import { services } from '@/data/services';
 import { supabase } from '@/lib/supabase';
@@ -28,7 +29,7 @@ const formSchema = z.object({
   email: z.string().email("Please enter a valid email").optional().or(z.literal('')),
   serviceId: z.string().min(1, "Please select a service"),
   date: z.date({ message: "Please select a preferred date" }),
-  timeSlot: z.enum(['morning', 'afternoon', 'evening']),
+  timeSlot: z.string().min(1, "Please select a preferred time"),
   location: z.string().min(5, "Please provide a more specific location in Surat"),
   notes: z.string().max(500).optional(),
 });
@@ -37,7 +38,9 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function AppointmentPage() {
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
+  const navigate = useNavigate();
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -62,7 +65,7 @@ export default function AppointmentPage() {
           email: data.email || null,
           service: data.serviceId,
           preferred_date: format(data.date, 'yyyy-MM-dd'),
-          preferred_time: data.timeSlot.charAt(0).toUpperCase() + data.timeSlot.slice(1),
+          preferred_time: data.timeSlot,
           location: data.location,
           notes: data.notes || null,
           status: 'pending'
@@ -70,10 +73,25 @@ export default function AppointmentPage() {
 
       if (error) throw error;
 
-      toast.success("Appointment confirmed! We'll call you shortly. 📞", {
-        description: "Our team has received your request and will be in touch within 2 hours.",
+      // Fire WhatsApp confirmation (non-blocking — don't fail booking if this fails)
+      fetch('http://localhost:3001/api/whatsapp/send-booking-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: data.phone,
+          name: data.fullName,
+          service: data.serviceId,
+          date: format(data.date, 'EEEE, MMMM d yyyy'),
+          time: data.timeSlot,
+          location: data.location,
+        }),
+      }).catch(() => { /* silently ignore if backend is down */ });
+
+      // Navigate to confirmation page with booking details
+      navigate('/appointment/confirmed', {
+        state: { booking: data },
+        replace: true,
       });
-      form.reset();
     } catch (error) {
       console.error('Appointment submission error:', error);
       toast.error("Something went wrong. Please try again or call us directly.", {
@@ -83,9 +101,13 @@ export default function AppointmentPage() {
       setIsLoading(false);
     }
   }
-
   return (
     <PageTransition>
+      <SEOMeta
+        title="Book Home Healthcare Appointment | 99 Care Surat"
+        description="Book a professional nurse, caretaker or home healthcare service in Surat. Fill in your details and our team will confirm within 2 hours. Available 24/7."
+        canonical="https://99care.org/appointment"
+      />
       <div className="w-full bg-brand-gray dark:bg-slate-950 min-h-screen pb-32">
         {/* SECTION 1 — HERO Minimal */}
         <section className="pt-32 pb-12 px-6 bg-white dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 text-center">
@@ -125,7 +147,7 @@ export default function AppointmentPage() {
                         <FormItem>
                           <FormLabel className="text-gray-900 dark:text-white font-semibold">Full Name <span className="text-red-500">*</span></FormLabel>
                           <FormControl>
-                            <Input placeholder="John Doe" className="h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue" {...field} />
+                            <Input placeholder="Enter your name" className="h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -138,7 +160,7 @@ export default function AppointmentPage() {
                         <FormItem>
                           <FormLabel className="text-gray-900 dark:text-white font-semibold">Phone Number <span className="text-red-500">*</span></FormLabel>
                           <FormControl>
-                            <Input placeholder="+91 9016 116 564" className="h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue" {...field} />
+                            <Input placeholder="Enter your phone number" className="h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -155,7 +177,7 @@ export default function AppointmentPage() {
                         <FormItem>
                           <FormLabel className="text-gray-900 dark:text-white font-semibold">Email Address <span className="text-gray-400 font-normal">(Optional)</span></FormLabel>
                           <FormControl>
-                            <Input type="email" placeholder="john@example.com" className="h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue" {...field} />
+                            <Input type="email" placeholder="yourname@example.com" className="h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -185,78 +207,54 @@ export default function AppointmentPage() {
                     />
                   </div>
 
-                  {/* Date & Time Slot */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <FormField
-                      control={form.control}
-                      name="date"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel className="text-gray-900 dark:text-white font-semibold mb-2">Preferred Date <span className="text-red-500">*</span></FormLabel>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant={"outline"}
-                                  className={cn(
-                                    "w-full h-12 pl-3 text-left font-normal bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-slate-800",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  {field.value ? (
-                                    format(field.value, "PPP")
-                                  ) : (
-                                    <span>Pick a date</span>
-                                  )}
-                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                disabled={(date) =>
-                                  date < new Date(new Date().setHours(0, 0, 0, 0))
-                                }
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="timeSlot"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel className="text-gray-900 dark:text-white font-semibold mb-2">Preferred Time <span className="text-red-500">*</span></FormLabel>
-                          <FormControl>
-                            <ToggleGroup 
-                              type="single" 
-                              onValueChange={field.onChange} 
-                              defaultValue={field.value}
-                              className="justify-start gap-2"
-                            >
-                              <ToggleGroupItem value="morning" aria-label="Toggle Morning" className="flex-1 h-12 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 data-[state=on]:bg-brand-blue data-[state=on]:text-white data-[state=on]:border-brand-blue">
-                                Morning
-                              </ToggleGroupItem>
-                              <ToggleGroupItem value="afternoon" aria-label="Toggle Afternoon" className="flex-1 h-12 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 data-[state=on]:bg-brand-blue data-[state=on]:text-white data-[state=on]:border-brand-blue">
-                                Afternoon
-                              </ToggleGroupItem>
-                              <ToggleGroupItem value="evening" aria-label="Toggle Evening" className="flex-1 h-12 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 data-[state=on]:bg-brand-blue data-[state=on]:text-white data-[state=on]:border-brand-blue">
-                                Evening
-                              </ToggleGroupItem>
-                            </ToggleGroup>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  {/* Date & Time Slot (Calendar Scheduler) */}
+                  <div className="mt-4">
+                    <FormLabel className="text-gray-900 dark:text-white font-semibold mb-3 block">Preferred Date & Time <span className="text-red-500">*</span></FormLabel>
+                    <Dialog open={isSchedulerOpen} onOpenChange={setIsSchedulerOpen}>
+                      <DialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            "w-full h-14 pl-4 pr-5 text-left font-normal bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800 flex items-center justify-between rounded-xl transition-all shadow-sm",
+                            (!form.watch("date") || !form.watch("timeSlot")) ? "text-muted-foreground" : "text-gray-900 dark:text-white border-brand-blue/30"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="bg-brand-blue/10 dark:bg-brand-blue/20 p-2 rounded-lg">
+                              <CalendarIcon className="h-5 w-5 text-brand-blue" />
+                            </div>
+                            <span className="text-base font-medium">
+                              {form.watch("date") && form.watch("timeSlot") ? (
+                                `${format(form.watch("date"), "PPP")} at ${form.watch("timeSlot")}`
+                              ) : (
+                                "Select a Date and Time"
+                              )}
+                            </span>
+                          </div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-brand-blue bg-brand-blue/10 px-3 py-1.5 rounded-full">
+                            {form.watch("date") && form.watch("timeSlot") ? "Change" : "Pick"}
+                          </div>
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="p-0 border-none bg-transparent shadow-none w-fit max-w-[95vw]">
+                        <CalendarScheduler
+                          defaultDate={form.watch("date")}
+                          defaultTime={form.watch("timeSlot") === 'morning' || form.watch("timeSlot") === 'afternoon' || form.watch("timeSlot") === 'evening' ? undefined : form.watch("timeSlot")}
+                          onConfirm={({ date, time }) => {
+                            if (date) form.setValue('date', date);
+                            if (time) form.setValue('timeSlot', time);
+                            setIsSchedulerOpen(false);
+                            form.trigger(['date', 'timeSlot']);
+                          }}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                    {(form.formState.errors.date || form.formState.errors.timeSlot) && (
+                      <p className="text-sm font-medium text-red-500 mt-2 ml-1">
+                        {form.formState.errors.date?.message || form.formState.errors.timeSlot?.message}
+                      </p>
+                    )}
                   </div>
 
                   {/* Location & Notes */}
@@ -294,10 +292,10 @@ export default function AppointmentPage() {
 
                   {/* Submit CTA */}
                   <div className="pt-6">
-                    <Button 
+                    <GradientButton 
                       type="submit" 
                       disabled={isLoading}
-                      className="w-full h-14 rounded-full bg-brand-blue hover:bg-brand-blue/90 text-white font-bold text-lg shadow-md hover:shadow-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="w-full h-14 rounded-full font-bold text-lg disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       {isLoading ? (
                         <>
@@ -307,7 +305,7 @@ export default function AppointmentPage() {
                       ) : (
                         'Confirm Appointment'
                       )}
-                    </Button>
+                    </GradientButton>
                   </div>
                 </form>
               </Form>
@@ -340,9 +338,11 @@ export default function AppointmentPage() {
                       </div>
                     </a>
                     
-                    <a href="https://wa.me/919016116564" target="_blank" rel="noopener noreferrer" className="w-full mt-4 bg-[#25D366] text-white py-3.5 rounded-full text-base font-semibold shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex justify-center items-center gap-2">
-                       <MessageCircle className="w-5 h-5 fill-white" /> WhatsApp Us
-                    </a>
+                    <GradientButton asChild variant="success" className="w-full mt-4 h-14 shadow-md hover:shadow-lg transition-all flex justify-center items-center gap-2">
+                      <a href="https://wa.me/919016116564" target="_blank" rel="noopener noreferrer">
+                         <MessageCircle className="w-5 h-5 fill-white" /> WhatsApp Us
+                      </a>
+                    </GradientButton>
                   </div>
 
                   <div className="h-px w-full bg-gray-100 dark:bg-slate-800 my-8"></div>
@@ -374,6 +374,39 @@ export default function AppointmentPage() {
           </div>
         </div>
       </section>
+
+       {/* SECTION 3 — FAQ */}
+       <section className="pt-16 pb-24 px-6 bg-white dark:bg-slate-900">
+         <div className="container mx-auto max-w-3xl">
+           <AnimateOnScroll variants={fadeUp}>
+             <div className="text-center mb-10">
+               <span className="text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-3 block">Common Questions</span>
+               <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-white">Frequently Asked Questions</h2>
+             </div>
+           </AnimateOnScroll>
+           <AnimateOnScroll variants={fadeUp} delay={0.1}>
+             <Accordion type="single" collapsible className="space-y-3">
+               {[
+                 { q: "Will I get the same nurse or caretaker each time?", a: "We always try to assign the same verified caretaker to ensure continuity of care. If unavoidable, we inform you in advance and ensure the replacement is fully briefed." },
+                 { q: "What areas in Surat do you cover?", a: "We cover all major areas including Pal, Adajan, Vesu, Althan, Udhna, Katargam, Varachha, City Centre, Piplod, and surrounding localities." },
+                 { q: "How soon can a caretaker arrive after booking?", a: "For same-day bookings we typically arrange a caretaker within 2–4 hours. Scheduled bookings are confirmed the evening before with a confirmation call." },
+                 { q: "What qualifications do your nursing staff have?", a: "All nurses are GNM or ANM certified with minimum 2 years of clinical experience. Caretakers are background-verified and complete our in-house training program." },
+                 { q: "Can I cancel or reschedule my appointment?", a: "Yes — call us at +91 9016 116 564 at least 4 hours before. WhatsApp us anytime for quick changes." },
+                 { q: "Is there a minimum booking duration?", a: "Our standard minimum is 4 hours. We also offer 12-hour and 24-hour packages for extended or live-in care." },
+               ].map((faq, i) => (
+                 <AccordionItem key={i} value={`faq-${i}`} className="border border-gray-100 dark:border-slate-800 rounded-xl overflow-hidden bg-gray-50/50 dark:bg-slate-800/30 px-2">
+                   <AccordionTrigger className="py-4 px-3 text-left font-semibold text-gray-800 dark:text-white text-sm hover:no-underline hover:text-brand-blue data-[state=open]:text-brand-blue transition-colors">
+                     {faq.q}
+                   </AccordionTrigger>
+                   <AccordionContent className="px-3 pb-4 text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
+                     {faq.a}
+                   </AccordionContent>
+                 </AccordionItem>
+               ))}
+             </Accordion>
+           </AnimateOnScroll>
+         </div>
+       </section>
     </div>
     </PageTransition>
   );

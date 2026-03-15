@@ -4,10 +4,17 @@ import { motion } from 'framer-motion';
 import { PageTransition } from '@/components/PageTransition';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { fadeUp, slideLeft, slideRight, staggerContainer, staggerItem } from '@/lib/animations';
+import { GradientButton } from '@/components/ui/gradient-button';
+import { SEOMeta } from '@/components/SEOMeta';
 
 export default function AboutPage() {
   return (
     <PageTransition>
+      <SEOMeta
+        title="About 99 Care | Trusted Home Healthcare in Surat"
+        description="Learn about 99 Care's mission to bring verified, compassionate healthcare to Surat homes. Meet our team and discover our commitment to quality care."
+        canonical="https://99care.org/about"
+      />
       <div className="w-full">
       {/* SECTION 1 — PAGE HERO */}
       <section className="pt-32 pb-16 px-6 text-center bg-white dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800">
@@ -247,12 +254,11 @@ export default function AboutPage() {
             whileTap={{ scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link 
-              to="/appointment" 
-              className="bg-white text-brand-blue px-10 py-4 rounded-full text-base font-bold hover:bg-gray-50 transition-all shadow-lg block"
-            >
-              Book Appointment
-            </Link>
+            <GradientButton size="lg" asChild>
+              <Link to="/appointment">
+                Book Appointment
+              </Link>
+            </GradientButton>
           </motion.div>
         </AnimateOnScroll>
       </section>

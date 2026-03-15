@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Menu, ChevronDown, Circle } from 'lucide-react';
+import { Menu, Home, User, HeartPulse, FileText, Phone, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useScroll, useMotionValueEvent, motion } from 'framer-motion';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { GradientButton } from '@/components/ui/gradient-button';
+import { TubelightNavbar } from '@/components/ui/tubelight-navbar';
 
 const SERVICES = [
   { name: 'Wound Care', path: '/services/wound-care' },
@@ -33,6 +35,31 @@ export default function Navbar() {
       isActive && 'after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-full after:bg-brand-blue after:rounded-t-md'
     );
 
+  // Services dropdown panel, passed as JSX to TubelightNavbar
+  const servicesDropdown = (
+    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-gray-100 dark:border-slate-800 overflow-hidden py-2 mt-2 ml-[-0.5rem]">
+      {SERVICES.map((srv, idx) => (
+        <Link 
+          key={idx} 
+          to={srv.path}
+          className="flex items-center gap-3 px-5 py-3 text-sm text-gray-600 dark:text-gray-400 hover:text-brand-blue dark:hover:text-brand-blue hover:bg-brand-blue/5 dark:hover:bg-brand-blue/10 transition-colors"
+        >
+          <Circle className="w-1.5 h-1.5 fill-brand-blue text-brand-blue flex-shrink-0" />
+          {srv.name}
+        </Link>
+      ))}
+    </div>
+  );
+
+  const navItems = useMemo(() => [
+    { name: 'Home', url: '/', icon: Home },
+    { name: 'About', url: '/about', icon: User },
+    { name: 'Services', url: '/services', icon: HeartPulse, dropdown: servicesDropdown },
+    { name: 'Blog', url: '/blog', icon: FileText },
+    { name: 'Contact', url: '/contact', icon: Phone }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
+
   return (
     <nav
       className={cn(
@@ -50,55 +77,25 @@ export default function Navbar() {
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ scale: 1.05 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+              src="/99care-logo.svg" 
               alt="99 Care Logo" 
               className="h-[52px] lg:h-[68px] w-auto drop-shadow-[0_4px_12px_rgba(27,108,168,0.25)] dark:drop-shadow-[0_4px_12px_rgba(255,255,255,0.1)]" 
             />
           </Link>
 
-          {/* CENTER: Desktop Navigation */}
-          <div className="hidden lg:flex items-center space-x-8">
-            <NavLink to="/" className={navLinkClass}>Home</NavLink>
-            <NavLink to="/about" className={navLinkClass}>About</NavLink>
-            
-            {/* Services Dropdown */}
-            <div className="group relative py-2">
-              <NavLink to="/services" className={navLinkClass}>
-                <span className="flex items-center gap-1">
-                  Services <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-brand-blue transition-colors" />
-                </span>
-              </NavLink>
-              
-              {/* Dropdown Menu */}
-              <div className="absolute top-full left-0 mt-0 w-64 opacity-0 translate-y-2 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all duration-200 ease-out z-50">
-                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-gray-100 dark:border-slate-800 overflow-hidden py-2 mt-2 ml-[-1rem]">
-                  {SERVICES.map((srv, idx) => (
-                    <Link 
-                      key={idx} 
-                      to={srv.path}
-                      className="flex items-center gap-3 px-5 py-3 text-sm text-gray-600 dark:text-gray-400 hover:text-brand-blue dark:hover:text-brand-blue hover:bg-brand-blue-light/30 dark:hover:bg-brand-blue/10 transition-colors"
-                    >
-                      <Circle className="w-1.5 h-1.5 fill-brand-blue text-brand-blue" />
-                      {srv.name}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <NavLink to="/blog" className={navLinkClass}>Blog</NavLink>
-            <NavLink to="/contact" className={navLinkClass}>Contact</NavLink>
+          {/* CENTER: Desktop Navigation (Tubelight Navbar) */}
+          <div className="hidden lg:flex items-center justify-center flex-1">
+            <TubelightNavbar items={navItems} />
           </div>
 
           {/* RIGHT: Book Now Button (Desktop) */}
           <div className="hidden lg:flex items-center gap-4">
             <ThemeToggle />
-            <Link 
-              to="/appointment" 
-              className="bg-brand-blue text-white px-5 py-2 rounded-full text-sm font-semibold hover:bg-brand-blue/90 transition-colors inline-block"
-            >
-              Book Now
-            </Link>
+            <GradientButton asChild>
+              <Link to="/appointment">
+                Book Now
+              </Link>
+            </GradientButton>
           </div>
 
           {/* MOBILE: Hamburger & Sheet */}
@@ -134,13 +131,14 @@ export default function Navbar() {
                 </div>
                 
                 <div className="pl-4 flex flex-col space-y-3 pb-2 border-b border-gray-50 dark:border-slate-900">
-                  <Link 
-                    to="/appointment" 
-                    onClick={() => setIsOpen(false)}
-                    className="w-full bg-brand-blue text-white py-3 rounded-full text-sm font-semibold hover:bg-brand-blue/90 transition-colors flex justify-center"
-                  >
-                    Book Appointment Now
-                  </Link>
+                  <GradientButton asChild className="w-full">
+                    <Link 
+                      to="/appointment" 
+                      onClick={() => setIsOpen(false)}
+                    >
+                      Book Appointment Now
+                    </Link>
+                  </GradientButton>
                 </div>
               </SheetContent>
             </Sheet>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronUp } from 'lucide-react';
+import { LiquidButton } from '@/components/ui/liquid-glass-button';
 
 export function ScrollToTopButton() {
   const [isHovered, setIsHovered] = useState(false);
@@ -33,20 +34,19 @@ export function ScrollToTopButton() {
         )}
       </AnimatePresence>
 
-      <motion.button
+      <LiquidButton
         onClick={scrollToTop}
-        className="flex items-center justify-center w-11 h-11 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-full shadow-md text-brand-blue"
-        whileHover={{ scale: 1.1, boxShadow: '0 8px 24px rgba(27,108,168,0.15)' }}
-        whileTap={{ scale: 0.92 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+        className="flex items-center justify-center w-12 h-12 rounded-full !p-0"
+        variant="default"
+        size="icon"
       >
         <motion.div
           whileHover={{ y: -2 }}
           transition={{ duration: 0.2 }}
         >
-          <ChevronUp className="w-5 h-5" />
+          <ChevronUp className="w-6 h-6 text-brand-blue" />
         </motion.div>
-      </motion.button>
+      </LiquidButton>
     </motion.div>
   );
 }

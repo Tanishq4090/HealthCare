@@ -5,7 +5,9 @@ import { useCountUp } from '@/hooks/useCountUp';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { staggerContainer, staggerItem, fadeUp } from '@/lib/animations';
 import { PageTransition } from '@/components/PageTransition';
+import { GradientButton } from '@/components/ui/gradient-button';
 import { services } from '@/data/services';
+import { SEOMeta } from '@/components/SEOMeta';
 
 interface StatCardProps {
   value: number;
@@ -41,6 +43,11 @@ export default function HomePage() {
 
   return (
     <PageTransition>
+      <SEOMeta
+        title="99 Care — Home Healthcare Services in Surat | 24/7 Nursing & Caretaker"
+        description="Professional home healthcare in Surat. Expert nurses, caretakers, wound care, maternity & newborn care — background verified, available 24/7. Call +91 9016 116 564."
+        canonical="https://99care.org"
+      />
       <div className="w-full bg-white dark:bg-slate-950">
       {/* SECTION 1 — HERO */}
       <section className="relative min-h-[90vh] flex flex-col justify-center items-center text-center px-6 pt-20 pb-32 bg-white dark:bg-slate-950 overflow-hidden">
@@ -63,7 +70,7 @@ export default function HomePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0 }}
-            className="text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-8 bg-brand-blue-light/50 px-4 py-1.5 rounded-full"
+            className="text-brand-blue dark:text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-8 bg-brand-blue-light/50 dark:bg-brand-blue/20 px-4 py-1.5 rounded-full border border-brand-blue/20 dark:border-brand-blue/40"
           >
             Trusted Home Healthcare • Surat, Gujarat
           </motion.span>
@@ -105,24 +112,22 @@ export default function HomePage() {
               whileTap={{ scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             >
-              <Link 
-                to="/appointment" 
-                className="w-full sm:w-auto bg-brand-blue text-white px-8 py-3.5 rounded-full text-base font-semibold hover:bg-brand-blue/90 hover:shadow-lg transition-all flex items-center justify-center gap-2"
-              >
-                Book Appointment <ChevronRight className="w-4 h-4" />
-              </Link>
+              <GradientButton asChild size="lg" className="w-full sm:w-auto h-14">
+                <Link to="/appointment" className="flex items-center justify-center gap-2">
+                  Book Appointment <ChevronRight className="w-4 h-4" />
+                </Link>
+              </GradientButton>
             </motion.div>
             <motion.div
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             >
-              <Link 
-                to="/services" 
-                className="w-full sm:w-auto bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-slate-800 px-8 py-3.5 rounded-full text-base font-semibold hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-700 transition-all text-center flex items-center justify-center"
-              >
-                View Services
-              </Link>
+              <GradientButton asChild size="lg" variant="neutral" className="w-full sm:w-auto h-14">
+                <Link to="/services" className="flex items-center justify-center">
+                  View Services
+                </Link>
+              </GradientButton>
             </motion.div>
           </motion.div>
           
@@ -414,12 +419,11 @@ export default function HomePage() {
             whileTap={{ scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           >
-            <Link 
-              to="/appointment" 
-              className="bg-white text-brand-blue px-10 py-4 rounded-full text-base font-bold hover:bg-gray-50 transition-all shadow-lg block"
-            >
-              Book Appointment
-            </Link>
+            <GradientButton asChild size="lg" variant="neutral" className="w-full sm:w-auto h-14">
+              <Link to="/appointment" className="flex items-center justify-center text-brand-blue font-bold">
+                Book Appointment
+              </Link>
+            </GradientButton>
           </motion.div>
         </AnimateOnScroll>
       </section>

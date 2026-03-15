@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { PageTransition } from '@/components/PageTransition';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { fadeUp, staggerContainer, staggerItem } from '@/lib/animations';
+import { SEOMeta } from '@/components/SEOMeta';
 
 export default function ServicesPage() {
   const nursingServices = services.filter(s => s.category === 'nursing');
@@ -56,6 +57,11 @@ export default function ServicesPage() {
 
   return (
     <PageTransition>
+      <SEOMeta
+        title="Home Healthcare Services in Surat | 99 Care"
+        description="Browse all home healthcare services: nursing, wound care, injection at home, maternity care, newborn care, old age care, and caretaker services in Surat."
+        canonical="https://99care.org/services"
+      />
       <div className="w-full bg-white dark:bg-slate-950 pb-32">
         {/* SECTION 1 — HERO */}
         <section className="pt-32 pb-16 px-6 text-center border-b border-gray-100 dark:border-slate-800">
@@ -81,16 +87,16 @@ export default function ServicesPage() {
         <div className="container mx-auto max-w-7xl">
           <Tabs defaultValue="nursing" className="w-full flex flex-col items-center">
             
-            <TabsList className="bg-transparent border-b border-gray-200 dark:border-slate-800 rounded-none w-full max-w-2xl justify-center h-auto p-0 mb-12">
+            <TabsList className="bg-transparent border-b border-gray-200 dark:border-slate-800 w-full max-w-2xl justify-center h-auto p-0 mb-12">
               <TabsTrigger 
                 value="nursing" 
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-brand-blue data-[state=active]:bg-transparent data-[state=active]:shadow-none px-8 py-4 text-base text-gray-500 dark:text-gray-400 data-[state=active]:text-brand-blue font-semibold transition-all"
+                className="rounded-none border border-transparent border-b-0 data-[state=active]:border-brand-blue data-[state=active]:border-x-gray-200 data-[state=active]:border-t-gray-200 data-[state=active]:dark:border-x-slate-700 data-[state=active]:dark:border-t-slate-700 gradient-button gradient-button-neutral data-[state=active]:shadow-md px-8 py-4 text-base text-gray-600 dark:text-brand-blue data-[state=active]:text-brand-blue data-[state=active]:font-bold font-semibold transition-all opacity-80 data-[state=active]:opacity-100 hover:opacity-100"
               >
                 Nursing Services
               </TabsTrigger>
               <TabsTrigger 
                 value="caretaker" 
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-brand-blue data-[state=active]:bg-transparent data-[state=active]:shadow-none px-8 py-4 text-base text-gray-500 dark:text-gray-400 data-[state=active]:text-brand-blue font-semibold transition-all"
+                className="rounded-none border border-transparent border-b-0 data-[state=active]:border-brand-blue data-[state=active]:border-x-gray-200 data-[state=active]:border-t-gray-200 data-[state=active]:dark:border-x-slate-700 data-[state=active]:dark:border-t-slate-700 gradient-button gradient-button-neutral data-[state=active]:shadow-md px-8 py-4 text-base text-gray-600 dark:text-brand-blue data-[state=active]:text-brand-blue data-[state=active]:font-bold font-semibold transition-all opacity-80 data-[state=active]:opacity-100 hover:opacity-100"
               >
                 Caretaker Services
               </TabsTrigger>
