@@ -10,7 +10,7 @@ export default function Footer() {
           {/* Col 1: Brand & Social */}
           <div>
             <img 
-              src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+              src="/99care-logo.svg" 
               alt="99 Care Logo" 
               className="h-16 mb-6 drop-shadow-[0_2px_12px_rgba(255,255,255,0.2)] dark:brightness-110" 
             />

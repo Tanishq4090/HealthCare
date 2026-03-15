@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { PageTransition } from '@/components/PageTransition';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { fadeUp, slideLeft, slideRight, staggerContainer, staggerItem } from '@/lib/animations';
+import { GradientButton } from '@/components/ui/gradient-button';
 
 export default function ServiceDetailPage() {
   const { slug } = useParams();
@@ -124,9 +125,11 @@ export default function ServiceDetailPage() {
                     </motion.div>
 
                     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
-                      <a href={`https://wa.me/919016116564?text=Hi, I want to inquire about ${service.title} services.`} target="_blank" rel="noopener noreferrer" className="w-full bg-white text-[#25D366] border border-[#25D366] py-3.5 rounded-xl text-base font-semibold hover:bg-[#25D366]/5 transition-all flex justify-center items-center gap-2">
-                         <MessageCircle className="w-5 h-5" /> Chat on WhatsApp
-                      </a>
+                      <GradientButton asChild variant="success" className="w-full flex justify-center items-center gap-2">
+                        <a href={`https://wa.me/919016116564?text=Hi, I want to inquire about ${service.title} services.`} target="_blank" rel="noopener noreferrer">
+                           <MessageCircle className="w-5 h-5 flex-shrink-0 fill-white" /> Chat on WhatsApp
+                        </a>
+                      </GradientButton>
                     </motion.div>
                   </div>
                 </div>

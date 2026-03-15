@@ -9,6 +9,7 @@ import { fadeUp, staggerContainer, staggerItem } from '@/lib/animations';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { SEOMeta } from '@/components/SEOMeta';
 
 export default function BlogPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,6 +42,11 @@ export default function BlogPage() {
 
   return (
     <PageTransition>
+      <SEOMeta
+        title="Home Healthcare Blog | Tips & Guides by 99 Care Surat"
+        description="Read expert articles on home nursing, wound care, maternity care, and elderly care in Surat. Healthcare tips from the 99 Care team."
+        canonical="https://99care.org/blog"
+      />
       <div className="w-full bg-white dark:bg-slate-950 min-h-screen pb-32">
         {/* SECTION 1 — HERO */}
         <section className="pt-32 pb-16 px-6 text-center border-b border-gray-100 dark:border-slate-800">
@@ -89,20 +95,13 @@ export default function BlogPage() {
                     <button
                       key={tag}
                       onClick={() => setActiveTag(tag)}
-                      className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 border ${
+                      className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 gradient-button gradient-button-neutral ${
                         isSelected
-                          ? 'bg-brand-blue text-white border-brand-blue shadow-sm'
-                          : 'bg-gray-100 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-800 hover:border-brand-blue/30'
+                          ? 'text-brand-blue font-bold shadow-md ring-1 ring-brand-blue/20'
+                          : 'text-gray-600 dark:text-brand-blue opacity-90 hover:opacity-100 shadow-sm'
                       }`}
                     >
-                      {isSelected && (
-                        <motion.span
-                          layoutId="activeTag"
-                          className="absolute inset-0 bg-brand-blue rounded-full -z-10"
-                          transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                        />
-                      )}
-                      {tag}
+                      <span className="relative z-10">{tag}</span>
                     </button>
                   );
                 })}

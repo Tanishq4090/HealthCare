@@ -25,6 +25,7 @@ import BlogPage from './pages/public/BlogPage';
 import BlogDetailPage from './pages/public/BlogDetailPage';
 import ContactPage from './pages/public/ContactPage';
 import AppointmentPage from './pages/public/AppointmentPage';
+import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import './App.css';
@@ -44,6 +45,7 @@ function AppContent() {
           <Route path="/blog/:slug" element={<BlogDetailPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/appointment" element={<AppointmentPage />} />
+          <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 

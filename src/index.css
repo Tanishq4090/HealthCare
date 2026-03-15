@@ -502,3 +502,282 @@
   /* Default cursor behavior is restored automatically */
   /* Custom cursor elements are removed, so no need to hide them */
 }
+@layer base {
+  @property --pos-x {
+    syntax: '<percentage>';
+    initial-value: 11.14%;
+    inherits: false;
+  }
+  @property --pos-y {
+    syntax: '<percentage>';
+    initial-value: 140%;
+    inherits: false;
+  }
+  @property --spread-x {
+    syntax: '<percentage>';
+    initial-value: 150%;
+    inherits: false;
+  }
+  @property --spread-y {
+    syntax: '<percentage>';
+    initial-value: 180.06%;
+    inherits: false;
+  }
+  @property --color-1 {
+    syntax: '<color>';
+    initial-value: #002a5c;
+    inherits: false;
+  }
+  @property --color-2 {
+    syntax: '<color>';
+    initial-value: #1e3a8a;
+    inherits: false;
+  }
+  @property --color-3 {
+    syntax: '<color>';
+    initial-value: #285fe2;
+    inherits: false;
+  }
+  @property --color-4 {
+    syntax: '<color>';
+    initial-value: #3b82f6;
+    inherits: false;
+  }
+  @property --color-5 {
+    syntax: '<color>';
+    initial-value: #60a5fa;
+    inherits: false;
+  }
+  @property --border-angle {
+    syntax: '<angle>';
+    initial-value: 20deg;
+    inherits: true;
+  }
+  @property --border-color-1 {
+    syntax: '<color>';
+    initial-value: hsla(210, 75%, 60%, 0.2);
+    inherits: true;
+  }
+  @property --border-color-2 {
+    syntax: '<color>';
+    initial-value: hsla(210, 75%, 40%, 0.4);
+    inherits: true;
+  }
+  @property --stop-1 {
+    syntax: '<percentage>';
+    initial-value: 37.35%;
+    inherits: false;
+  }
+  @property --stop-2 {
+    syntax: '<percentage>';
+    initial-value: 61.36%;
+    inherits: false;
+  }
+  @property --stop-3 {
+    syntax: '<percentage>';
+    initial-value: 78.42%;
+    inherits: false;
+  }
+  @property --stop-4 {
+    syntax: '<percentage>';
+    initial-value: 89.52%;
+    inherits: false;
+  }
+  @property --stop-5 {
+    syntax: '<percentage>';
+    initial-value: 100%;
+    inherits: false;
+  }
+}
+
+@layer components {
+  .gradient-button {
+    @apply relative appearance-none cursor-pointer;
+    background: radial-gradient(
+      var(--spread-x) var(--spread-y) at var(--pos-x) var(--pos-y),
+      var(--color-1) var(--stop-1),
+      var(--color-2) var(--stop-2),
+      var(--color-3) var(--stop-3),
+      var(--color-4) var(--stop-4),
+      var(--color-5) var(--stop-5)
+    );
+    transition:
+      --pos-x 0.5s,
+      --pos-y 0.5s,
+      --spread-x 0.5s,
+      --spread-y 0.5s,
+      --color-1 0.5s,
+      --color-2 0.5s,
+      --color-3 0.5s,
+      --color-4 0.5s,
+      --color-5 0.5s,
+      --border-angle 0.5s,
+      --border-color-1 0.5s,
+      --border-color-2 0.5s,
+      --stop-1 0.5s,
+      --stop-2 0.5s,
+      --stop-3 0.5s,
+      --stop-4 0.5s,
+      --stop-5 0.5s;
+  }
+
+  .gradient-button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      var(--border-angle),
+      var(--border-color-1),
+      var(--border-color-2)
+    );
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .gradient-button:hover {
+    --pos-x: 0%;
+    --pos-y: 91.51%;
+    --spread-x: 120.24%;
+    --spread-y: 103.18%;
+    --color-1: #1e3a8a;
+    --color-2: #285fe2;
+    --color-3: #60a5fa;
+    --color-4: #03cd69;
+    --color-5: #002a5c;
+    --border-angle: 190deg;
+    --border-color-1: hsla(210, 78%, 90%, 0.1);
+    --border-color-2: hsla(210, 75%, 90%, 0.6);
+    --stop-1: 0%;
+    --stop-2: 8.8%;
+    --stop-3: 21.44%;
+    --stop-4: 71.34%;
+    --stop-5: 85.76%;
+  }
+
+  .gradient-button-variant {
+    --color-1: #002a5c;
+    --color-2: #03cd69;
+    --color-3: #285fe2;
+    --color-4: #f1ffa5;
+    --border-angle: 200deg;
+    --border-color-1: hsla(150, 75%, 90%, 0.6);
+    --border-color-2: hsla(150, 50%, 90%, 0.15);
+  }
+
+  .gradient-button-variant:hover {
+    --pos-x: 0%;
+    --pos-y: 95.51%;
+    --spread-x: 110.24%;
+    --spread-y: 110.2%;
+    --color-1: #001e3c;
+    --color-2: #f1ffa5;
+    --color-3: #285fe2;
+    --color-4: #03cd69;
+    --color-5: #002a5c;
+    --stop-1: 0%;
+    --stop-2: 10%;
+    --stop-3: 35.44%;
+    --stop-4: 71.34%;
+    --stop-5: 90.76%;
+    --border-angle: 210deg;
+    --border-color-1: hsla(150, 75%, 90%, 0.2);
+    --border-color-2: hsla(150, 50%, 90%, 0.75);
+  }
+
+  .gradient-button-secondary {
+    --color-1: #ffffff;
+    --color-2: #f0f4ff;
+    --color-3: #e8f5ff;
+    --color-4: #ffffff;
+    --border-angle: 200deg;
+    --border-color-1: hsla(210, 75%, 90%, 0.8);
+    --border-color-2: hsla(210, 50%, 95%, 0.3);
+  }
+
+  .gradient-button-secondary:hover {
+    --pos-x: 0%;
+    --pos-y: 95.51%;
+    --spread-x: 110.24%;
+    --spread-y: 110.2%;
+    --color-1: #f0f4ff;
+    --color-2: #e8f5ff;
+    --color-3: #ffffff;
+    --color-4: #f0f4ff;
+    --color-5: #dbeafe;
+    --stop-1: 0%;
+    --stop-2: 10%;
+    --stop-3: 35.44%;
+    --stop-4: 71.34%;
+    --stop-5: 90.76%;
+    --border-angle: 210deg;
+    --border-color-1: hsla(210, 75%, 80%, 0.3);
+    --border-color-2: hsla(210, 50%, 90%, 0.8);
+  }
+
+  .gradient-button-success {
+    --color-1: #128c7e;
+    --color-2: #25d366;
+    --color-3: #075e54;
+    --color-4: #25d366;
+    --color-5: #128c7e;
+    --border-angle: 200deg;
+    --border-color-1: hsla(120, 75%, 90%, 0.5);
+    --border-color-2: hsla(120, 50%, 95%, 0.2);
+  }
+
+  .gradient-button-success:hover {
+    --pos-x: 0%;
+    --pos-y: 95.51%;
+    --spread-x: 110.24%;
+    --spread-y: 110.2%;
+    --color-1: #075e54;
+    --color-2: #128c7e;
+    --color-3: #25d366;
+    --color-4: #128c7e;
+    --color-5: #075e54;
+    --stop-1: 0%;
+    --stop-2: 10%;
+    --stop-3: 35.44%;
+    --stop-4: 71.34%;
+    --stop-5: 90.76%;
+    --border-angle: 210deg;
+    --border-color-1: hsla(120, 75%, 80%, 0.2);
+    --border-color-2: hsla(120, 50%, 90%, 0.5);
+  }
+
+  .gradient-button-neutral {
+    --color-1: #e2e8f0;
+    --color-2: #f8fafc;
+    --color-3: #cbd5e1;
+    --color-4: #f1f5f9;
+    --color-5: #e2e8f0;
+    --border-angle: 200deg;
+    --border-color-1: hsla(210, 20%, 70%, 0.6);
+    --border-color-2: hsla(210, 10%, 85%, 0.3);
+  }
+
+  .gradient-button-neutral:hover {
+    --pos-x: 0%;
+    --pos-y: 95.51%;
+    --spread-x: 110.24%;
+    --spread-y: 110.2%;
+    --color-1: #cbd5e1;
+    --color-2: #f1f5f9;
+    --color-3: #e2e8f0;
+    --color-4: #94a3b8;
+    --color-5: #cbd5e1;
+    --stop-1: 0%;
+    --stop-2: 10%;
+    --stop-3: 35.44%;
+    --stop-4: 71.34%;
+    --stop-5: 90.76%;
+    --border-angle: 210deg;
+    --border-color-1: hsla(210, 20%, 60%, 0.4);
+    --border-color-2: hsla(210, 10%, 80%, 0.7);
+  }
+}
