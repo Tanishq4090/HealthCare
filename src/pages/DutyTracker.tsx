@@ -171,7 +171,7 @@ export default function DutyTracker() {
 
                 {/* Header Profile */}
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 text-center">
-                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white shadow-md">
+                    <div className="w-16 h-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white shadow-md">
                         <span className="text-2xl font-bold">{worker.name.charAt(0)}</span>
                     </div>
                     <h1 className="text-2xl font-bold text-slate-900">{worker.name}</h1>

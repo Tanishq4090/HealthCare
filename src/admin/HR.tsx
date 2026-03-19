@@ -536,7 +536,7 @@ export default function HR() {
                                             </td>
                                             <td className="py-4 px-6">
                                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${worker.status === 'Active' ? 'bg-emerald-100 text-emerald-800' :
-                                                    worker.status === 'Available' ? 'bg-blue-100 text-blue-800' :
+                                                    worker.status === 'Available' ? 'bg-primary/10 text-primary' :
                                                         'bg-amber-100 text-amber-800'
                                                     }`}>
                                                     {worker.status}
@@ -619,8 +619,8 @@ export default function HR() {
                         </div>
                     ) : attendanceLogs.length === 0 ? (
                         <div className="flex-1 p-8 text-center flex flex-col items-center justify-center">
-                            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-                                <Clock className="w-8 h-8 text-blue-500" />
+                            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                                <Clock className="w-8 h-8 text-primary" />
                             </div>
                             <h3 className="text-lg font-bold text-slate-900 mb-2">Awaiting Duty Starts</h3>
                             <p className="text-slate-500 max-w-sm">No duty starts logged for today yet. Staff or clients can use their unique tracking links to submit attendance automatically.</p>
@@ -654,7 +654,7 @@ export default function HR() {
                                             <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                                                 <td className="py-4 px-6">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                                                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
                                                             {log.workers?.name?.charAt(0) || '?'}
                                                         </div>
                                                         <div className="flex flex-col">

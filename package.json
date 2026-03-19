@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:public": "cross-env VITE_APP_MODE=public vite",
+    "dev:os": "cross-env VITE_APP_MODE=os vite",
     "build": "tsc -b && vite build",
+    "build:public": "node scripts/set-robots.mjs public && cross-env VITE_APP_MODE=public tsc -b && cross-env VITE_APP_MODE=public vite build",
+    "build:os": "node scripts/set-robots.mjs os && cross-env VITE_APP_MODE=os tsc -b && cross-env VITE_APP_MODE=os vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -70,6 +74,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.23",
+    "cross-env": "^7.0.3",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

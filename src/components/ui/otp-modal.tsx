@@ -85,12 +85,12 @@ export function OtpModal({ isOpen, onClose, phoneNumber, onVerified }: OtpModalP
                     <div className="mx-auto w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 shadow-inner">
                         <MessageSquare className="w-8 h-8 text-emerald-600" />
                     </div>
-                    <DialogTitle className="text-2xl font-bold text-[#002a5c]">
+                    <DialogTitle className="text-2xl font-bold text-foreground">
                         Verify WhatsApp
                     </DialogTitle>
-                    <DialogDescription className="text-[#002a5c]/70 mt-2">
+                    <DialogDescription className="text-foreground/70 mt-2">
                         We've sent a 4-digit secure code to your WhatsApp number:<br />
-                        <strong className="text-[#285fe2]">{phoneNumber}</strong>
+                        <strong className="text-primary">{phoneNumber}</strong>
                     </DialogDescription>
                 </DialogHeader>
 
@@ -102,7 +102,7 @@ export function OtpModal({ isOpen, onClose, phoneNumber, onVerified }: OtpModalP
                             value={otp}
                             onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                             placeholder="••••"
-                            className="text-center text-3xl tracking-[1em] font-bold h-16 w-48 border-2 border-[#285fe2]/20 focus:border-[#285fe2] focus:ring-[#285fe2] rounded-xl bg-slate-50"
+                            className="text-center text-3xl tracking-[1em] font-bold h-16 w-48 border-2 border-primary/20 focus:border-primary focus:ring-primary rounded-xl bg-slate-50"
                             autoFocus
                         />
                     </div>
@@ -110,7 +110,7 @@ export function OtpModal({ isOpen, onClose, phoneNumber, onVerified }: OtpModalP
                     <Button
                         onClick={handleVerify}
                         disabled={otp.length !== 4 || isVerifying}
-                        className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-[#285fe2] to-[#1e4fc2] hover:opacity-90 disabled:opacity-50 transition-all rounded-xl shadow-lg hover:shadow-xl"
+                        className="w-full h-12 text-lg font-semibold bg-primary hover:bg-primary/90 disabled:opacity-50 transition-all rounded-xl shadow-lg hover:shadow-xl"
                     >
                         {isVerifying ? (
                             <span className="flex items-center gap-2">
@@ -121,11 +121,11 @@ export function OtpModal({ isOpen, onClose, phoneNumber, onVerified }: OtpModalP
                         )}
                     </Button>
 
-                    <p className="text-center text-sm text-[#002a5c]/60">
+                    <p className="text-center text-sm text-foreground/60">
                         Didn't receive the code?{' '}
                         <button
                             onClick={handleResend}
-                            className="text-[#285fe2] font-semibold hover:underline"
+                            className="text-primary font-semibold hover:underline"
                         >
                             Resend WhatsApp OTP
                         </button>

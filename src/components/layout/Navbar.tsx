@@ -79,7 +79,7 @@ export default function Navbar() {
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               src="/99care-logo.svg" 
               alt="99 Care Logo" 
-              className="h-[52px] lg:h-[68px] w-auto drop-shadow-[0_4px_12px_rgba(27,108,168,0.25)] dark:drop-shadow-[0_4px_12px_rgba(255,255,255,0.1)]" 
+              className="h-[52px] lg:h-[68px] w-auto drop-shadow-[0_4px_12px_rgba(26,166,168,0.25)] dark:drop-shadow-[0_4px_12px_rgba(255,255,255,0.1)]" 
             />
           </Link>
 

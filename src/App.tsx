@@ -27,95 +27,125 @@ import ContactPage from './pages/public/ContactPage';
 import AppointmentPage from './pages/public/AppointmentPage';
 import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
 import NotFoundPage from './pages/NotFoundPage';
+import { APP_MODE } from './config/appMode';
+import { useEffect } from 'react';
 
 import './App.css';
 
+function AppMeta() {
+  const mode = APP_MODE;
+
+  useEffect(() => {
+    // Ensure OS pages never get indexed if deployed accidentally on public domain.
+    if (typeof document === 'undefined') return;
+
+    document.title =
+      mode === 'os'
+        ? 'HealthFirst OS — Private Client Portal'
+        : '99 Care — Home Healthcare Services in Surat';
+
+    const existing = document.querySelector('meta[name="robots"]');
+    if (mode === 'os') {
+      const meta = existing ?? document.createElement('meta');
+      meta.setAttribute('name', 'robots');
+      meta.setAttribute('content', 'noindex,nofollow,noarchive');
+      if (!existing) document.head.appendChild(meta);
+    } else if (existing) {
+      existing.remove();
+    }
+  }, [mode]);
+
+  return null;
+}
+
 function AppContent() {
   const location = useLocation();
+  const mode = APP_MODE;
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        {/* 99 Care Public Routes - Wrapped in Layout */}
-        <Route element={<Layout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="/services" element={<ServicesPage />} />
-          <Route path="/services/:slug" element={<ServiceDetailPage />} />
-          <Route path="/blog" element={<BlogPage />} />
-          <Route path="/blog/:slug" element={<BlogDetailPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/appointment" element={<AppointmentPage />} />
-          <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Route>
+        {mode === 'public' ? (
+          <>
+            {/* 99 Care Public Routes - Wrapped in Layout */}
+            <Route element={<Layout />}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/services" element={<ServicesPage />} />
+              <Route path="/services/:slug" element={<ServiceDetailPage />} />
+              <Route path="/blog" element={<BlogPage />} />
+              <Route path="/blog/:slug" element={<BlogDetailPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route path="/appointment" element={<AppointmentPage />} />
+              <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </>
+        ) : (
+          <>
+            {/* OS Mode: root goes to login */}
+            <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* Existing Auth / Admin Routes (Rendered Without Layout) */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
-        <Route path="/duty/:id" element={<DutyTracker />} />
+            {/* Auth / Client utility routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
+            <Route path="/duty/:id" element={<DutyTracker />} />
 
-        {/* Private Admin Dashboard */}
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute>
-              <AdminLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* Anyone with dashboard access can see the default index */}
-          <Route index element={<Dashboard />} />
+            {/* Private Admin Dashboard */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Dashboard />} />
+              <Route
+                path="crm"
+                element={
+                  <ProtectedRoute requiredModule="crm">
+                    <CRM />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="clients"
+                element={
+                  <ProtectedRoute requiredModule="clients">
+                    <Clients />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="hr"
+                element={
+                  <ProtectedRoute requiredModule="hr">
+                    <HR />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="billing"
+                element={
+                  <ProtectedRoute requiredModule="finance">
+                    <Billing />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="settings"
+                element={
+                  <ProtectedRoute>
+                    <AccessControl />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Route>
 
-          {/* Role-Restricted Modules */}
-          <Route
-            path="crm"
-            element={
-              <ProtectedRoute requiredModule="crm">
-                <CRM />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="clients"
-            element={
-              <ProtectedRoute requiredModule="clients">
-                <Clients />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="hr"
-            element={
-              <ProtectedRoute requiredModule="hr">
-                <HR />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="billing"
-            element={
-              <ProtectedRoute requiredModule="finance">
-                <Billing />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* System Admin Only */}
-          <Route
-            path="settings"
-            element={
-              <ProtectedRoute>
-                <AccessControl />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Catch-all relative to /admin */}
-          <Route path="*" element={<Navigate to="/admin" replace />} />
-        </Route>
-
-        {/* Global Fallback — already handled by public and admin catch-alls, but as a safety: */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </>
+        )}
       </Routes>
     </AnimatePresence>
   );
@@ -126,6 +156,7 @@ function App() {
     <Router>
       <AuthProvider>
         <ScrollToTop />
+        <AppMeta />
         <Toaster position="bottom-right" theme="light" />
         <AppContent />
       </AuthProvider>

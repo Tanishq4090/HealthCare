@@ -7,13 +7,13 @@ html {
 
 /* Selection color */
 ::selection {
-  background: rgba(40, 95, 226, 0.3);
-  color: #002a5c;
+  background: rgba(26, 166, 168, 0.28);
+  color: #063b3c;
 }
 
 /* Focus styles */
 *:focus-visible {
-  outline: 2px solid #285fe2;
+  outline: 2px solid #1aa6a8;
   outline-offset: 2px;
 }
 
@@ -76,14 +76,14 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f0f4ff;
+  background: #eafdfd;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #285fe2;
+  background: #1aa6a8;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #1e4fc2;
+  background: #0e7c7e;
 }

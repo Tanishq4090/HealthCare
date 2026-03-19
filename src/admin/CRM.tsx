@@ -1010,7 +1010,7 @@ export default function CRM() {
                                                         {item.pipeline_stage === 'Quotation Sent' && (
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
-                                                                className="w-full bg-blue-50 hover:bg-blue-500 hover:text-white border border-blue-100 text-blue-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                                className="w-full bg-primary/10 hover:bg-primary hover:text-primary-foreground border border-primary/15 text-primary text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                             >
                                                                 <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                                                                 Send Consent Form Link
@@ -1196,13 +1196,13 @@ export default function CRM() {
                             {calls.map((call) => (
                                 <div key={call.id} className="p-5 rounded-xl border border-slate-200 flex flex-col xl:flex-row gap-6 hover:shadow-sm transition-shadow">
                                     <div className="flex items-start gap-4 xl:w-1/3 shrink-0 border-b xl:border-b-0 xl:border-r border-slate-100 pb-4 xl:pb-0 xl:pr-6">
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${call.type === 'Inbound' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${call.type === 'Inbound' ? 'bg-primary/10 text-primary' : 'bg-purple-50 text-purple-600'}`}>
                                             <Phone className="w-5 h-5" />
                                         </div>
                                         <div>
                                             <div className="flex items-center gap-2 mb-1">
                                                 <h3 className="font-bold text-slate-900 text-lg">{call.phone}</h3>
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${call.type === 'Inbound' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${call.type === 'Inbound' ? 'bg-primary/10 text-primary' : 'bg-purple-100 text-purple-700'}`}>
                                                     {call.type}
                                                 </span>
                                             </div>
@@ -1357,15 +1357,15 @@ export default function CRM() {
                                 <p className="text-sm text-slate-500">The HR/Admin specifies services; AI automatically drafts and emails a professional quotation to the client.</p>
                             </div>
 
-                            <div className={`p-4 rounded-lg border transition-colors ${workflows.consent_form ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
+                            <div className={`p-4 rounded-lg border transition-colors ${workflows.consent_form ? 'border-primary/40 bg-primary/10' : 'border-slate-200'}`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                        <CheckCircle2 className={`w-5 h-5 ${workflows.consent_form ? 'text-blue-600' : 'text-slate-400'}`} />
-                                        <h3 className={`font-semibold ${workflows.consent_form ? 'text-blue-700' : 'text-slate-600'}`}>Form Link & Receipt Grtg.</h3>
+                                        <CheckCircle2 className={`w-5 h-5 ${workflows.consent_form ? 'text-primary' : 'text-slate-400'}`} />
+                                        <h3 className={`font-semibold ${workflows.consent_form ? 'text-primary' : 'text-slate-600'}`}>Form Link & Receipt Grtg.</h3>
                                     </div>
                                     <button
                                         onClick={() => toggleWorkflow('consent_form', 'Form Link & Receipt Grtg.')}
-                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.consent_form ? 'bg-blue-500' : 'bg-slate-200'}`}
+                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.consent_form ? 'bg-primary' : 'bg-slate-200'}`}
                                     >
                                         <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.consent_form ? 'right-0.5' : 'left-0.5'}`}></div>
                                     </button>

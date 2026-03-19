@@ -74,7 +74,12 @@ export default function AppointmentPage() {
       if (error) throw error;
 
       // Fire WhatsApp confirmation (non-blocking — don't fail booking if this fails)
-      fetch('http://localhost:3001/api/whatsapp/send-booking-confirmation', {
+      const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN as string | undefined;
+      const bookingConfirmUrl = backendOrigin
+        ? `${backendOrigin}/api/whatsapp/send-booking-confirmation`
+        : `/api/whatsapp/send-booking-confirmation`;
+
+      fetch(bookingConfirmUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

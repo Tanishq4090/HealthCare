@@ -5,15 +5,16 @@
 @layer base {
   :root {
     --background: 220 50% 98%;
-    --foreground: 213 100% 18%;
+    --foreground: 200 35% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 213 100% 18%;
+    --card-foreground: 200 35% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 213 100% 18%;
-    --primary: 220 75% 52%;
+    --popover-foreground: 200 35% 15%;
+    /* 99 Care brand (logo teal) */
+    --primary: 181 73% 38%;
     --primary-foreground: 0 0% 100%;
     --secondary: 220 50% 96%;
-    --secondary-foreground: 213 100% 18%;
+    --secondary-foreground: 200 35% 15%;
     --muted: 220 30% 94%;
     --muted-foreground: 213 30% 40%;
     --accent: 152 96% 41%;
@@ -22,14 +23,14 @@
     --destructive-foreground: 0 0% 98%;
     --border: 220 30% 88%;
     --input: 220 30% 88%;
-    --ring: 220 75% 52%;
+    --ring: 181 73% 38%;
     --radius: 0.75rem;
 
-    --health-blue: #285fe2;
+    --health-blue: #1aa6a8;
     --health-green: #03cd69;
-    --health-dark: #002a5c;
-    --health-light: #f0f4ff;
-    --health-accent: #e8f5ff;
+    --health-dark: #063b3c;
+    --health-light: #eafdfd;
+    --health-accent: #dcf7f7;
   }
 
   .dark {
@@ -39,6 +40,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
+    --primary: 181 73% 45%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217 33% 17%;
@@ -47,7 +50,7 @@
     --accent-foreground: 210 40% 98%;
     --border: 217 33% 25%;
     --input: 217 33% 25%;
-    --health-blue-light: #1E3A5F;
+    --health-blue-light: #0b4f50;
   }
 }
 
@@ -91,7 +94,7 @@
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px rgba(40, 95, 226, 0.1);
+  box-shadow: 0 8px 32px rgba(26, 166, 168, 0.12);
 }
 
 .glass-card-dark {
@@ -195,11 +198,11 @@
 
   0%,
   100% {
-    box-shadow: 0 0 20px rgba(40, 95, 226, 0.3);
+    box-shadow: 0 0 20px rgba(26, 166, 168, 0.28);
   }
 
   50% {
-    box-shadow: 0 0 40px rgba(40, 95, 226, 0.6);
+    box-shadow: 0 0 40px rgba(26, 166, 168, 0.55);
   }
 }
 
@@ -252,7 +255,7 @@
 
 .card-lift:hover {
   transform: translateY(-10px) scale(1.02);
-  box-shadow: 0 25px 50px rgba(40, 95, 226, 0.2);
+  box-shadow: 0 25px 50px rgba(26, 166, 168, 0.22);
 }
 
 /* Magnetic Button Effect */
@@ -315,7 +318,7 @@
   left: var(--mouse-x, 50%);
   width: 200px;
   height: 200px;
-  background: radial-gradient(circle, rgba(40, 95, 226, 0.15) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(26, 166, 168, 0.16) 0%, transparent 70%);
   transform: translate(-50%, -50%);
   opacity: 0;
   transition: opacity 0.3s ease;
@@ -353,11 +356,11 @@
 }
 
 .calendar-day:hover:not(.disabled) {
-  @apply bg-blue-100 text-blue-600;
+  @apply bg-primary/10 text-primary;
 }
 
 .calendar-day.selected {
-  @apply bg-blue-600 text-white;
+  @apply bg-primary text-primary-foreground;
 }
 
 .calendar-day.disabled {
@@ -367,13 +370,13 @@
 /* Time Slot Styles */
 .time-slot {
   @apply px-4 py-2 rounded-full text-sm font-medium border-2 border-transparent transition-all duration-200;
-  background: rgba(40, 95, 226, 0.1);
+  background: rgba(26, 166, 168, 0.12);
   color: var(--health-blue);
 }
 
 .time-slot:hover {
-  @apply border-blue-300;
-  background: rgba(40, 95, 226, 0.15);
+  @apply border-primary/40;
+  background: rgba(26, 166, 168, 0.18);
 }
 
 .time-slot.selected {
@@ -387,7 +390,7 @@
 }
 
 .form-input-glow:focus {
-  box-shadow: 0 0 0 4px rgba(40, 95, 226, 0.15);
+  box-shadow: 0 0 0 4px rgba(26, 166, 168, 0.18);
   border-color: var(--health-blue);
 }
 
@@ -494,7 +497,7 @@
 /* Section Divider */
 .section-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(40, 95, 226, 0.3), transparent);
+  background: linear-gradient(90deg, transparent, rgba(26, 166, 168, 0.32), transparent);
 }
 
 /* Responsive Typography */
@@ -525,27 +528,27 @@
   }
   @property --color-1 {
     syntax: '<color>';
-    initial-value: #002a5c;
+    initial-value: #063b3c;
     inherits: false;
   }
   @property --color-2 {
     syntax: '<color>';
-    initial-value: #1e3a8a;
+    initial-value: #0b4f50;
     inherits: false;
   }
   @property --color-3 {
     syntax: '<color>';
-    initial-value: #285fe2;
+    initial-value: #1aa6a8;
     inherits: false;
   }
   @property --color-4 {
     syntax: '<color>';
-    initial-value: #3b82f6;
+    initial-value: #34c7c9;
     inherits: false;
   }
   @property --color-5 {
     syntax: '<color>';
-    initial-value: #60a5fa;
+    initial-value: #93e6e7;
     inherits: false;
   }
   @property --border-angle {
@@ -555,12 +558,12 @@
   }
   @property --border-color-1 {
     syntax: '<color>';
-    initial-value: hsla(210, 75%, 60%, 0.2);
+    initial-value: hsla(181, 73%, 50%, 0.22);
     inherits: true;
   }
   @property --border-color-2 {
     syntax: '<color>';
-    initial-value: hsla(210, 75%, 40%, 0.4);
+    initial-value: hsla(181, 73%, 35%, 0.45);
     inherits: true;
   }
   @property --stop-1 {
@@ -644,14 +647,14 @@
     --pos-y: 91.51%;
     --spread-x: 120.24%;
     --spread-y: 103.18%;
-    --color-1: #1e3a8a;
-    --color-2: #285fe2;
-    --color-3: #60a5fa;
+    --color-1: #0b4f50;
+    --color-2: #1aa6a8;
+    --color-3: #93e6e7;
     --color-4: #03cd69;
-    --color-5: #002a5c;
+    --color-5: #063b3c;
     --border-angle: 190deg;
-    --border-color-1: hsla(210, 78%, 90%, 0.1);
-    --border-color-2: hsla(210, 75%, 90%, 0.6);
+    --border-color-1: hsla(181, 73%, 92%, 0.12);
+    --border-color-2: hsla(181, 73%, 88%, 0.55);
     --stop-1: 0%;
     --stop-2: 8.8%;
     --stop-3: 21.44%;
@@ -660,9 +663,9 @@
   }
 
   .gradient-button-variant {
-    --color-1: #002a5c;
+    --color-1: #063b3c;
     --color-2: #03cd69;
-    --color-3: #285fe2;
+    --color-3: #1aa6a8;
     --color-4: #f1ffa5;
     --border-angle: 200deg;
     --border-color-1: hsla(150, 75%, 90%, 0.6);
@@ -674,11 +677,11 @@
     --pos-y: 95.51%;
     --spread-x: 110.24%;
     --spread-y: 110.2%;
-    --color-1: #001e3c;
+    --color-1: #042f30;
     --color-2: #f1ffa5;
-    --color-3: #285fe2;
+    --color-3: #1aa6a8;
     --color-4: #03cd69;
-    --color-5: #002a5c;
+    --color-5: #063b3c;
     --stop-1: 0%;
     --stop-2: 10%;
     --stop-3: 35.44%;
@@ -691,12 +694,12 @@
 
   .gradient-button-secondary {
     --color-1: #ffffff;
-    --color-2: #f0f4ff;
-    --color-3: #e8f5ff;
+    --color-2: #eafdfd;
+    --color-3: #dcf7f7;
     --color-4: #ffffff;
     --border-angle: 200deg;
-    --border-color-1: hsla(210, 75%, 90%, 0.8);
-    --border-color-2: hsla(210, 50%, 95%, 0.3);
+    --border-color-1: hsla(181, 73%, 92%, 0.78);
+    --border-color-2: hsla(181, 73%, 95%, 0.28);
   }
 
   .gradient-button-secondary:hover {
@@ -704,19 +707,19 @@
     --pos-y: 95.51%;
     --spread-x: 110.24%;
     --spread-y: 110.2%;
-    --color-1: #f0f4ff;
-    --color-2: #e8f5ff;
+    --color-1: #eafdfd;
+    --color-2: #dcf7f7;
     --color-3: #ffffff;
-    --color-4: #f0f4ff;
-    --color-5: #dbeafe;
+    --color-4: #eafdfd;
+    --color-5: #c7f0f1;
     --stop-1: 0%;
     --stop-2: 10%;
     --stop-3: 35.44%;
     --stop-4: 71.34%;
     --stop-5: 90.76%;
     --border-angle: 210deg;
-    --border-color-1: hsla(210, 75%, 80%, 0.3);
-    --border-color-2: hsla(210, 50%, 90%, 0.8);
+    --border-color-1: hsla(181, 73%, 80%, 0.3);
+    --border-color-2: hsla(181, 73%, 90%, 0.78);
   }
 
   .gradient-button-success {

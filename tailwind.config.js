@@ -11,10 +11,11 @@ module.exports = {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         brand: {
-          blue: '#1B6CA8',
-          'blue-light': '#EFF6FF',
-          teal: '#0EA5E9',
-          'teal-light': '#F0F9FF',
+          // Brand palette (99 Care logo)
+          blue: '#1AA6A8',
+          'blue-light': '#E6F7F7',
+          teal: '#0E7C7E',
+          'teal-light': '#EAFBFB',
           green: '#16A34A',
           gray: '#F9FAFB',
           dark: '#0F172A',
