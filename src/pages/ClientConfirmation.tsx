@@ -102,7 +102,7 @@ export default function ClientConfirmation() {
                 {/* Profile Card */}
                 <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden relative">
                     {/* Top banner design */}
-                    <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-600 relative">
+                    <div className="h-32 bg-gradient-to-r from-primary to-brand-teal relative">
                         <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
                     </div>
 
@@ -124,7 +124,7 @@ export default function ClientConfirmation() {
                         <div className="text-center mb-8">
                             <h2 className="text-2xl font-bold text-slate-900">{worker.name}</h2>
                             <p className="text-primary font-medium text-lg mt-1">{worker.role}</p>
-                            <span className="inline-block mt-3 px-3 py-1 bg-blue-50 text-blue-700 text-sm font-semibold rounded-full border border-blue-100">
+                            <span className="inline-block mt-3 px-3 py-1 bg-primary/10 text-primary text-sm font-semibold rounded-full border border-primary/15">
                                 Assigned to: {worker.assigned_client || 'Your Facility'}
                             </span>
                         </div>

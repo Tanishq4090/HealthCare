@@ -40,8 +40,8 @@ export default function Dashboard() {
                     </div>
                     <div className="p-5 flex-1 p-5 space-y-4">
                         <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
-                                <span className="text-xs font-bold text-blue-600">AI</span>
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="text-xs font-bold text-primary">AI</span>
                             </div>
                             <div>
                                 <p className="text-sm text-slate-900"><span className="font-semibold">Auto-responder sent</span> Folio to "Sarah Jenkins" for "Service Inquiry".</p>
@@ -49,8 +49,8 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
-                                <span className="text-xs font-bold text-blue-600">IN</span>
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="text-xs font-bold text-primary">IN</span>
                             </div>
                             <div>
                                 <p className="text-sm text-slate-900"><span className="font-semibold">New Lead Captured</span> from AI Voice Call - "Mark Johnson".</p>
