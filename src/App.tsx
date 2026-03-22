@@ -60,92 +60,103 @@ function AppMeta() {
 
 function AppContent() {
   const location = useLocation();
-  const mode = APP_MODE;
+  const appDomain = import.meta.env.VITE_APP_DOMAIN;
+  
+  // Use Vercel VITE_APP_DOMAIN if it exists, otherwise fall back to local APP_MODE config
+  const mode = appDomain === 'crm' ? 'os' : (appDomain === 'website' ? 'public' : APP_MODE);
+
+  if (mode === 'public') {
+    return (
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route element={<Layout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/:slug" element={<ServiceDetailPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/blog/:slug" element={<BlogDetailPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/appointment" element={<AppointmentPage />} />
+            <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AnimatePresence>
+    );
+  }
+
+  if (mode === 'os') {
+    return (
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
+          <Route path="/duty/:id" element={<DutyTracker />} />
+
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="crm" element={<ProtectedRoute requiredModule="crm"><CRM /></ProtectedRoute>} />
+            <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
+            <Route path="hr" element={<ProtectedRoute requiredModule="hr"><HR /></ProtectedRoute>} />
+            <Route path="billing" element={<ProtectedRoute requiredModule="finance"><Billing /></ProtectedRoute>} />
+            <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </AnimatePresence>
+    );
+  }
+
+  // Default block (local development without VITE_APP_DOMAIN set and APP_MODE unset)
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        {mode === 'public' ? (
-          <>
-            {/* 99 Care Public Routes - Wrapped in Layout */}
-            <Route element={<Layout />}>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/about" element={<AboutPage />} />
-              <Route path="/services" element={<ServicesPage />} />
-              <Route path="/services/:slug" element={<ServiceDetailPage />} />
-              <Route path="/blog" element={<BlogPage />} />
-              <Route path="/blog/:slug" element={<BlogDetailPage />} />
-              <Route path="/contact" element={<ContactPage />} />
-              <Route path="/appointment" element={<AppointmentPage />} />
-              <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </>
-        ) : (
-          <>
-            {/* OS Mode: root goes to login */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/services/:slug" element={<ServiceDetailPage />} />
+          <Route path="/blog" element={<BlogPage />} />
+          <Route path="/blog/:slug" element={<BlogDetailPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/appointment" element={<AppointmentPage />} />
+          <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
 
-            {/* Auth / Client utility routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
-            <Route path="/duty/:id" element={<DutyTracker />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
+        <Route path="/duty/:id" element={<DutyTracker />} />
 
-            {/* Private Admin Dashboard */}
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute>
-                  <AdminLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Dashboard />} />
-              <Route
-                path="crm"
-                element={
-                  <ProtectedRoute requiredModule="crm">
-                    <CRM />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="clients"
-                element={
-                  <ProtectedRoute requiredModule="clients">
-                    <Clients />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="hr"
-                element={
-                  <ProtectedRoute requiredModule="hr">
-                    <HR />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="billing"
-                element={
-                  <ProtectedRoute requiredModule="finance">
-                    <Billing />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="settings"
-                element={
-                  <ProtectedRoute>
-                    <AccessControl />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </Route>
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Dashboard />} />
+          <Route path="crm" element={<ProtectedRoute requiredModule="crm"><CRM /></ProtectedRoute>} />
+          <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
+          <Route path="hr" element={<ProtectedRoute requiredModule="hr"><HR /></ProtectedRoute>} />
+          <Route path="billing" element={<ProtectedRoute requiredModule="finance"><Billing /></ProtectedRoute>} />
+          <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Route>
 
-            <Route path="*" element={<Navigate to="/admin" replace />} />
-          </>
-        )}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
   );
