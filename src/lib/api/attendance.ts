@@ -1,18 +1,15 @@
 import axios from 'axios';
-import { supabase } from '../supabase';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const attendanceApi = axios.create({
   baseURL: `${API_URL}/attendance`,
 });
 
-// Automatically inject JWT for IDOR enforcement
-attendanceApi.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
-  }
+// Automatically inject pure token for auth
+attendanceApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem('healthfirst_pure_token') || 'pure_dev_token_admin';
+  config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
