@@ -51,3 +51,20 @@ export const MOCK_PAYROLL = [
     { id: '1', worker: 'Dr. Emily Carter', days_worked: 25, client_name: 'Apex Medical Corp', deposit_received: 15000, daily_rate: 5000, net_balance: 110000, status: 'Pending Verification' },
     { id: '2', worker: 'Sarah Jenkins', days_worked: 31, client_name: 'Downtown Physio', deposit_received: 15000, daily_rate: 850, net_balance: 11350, status: 'Draft' },
 ];
+
+export const MOCK_ATTENDANCE = [
+    {
+        id: '1',
+        workers: { name: 'Dr. Emily Carter', role: 'Specialist Consultant', assigned_client: 'Apex Medical Corp' },
+        check_in_time: new Date(new Date().setHours(new Date().getHours() - 3)).toISOString(),
+        check_out_time: null,
+        status: 'On Duty'
+    },
+    {
+        id: '2',
+        workers: { name: 'Sarah Jenkins', role: 'Registered Nurse', assigned_client: 'Downtown Physio' },
+        check_in_time: new Date(new Date().setHours(new Date().getHours() - 8)).toISOString(),
+        check_out_time: new Date(new Date().setHours(new Date().getHours() - 0, 30)).toISOString(),
+        status: 'Completed'
+    }
+];

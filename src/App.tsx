@@ -26,6 +26,7 @@ import BlogDetailPage from './pages/public/BlogDetailPage';
 import ContactPage from './pages/public/ContactPage';
 import AppointmentPage from './pages/public/AppointmentPage';
 import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
+import MarkAttendance from './pages/hr/MarkAttendance';
 import NotFoundPage from './pages/NotFoundPage';
 import { APP_MODE } from './config/appMode';
 import { useEffect } from 'react';
@@ -58,7 +59,10 @@ function AppMeta() {
   return null;
 }
 
+import { useAttendanceSocket } from './hooks/useAttendanceSocket';
+
 function AppContent() {
+  useAttendanceSocket();
   const location = useLocation();
   const mode = APP_MODE;
   return (
@@ -125,6 +129,14 @@ function AppContent() {
                 }
               />
               <Route
+                path="hr/mark"
+                element={
+                  <ProtectedRoute requiredModule="hr">
+                    <MarkAttendance />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="billing"
                 element={
                   <ProtectedRoute requiredModule="finance">
@@ -151,16 +163,29 @@ function AppContent() {
   );
 }
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 1,
+    },
+  },
+});
+
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <ScrollToTop />
-        <AppMeta />
-        <Toaster position="bottom-right" theme="light" />
-        <AppContent />
-      </AuthProvider>
-    </Router>
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <AuthProvider>
+          <ScrollToTop />
+          <AppMeta />
+          <Toaster position="bottom-right" theme="light" />
+          <AppContent />
+        </AuthProvider>
+      </Router>
+    </QueryClientProvider>
   );
 }
 

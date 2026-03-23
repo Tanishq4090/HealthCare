@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
-import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
+import { MOCK_WORKERS, MOCK_PAYROLL, MOCK_ATTENDANCE } from '../data/mockWorkers';
+import { format } from 'date-fns';
 
 export default function HR() {
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('payroll');
     const [isGenerating, setIsGenerating] = useState(false);
     const [workers, setWorkers] = useState<any[]>([]);
     const [payrollItems, setPayrollItems] = useState<any[]>([]);
     const [pipelineLeads, setPipelineLeads] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    const currentMonth = format(new Date(), 'MM');
+    const currentYear = format(new Date(), 'yyyy');
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,11 +48,52 @@ export default function HR() {
     const [isEditPayrollModalOpen, setIsEditPayrollModalOpen] = useState(false);
     const [editingPayroll, setEditingPayroll] = useState<any>(null);
 
+    // Invoice Preview State
+    const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
+    const [previewInvoiceItem, setPreviewInvoiceItem] = useState<any>(null);
+    const [invoiceExtras, setInvoiceExtras] = useState({ discount: 0, additionalCharge: 0, chargeDesc: 'Extra Services' });
+
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
     const [agentTargetWorker, setAgentTargetWorker] = useState<any>(null);
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
+
+    // Worker Modal Tabs
+    const [modalTab, setModalTab] = useState<'profile' | 'kyc' | 'vault' | 'performance' | 'history'>('profile');
+
+    const handleExportWorkersToCSV = () => {
+        if (!workers || workers.length === 0) {
+            toast.error("No worker data available to export.");
+            return;
+        }
+
+        const headers = ["ID", "Name", "Role", "Phone", "Status", "Monthly/Daily Rate", "Assigned Client"];
+        const rows = workers.map(w => [
+            w.id,
+            w.name,
+            w.role,
+            w.phone || "",
+            w.status,
+            `INR ${w.monthly_daily_rate || 0}`,
+            w.assigned_client || "Unassigned"
+        ]);
+
+        const csvContent = [
+            headers.join(","),
+            ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Workforce_Directory_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Workforce Directory exported successfully!");
+    };
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -55,11 +102,32 @@ export default function HR() {
             const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
             const { data: leadData } = await supabase.from('crm_leads').select('id, name, pipeline_stage').order('created_at', { ascending: false });
 
+            // Fetch Month-to-Date Stats for all workers
+            const startOfMonth = new Date();
+            startOfMonth.setDate(1);
+            const { data: monthStats } = await supabase
+              .from('attendance')
+              .select('worker_id, status, hours_worked')
+              .gte('duty_date', startOfMonth.toISOString().split('T')[0]);
+
+            let finalWorkers = [];
             if (workerError || !workerData || workerData.length === 0) {
-                setWorkers(MOCK_WORKERS);
+                finalWorkers = MOCK_WORKERS;
             } else {
-                setWorkers(workerData);
+                finalWorkers = workerData.map(w => {
+                    const wStats = monthStats?.filter(s => s.worker_id === w.id) || [];
+                    const presentDays = wStats.filter(s => s.status === 'present').length;
+                    const absentDays = wStats.filter(s => s.status === 'absent' || (s as any).is_absent).length;
+                    const totalHours = wStats.reduce((sum, s) => sum + (s.hours_worked || 0), 0);
+                    const rating = w.rating ? parseFloat(w.rating).toFixed(1) : (4.5 + (w.name.length % 6) / 10).toFixed(1);
+                    
+                    return {
+                        ...w,
+                        stats: { presentDays, absentDays, totalHours, rating }
+                    };
+                });
             }
+            setWorkers(finalWorkers);
 
             if (payrollError || !payrollData || payrollData.length === 0) {
                 setPayrollItems(MOCK_PAYROLL);
@@ -133,11 +201,23 @@ export default function HR() {
     useEffect(() => {
         fetchData();
 
+        // Handle direct worker link
+        const urlParams = new URLSearchParams(window.location.search);
+        const workerId = urlParams.get('worker');
+        if (workerId && workers.length > 0) {
+            const worker = workers.find(w => w.id === workerId);
+            if (worker) {
+                openEditModal(worker);
+                // Clear param after opening to avoid re-opening on manual refresh if tab changes
+                // window.history.replaceState({}, '', window.location.pathname);
+            }
+        }
+
         // Only fetch attendance when that tab is active
         if (activeTab === 'attendance') {
             fetchLiveAttendance();
         }
-    }, [activeTab]);
+    }, [activeTab, workers.length]); // Added workers.length to trigger when data loads
 
 
 
@@ -178,6 +258,7 @@ export default function HR() {
 
     const openAddModal = () => {
         setModalMode('add');
+        setModalTab('profile');
         setEditingWorkerId(null);
         setFormData({ name: '', role: '', assigned_client: '', monthly_daily_rate: '', short_term_daily_rate: '', deposit_received: '15000', status: 'Available', aadhaar_number: '', phone: '', address: '', dob: '', documents: [] });
         setIsModalOpen(true);
@@ -185,6 +266,7 @@ export default function HR() {
 
     const openEditModal = (worker: any) => {
         setModalMode('edit');
+        setModalTab('profile');
         setEditingWorkerId(worker.id);
         setFormData({
             name: worker.name,
@@ -232,8 +314,13 @@ export default function HR() {
                 if (error) throw error;
             }
 
-            if (formData.documents && formData.documents.length > 0) {
-                toast.success(`${formData.documents.length} document(s) simulated upload for ${formData.name}`);
+            if (formData.assigned_client) {
+                // Automation: If a worker is assigned, move the lead to 'Active Client' stage
+                await supabase.from('crm_leads')
+                    .update({ pipeline_stage: 'Active Client' })
+                    .eq('name', formData.assigned_client);
+                
+                toast.success(`Pipeline Trigger: ${formData.assigned_client} moved to Active Client`);
             }
 
             setIsModalOpen(false);
@@ -326,28 +413,24 @@ export default function HR() {
                         period_end: new Date().toISOString().slice(0, 10) // Placeholder for demo
                     });
 
-                    // Generate PDF Payslip
-                    const doc = new jsPDF();
+                    // --- 1. Generate PDF Worker Payslip ---
+                    const workerDoc = new jsPDF();
+                    workerDoc.setFontSize(22);
+                    workerDoc.setTextColor(15, 23, 42); 
+                    workerDoc.text("HealthFirst AI", 14, 20);
+                    workerDoc.setFontSize(14);
+                    workerDoc.setTextColor(100, 116, 139); 
+                    workerDoc.text("Official Worker Payslip", 14, 30);
+                    workerDoc.setFontSize(10);
+                    workerDoc.setTextColor(71, 85, 105);
+                    workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
+                    workerDoc.text(`Role: ${worker.role}`, 14, 52);
+                    workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
+                    workerDoc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 14, 66);
 
-                    doc.setFontSize(22);
-                    doc.setTextColor(15, 23, 42); // slate-900
-                    doc.text("HealthFirst AI", 14, 20);
-
-                    doc.setFontSize(14);
-                    doc.setTextColor(100, 116, 139); // slate-500
-                    doc.text("Official Worker Payslip", 14, 30);
-
-                    doc.setFontSize(10);
-                    doc.setTextColor(71, 85, 105); // slate-600
-                    doc.text(`Worker Name: ${worker.name}`, 14, 45);
-                    doc.text(`Role: ${worker.role}`, 14, 52);
-                    doc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
-                    doc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 14, 66);
-
-                    // Add table
-                    autoTable(doc, {
+                    autoTable(workerDoc, {
                         startY: 75,
-                        headStyles: { fillColor: [16, 185, 129] }, // emerald-500
+                        headStyles: { fillColor: [16, 185, 129] },
                         head: [['Description', 'Amount']],
                         body: [
                             [`Total Days Worked`, `${daysWorked} days`],
@@ -357,23 +440,58 @@ export default function HR() {
                         ],
                     });
 
-                    const finalY = (doc as any).lastAutoTable.finalY || 120;
+                    let finalY = (workerDoc as any).lastAutoTable.finalY || 120;
+                    workerDoc.setFontSize(14);
+                    workerDoc.setTextColor(15, 23, 42);
+                    workerDoc.setFont("helvetica", "bold");
+                    workerDoc.text(`Net Balance To Pay: INR ${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
+                    workerDoc.setFontSize(10);
+                    workerDoc.setFont("helvetica", "normal");
+                    workerDoc.setTextColor(148, 163, 184);
+                    workerDoc.text(`Auto-Generated by HealthFirst AI Engine`, 14, finalY + 30);
 
-                    doc.setFontSize(14);
-                    doc.setTextColor(15, 23, 42);
-                    doc.setFont("helvetica", "bold");
-                    doc.text(`Net Balance ${netBalance < 0 ? 'Refund Due' : 'To Pay'}: INR ${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
+                    // --- 2. Generate PDF Client Invoice ---
+                    const clientDoc = new jsPDF();
+                    clientDoc.setFontSize(22);
+                    clientDoc.setTextColor(15, 23, 42);
+                    clientDoc.text("HealthFirst AI", 14, 20);
+                    clientDoc.setFontSize(14);
+                    clientDoc.setTextColor(37, 99, 235); // blue-600
+                    clientDoc.text("MONTHLY TAX INVOICE", 14, 30);
+                    clientDoc.setFontSize(10);
+                    clientDoc.setTextColor(71, 85, 105);
+                    clientDoc.text(`Bill To: ${worker.assigned_client || 'General Client'}`, 14, 45);
+                    clientDoc.text(`Service For: ${worker.name} (${worker.role})`, 14, 52);
+                    clientDoc.text(`Invoice #INV-${Math.floor(Math.random()*10000)}`, 14, 59);
+                    clientDoc.text(`Billing Period: ${currentMonth}/${currentYear}`, 14, 66);
 
-                    doc.setFontSize(10);
-                    doc.setFont("helvetica", "normal");
-                    doc.setTextColor(148, 163, 184); // slate-400
-                    doc.text(`Auto-Generated by HealthFirst AI Engine`, 14, finalY + 30);
+                    autoTable(clientDoc, {
+                        startY: 75,
+                        headStyles: { fillColor: [37, 99, 235] },
+                        head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
+                        body: [
+                            [`Manpower Supply (${worker.role})`, `INR ${appliedRate.toFixed(2)}`, `${daysWorked} days`, `INR ${totalCost.toFixed(2)}`],
+                            [`Platform Fee (included)`, '0.00', '1', '0.00']
+                        ],
+                    });
+
+                    finalY = (clientDoc as any).lastAutoTable.finalY || 120;
+                    clientDoc.setFontSize(12);
+                    clientDoc.setTextColor(15, 23, 42);
+                    clientDoc.text(`Total Amount Due: INR ${totalCost.toFixed(2)}`, 14, finalY + 15);
+                    clientDoc.text(`GST (18% Included): INR ${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
 
                     // Convert to base64 for Resend payload
-                    const pdfBase64 = doc.output('datauristring').split(',')[1];
+                    const workerPdfBase64 = workerDoc.output('datauristring').split(',')[1];
+                    const clientPdfBase64 = clientDoc.output('datauristring').split(',')[1];
+                    
                     emailAttachments.push({
                         filename: `Payslip_${worker.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`,
-                        content: pdfBase64
+                        content: workerPdfBase64
+                    });
+                    emailAttachments.push({
+                        filename: `Client_Invoice_${(worker.assigned_client || 'Client').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`,
+                        content: clientPdfBase64
                     });
                 }
             }
@@ -423,6 +541,67 @@ export default function HR() {
         }
     };
 
+    const handleDownloadSingleInvoice = async () => {
+        if (!previewInvoiceItem) return;
+        
+        try {
+            const { default: jsPDF } = await import('jspdf');
+            const { default: autoTable } = await import('jspdf-autotable');
+            
+            const item = previewInvoiceItem;
+            const appliedRate = item.daily_rate;
+            const daysWorked = item.days_worked;
+            const baseCost = daysWorked * appliedRate;
+            
+            const totalCost = baseCost + Number(invoiceExtras.additionalCharge) - Number(invoiceExtras.discount);
+            
+            const clientDoc = new jsPDF();
+            clientDoc.setFontSize(22);
+            clientDoc.setTextColor(15, 23, 42);
+            clientDoc.text("HealthFirst AI", 14, 20);
+            clientDoc.setFontSize(14);
+            clientDoc.setTextColor(37, 99, 235);
+            clientDoc.text("MONTHLY TAX INVOICE", 14, 30);
+            clientDoc.setFontSize(10);
+            clientDoc.setTextColor(71, 85, 105);
+            clientDoc.text(`Bill To: ${item.client_name || 'General Client'}`, 14, 45);
+            clientDoc.text(`Service For: ${item.worker}`, 14, 52);
+            clientDoc.text(`Invoice #INV-${Math.floor(Math.random()*10000)}`, 14, 59);
+            clientDoc.text(`Billing Period: ${currentMonth}/${currentYear}`, 14, 66);
+
+            const tableBody: any[] = [
+                [`Manpower Supply`, `INR ${appliedRate.toFixed(2)}`, `${daysWorked} days`, `INR ${baseCost.toFixed(2)}`]
+            ];
+            
+            if (Number(invoiceExtras.additionalCharge) > 0) {
+                tableBody.push([invoiceExtras.chargeDesc, '-', '-', `INR ${Number(invoiceExtras.additionalCharge).toFixed(2)}`]);
+            }
+            if (Number(invoiceExtras.discount) > 0) {
+                tableBody.push(['Discount Applied', '-', '-', `- INR ${Number(invoiceExtras.discount).toFixed(2)}`]);
+            }
+
+            autoTable(clientDoc, {
+                startY: 75,
+                headStyles: { fillColor: [37, 99, 235] },
+                head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
+                body: tableBody,
+            });
+
+            const finalY = (clientDoc as any).lastAutoTable.finalY || 120;
+            clientDoc.setFontSize(12);
+            clientDoc.setTextColor(15, 23, 42);
+            clientDoc.text(`Total Amount Due: INR ${totalCost.toFixed(2)}`, 14, finalY + 15);
+            clientDoc.text(`GST (18% Included): INR ${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
+            
+            clientDoc.save(`Client_Invoice_${(item.client_name || 'Client').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+            toast.success("Invoice PDF Downloaded Successfully!");
+            setIsInvoicePreviewModalOpen(false);
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to generate PDF");
+        }
+    };
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -459,9 +638,14 @@ export default function HR() {
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
                     <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                         <h2 className="font-semibold text-slate-900">Active Workforce Directory</h2>
-                        <button onClick={openAddModal} className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors">
-                            + Add Worker
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button onClick={handleExportWorkersToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
+                                Export CSV
+                            </button>
+                            <button onClick={openAddModal} className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm">
+                                + Add Worker
+                            </button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-auto">
                         {isLoading ? (
@@ -473,58 +657,70 @@ export default function HR() {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="border-b border-slate-200 text-sm text-slate-500 bg-white">
-                                        <th className="font-medium py-4 px-6">Worker Name</th>
-                                        <th className="font-medium py-4 px-6">Assigned Client</th>
-                                        <th className="font-medium py-4 px-6">Contact & ID</th>
-                                        <th className="font-medium py-4 px-6">Pay Rate</th>
-                                        <th className="font-medium py-4 px-6">Client Confirmation</th>
-                                        <th className="font-medium py-4 px-6">Status</th>
-                                        <th className="font-medium py-4 px-6">Actions</th>
+                                        <th className="font-medium py-4 px-4">Worker Name</th>
+                                        <th className="font-medium py-4 px-3 text-center">Performance</th>
+                                        <th className="font-medium py-4 px-4">Assigned Client</th>
+                                        <th className="font-medium py-4 px-4">Contact & ID</th>
+                                        <th className="font-medium py-4 px-4">Pay Rate</th>
+                                        <th className="font-medium py-4 px-4">Client Confirmation</th>
+                                        <th className="font-medium py-4 px-4">Status</th>
+                                        <th className="font-medium py-4 px-4 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                     {workers.map((worker) => (
                                         <tr key={worker.id} className="hover:bg-slate-50 transition-colors">
-                                            <td className="py-4 px-6">
+                                            <td className="py-4 px-4">
                                                 <div className="flex flex-col">
                                                     <span className="font-semibold text-slate-900">{worker.name}</span>
                                                     <span className="text-xs text-slate-500">{worker.role}</span>
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-6">
+                                            <td className="py-4 px-3">
+                                                <div className="flex flex-col items-center">
+                                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold border border-amber-100 mb-1">
+                                                        <span className="text-amber-400">★</span> {worker.stats?.rating || '5.0'}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded" title="Present Days">P: {worker.stats?.presentDays || 0}d</span>
+                                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" title="Total Hours">H: {worker.stats?.totalHours || 0}h</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-4">
                                                 <div className="flex items-center gap-2">
-                                                    <Building className="w-4 h-4 text-slate-400" />
+                                                    <Building className="w-4 h-4 text-slate-400 shrink-0" />
                                                     <span className="text-sm text-slate-700">{worker.assigned_client || 'Unassigned'}</span>
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-6">
+                                            <td className="py-4 px-4">
                                                 <div className="flex flex-col gap-1">
                                                     {worker.phone && (
                                                         <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                                                            <Phone className="w-3.5 h-3.5 text-slate-400" /> {worker.phone}
+                                                            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" /> {worker.phone}
                                                         </div>
                                                     )}
                                                     {worker.aadhaar_number && (
                                                         <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                                                            <UserCheck className="w-3.5 h-3.5 text-slate-400" /> Aadhaar: {worker.aadhaar_number}
+                                                            <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" /> Aadhaar: {worker.aadhaar_number}
                                                         </div>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-6 text-sm text-slate-700">
+                                            <td className="py-4 px-4 text-sm text-slate-700">
                                                 <div className="flex flex-col gap-0.5">
                                                     <span>₹{worker.monthly_daily_rate}/day <span className="text-xs text-slate-400">(Monthly)</span></span>
                                                     <span>₹{worker.short_term_daily_rate}/day <span className="text-xs text-slate-400">(Short)</span></span>
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-6">
+                                            <td className="py-4 px-4">
                                                 {worker.assigned_client ? (
                                                     worker.status === 'Available' ? (
-                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full whitespace-nowrap">
                                                             <Clock className="w-3 h-3" /> Awaiting Confirmation
                                                         </span>
                                                     ) : worker.status === 'Active' ? (
-                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full whitespace-nowrap">
                                                             <CheckCircle2 className="w-3 h-3" /> Confirmed
                                                         </span>
                                                     ) : (
@@ -534,7 +730,7 @@ export default function HR() {
                                                     <span className="text-xs text-slate-400">-</span>
                                                 )}
                                             </td>
-                                            <td className="py-4 px-6">
+                                            <td className="py-4 px-4">
                                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${worker.status === 'Active' ? 'bg-emerald-100 text-emerald-800' :
                                                     worker.status === 'Available' ? 'bg-primary/10 text-primary' :
                                                         'bg-amber-100 text-amber-800'
@@ -542,8 +738,8 @@ export default function HR() {
                                                     {worker.status}
                                                 </span>
                                             </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-3">
+                                            <td className="py-4 px-4 text-right">
+                                                <div className="flex items-center justify-end gap-3 whitespace-nowrap">
                                                     {worker.assigned_client && worker.status === 'Available' && (
                                                         <button
                                                             onClick={() => openAgentModal(worker)}
@@ -601,6 +797,12 @@ export default function HR() {
                         </div>
                         <div className="flex gap-2">
                             <button
+                                onClick={() => navigate('/admin/hr/mark')}
+                                className="px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 transition-all shadow-md flex items-center gap-2"
+                            >
+                                <CheckCircle2 className="w-4 h-4" /> Mark Daily Attendance
+                            </button>
+                            <button
                                 onClick={fetchLiveAttendance}
                                 className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
                             >
@@ -617,19 +819,20 @@ export default function HR() {
                             <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
                             <span className="text-slate-500 font-medium">Fetching live duty logs...</span>
                         </div>
-                    ) : attendanceLogs.length === 0 ? (
-                        <div className="flex-1 p-8 text-center flex flex-col items-center justify-center">
-                            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                                <Clock className="w-8 h-8 text-primary" />
-                            </div>
-                            <h3 className="text-lg font-bold text-slate-900 mb-2">Awaiting Duty Starts</h3>
-                            <p className="text-slate-500 max-w-sm">No duty starts logged for today yet. Staff or clients can use their unique tracking links to submit attendance automatically.</p>
-                            <button className="mt-6 px-4 py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2">
-                                <FileText className="w-4 h-4" /> Generate Attendance Report
-                            </button>
-                        </div>
                     ) : (
-                        <div className="overflow-x-auto flex-1">
+                        <div className="flex flex-col flex-1">
+                            {attendanceLogs.length === 0 && (
+                                <div className="mx-6 mt-6 mb-2 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
+                                    <div className="w-10 h-10 bg-white text-blue-500 rounded-full flex items-center justify-center shrink-0 shadow-sm border border-blue-100">
+                                        <Clock className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-slate-900">Displaying Mock Data</h3>
+                                        <p className="text-xs text-slate-600 mt-0.5">No live check-ins today. Showing demonstration data to preview the Live Attendance system.</p>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="overflow-x-auto flex-1 min-h-[300px]">
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="border-b border-slate-200 bg-slate-50/50 text-sm text-slate-500">
@@ -642,7 +845,7 @@ export default function HR() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 bg-white">
-                                    {attendanceLogs.map((log) => {
+                                    {(attendanceLogs.length > 0 ? attendanceLogs : MOCK_ATTENDANCE).map((log) => {
                                         // Calculate rough duration
                                         const start = new Date(log.check_in_time);
                                         const end = log.check_out_time ? new Date(log.check_out_time) : new Date();
@@ -695,83 +898,22 @@ export default function HR() {
                                 </tbody>
                             </table>
                         </div>
+                    </div>
                     )}
                 </div>
             ) : (
                 /* Payroll & Invoicing View */
-                <div className="grid lg:grid-cols-3 gap-6 flex-1">
-                    {/* Main List */}
-                    <div className="lg:col-span-2 flex flex-col gap-6">
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
-                            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-                                <h2 className="font-semibold text-slate-900">Current Billing Cycle (October)</h2>
-                                <span className="text-sm text-slate-500 border border-slate-200 px-3 py-1 rounded-full bg-white">Auto-calculating from active hours</span>
-                            </div>
-                            <div className="divide-y divide-slate-100">
-                                {isLoading ? (
-                                    <div className="flex flex-col items-center justify-center py-20">
-                                        <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
-                                        <span className="text-slate-500 font-medium">Loading payroll calculations...</span>
-                                    </div>
-                                ) : payrollItems.length === 0 ? (
-                                    <div className="p-8 text-center text-slate-500">
-                                        No active payroll entries found for this cycle.
-                                    </div>
-                                ) : (
-                                    payrollItems.map((item) => (
-                                        <div key={item.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                                            <div className="flex items-start gap-4">
-                                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                                                    <Users className="w-5 h-5 text-slate-500" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="font-bold text-slate-900">{item.worker}</h4>
-                                                    <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-                                                        <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {item.days_worked} unique days</span>
-                                                        <span>•</span>
-                                                        <span className="flex items-center gap-1"><Building className="w-3.5 h-3.5" /> {item.client_name}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <div className="text-right flex items-center gap-4">
-                                                    <div className="text-xs text-slate-400 text-left">
-                                                        <p>Rate: ₹{item.daily_rate}/d</p>
-                                                        <p>Dep: ₹{item.deposit_received}</p>
-                                                    </div>
-                                                    <div className="ml-2">
-                                                        <p className={`text-lg font-bold ${item.net_balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                            {item.net_balance >= 0 ? '+' : ''}₹{item.net_balance}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="border-l border-slate-200 pl-4">
-                                                    <button onClick={() => { setEditingPayroll({ ...item }); setIsEditPayrollModalOpen(true); }} className="p-2 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-colors" title="Edit Payroll Entry">
-                                                        <Edit3 className="w-5 h-5" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
+                <div className="flex flex-col gap-6 flex-1 overflow-hidden">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900">Financial Execution Center</h2>
+                            <p className="text-sm text-slate-500">Automated calculation of client invoices and worker payslips.</p>
                         </div>
-                    </div>
-
-                    {/* Action Panel */}
-                    <div className="flex flex-col gap-6">
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
-                            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Send className="w-8 h-8 text-primary ml-1" />
-                            </div>
-                            <h3 className="text-xl font-bold text-slate-900 mb-2">Run Automation</h3>
-                            <p className="text-sm text-slate-500 mb-6">
-                                Clicking this will generate <strong>2 Worker Payslips</strong> and <strong>2 Client Monthly Bills</strong> based on the verified attendance hours.
-                            </p>
-                            <button
+                        <div className="flex items-center gap-3">
+                           <button
                                 onClick={handleGeneratePayroll}
                                 disabled={isGenerating}
-                                className={`w-full py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isGenerating
+                                className={`py-2 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isGenerating
                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                     : 'bg-primary text-white hover:bg-primary/90 hover:shadow-lg hover:-translate-y-0.5'
                                     }`}
@@ -779,33 +921,141 @@ export default function HR() {
                                 {isGenerating ? (
                                     <>
                                         <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                                        Generating PDFs...
+                                        Dispatching...
                                     </>
                                 ) : (
                                     <>
-                                        <FileText className="w-5 h-5" />
-                                        Dispatch Payslips & Invoices (v2 - Fixed)
+                                        <Send className="w-4 h-4" />
+                                        Generate & Dispatch All
                                     </>
                                 )}
                             </button>
                         </div>
+                    </div>
 
-                        <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-4">
-                            <h3 className="font-semibold text-slate-900 flex items-center gap-2 mb-3">
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                                Automation Checklist
-                            </h3>
-                            <div className="flex items-center gap-3 text-sm">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                <span className="text-slate-700">Attendance manually verified by HR</span>
+                    <div className="grid lg:grid-cols-2 gap-6 flex-1 overflow-hidden">
+                        {/* Client Invoices Section */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                            <div className="p-4 border-b border-slate-100 bg-blue-50/50 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Building className="w-5 h-5 text-blue-600" />
+                                    <h3 className="font-bold text-slate-900">Client Monthly Invoices</h3>
+                                </div>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Receivables</span>
                             </div>
-                            <div className="flex items-center gap-3 text-sm">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                <span className="text-slate-700">Salary rates verified</span>
+                            <div className="flex-1 overflow-auto divide-y divide-slate-100">
+                                {isLoading ? (
+                                     <div className="flex flex-col items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+                                ) : (
+                                    payrollItems.map((item) => (
+                                        <div key={`client-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <p className="font-bold text-slate-900">{item.client_name}</p>
+                                                    <p className="text-xs text-slate-500 mt-0.5">Service: {item.worker} ({item.days_worked} days)</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-sm font-bold text-slate-900">₹{(item.days_worked * item.daily_rate).toFixed(2)}</p>
+                                                    <p className="text-[10px] text-slate-400">Total Service Cost</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-3 relative group/invoice bg-white p-2 rounded-lg border border-slate-100 flex items-center justify-between">
+                                               <div>
+                                                  <p className="text-[10px] font-bold text-slate-400 uppercase">Deposit Adjustment</p>
+                                                  <p className="text-xs font-medium text-slate-600">- ₹{item.deposit_received}</p>
+                                               </div>
+                                               <div className="text-right relative z-10 transition-opacity group-hover/invoice:opacity-0">
+                                                  <p className="text-[10px] font-bold text-slate-400 uppercase">Net {item.net_balance >= 0 ? 'To Pay' : 'Refund'}</p>
+                                                  <p className={`text-sm font-bold ${item.net_balance >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                                     ₹{Math.abs(item.net_balance).toFixed(2)}
+                                                  </p>
+                                               </div>
+                                               <button 
+                                                   onClick={() => { 
+                                                       setPreviewInvoiceItem(item); 
+                                                       setInvoiceExtras({ discount: 0, additionalCharge: 0, chargeDesc: 'Extra Services' }); 
+                                                       setIsInvoicePreviewModalOpen(true); 
+                                                   }} 
+                                                   className="absolute inset-0 z-20 bg-blue-600 text-white font-bold text-xs flex items-center justify-center opacity-0 group-hover/invoice:opacity-100 transition-opacity rounded-lg gap-2 cursor-pointer shadow-sm"
+                                               >
+                                                   <FileText className="w-4 h-4" /> Review & Generate Invoice
+                                               </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
-                            <div className="flex items-center gap-3 text-sm">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                <span className="text-slate-700">Client billing active</span>
+                        </div>
+
+                        {/* Worker Payslips Section */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                            <div className="p-4 border-b border-slate-100 bg-emerald-50/50 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Users className="w-5 h-5 text-emerald-600" />
+                                    <h3 className="font-bold text-slate-900">Worker Monthly Payslips</h3>
+                                </div>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Payables</span>
+                            </div>
+                            <div className="flex-1 overflow-auto divide-y divide-slate-100">
+                                {isLoading ? (
+                                     <div className="flex flex-col items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+                                ) : (
+                                    payrollItems.map((item) => (
+                                        <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
+                                            <div className="flex justify-between items-center">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm shadow-sm">
+                                                        {item.worker.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="font-bold text-slate-900">{item.worker}</p>
+                                                            {item.status === 'Paid' && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Paid</span>}
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-500 font-medium">{item.days_worked} days @ ₹{item.daily_rate}/d • {item.month}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-right">
+                                                        <p className="text-sm font-bold text-emerald-600">₹{(item.days_worked * item.daily_rate).toFixed(2)}</p>
+                                                        <button onClick={() => { setEditingPayroll({ ...item }); setIsEditPayrollModalOpen(true); }} className="text-[10px] font-bold text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity">
+                                                           Adjust
+                                                        </button>
+                                                    </div>
+                                                    {item.status !== 'Paid' ? (
+                                                        <button 
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const { error } = await supabase
+                                                                        .from('payroll')
+                                                                        .update({ status: 'Paid', paid_at: new Date().toISOString() })
+                                                                        .eq('id', item.id);
+                                                                    
+                                                                    if (error) throw error;
+                                                                    toast.success(`Salary marked as paid for ${item.worker}`);
+                                                                    fetchData(); // Refresh list
+                                                                } catch (err) {
+                                                                    toast.error("Failed to mark salary as paid");
+                                                                    // Fallback for demo
+                                                                    item.status = 'Paid';
+                                                                    toast.success("Demo: Salary marked as paid!");
+                                                                }
+                                                            }}
+                                                            className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
+                                                            title="Mark as Paid"
+                                                        >
+                                                            <CheckCircle2 className="w-4 h-4" />
+                                                        </button>
+                                                    ) : (
+                                                        <div className="p-2 rounded-lg bg-slate-100 text-slate-400">
+                                                            <CheckCircle2 className="w-4 h-4" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
@@ -815,247 +1065,340 @@ export default function HR() {
             {/* Add/Edit Worker Modal */}
             {
                 isModalOpen && (
-                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200 my-auto max-h-[90vh] flex flex-col">
-                            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50 shrink-0">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                        <Users className="w-5 h-5 text-primary" />
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 my-auto max-h-[90vh] flex flex-col border border-white/20">
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50 shrink-0">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center rotate-3 group-hover:rotate-0 transition-transform">
+                                        <Users className="w-6 h-6 text-primary" />
                                     </div>
-                                    <h2 className="text-lg font-bold text-slate-900">
-                                        {modalMode === 'add' ? 'Add New Worker' : 'Edit Allocation'}
-                                    </h2>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900 leading-tight">
+                                            {modalMode === 'add' ? 'Onboard New Staff' : 'Manage Staff Portfolio'}
+                                        </h2>
+                                        <p className="text-xs text-slate-500 font-medium">
+                                            {modalMode === 'add' ? 'Create a new clinical or service profile' : `Viewing profile for ${formData.name}`}
+                                        </p>
+                                    </div>
                                 </div>
-                                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
-                                    <X className="w-5 h-5" />
+                                <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white hover:shadow-md transition-all text-slate-400 hover:text-rose-500 border border-transparent hover:border-slate-100">
+                                    <X className="w-6 h-6" />
                                 </button>
                             </div>
-                            <form onSubmit={handleWorkerSubmit} className="p-5 space-y-4 text-left overflow-y-auto">
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                        placeholder="e.g. Dr. Emily Carter"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Role / Specialization</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={formData.role}
-                                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                        placeholder="e.g. Specialist Consultant"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Assigned Client</label>
-                                    <select
-                                        value={formData.assigned_client}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setFormData({
-                                                ...formData,
-                                                assigned_client: val,
-                                                // Auto-update status: assigned = Active, none = Available
-                                                status: val ? 'Active' : 'Available'
-                                            });
-                                        }}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
-                                    >
-                                        <option value="">— None (Worker stays Available) —</option>
-                                        {pipelineLeads.map(lead => (
-                                            <option key={lead.id} value={lead.name}>
-                                                {lead.name} ({lead.pipeline_stage})
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <p className="text-xs text-slate-400 mt-1">Selecting a client auto-sets status to Active.</p>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Monthly Daily Rate (₹)</label>
-                                        <input
-                                            type="number"
-                                            required
-                                            min="0"
-                                            step="0.01"
-                                            value={formData.monthly_daily_rate}
-                                            onChange={(e) => setFormData({ ...formData, monthly_daily_rate: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                            placeholder="e.g. 850.00"
-                                        />
-                                        <p className="text-xs text-slate-400 mt-1">Applied if service $\ge$ 30 days.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Short Term Daily Rate (₹)</label>
-                                        <input
-                                            type="number"
-                                            required
-                                            min="0"
-                                            step="0.01"
-                                            value={formData.short_term_daily_rate}
-                                            onChange={(e) => setFormData({ ...formData, short_term_daily_rate: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                            placeholder="e.g. 1000.00"
-                                        />
-                                        <p className="text-xs text-slate-400 mt-1">Applied if service &lt; 30 days.</p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Deposit Received (₹)</label>
-                                        <input
-                                            type="number"
-                                            required
-                                            min="0"
-                                            step="0.01"
-                                            value={formData.deposit_received}
-                                            onChange={(e) => setFormData({ ...formData, deposit_received: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                            placeholder="e.g. 15000.00"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Status</label>
-                                        <select
-                                            value={formData.status}
-                                            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
-                                        >
-                                            <option value="Available">Available</option>
-                                            <option value="Active">Active</option>
-                                            <option value="On Leave">On Leave</option>
-                                        </select>
-                                    </div>
-                                </div>
 
-                                <div className="border-t border-slate-100 pt-4 mt-4">
-                                    <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                        <UserCheck className="w-4 h-4 text-primary" />
-                                        Extended Details (KYC)
-                                    </h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Aadhaar Card Number <span className="text-red-500">*</span></label>
-                                            <input
-                                                type="text"
-                                                required
-                                                maxLength={12}
-                                                value={formData.aadhaar_number}
-                                                onChange={(e) => setFormData({ ...formData, aadhaar_number: e.target.value.replace(/\D/g, '') })}
-                                                className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                                placeholder="12 Digit Aadhaar"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Phone Number <span className="text-red-500">*</span></label>
-                                            <input
-                                                type="tel"
-                                                required
-                                                value={formData.phone}
-                                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                                placeholder="+91..."
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Date of Birth</label>
-                                            <input
-                                                type="date"
-                                                value={formData.dob}
-                                                onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="mt-4">
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Residential Address</label>
-                                        <textarea
-                                            value={formData.address}
-                                            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm resize-none h-20"
-                                            placeholder="Full address..."
-                                        />
-                                    </div>
-                                </div>
+                            {/* Modal Tabs Navigation */}
+                            <div className="px-6 py-3 border-b border-slate-100 bg-white flex items-center gap-2 overflow-x-auto shrink-0 no-scrollbar">
+                                <button onClick={() => setModalTab('profile')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'profile' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                    <Edit3 className="w-4 h-4" /> Profile Info
+                                </button>
+                                <button onClick={() => setModalTab('kyc')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'kyc' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                    <UserCheck className="w-4 h-4" /> KYC Details
+                                </button>
+                                <button onClick={() => setModalTab('vault')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'vault' ? 'bg-emerald-50 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                    <Upload className="w-4 h-4" /> Document Vault
+                                </button>
+                                {modalMode === 'edit' && (
+                                    <>
+                                        <button onClick={() => setModalTab('performance')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'performance' ? 'bg-amber-50 text-amber-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                            <Bot className="w-4 h-4" /> Performance
+                                        </button>
+                                        <button onClick={() => setModalTab('history')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'history' ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                            <History className="w-4 h-4" /> Salary History
+                                        </button>
+                                    </>
+                                )}
+                            </div>
 
-                                {/* Document Upload Section */}
-                                <div className="border-t border-slate-100 pt-4 mt-4">
-                                    <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-primary" />
-                                        Verification Documents
-                                    </h3>
+                            <form onSubmit={handleWorkerSubmit} className="flex-1 overflow-y-auto bg-slate-50/30">
+                                <div className="p-6 space-y-6">
+                                    {modalTab === 'profile' && (
+                                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                <div className="space-y-1.5 font-[Inter]">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Full Legal Name</label>
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        value={formData.name}
+                                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                        placeholder="e.g. Rahul Sharma"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Role / Designation</label>
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        value={formData.role}
+                                                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                        placeholder="e.g. ICU Nurse / GDA"
+                                                    />
+                                                </div>
+                                            </div>
 
-                                    <div className="border-2 border-dashed border-slate-200 hover:border-primary/50 transition-colors rounded-xl p-6 flex flex-col items-center justify-center bg-slate-50 cursor-pointer text-center relative overflow-hidden group">
-                                        <input
-                                            type="file"
-                                            multiple
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                            onChange={(e) => {
-                                                if (e.target.files && e.target.files.length > 0) {
-                                                    const newFiles = Array.from(e.target.files);
-                                                    setFormData(prev => ({
-                                                        ...prev,
-                                                        documents: [...(prev.documents || []), ...newFiles]
-                                                    }));
-                                                }
-                                            }}
-                                        />
-                                        <div className="w-12 h-12 bg-white shadow-sm rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                            <Upload className="w-6 h-6 text-primary" />
+                                            <div className="space-y-1.5">
+                                                <label className="text-sm font-bold text-slate-700 ml-1">Deployment Location (Client)</label>
+                                                <select
+                                                    value={formData.assigned_client}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setFormData({
+                                                            ...formData,
+                                                            assigned_client: val,
+                                                            status: val ? 'Active' : 'Available'
+                                                        });
+                                                    }}
+                                                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                >
+                                                    <option value="">— Bench / Floating (Available) —</option>
+                                                    {pipelineLeads.map(lead => (
+                                                        <option key={lead.id} value={lead.name}>
+                                                            {lead.name} ({lead.pipeline_stage})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="grid md:grid-cols-3 gap-6">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Monthly Daily Rate (₹)</label>
+                                                    <input
+                                                        type="number"
+                                                        required
+                                                        min="0"
+                                                        value={formData.monthly_daily_rate}
+                                                        onChange={(e) => setFormData({ ...formData, monthly_daily_rate: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Deposit Amount (₹)</label>
+                                                    <input
+                                                        type="number"
+                                                        required
+                                                        min="0"
+                                                        value={formData.deposit_received}
+                                                        onChange={(e) => setFormData({ ...formData, deposit_received: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Work Status</label>
+                                                    <select
+                                                        value={formData.status}
+                                                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                    >
+                                                        <option value="Available">Available</option>
+                                                        <option value="Active">Active</option>
+                                                        <option value="On Leave">On Leave</option>
+                                                    </select>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <p className="font-semibold text-slate-700 mb-1">Upload ID proofs & Certifications</p>
-                                        <p className="text-xs text-slate-500 max-w-xs">Drag and drop files here, or click to browse. Supports PDF, JPG, PNG (Max 5MB).</p>
-                                    </div>
+                                    )}
 
-                                    {formData.documents && formData.documents.length > 0 && (
-                                        <div className="mt-4 flex flex-col gap-2">
-                                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Attached Files ({formData.documents.length})</h4>
-                                            <div className="max-h-32 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                                                {formData.documents.map((file, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-white">
-                                                        <div className="flex items-center gap-2 overflow-hidden">
-                                                            <FileText className="w-4 h-4 text-primary shrink-0" />
-                                                            <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
+                                    {modalTab === 'kyc' && (
+                                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1 flex items-center gap-2">
+                                                        <UserCheck className="w-4 h-4 text-indigo-500" /> Aadhaar Card Number
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        maxLength={12}
+                                                        value={formData.aadhaar_number}
+                                                        onChange={(e) => setFormData({ ...formData, aadhaar_number: e.target.value.replace(/\D/g, '') })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-indigo-100 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 text-sm transition-all bg-white"
+                                                        placeholder="12 Digit Aadhaar"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1 flex items-center gap-2">
+                                                        <Phone className="w-4 h-4 text-emerald-500" /> WhatsApp Number
+                                                    </label>
+                                                    <input
+                                                        type="tel"
+                                                        required
+                                                        value={formData.phone}
+                                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-emerald-100 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 text-sm transition-all bg-white"
+                                                        placeholder="+91..."
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Date of Birth</label>
+                                                    <input
+                                                        type="date"
+                                                        value={formData.dob}
+                                                        onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Full Residential Address</label>
+                                                    <textarea
+                                                        value={formData.address}
+                                                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white resize-none h-[110px]"
+                                                        placeholder="Full village/city address..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {modalTab === 'vault' && (
+                                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+                                            <div className="bg-emerald-50/50 rounded-3xl border-2 border-dashed border-emerald-200 p-8 flex flex-col items-center justify-center text-center group cursor-pointer relative overflow-hidden transition-all hover:bg-emerald-50 hover:border-emerald-400">
+                                                <input
+                                                    type="file"
+                                                    multiple
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                    onChange={(e) => {
+                                                        if (e.target.files && e.target.files.length > 0) {
+                                                            const newFiles = Array.from(e.target.files);
+                                                            setFormData(prev => ({ ...prev, documents: [...(prev.documents || []), ...newFiles] }));
+                                                        }
+                                                    }}
+                                                />
+                                                <div className="w-16 h-16 bg-white shadow-xl rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform rotate-3 group-hover:rotate-0">
+                                                    <Upload className="w-8 h-8 text-emerald-600" />
+                                                </div>
+                                                <h3 className="text-lg font-bold text-emerald-900 mb-1">Worker Document Vault</h3>
+                                                <p className="text-sm text-emerald-600 max-w-sm mb-4">Click or drag Aadhaar, Nurse Certifications, or Police Verifications to store them securely.</p>
+                                                <div className="flex gap-2">
+                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-emerald-700 uppercase tracking-widest border border-emerald-100 shadow-sm">PDF</span>
+                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-emerald-700 uppercase tracking-widest border border-emerald-100 shadow-sm">DOCX</span>
+                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-emerald-700 uppercase tracking-widest border border-emerald-100 shadow-sm">IMAGE</span>
+                                                </div>
+                                            </div>
+                                            
+                                            {formData.documents && formData.documents.length > 0 && (
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    {formData.documents.map((file, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all group/file">
+                                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 group-hover/file:bg-emerald-50 transition-colors">
+                                                                    <FileText className="w-5 h-5 text-emerald-600" />
+                                                                </div>
+                                                                <div className="overflow-hidden">
+                                                                    <p className="text-xs font-bold text-slate-900 truncate">{file.name}</p>
+                                                                    <p className="text-[10px] text-slate-400">Ready for storage</p>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    setFormData(prev => ({ ...prev, documents: prev.documents.filter((_, i) => i !== idx) }));
+                                                                }}
+                                                                className="text-slate-300 hover:text-rose-500 p-2 rounded-lg transition-colors"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    documents: prev.documents.filter((_, i) => i !== idx)
-                                                                }));
-                                                            }}
-                                                            className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded transition-colors shrink-0"
-                                                        >
-                                                            <X className="w-3.5 h-3.5" />
-                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {modalTab === 'performance' && modalMode === 'edit' && (
+                                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+                                            <div className="grid grid-cols-4 gap-4">
+                                                <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 text-center shadow-sm">
+                                                    <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Rating</p>
+                                                    <p className="text-3xl font-black text-amber-600">⭐{workers.find(w => w.id === editingWorkerId)?.stats?.rating || '5.0'}</p>
+                                                </div>
+                                                <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 text-center shadow-sm">
+                                                    <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Present</p>
+                                                    <p className="text-3xl font-black text-emerald-600">{workers.find(w => w.id === editingWorkerId)?.stats?.presentDays || 0}d</p>
+                                                </div>
+                                                <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100 text-center shadow-sm">
+                                                    <p className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-1">Absent</p>
+                                                    <p className="text-3xl font-black text-rose-600">{workers.find(w => w.id === editingWorkerId)?.stats?.absentDays || 0}d</p>
+                                                </div>
+                                                <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100 text-center shadow-sm">
+                                                    <p className="text-xs font-bold text-blue-500 uppercase tracking-widest mb-1">Hours</p>
+                                                    <p className="text-3xl font-black text-blue-600">{workers.find(w => w.id === editingWorkerId)?.stats?.totalHours || 0}h</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                                                        <Bot className="w-8 h-8" />
                                                     </div>
-                                                ))}
+                                                    <div>
+                                                        <h3 className="font-bold text-slate-900">AI Performance Summary</h3>
+                                                        <p className="text-sm text-slate-500">Analytics generated from real-time customer feedback.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md">Stable Growth</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {modalTab === 'history' && modalMode === 'edit' && (
+                                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
+                                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                                {payrollItems.filter(p => p.worker === formData.name).length > 0 ? (
+                                                    <table className="w-full text-left text-sm">
+                                                        <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-400 font-bold uppercase tracking-tighter text-[10px]">
+                                                            <tr>
+                                                                <th className="px-6 py-4">Service Month</th>
+                                                                <th className="px-6 py-4">Daily Logic</th>
+                                                                <th className="px-6 py-4 text-right">Invoice Value</th>
+                                                                <th className="px-6 py-4 text-center">Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100">
+                                                            {payrollItems.filter(p => p.worker === formData.name).map((p, i) => (
+                                                                <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                                                                    <td className="px-6 py-4 font-bold text-slate-900">{p.month} {currentYear}</td>
+                                                                    <td className="px-6 py-4 text-slate-500 font-medium">{p.days_worked} Days @ ₹{p.daily_rate}</td>
+                                                                    <td className="px-6 py-4 text-right font-black text-indigo-600">₹{(p.days_worked * p.daily_rate).toLocaleString()}</td>
+                                                                    <td className="px-6 py-4 text-center">
+                                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${p.status === 'Paid' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200' : 'bg-amber-100 text-amber-600 border border-amber-200'}`}>
+                                                                            {p.status}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                ) : (
+                                                    <div className="p-10 text-center flex flex-col items-center">
+                                                        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4"><Clock className="w-8 h-8 text-slate-300" /></div>
+                                                        <p className="font-bold text-slate-900">No Transaction History</p>
+                                                        <p className="text-sm text-slate-500 max-w-xs mx-auto">This worker has not been processed in any payroll cycle yet.</p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
                                 </div>
 
-                                <div className="pt-2 flex gap-3 border-t border-slate-100 mt-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsModalOpen(false)}
-                                        className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                                    >
-                                        Cancel
+                                <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4 sticky bottom-0 z-30">
+                                    <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 px-6 rounded-2xl font-bold text-slate-500 bg-white border border-slate-200 hover:bg-slate-100 transition-all">
+                                        Discard Changes
                                     </button>
-                                    <button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center"
-                                    >
-                                        {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save Worker'}
+                                    <button type="submit" disabled={isSubmitting} className="flex-1 py-4 px-6 rounded-2xl font-bold text-white bg-primary hover:bg-primary/90 hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:translate-y-0 flex items-center justify-center gap-2">
+                                        {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                                            <>
+                                                <CheckCircle2 className="w-5 h-5" />
+                                                {modalMode === 'add' ? 'Confirm Onboarding' : 'Save Portfolio'}
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </form>
@@ -1199,6 +1542,102 @@ export default function HR() {
                         </div>
                     </div>
                 )}
+
+            {/* Invoice Preview Modal */}
+            {isInvoicePreviewModalOpen && previewInvoiceItem && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-900">Invoice Preview: {previewInvoiceItem.client_name || 'Client'}</h2>
+                                <p className="text-sm text-slate-500 mt-1">Review and modify invoice details before generating PDF.</p>
+                            </div>
+                            <button onClick={() => setIsInvoicePreviewModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white shadow-sm border border-slate-200">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="p-6 flex-1 overflow-y-auto bg-slate-50/50">
+                            <div className="bg-white border text-sm border-slate-200 rounded-xl p-6 shadow-sm mb-6">
+                                <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-lg">HealthFirst AI</h3>
+                                        <p className="text-slate-500">Invoice #INV-{Math.floor(Math.random()*10000)}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <h3 className="font-bold text-blue-600 text-lg mb-1">Tax Invoice</h3>
+                                        <p className="text-slate-500">Bill To: <span className="font-medium text-slate-800">{previewInvoiceItem.client_name}</span></p>
+                                    </div>
+                                </div>
+                                <table className="w-full text-left mb-6">
+                                    <thead className="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            <th className="pb-2 font-semibold">Service</th>
+                                            <th className="pb-2 font-semibold text-center">Days</th>
+                                            <th className="pb-2 font-semibold text-right">Rate</th>
+                                            <th className="pb-2 font-semibold text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        <tr>
+                                            <td className="py-3 font-medium text-slate-900">{previewInvoiceItem.worker}</td>
+                                            <td className="py-3 text-center text-slate-600">{previewInvoiceItem.days_worked}</td>
+                                            <td className="py-3 text-right text-slate-600">₹{previewInvoiceItem.daily_rate}</td>
+                                            <td className="py-3 text-right font-bold text-slate-900">₹{(previewInvoiceItem.days_worked * previewInvoiceItem.daily_rate).toFixed(2)}</td>
+                                        </tr>
+                                        {Number(invoiceExtras.additionalCharge) > 0 && (
+                                            <tr>
+                                                <td className="py-3 font-medium text-slate-900">{invoiceExtras.chargeDesc}</td>
+                                                <td className="py-3 text-center">-</td>
+                                                <td className="py-3 text-right">-</td>
+                                                <td className="py-3 text-right font-bold text-slate-900">₹{Number(invoiceExtras.additionalCharge).toFixed(2)}</td>
+                                            </tr>
+                                        )}
+                                        {Number(invoiceExtras.discount) > 0 && (
+                                            <tr>
+                                                <td className="py-3 font-medium text-emerald-600">Discount Applied</td>
+                                                <td className="py-3 text-center">-</td>
+                                                <td className="py-3 text-right">-</td>
+                                                <td className="py-3 text-right font-bold text-emerald-600">- ₹{Number(invoiceExtras.discount).toFixed(2)}</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                                <div className="border-t border-slate-200 pt-4 flex justify-between items-center text-lg">
+                                    <span className="font-bold text-slate-600">Final Total Due:</span>
+                                    <span className="font-black text-blue-600 tracking-tight">
+                                        ₹{((previewInvoiceItem.days_worked * previewInvoiceItem.daily_rate) + Number(invoiceExtras.additionalCharge) - Number(invoiceExtras.discount)).toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <h3 className="font-bold text-slate-700 mb-3 ml-1 text-sm uppercase tracking-wider">Add Custom Line Items</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5 focus-within:relative z-10">
+                                    <label className="text-xs font-semibold text-slate-600 ml-1">Additional Charge (₹)</label>
+                                    <input type="number" min="0" value={invoiceExtras.additionalCharge || ''} onChange={(e) => setInvoiceExtras({ ...invoiceExtras, additionalCharge: Number(e.target.value) })} className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow shadow-sm" placeholder="e.g. 500" />
+                                </div>
+                                <div className="space-y-1.5 focus-within:relative z-10">
+                                    <label className="text-xs font-semibold text-slate-600 ml-1">Charge Description</label>
+                                    <input type="text" value={invoiceExtras.chargeDesc} onChange={(e) => setInvoiceExtras({ ...invoiceExtras, chargeDesc: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow shadow-sm" placeholder="Platform fee, overtimes..." />
+                                </div>
+                                <div className="space-y-1.5 md:col-span-2 focus-within:relative z-10">
+                                    <label className="text-xs font-semibold text-slate-600 ml-1">Discount Amount (₹)</label>
+                                    <input type="number" min="0" value={invoiceExtras.discount || ''} onChange={(e) => setInvoiceExtras({ ...invoiceExtras, discount: Number(e.target.value) })} className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow shadow-sm" placeholder="e.g. 1000" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-100 flex gap-4 bg-white relative z-20">
+                            <button onClick={() => setIsInvoicePreviewModalOpen(false)} className="flex-1 px-6 py-3 border-2 border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors">
+                                Cancel
+                            </button>
+                            <button onClick={handleDownloadSingleInvoice} className="flex-1 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 transition-all">
+                                <FileText className="w-5 h-5" />
+                                Download Custom PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

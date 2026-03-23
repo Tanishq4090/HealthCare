@@ -66,6 +66,8 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/',
     server: {
+      port: 5174,
+      strictPort: true,
       proxy: {
         '/api': 'http://localhost:3001',
       },
@@ -85,6 +87,7 @@ export default defineConfig(({ mode }) => {
         includeAssets: ['favicon.svg'],
         manifest: pwaManifest as any,
         workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB limit
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           runtimeCaching: [
             {

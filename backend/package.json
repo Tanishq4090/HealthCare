@@ -11,9 +11,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@google/genai": "^1.44.0",
+    "@supabase/supabase-js": "^2.99.3",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
+    "express-rate-limit": "^8.3.1",
+    "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
     "morgan": "^1.10.0",
     "ws": "^8.19.0"

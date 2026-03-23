@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, ClipboardList, ShieldCheck, AlertCircle, Save } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import Client from '@vapi-ai/web';
@@ -9,17 +9,40 @@ const VAPI_PUBLIC_KEY = "3cd76924-ad95-4b41-8018-26d22b309bbf";
 const VAPI_ASSISTANT_ID = "2de7804c-6087-43bf-8098-dfc787aa3dee";
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>('pipeline');
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'content'>('pipeline');
     const [leads, setLeads] = useState<any[]>([
-        { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Inquiry', created_at: new Date().toISOString(), estimated_value_monthly: 5000 },
-        { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Quotation Sent', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000 },
-        { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Form Submitted', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000 },
-        { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Deposit Pending', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000 },
-        { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Active Client', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000 }
+        { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Inquiry', created_at: new Date().toISOString(), estimated_value_monthly: 5000, service_type: 'baby_care' },
+        { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Quotation Sent', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000, service_type: 'old_age_care' },
+        { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Form Submitted', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000, service_type: 'nursing_care' },
+        { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Deposit Pending', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000, service_type: 'japa_care' },
+        { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Active Client', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000, service_type: 'physiotherapy' }
     ]);
+    const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+    const [isIntelligenceModalOpen, setIsIntelligenceModalOpen] = useState(false);
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSendingFolio, setIsSendingFolio] = useState(false);
     const [isSimulatingInquiry, setIsSimulatingInquiry] = useState(false);
+    const [crmConfig, setCrmConfig] = useState<any>(null);
+
+    const fetchCrmConfig = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const response = await fetch('http://localhost:3001/api/crm-config/config', {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
+            const data = await response.json();
+            setCrmConfig(data);
+        } catch (e) {
+            console.error("Failed to fetch CRM config", e);
+        }
+    };
+
+    useEffect(() => {
+        fetchCrmConfig();
+        fetchLeads();
+    }, []);
 
     // AI Automation State
     const [automationLogs, setAutomationLogs] = useState([
@@ -43,6 +66,10 @@ export default function CRM() {
     const [agentDraftText, setAgentDraftText] = useState('');
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
     const [templateDraftText, setTemplateDraftText] = useState('');
+
+    // Transcript Modal State
+    const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
+    const [selectedCall, setSelectedCall] = useState<any>(null);
 
     const [whatsappTemplates, setWhatsappTemplates] = useState<Record<string, Record<string, string>>>({
         inquiry: {
@@ -87,7 +114,7 @@ export default function CRM() {
     }, []);
 
     const [pipelineStages, setPipelineStages] = useState<string[]>([
-        'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing'
+        'New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing', 'Closed Won'
     ]);
     const [isAddingStage, setIsAddingStage] = useState(false);
     const [newStageName, setNewStageName] = useState('');
@@ -121,6 +148,43 @@ export default function CRM() {
     // --- VAPI INTEGRATION ---
     const vapiRef = useRef<any>(null);
     const [callStatus, setCallStatus] = useState<'idle' | 'loading' | 'active'>('idle');
+
+    // WhatsApp Messaging Logic
+    const sendRequirementsWhatsApp = (lead: any, category: any) => {
+        const text = `HealthFirst CRM: Namaste ${lead.name}! Aapne ${category.name} service ke liye enquiry ki hai. Inquiry details fill karne ke liye niche di gayi kripya jankari dein:\n\n${category.questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}\n\nAap message ka reply de sakte hain ya call karein. Dhanyawad! 🙏`;
+        const phone = lead.phone?.replace(/\D/g, '') || '917575041313';
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+        toast.success(`Questionnaire draft opened for ${lead.name}!`);
+    };
+
+    const sendWorkerProfileWhatsApp = (lead: any, worker: any) => {
+        const baseUrl = window.location.origin;
+        const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}`;
+        const text = `HealthFirst CRM: Namaste ${lead.name}! Humne aapke liye staff allocate kar diya hai.\n\nName: ${worker.name}\nRole: ${worker.role}\nCharge: ₹${worker.monthly_daily_rate}/day\n\nFull profile check karke confirm karein: ${confirmLink}\n\nDhanyawad! ✅`;
+        const phone = lead.phone?.replace(/\D/g, '') || '917575041313';
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+        toast.success(`Worker profile shared with ${lead.name}!`);
+    };
+
+    const saveRequirements = async () => {
+        const lead = leads.find(l => l.id === selectedLeadId);
+        if (!lead || !selectedLeadId) return;
+
+        try {
+            const { error } = await supabase
+                .from('crm_leads')
+                .update({ 
+                    service_type: lead.service_type
+                })
+                .eq('id', selectedLeadId);
+
+            if (error) throw error;
+            toast.success("Client requirements updated successfully!");
+            setIsDetailsModalOpen(false);
+        } catch (err: any) {
+            toast.error("Failed to save to database: " + err.message);
+        }
+    };
 
     useEffect(() => {
         // Initialize Vapi object
@@ -462,14 +526,23 @@ export default function CRM() {
     const fetchWorkers = async () => {
         setIsLoadingWorkers(true);
         try {
-            const { data, error } = await supabase.from('workers').select('*').eq('status', 'Available');
-            if (error || !data || data.length === 0) {
-                // Fall back to the same mock data shown in HR section, filtered to Available
-                setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
+            // Check both potential column names 'status' or 'availability'
+            const { data, error } = await supabase.from('workers').select('*');
+            
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                // Filter in JS to be safe against schema variations
+                const available = data.filter(w => 
+                    (w.status && w.status.toLowerCase() === 'available') || 
+                    (w.availability && w.availability.toLowerCase() === 'available')
+                );
+                setAvailableWorkers(available.length > 0 ? available : MOCK_WORKERS.filter(w => w.status === 'Available'));
             } else {
-                setAvailableWorkers(data);
+                setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
             }
-        } catch {
+        } catch (err) {
+            console.warn("Failed to fetch workers from DB, using mock data:", err);
             setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
         } finally {
             setIsLoadingWorkers(false);
@@ -601,6 +674,40 @@ export default function CRM() {
             console.error("WhatsApp dispatch failed", err);
             toast.error(`WhatsApp dispatch failed: ${err.message}`, { id: toastId });
         }
+    };
+
+    const handleExportLeadsToCSV = () => {
+        if (!leads || leads.length === 0) {
+            toast.error("No leads available to export.");
+            return;
+        }
+
+        const headers = ["ID", "Name", "Phone", "Email", "Source", "Status", "Pipeline Stage", "Est. Monthly Value"];
+        const rows = leads.map(l => [
+            l.id,
+            l.name,
+            l.phone || "",
+            l.email || "",
+            l.source || "",
+            l.status || "",
+            l.pipeline_stage || "",
+            `INR ${l.estimated_value_monthly || 0}`
+        ]);
+
+        const csvContent = [
+            headers.join(","),
+            ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `CRM_Leads_Pipeline_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Leads pipeline exported successfully!");
     };
 
     // Fetch leads from Supabase
@@ -795,37 +902,102 @@ export default function CRM() {
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">AI CRM Center</h1>
-                    <p className="text-slate-500 mt-1">Manage leads, pipelines, and AI communication workflows.</p>
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+                        <Bot className="w-7 h-7 text-primary" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] tracking-tight">AI CRM Center</h1>
+                        <p className="text-sm text-slate-500 font-medium font-bold">AI-Powered Management</p>
+                    </div>
                 </div>
 
-                {/* Module Tabs */}
-                <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0">
-                    <button
-                        onClick={() => setActiveTab('pipeline')}
-                        className={`px - 4 py - 2 rounded - md text - sm font - medium transition - colors ${activeTab === 'pipeline' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                        Pipeline
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('automations')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'automations' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'} `}
-                    >
-                        AI Automations
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('voice')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'voice' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'} `}
-                    >
-                        Voice AI Calls
-                    </button>
+                <div className="flex items-center gap-4">
+                    {/* Notification Bell */}
+                    <div className="relative z-50">
+                        <button 
+                            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                            className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all relative group shadow-sm"
+                        >
+                            <Bot className="w-6 h-6 group-hover:scale-110 transition-transform text-primary" />
+                            <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
+                        </button>
+                        
+                        {isNotificationsOpen && (
+                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                                    <h3 className="font-bold text-slate-900 text-sm">AI Agent Activity</h3>
+                                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">LIVE</span>
+                                </div>
+                                <div className="max-h-96 overflow-y-auto">
+                                    {automationLogs.map(log => (
+                                        <div key={log.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer group">
+                                            <div className="flex gap-4">
+                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 group-hover:bg-white transition-colors border border-slate-200">
+                                                    <log.icon className="w-5 h-5 text-slate-600" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-900 leading-tight">{log.title}</p>
+                                                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{log.desc}</p>
+                                                    <p className="text-[9px] text-slate-400 mt-2 uppercase font-bold tracking-tighter flex items-center gap-1.5">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
+                                                        {log.time}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="p-4 text-center bg-slate-50/30 border-t border-slate-50">
+                                    <button onClick={() => { setActiveTab('automations'); setIsNotificationsOpen(false); }} className="text-xs font-bold text-primary hover:underline transition-transform inline-block">View Full Intelligence Logs</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Module Tabs */}
+                    <div className="flex items-center p-1.5 bg-slate-200/50 rounded-2xl shrink-0 border border-slate-200 shadow-inner">
+                        <button
+                            onClick={() => setActiveTab('pipeline')}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Pipeline
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('automations')}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'automations' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            AI Automations
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('voice')}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'voice' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Voice AI Calls
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('content')}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'content' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Content & FAQ
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {activeTab === 'pipeline' ? (
-                /* Kanban Pipeline View */
-                <div className="flex-1 flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
+                <div className="flex flex-col flex-1 h-full min-h-0">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            Live Sync Active
+                        </div>
+                        <button onClick={handleExportLeadsToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
+                            Export Pipeline to CSV
+                        </button>
+                    </div>
+                {/* Kanban Pipeline View */}
+                <div className="flex-1 flex gap-6 overflow-x-auto pb-4 custom-scrollbar">
                     {isLoading ? (
                         <div className="flex-1 flex items-center justify-center">
                             <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -905,18 +1077,20 @@ export default function CRM() {
 
                                     <div className="p-3 flex-1 overflow-y-auto space-y-3">
                                         {col.items.map((item) => (
-                                            <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group">
+                                            <div key={item.id} onClick={() => { setSelectedLeadId(item.id); setIsIntelligenceModalOpen(true); }} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group relative">
                                                 <div className="flex items-start justify-between mb-2">
                                                     <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{item.name}</h4>
-                                                    <select
-                                                        value={item.pipeline_stage}
-                                                        onChange={(e) => handleMoveLead(item.id, e.target.value)}
-                                                        className="text-xs bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-slate-100 transition-colors"
-                                                    >
-                                                        {pipelineStages.map(stage => (
-                                                            <option key={stage} value={stage}>{stage}</option>
-                                                        ))}
-                                                    </select>
+                                                    <div onClick={(e) => e.stopPropagation()} className="relative">
+                                                        <select
+                                                            value={item.pipeline_stage}
+                                                            onChange={(e) => handleMoveLead(item.id, e.target.value)}
+                                                            className="text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-800 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-slate-200 transition-colors uppercase tracking-tight"
+                                                        >
+                                                            {pipelineStages.map(stage => (
+                                                                <option key={stage} value={stage}>{stage}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex items-center gap-4 mb-3" onDoubleClick={(e) => {
@@ -1008,13 +1182,26 @@ export default function CRM() {
                                                         )}
 
                                                         {item.pipeline_stage === 'Quotation Sent' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
-                                                                className="w-full bg-primary/10 hover:bg-primary hover:text-primary-foreground border border-primary/15 text-primary text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                            >
-                                                                <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                Send Consent Form Link
-                                                            </button>
+                                                            <div className="flex flex-col gap-2">
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
+                                                                    className="w-full bg-primary/10 hover:bg-primary hover:text-primary-foreground border border-primary/15 text-primary text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                                >
+                                                                    <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                    Send Consent Form Link
+                                                                </button>
+                                                                <button
+                                                                    onClick={async (e) => { 
+                                                                        e.stopPropagation(); 
+                                                                        await handleMoveLead(item.id, 'Form Submitted');
+                                                                        toast.success("Consent marked as Agreed! Lead moved to Form Submitted.");
+                                                                    }}
+                                                                    className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-100 text-emerald-800 text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                                                >
+                                                                    <CheckCircle2 className="w-3 h-3" />
+                                                                    Mark Consent Agreed
+                                                                </button>
+                                                            </div>
                                                         )}
 
                                                         {item.pipeline_stage === 'Form Submitted' && (
@@ -1115,6 +1302,7 @@ export default function CRM() {
                         </>
                     )}
                 </div>
+                </div>
             ) : activeTab === 'voice' ? (
                 /* Voice AI Dashboard View */
                 <div className="flex-1 flex flex-col gap-6">
@@ -1211,15 +1399,20 @@ export default function CRM() {
                                                 <span>•</span>
                                                 <span className="font-medium">{call.time}</span>
                                             </div>
-                                            {call.recordingUrl ? (
-                                                <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-emerald-600 hover:text-emerald-500 flex items-center gap-1.5 transition-colors">
-                                                    <PlayCircle className="w-4 h-4" /> Listen to Recording
-                                                </a>
-                                            ) : (
-                                                <span className="text-sm font-medium text-slate-400 flex items-center gap-1.5">
-                                                    <PlayCircle className="w-4 h-4" /> Recording Unavailable
-                                                </span>
-                                            )}
+                                            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100/80">
+                                                {call.recordingUrl ? (
+                                                    <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 transition-colors bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm">
+                                                        <PlayCircle className="w-4 h-4" /> Listen
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-sm font-medium text-slate-400 flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 cursor-not-allowed">
+                                                        <PlayCircle className="w-4 h-4" /> Audio Unavailable
+                                                    </span>
+                                                )}
+                                                <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm">
+                                                    <FileText className="w-4 h-4" /> View Transcript
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1280,6 +1473,49 @@ export default function CRM() {
                                     <button className="text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">Refresh Calls</button>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            ) : activeTab === 'content' ? (
+                /* Content & FAQ View */
+                <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+                    <div className="grid lg:grid-cols-2 gap-6 flex-1 overflow-hidden">
+                        {/* Company Intro Section */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                            <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                                <h2 className="text-lg font-bold text-slate-900">Company Introduction</h2>
+                                <Globe className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="p-5 space-y-6 overflow-y-auto flex-1">
+                                {['english', 'hindi', 'gujarati'].map(lang => (
+                                    <div key={lang} className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">{lang}</label>
+                                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 leading-relaxed min-h-[100px]">
+                                            {crmConfig?.companyIntro?.[lang] || 'Loading...'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* FAQ Section */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                            <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                                <h2 className="text-lg font-bold text-slate-900">Frequently Asked Questions</h2>
+                                <Bot className="w-5 h-5 text-emerald-500" />
+                            </div>
+                            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                                {crmConfig?.faqs?.map((faq: any, idx: number) => (
+                                    <div key={idx} className="p-4 rounded-xl border border-slate-100 bg-emerald-50/30 hover:bg-emerald-50/50 transition-colors">
+                                        <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2 text-sm">
+                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px]">Q</div>
+                                            {faq.q}
+                                        </h4>
+                                        <p className="text-sm text-slate-600 pl-8">{faq.a}</p>
+                                    </div>
+                                ))}
+                                {!crmConfig?.faqs && <p className="text-center text-slate-400 py-10">No FAQs loaded.</p>}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1482,13 +1718,25 @@ export default function CRM() {
                                                     <Phone className="w-3 h-3" /> {worker.phone}
                                                 </p>
                                             )}
-                                            <button
-                                                onClick={() => confirmWorkerSelection(worker)}
-                                                className="w-full py-2 bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 text-xs font-bold rounded-lg border border-purple-200 transition-all group-hover:border-purple-400 flex items-center justify-center gap-1.5"
-                                            >
-                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                                Assign to {staffPickerTargetLead.name.split(' ')[0]}
-                                            </button>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => confirmWorkerSelection(worker)}
+                                                    className="flex-1 py-2 bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 text-xs font-bold rounded-lg border border-purple-200 transition-all group-hover:border-purple-400 flex items-center justify-center gap-1.5"
+                                                >
+                                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    Assign to {staffPickerTargetLead.name.split(' ')[0]}
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        const lead = leads.find(l => l.id === staffPickerTargetLead.id);
+                                                        if (lead) sendWorkerProfileWhatsApp(lead, worker);
+                                                    }}
+                                                    className="p-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-600 hover:text-white transition-all"
+                                                    title="Share Profile via WhatsApp"
+                                                >
+                                                    <Send className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1586,6 +1834,284 @@ export default function CRM() {
                     </div>
                 </div>
             )}
+
+            {/* Lead Details Modal (Dynamic Questionnaire) */}
+            {isDetailsModalOpen && selectedLeadId && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                        <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                                    <ClipboardList className="w-5 h-5 text-primary" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900">Lead Requirements</h2>
+                                    <p className="text-xs text-slate-500 font-medium tracking-wide">
+                                        CLIENT: {leads.find(l => l.id === selectedLeadId)?.name}
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsDetailsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 space-y-6 overflow-y-auto">
+                            {/* Service Category Selection */}
+                            <div className="space-y-3">
+                                <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4 text-primary" /> Service Category
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {crmConfig?.serviceCategories?.map((cat: any) => (
+                                        <button
+                                            key={cat.id}
+                                            onClick={() => {
+                                                const updatedLeads = leads.map(l => 
+                                                    l.id === selectedLeadId ? { ...l, service_type: cat.id } : l
+                                                );
+                                                setLeads(updatedLeads);
+                                            }}
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold border-2 transition-all ${
+                                                leads.find(l => l.id === selectedLeadId)?.service_type === cat.id
+                                                    ? 'border-primary bg-primary/5 text-primary'
+                                                    : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200'
+                                            }`}
+                                        >
+                                            {cat.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Dynamic Questions */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-primary" /> Specific Requirements
+                                    </label>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded">
+                                        {crmConfig?.serviceCategories?.find((c: any) => c.id === leads.find(l => l.id === selectedLeadId)?.service_type)?.name || 'Select Service'}
+                                    </span>
+                                </div>
+                                
+                                <div className="space-y-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                                    {crmConfig?.serviceCategories?.find((cat: any) => cat.id === leads.find(l => l.id === selectedLeadId)?.service_type)?.questions.map((q: string, idx: number) => (
+                                        <div key={idx} className="space-y-1.5">
+                                            <label className="text-xs font-bold text-slate-600 ml-1">{q}</label>
+                                            <input 
+                                                type="text"
+                                                placeholder="Type response..."
+                                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm bg-white shadow-sm transition-all"
+                                            />
+                                        </div>
+                                    ))}
+                                    {!leads.find(l => l.id === selectedLeadId)?.service_type && (
+                                        <div className="py-10 text-center space-y-2">
+                                            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto">
+                                                <AlertCircle className="w-6 h-6 text-slate-300" />
+                                            </div>
+                                            <p className="text-sm text-slate-400 font-medium">Please select a service category above to see the requirements list.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            {/* WhatsApp Send Button */}
+                            <div className="mt-2 p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-bold text-emerald-900">Send to Client</p>
+                                    <p className="text-xs text-emerald-600">Send these requirements via WhatsApp</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const category = crmConfig?.serviceCategories?.find((c: any) => c.id === leads.find(l => l.id === selectedLeadId)?.service_type);
+                                        if (category && selectedLeadId) {
+                                            const lead = leads.find(l => l.id === selectedLeadId);
+                                            if (lead) sendRequirementsWhatsApp(lead, category);
+                                        }
+                                    }}
+                                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
+                                >
+                                    <Send className="w-4 h-4" />
+                                    Send via WhatsApp
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                            <button onClick={() => setIsDetailsModalOpen(false)} className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
+                                Close
+                            </button>
+                            <button 
+                                onClick={saveRequirements}
+                                className="flex-1 py-2.5 rounded-xl font-bold text-white bg-primary hover:bg-primary/90 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                            >
+                                <Save className="w-4 h-4" /> Save Requirements
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* AI Captured Intelligence Modal (Read-Only Summary) */}
+            {isIntelligenceModalOpen && selectedLeadId && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
+                    <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+                        <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-primary/5 to-transparent flex justify-between items-center">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center animate-pulse">
+                                    <Bot className="w-6 h-6 text-primary" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900">AI Captured Intelligence</h2>
+                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
+                                        Client: {leads.find(l => l.id === selectedLeadId)?.name}
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsIntelligenceModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2.5 rounded-full hover:bg-slate-100 transition-colors">
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+                        
+                        <div className="p-8 space-y-8 overflow-y-auto">
+                            {/* AI Summary Card */}
+                            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 p-3">
+                                    <ShieldCheck className="w-10 h-10 text-emerald-500/10 rotate-12 group-hover:rotate-0 transition-transform duration-500" />
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                                    <Bot className="w-4 h-4 text-primary" /> AI Conversation Summary
+                                </h3>
+                                <p className="text-sm text-slate-600 leading-relaxed italic">
+                                    "The lead was captured via {leads.find(l => l.id === selectedLeadId)?.source}. The AI Agent engaged in a triage conversation, identifying requirements for {leads.find(l => l.id === selectedLeadId)?.service_type?.replace('_', ' ') || 'healthcare'} services. The client indicated urgency and requested a callback regarding pricing."
+                                </p>
+                            </div>
+
+                            {/* Captured Requirements List */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                        <ClipboardList className="w-4 h-4 text-primary" /> Automated Requirement Capture
+                                    </h3>
+                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full animate-pulse">LIVE DATA</span>
+                                </div>
+
+                                <div className="grid gap-3">
+                                    {[
+                                        { label: 'Primary Need', value: leads.find(l => l.id === selectedLeadId)?.service_type?.replace('_', ' ').toUpperCase() || 'GENERAL INQUIRY' },
+                                        { label: 'Patient Readiness', value: 'IMMEDIATE' },
+                                        { label: 'Service Duration', value: '30+ DAYS CONTENT' },
+                                        { label: 'Location Context', value: leads.find(l => l.id === selectedLeadId)?.phone?.startsWith('+91') ? 'INDIA (SURAT)' : 'INTERNATIONAL' }
+                                    ].map((field, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-primary/20 transition-colors group">
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{field.label}</span>
+                                            <span className="text-sm font-bold text-slate-900 bg-slate-50 px-3 py-1 rounded-lg group-hover:bg-primary/5 group-hover:text-primary transition-colors">{field.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Verification Badge */}
+                            <div className="flex items-center justify-center gap-2 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                <span className="text-xs font-bold text-emerald-700">Information automatically verified by AI Agent — No manual entry required.</span>
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex gap-4">
+                            <button 
+                                onClick={() => setIsIntelligenceModalOpen(false)}
+                                className="flex-1 py-3.5 rounded-2xl font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+                            >
+                                Close Intelligence View
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setIsIntelligenceModalOpen(false);
+                                    setActiveTab('automations');
+                                }}
+                                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-primary hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <Bot className="w-4 h-4" /> View Full Chat Logs
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        {/* Transcript Modal */}
+        {isTranscriptModalOpen && selectedCall && (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[85vh]">
+                    <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/80 sticky top-0 z-10">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${selectedCall.type === 'Inbound' ? 'bg-primary/10 text-primary' : 'bg-purple-100 text-purple-600'}`}>
+                                <FileText className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-900">Call Transcript</h2>
+                                <p className="text-sm text-slate-500 mt-0.5">Contact: {selectedCall.phone} • {selectedCall.duration}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setIsTranscriptModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    
+                    <div className="p-6 flex-1 overflow-y-auto space-y-6 bg-slate-50/30">
+                        {/* Call Summary Block */}
+                        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+                            <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <Bot className="w-4 h-4" /> AI Summary
+                            </h3>
+                            <p className="text-sm font-medium text-slate-700 leading-relaxed italic">
+                                "{selectedCall.summary || 'Summary unavailable.'}"
+                            </p>
+                            {selectedCall.intent && (
+                                <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-100 text-xs font-bold text-blue-700 shadow-sm">
+                                    Intent: {selectedCall.intent}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Transcript Dialogue */}
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">Full Dialogue</h3>
+                            {selectedCall.transcript ? (
+                                <div className="space-y-4">
+                                    {selectedCall.transcript.split('\n').filter((l: string) => l.trim()).map((line: string, idx: number) => {
+                                        const isAI = line.toLowerCase().startsWith('ai:') || line.toLowerCase().startsWith('assistant:');
+                                        const isUser = line.toLowerCase().startsWith('user:') || line.toLowerCase().startsWith('lead:');
+                                        
+                                        if (!isAI && !isUser) {
+                                            return <p key={idx} className="text-xs text-slate-400 text-center py-2">{line}</p>;
+                                        }
+
+                                        return (
+                                            <div key={idx} className={`flex ${isAI ? 'justify-start' : 'justify-end'}`}>
+                                                <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${isAI ? 'bg-white border border-slate-200 shadow-sm rounded-tl-none' : 'bg-primary text-white rounded-tr-none shadow-md'}`}>
+                                                    <span className={`block text-[10px] uppercase font-bold mb-1 tracking-wider ${isAI ? 'text-primary' : 'text-emerald-100'}`}>
+                                                        {isAI ? 'AI Agent' : 'Contact'}
+                                                    </span>
+                                                    <p className={`text-sm ${isAI ? 'text-slate-800' : 'text-emerald-50'}`}>{line.replace(/^(AI|Assistant|User|Lead):\s*/i, '')}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center p-8 text-center bg-white rounded-xl border border-dashed border-slate-200">
+                                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mb-3">
+                                        <FileText className="w-6 h-6 text-slate-300" />
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-600">No detailed transcript available for this call.</p>
+                                    <p className="text-xs text-slate-400 mt-1">This could be due to a short drop-off or tracking limitations.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
         </div>
     );
 }

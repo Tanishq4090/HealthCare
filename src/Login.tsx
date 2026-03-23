@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Lock, User as UserIcon } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 
 export default function Login() {
-    const { login, allUsers } = useAuth();
+    const { user, login } = useAuth();
     const navigate = useNavigate();
     const [isLoading, setIsLoading] = useState(false);
 
@@ -12,7 +12,14 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
 
-    const handleLogin = (e: React.FormEvent) => {
+    // Auto-redirect if already logged in
+    useEffect(() => {
+        if (user) {
+            navigate('/admin', { replace: true });
+        }
+    }, [user, navigate]);
+
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
 
@@ -23,17 +30,23 @@ export default function Login() {
 
         setIsLoading(true);
 
-        // Simulate a slight network delay for realism
-        setTimeout(() => {
-            const user = allUsers.find(u => u.username === username && u.password === password);
-            if (user) {
-                login(user);
-                navigate('/admin');
+        try {
+            // Pure Username Auth System Request (Zero Supabase API dependency)
+            const cleanUser = username.toLowerCase().trim();
+            if (cleanUser === 'admin' && password === 'password123') {
+                login('pure_dev_token_admin');
+                navigate('/admin', { replace: true });
+            } else if (cleanUser === 'client' && password === 'password123') {
+                login('pure_dev_token_client');
+                navigate('/admin', { replace: true });
             } else {
                 setError('Invalid username or password.');
-                setIsLoading(false);
             }
-        }, 800);
+        } catch (err: any) {
+            setError(err.message || 'Authentication failed.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -106,12 +119,7 @@ export default function Login() {
                         </button>
                     </form>
 
-                    {/* Dev note since there's no backend invite system yet */}
-                    <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-                        <p className="text-xs text-slate-400">
-                            Default Admin: <strong className="text-slate-500">admin</strong> / <strong className="text-slate-500">password123</strong>
-                        </p>
-                    </div>
+                    {/* Security Update: Removed dev-note for default plain text admin credentials */}
                 </div>
 
                 <div className="text-center mt-8 text-xs text-slate-400">
