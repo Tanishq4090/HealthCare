@@ -26,7 +26,6 @@ import BlogDetailPage from './pages/public/BlogDetailPage';
 import ContactPage from './pages/public/ContactPage';
 import AppointmentPage from './pages/public/AppointmentPage';
 import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
-import MarkAttendance from './pages/hr/MarkAttendance';
 import NotFoundPage from './pages/NotFoundPage';
 import { APP_MODE } from './config/appMode';
 import { useEffect } from 'react';
