@@ -164,7 +164,7 @@ export default function AdminLayout() {
                                 </div>
                             )}
                         </div>
-                        <a href="http://localhost:5174" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors hidden sm:block">
+                        <a href="https://healthcare-website-ecru-delta.vercel.app" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors hidden sm:block">
                             View Public Site
                         </a>
                     </div>
