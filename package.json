@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:public": "cross-env VITE_APP_MODE=public vite",
-    "dev:os": "cross-env VITE_APP_MODE=os vite",
+    "dev:public": "cross-env VITE_APP_MODE=public vite --port 5174 --strictPort",
+    "dev:os": "cross-env VITE_APP_MODE=os vite --port 5173 --strictPort",
     "build": "tsc -b && vite build",
     "build:public": "node scripts/set-robots.mjs public && cross-env VITE_APP_MODE=public tsc -b && cross-env VITE_APP_MODE=public vite build",
     "build:os": "node scripts/set-robots.mjs os && cross-env VITE_APP_MODE=os tsc -b && cross-env VITE_APP_MODE=os vite build",
@@ -44,6 +44,7 @@
     "@supabase/supabase-js": "^2.97.0",
     "@tanstack/react-query": "^5.90.21",
     "@vapi-ai/web": "^2.5.2",
+    "axios": "^1.13.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

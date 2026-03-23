@@ -1,0 +1,10 @@
+src/admin/AccessControl.tsx(24,9): error TS2353: Object literal may only specify known properties, and 'password' does not exist in type 'Partial<User> | (() => Partial<User>)'.
+src/admin/AccessControl.tsx(41,37): error TS2353: Object literal may only specify known properties, and 'password' does not exist in type 'SetStateAction<Partial<User>>'.
+src/admin/AccessControl.tsx(56,27): error TS2339: Property 'password' does not exist on type 'Partial<User>'.
+src/admin/AccessControl.tsx(61,17): error TS2353: Object literal may only specify known properties, and 'password' does not exist in type 'User'.
+src/admin/AccessControl.tsx(61,36): error TS2339: Property 'password' does not exist on type 'Partial<User>'.
+src/admin/AccessControl.tsx(78,30): error TS2339: Property 'password' does not exist on type 'Partial<User>'.
+src/admin/AccessControl.tsx(78,62): error TS2339: Property 'password' does not exist on type 'Partial<User>'.
+src/admin/AccessControl.tsx(165,53): error TS2339: Property 'password' does not exist on type 'Partial<User>'.
+src/admin/AccessControl.tsx(166,79): error TS2353: Object literal may only specify known properties, and 'password' does not exist in type 'SetStateAction<Partial<User>>'.
+src/Login.tsx(4,1): error TS6133: 'supabase' is declared but its value is never read.

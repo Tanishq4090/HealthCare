@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Bot, Globe, QrCode } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { DollarSign, FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Bot, Globe, QrCode, History, Search, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '../lib/supabase';
 
 export default function Billing() {
-    const [activeTab, setActiveTab] = useState<'deposits' | 'monthly'>('deposits');
+    const [searchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
+    const [payments, setPayments] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     const [deposits, setDeposits] = useState([
         { id: 1, client: 'Apex Medical Corp', amount: '₹15,000', status: 'Pending Invoice', date: 'Oct 24, 2026', invoice_no: null },
@@ -33,26 +38,94 @@ export default function Billing() {
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
 
+    const fetchPayments = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('payments')
+                .select('*')
+                .order('payment_date', { ascending: false });
+            
+            if (error) throw error;
+            setPayments(data || []);
+        } catch (err: any) {
+            console.error('Error fetching payments:', err);
+            toast.error('Failed to load payment history');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'history') {
+            fetchPayments();
+        }
+    }, [activeTab]);
+
     const handleGenerateDepositInvoice = (id: number, clientName: string) => {
         const fakeInvoiceNo = `INV-D${Math.floor(Math.random() * 1000) + 500}`;
         setDeposits(prev => prev.map(d => d.id === id ? { ...d, status: 'Invoice Sent', invoice_no: fakeInvoiceNo } : d));
         toast.success(`System auto-generated Deposit Invoice ${fakeInvoiceNo}. PDF emailed automatically to ${clientName}!`);
     };
 
-    const handleCollectDeposit = (e: React.FormEvent) => {
+    const handleCollectDeposit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (activeDepositId) {
-            setDeposits(prev => prev.map(d => d.id === activeDepositId ? { ...d, status: 'Paid' } : d));
-            toast.success(`Deposit marked as paid via ${depositMethod}. Automated "Payment Confirmation & Thank You" greeting has been dispatched to the client.`);
+            const deposit = deposits.find(d => d.id === activeDepositId);
+            if (!deposit) return;
+
+            setIsLoading(true);
+            try {
+                // 1. Record in Payments table
+                const { error: payError } = await supabase.from('payments').insert([{
+                    amount: parseFloat(deposit.amount.replace(/[^\d.-]/g, '')),
+                    recorded_by: 'admin',
+                    transaction_ref: `${depositMethod.toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+                    payment_date: new Date().toISOString()
+                }]);
+
+                if (payError) throw payError;
+
+                // 2. Update local UI (Mock update)
+                setDeposits(prev => prev.map(d => d.id === activeDepositId ? { ...d, status: 'Paid' } : d));
+                toast.success(`Deposit marked as paid via ${depositMethod}. Recorded in Collection History.`);
+            } catch (err: any) {
+                console.error('Error recording deposit:', err);
+                toast.error('Failed to record payment in database');
+            } finally {
+                setIsLoading(false);
+            }
         }
         setIsDepositModalOpen(false);
     };
 
-    const handleAction = (action: string, clientName: string, id: number) => {
+    const handleAction = async (action: string, clientName: string, id: number) => {
         if (action === 'Record Monthly Payment') {
-            const txnId = `TXN-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-            setMonthlyBills(prev => prev.map(b => b.id === id ? { ...b, status: 'Paid' } : b));
-            toast.success(`Payment received for ${clientName}. Transaction ID: ${txnId} logged. Auto-greeting sent.`);
+            const bill = monthlyBills.find(b => b.id === id);
+            if (!bill) return;
+
+            setIsLoading(true);
+            try {
+                const txnId = `TXN-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+                
+                // 1. Record in Payments table
+                const { error: payError } = await supabase.from('payments').insert([{
+                    amount: parseFloat(bill.amount.replace(/[^\d.-]/g, '')),
+                    recorded_by: 'admin',
+                    transaction_ref: txnId,
+                    payment_date: new Date().toISOString()
+                }]);
+
+                if (payError) throw payError;
+
+                setMonthlyBills(prev => prev.map(b => b.id === id ? { ...b, status: 'Paid' } : b));
+                toast.success(`Payment gathered for ${clientName}. Transaction ID: ${txnId} logged.`);
+            } catch (err: any) {
+                console.error('Error recording payment:', err);
+                toast.error('Failed to log payment to history');
+            } finally {
+                setIsLoading(false);
+            }
         }
     };
 
@@ -122,6 +195,12 @@ export default function Billing() {
                     >
                         Monthly Billing
                     </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                        Collection History
+                    </button>
                 </div>
             </div>
 
@@ -174,7 +253,7 @@ export default function Billing() {
                         ))}
                     </div>
                 </div>
-            ) : (
+            ) : activeTab === 'monthly' ? (
                 /* Monthly Billing View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
                     <div className="p-5 border-b border-slate-200 bg-slate-50">
@@ -232,6 +311,80 @@ export default function Billing() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            ) : (
+                /* Collection History View */
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                            <History className="w-5 h-5 text-primary" />
+                            <h2 className="font-semibold text-slate-900">Recorded Collection Log</h2>
+                        </div>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                            <input
+                                type="text"
+                                placeholder="Search transactions..."
+                                className="pl-9 pr-4 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all w-full sm:w-64"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-auto">
+                        {isLoading ? (
+                            <div className="flex flex-col items-center justify-center py-20">
+                                <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+                                <span className="text-slate-500 font-medium">Loading collection records...</span>
+                            </div>
+                        ) : payments.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-center">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                    <DollarSign className="w-8 h-8 text-slate-400" />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">No Payments Recorded</h3>
+                                <p className="text-slate-500 max-w-xs">Use the "Record Payment" buttons in the other tabs to log collections here.</p>
+                            </div>
+                        ) : (
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                                        <th className="py-3 px-6">Date</th>
+                                        <th className="py-3 px-6">Reference ID</th>
+                                        <th className="py-3 px-6">Amount</th>
+                                        <th className="py-3 px-6">Verified By</th>
+                                        <th className="py-3 px-6 text-right">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {payments.map(payment => (
+                                        <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="py-4 px-6 text-sm text-slate-600">
+                                                {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
+                                                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Invoice: {payment.invoice_id ? 'INV-LINKED' : 'DIRECT-REC'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
+                                            </td>
+                                            <td className="py-4 px-6 text-sm text-slate-600 capitalize">
+                                                {payment.recorded_by}
+                                            </td>
+                                            <td className="py-4 px-6 text-right">
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    Success
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
             )}

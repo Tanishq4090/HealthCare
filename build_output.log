@@ -1,0 +1,32 @@
+
+> my-app@0.0.0 build
+> tsc -b && vite build
+
+[36mvite v7.3.0 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 4291 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist-public/[22m[32mregisterSW.js                              [39m[1m[2m    0.13 kB[22m[1m[22m
+[2mdist-public/[22m[32mmanifest.webmanifest                       [39m[1m[2m    0.85 kB[22m[1m[22m
+[2mdist-public/[22m[32mindex.html                                 [39m[1m[2m    3.48 kB[22m[1m[22m[2m │ gzip:   1.29 kB[22m
+[2mdist-public/[22m[35massets/index-DRQFjKRw.css                  [39m[1m[2m  165.00 kB[22m[1m[22m[2m │ gzip:  26.21 kB[22m
+[2mdist-public/[22m[36massets/purify.es-CovBOfck.js               [39m[1m[2m   22.58 kB[22m[1m[22m[2m │ gzip:   8.67 kB[22m
+[2mdist-public/[22m[36massets/jspdf.plugin.autotable-CBbcTuFj.js  [39m[1m[2m   30.91 kB[22m[1m[22m[2m │ gzip:   9.86 kB[22m
+[2mdist-public/[22m[36massets/index.es-B5FEtp0h.js                [39m[1m[2m  158.62 kB[22m[1m[22m[2m │ gzip:  52.95 kB[22m
+[2mdist-public/[22m[36massets/html2canvas.esm-DXEQVQnt.js         [39m[1m[2m  201.04 kB[22m[1m[22m[2m │ gzip:  47.43 kB[22m
+[2mdist-public/[22m[36massets/jspdf.es.min-DcmP_xqu.js            [39m[1m[2m  385.86 kB[22m[1m[22m[2m │ gzip: 126.13 kB[22m
+[2mdist-public/[22m[36massets/index-B8MJXFrZ.js                   [39m[1m[33m2,179.94 kB[39m[22m[2m │ gzip: 597.66 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 32.58s[39m
+
+PWA v1.2.0
+mode      generateSW
+precache  17 entries (8867.42 KiB)
+files generated
+  dist-public/sw.js
+  dist-public/workbox-4f6fa108.js

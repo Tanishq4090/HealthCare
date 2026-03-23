@@ -10,8 +10,30 @@ import {
   getOrCreate, addMessage, markRead,
   getAllConversations, getConversation, setAIEnabled
 } from "../services/conversationStore.js";
+import { requireAuth } from "../middleware/auth.js";
+import { validateStrict } from "../middleware/validation.js";
+import { body, param, query } from "express-validator";
+import rateLimit from "express-rate-limit";
+import * as whatsappService from "../services/whatsappService.js";
 
 const router = express.Router();
+
+// ── Strict Rate Limiters ──────────────────────────────────────────────────────
+const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour per IP
+  limit: 20, // 20 requests per hour strictly
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "AI quota exceeded. Please try again later." }
+});
+
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 5, // 5 OTP requests per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many verification requests. Please wait 15 minutes." }
+});
 
 const {
   META_ACCESS_TOKEN,
@@ -20,48 +42,31 @@ const {
   DEV_MODE,
 } = process.env;
 
-const META_API_URL = `https://graph.facebook.com/v19.0/${META_PHONE_NUMBER_ID}/messages`;
-
 // Broadcast function injected from server.js
 let broadcastFn = null;
 export function setWss(fn) { broadcastFn = fn; }
-function broadcast(event, data) { broadcastFn?.(event, data); }
-
-// ── Send WhatsApp via Meta API ────────────────────────────────────────────────
-async function sendWhatsApp(to, body) {
-  const cleanNumber = to.replace(/^\+/, "");
-  const res = await fetch(META_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${META_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: cleanNumber,
-      type: "text",
-      text: { body },
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || "Meta API error");
-  return data;
-}
+export function broadcast(event, data) { broadcastFn?.(event, data); }
 
 // ── CRM: Get all conversations ────────────────────────────────────────────────
-router.get("/conversations", (_req, res) => {
+router.get("/conversations", requireAuth, (_req, res) => {
   res.json(getAllConversations());
 });
 
 // ── CRM: Get single conversation ──────────────────────────────────────────────
-router.get("/conversations/:phone", (req, res) => {
+router.get("/conversations/:phone", [
+  param("phone").trim().isString().notEmpty(),
+  validateStrict
+], requireAuth, (req, res) => {
   const conv = getConversation(decodeURIComponent(req.params.phone));
   if (!conv) return res.status(404).json({ error: "Not found" });
   res.json(conv);
 });
 
 // ── CRM: Mark read ────────────────────────────────────────────────────────────
-router.post("/conversations/:phone/read", (req, res) => {
+router.post("/conversations/:phone/read", [
+  param("phone").trim().isString().notEmpty(),
+  validateStrict
+], requireAuth, (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   markRead(phone);
   broadcast("conversation_updated", getConversation(phone));
@@ -69,30 +74,33 @@ router.post("/conversations/:phone/read", (req, res) => {
 });
 
 // ── CRM: Toggle AI ────────────────────────────────────────────────────────────
-router.post("/conversations/:phone/ai", (req, res) => {
+router.post("/bot/toggle/:phone", [
+  param("phone").trim().isString().notEmpty(),
+  body("enabled").isBoolean(),
+  validateStrict
+], requireAuth, (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   const { enabled } = req.body;
-  setAIEnabled(phone, !!enabled);
+  setAIEnabled(phone, enabled);
   broadcast("conversation_updated", getConversation(phone));
-  res.json({ success: true });
+  res.json({ success: true, aiEnabled: enabled });
 });
 
 // ── CRM: Agent sends message ──────────────────────────────────────────────────
-router.post("/conversations/:phone/send", async (req, res) => {
+router.post("/conversations/:phone/send", [
+  param("phone").trim().isString().notEmpty(),
+  body("message").trim().isString().notEmpty(),
+  validateStrict
+], requireAuth, async (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   const { message } = req.body;
-  if (!message) return res.status(400).json({ error: "Message required" });
 
   const msg = addMessage(phone, "agent", message);
   broadcast("new_message", { phone, message: msg });
 
-  if (DEV_MODE?.trim() === "true") {
-    console.log(`[DEV] Agent → ${phone}: ${message}`);
-    return res.json({ success: true, message: msg });
-  }
-
   try {
-    await sendWhatsApp(phone, message);
+    const isDevMode = DEV_MODE?.trim() === "true";
+    await whatsappService.sendWhatsAppMessage(phone, message, isDevMode);
     res.json({ success: true, message: msg });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -100,29 +108,20 @@ router.post("/conversations/:phone/send", async (req, res) => {
 });
 
 // ── Booking confirmation message ──────────────────────────────────────────────
-router.post("/send-booking-confirmation", async (req, res) => {
-  const { phone, name, service, date, time, location } = req.body;
-  if (!phone || !name) return res.status(400).json({ error: "phone and name required" });
-
-  const serviceName = (service || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const message =
-    `✅ *Appointment Confirmed!*\n\n` +
-    `Hi ${name}, your 99 Care appointment is booked! Here are your details:\n\n` +
-    `📅 *Date:* ${date}\n` +
-    `⏰ *Time:* ${time}\n` +
-    `🏥 *Service:* ${serviceName}\n` +
-    `📍 *Location:* ${location}\n\n` +
-    `Our team will call you within 2 hours to confirm.\n\n` +
-    `For help: *+91 9016 116 564*\n` +
-    `_99 Care — Helping Hands_ 💙`;
-
-  if (DEV_MODE?.trim() === "true") {
-    console.log(`[DEV] Booking confirmation → ${phone}:\n${message}`);
-    return res.json({ success: true });
-  }
-
+router.post("/send-booking-confirmation", [
+  body("phone").trim().isString().notEmpty(),
+  body("name").trim().isString().notEmpty().escape(), // Escape names/locations to prevent basic XSS
+  body("service").trim().isString().notEmpty().escape(),
+  body("date").trim().isString().notEmpty().escape(),
+  body("time").trim().isString().notEmpty().escape(),
+  body("location").trim().isString().notEmpty().escape(),
+  validateStrict
+], async (req, res) => {
+  const payload = req.body;
+  
   try {
-    await sendWhatsApp(phone, message);
+    const isDevMode = DEV_MODE?.trim() === "true";
+    await whatsappService.sendBookingConfirmation(payload, isDevMode);
     res.json({ success: true });
   } catch (err) {
     console.error("[Booking confirmation] Failed:", err.message);
@@ -132,9 +131,12 @@ router.post("/send-booking-confirmation", async (req, res) => {
 });
 
 // ── CRM: Chat (AI reply test) ─────────────────────────────────────────────────
-router.post("/chat", async (req, res) => {
+router.post("/chat", aiLimiter, [
+  body("phone").trim().isString().notEmpty(),
+  body("message").trim().isString().notEmpty(),
+  validateStrict
+], requireAuth, async (req, res) => {
   const { phone, message } = req.body;
-  if (!phone || !message) return res.status(400).json({ error: "phone and message required" });
   try {
     const { reply } = await processMessage(phone, message);
     res.json({ reply });
@@ -144,32 +146,32 @@ router.post("/chat", async (req, res) => {
 });
 
 // ── OTP: Send ─────────────────────────────────────────────────────────────────
-router.post("/send-otp", async (req, res) => {
+router.post("/send-otp", otpLimiter, [
+  body("phone").trim().isString().matches(/^\+\d{7,15}$/).withMessage("Invalid phone format"),
+  validateStrict
+], async (req, res) => {
   const { phone } = req.body;
-  if (!phone || !/^\+\d{7,15}$/.test(phone))
-    return res.status(400).json({ error: "Invalid phone number." });
   if (hasActiveOTP(phone))
     return res.status(429).json({ error: "Code already sent. Please wait." });
 
   const code = generateOTP(phone);
 
-  if (DEV_MODE?.trim() === "true") {
-    console.log(`\n[DEV MODE] OTP for ${phone} → ${code}\n`);
-    return res.json({ success: true, mockCode: code });
-  }
-
   try {
-    await sendWhatsApp(phone, `Your HealthFirst verification code: *${code}*\n\nExpires in 10 minutes.`);
-    res.json({ success: true });
+    const isDevMode = DEV_MODE?.trim() === "true";
+    await whatsappService.sendOTPMessage(phone, code, isDevMode);
+    res.json({ success: true, ...(isDevMode ? { mockCode: code } : {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── OTP: Verify ───────────────────────────────────────────────────────────────
-router.post("/verify-otp", (req, res) => {
+router.post("/verify-otp", otpLimiter, [
+  body("phone").trim().isString().notEmpty(),
+  body("code").trim().isString().notEmpty(),
+  validateStrict
+], (req, res) => {
   const { phone, code } = req.body;
-  if (!phone || !code) return res.status(400).json({ error: "Phone and code required." });
   const result = verifyOTP(phone, String(code));
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json({ success: true });
@@ -207,32 +209,13 @@ router.post("/webhook", (req, res) => {
     console.log(`[Webhook] From ${from}: "${text}"`);
 
     const conv = getOrCreate(from);
-    if (conv.aiEnabled) handleInbound(from, text);
+    if (conv.aiEnabled) {
+      const isDevMode = DEV_MODE?.trim() === "true";
+      whatsappService.handleInboundMessage(from, text, isDevMode, broadcast);
+    }
   } catch (err) {
     console.error("[Webhook] Error:", err.message);
   }
 });
-
-async function handleInbound(phone, message) {
-  try {
-    // Broadcast "AI typing" state
-    broadcast("ai_typing", { phone, typing: true });
-
-    const { reply } = await processMessage(phone, message);
-    const msg = addMessage(phone, "assistant", reply);
-
-    broadcast("ai_typing", { phone, typing: false });
-    broadcast("new_message", { phone, message: msg });
-    broadcast("conversation_updated", getConversation(phone));
-
-    if (DEV_MODE?.trim() !== "true") {
-      await sendWhatsApp(phone, reply);
-    }
-    console.log(`[Bot] Replied to ${phone}`);
-  } catch (err) {
-    broadcast("ai_typing", { phone, typing: false });
-    console.error(`[Bot] Failed for ${phone}:`, err.message);
-  }
-}
 
 export default router;

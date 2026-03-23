@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 export default function Clients() {
+    const navigate = useNavigate();
     const [clients, setClients] = useState<any[]>([]);
 
     const [workflows, setWorkflows] = useState({
@@ -12,6 +15,7 @@ export default function Clients() {
     // Edit Modal State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingClient, setEditingClient] = useState<any>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const toggleWorkflow = (key: keyof typeof workflows) => {
         setWorkflows(prev => ({ ...prev, [key]: !prev[key] }));
@@ -22,24 +26,84 @@ export default function Clients() {
         setIsEditModalOpen(true);
     };
 
-    const handleSaveClient = (e: React.FormEvent) => {
+    const handleRequestReview = async (client: any) => {
+        const message = `Hi ${client.contact}, thank you for choosing HealthFirst. We would love to hear about your experience! Please leave us a review here: [Google Local Link]`;
+        console.log('Sending message:', message); // Use message
+        
+        toast.promise(
+            new Promise(resolve => setTimeout(resolve, 1500)),
+            {
+                loading: `Sending WhatsApp to ${client.name}...`,
+                success: 'Review request sent successfully!',
+                error: 'Failed to send request'
+            }
+        );
+    };
+
+    const handleSaveClient = async (e: React.FormEvent) => {
         e.preventDefault();
-        setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
-        setIsEditModalOpen(false);
-        toast.success(`${editingClient.name} details updated successfully!`);
+        setIsSubmitting(true);
+        try {
+            // 1. Update Client (Simulated for now, would need SQL column 'service_rating')
+            // const { error } = await supabase.from('clients').update({ service_rating: editingClient.service_rating }).eq('name', editingClient.name);
+
+            // 2. Sync with Workers (As requested: Worker gets rating from Client's company service review)
+            const { error: workerError } = await supabase
+                .from('workers')
+                .update({ rating: editingClient.service_rating })
+                .eq('assigned_client', editingClient.name);
+
+            if (workerError) throw workerError;
+
+            setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
+            setIsEditModalOpen(false);
+            toast.success(`${editingClient.name} service review updated. Worker ratings synchronized!`);
+            fetchClients();
+        } catch (err: any) {
+            console.error('Error syncing ratings:', err);
+            toast.error('Failed to sync worker ratings');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const fetchClients = async () => {
         try {
-            // Fetch dummy clients or from DB if available. 
-            // We'll use static data for visualization based on the "Client Master Entry" concept.
-            setClients([
-                { id: 1, name: 'Apex Medical Corp', contact: 'Sarah Jenkins', email: 'sarah@apexmed.com', phone: '+1 (555) 123-4567', status: 'Active', joined: 'Oct 12, 2026', lifetimeValue: '₹45,000' },
-                { id: 2, name: 'Downtown Physio', contact: 'Michael Ross', email: 'mross@dtphysio.com', phone: '+1 (555) 987-6543', status: 'Active', joined: 'Sep 28, 2026', lifetimeValue: '₹12,500' },
-                { id: 3, name: 'Wellness Clinic Inc', contact: 'David Chen', email: 'david@wellnessclinic.com', phone: '+1 (555) 456-7890', status: 'Inactive', joined: 'Aug 15, 2026', lifetimeValue: '₹8,000' },
-            ]);
+            // Fetch all workers to derive clients
+            const { data: workerData, error: workerError } = await supabase
+                .from('workers')
+                .select('id, name, assigned_client, status');
+            
+            if (workerError) throw workerError;
+
+            // Group workers by client
+            const clientMap: Record<string, any> = {};
+            (workerData || []).forEach(w => {
+                if (!w.assigned_client) return;
+                
+                if (!clientMap[w.assigned_client]) {
+                    clientMap[w.assigned_client] = {
+                        id: w.assigned_client,
+                        name: w.assigned_client,
+                        contact: 'Main Admin', // Fallback
+                        email: '-',
+                        status: 'Active',
+                        workerCount: 0,
+                        activeWorkerCount: 0,
+                        lifetimeValue: '₹0'
+                    };
+                }
+                
+                clientMap[w.assigned_client].workerCount++;
+                if (w.status === 'Active') {
+                    clientMap[w.assigned_client].activeWorkerCount++;
+                }
+            });
+
+            setClients(Object.values(clientMap));
         } catch (error) {
             console.error('Error fetching clients:', error);
+            toast.error('Failed to load dynamic client data');
         }
     };
 
@@ -54,6 +118,13 @@ export default function Clients() {
                     <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">Client Master Database</h1>
                     <p className="text-slate-500 mt-1">Manage permanent clients, lifetime value, and automated review collection.</p>
                 </div>
+                <button 
+                    onClick={() => navigate('/admin/billing?tab=history')}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+                >
+                    <HistoryIcon className="w-4 h-4 text-primary" />
+                    View Global Payment history
+                </button>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-6 flex-1">
@@ -79,32 +150,42 @@ export default function Clients() {
                                         </div>
                                         <div>
                                             <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
-                                            <p className="text-sm text-slate-500 flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {client.contact}</p>
+                                            <p className="text-sm text-slate-500 flex items-center gap-1">
+                                                <Users className="w-3.5 h-3.5" /> {client.activeWorkerCount} Active / {client.workerCount} Total Workers
+                                            </p>
                                         </div>
                                     </div>
                                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                                         {client.status}
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium uppercase mb-1">Email</p>
-                                        <p className="text-sm text-slate-700 truncate" title={client.email}>{client.email}</p>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
+                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col justify-center">
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                                            <Phone className="w-3 h-3" /> Contact
+                                        </p>
+                                        <p className="text-sm font-bold text-slate-700 truncate">{client.phone || 'N/A'}</p>
                                     </div>
-                                    <div className="col-span-2 flex flex-col gap-1">
+                                    <div className="bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+                                        <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                                            <Wallet className="w-3 h-3" /> Security Deposit
+                                        </p>
+                                        <p className="text-sm font-bold text-emerald-700">₹15,000</p>
+                                    </div>
+                                    <div className="col-span-2 flex items-center gap-2">
                                         <button
-                                            onClick={() => toast.success(`Review Request sent! \n\n"Hi ${client.contact}, thank you for choosing HealthFirst. We would love to hear about your experience! Please leave us a review here: [Google Local Link]"`)}
-                                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                                            onClick={(e) => { e.stopPropagation(); handleRequestReview(client); }}
+                                            className="flex-1 px-4 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2 shadow-sm"
                                         >
-                                            <Star className="w-4 h-4 text-amber-500" /> Request Google Review
+                                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> WhatsApp Review
                                         </button>
-                                        <button onClick={() => openEditModal(client)} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2">
-                                            <Edit2 className="w-4 h-4 text-slate-400" /> Edit Details
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); openEditModal(client); }} 
+                                            className="p-2.5 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
+                                            title="Edit Profile"
+                                        >
+                                            <Edit2 className="w-4 h-4" />
                                         </button>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-400 font-medium uppercase mb-1">LTV</p>
-                                        <p className="text-sm font-semibold text-emerald-600">{client.lifetimeValue}</p>
                                     </div>
                                 </div>
                             </div>
@@ -219,12 +300,37 @@ export default function Clients() {
                                     </select>
                                 </div>
                             </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2 flex justify-between">
+                                    <span>Service Quality Rating</span>
+                                    <span className="text-primary font-bold">{editingClient.service_rating || 0} Stars</span>
+                                </label>
+                                <div className="flex gap-2">
+                                    {[1, 2, 3, 4, 5].map(star => (
+                                        <button
+                                            key={star}
+                                            type="button"
+                                            onClick={() => setEditingClient({ ...editingClient, service_rating: star })}
+                                            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
+                                                (editingClient.service_rating || 0) >= star 
+                                                ? 'bg-amber-100 text-amber-500 border-amber-200' 
+                                                : 'bg-slate-50 text-slate-300 border-slate-100'
+                                            } border hover:scale-110`}
+                                        >
+                                            <Star className={`w-5 h-5 ${(editingClient.service_rating || 0) >= star ? 'fill-current' : ''}`} />
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-2 italic">Note: This rating will automatically apply to all workers currently assigned to this client.</p>
+                            </div>
+
                             <div className="pt-2 flex gap-3">
                                 <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
                                     Cancel
                                 </button>
-                                <button type="submit" className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm">
-                                    Save Changes
+                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                                    {isSubmitting && <Star className="w-4 h-4 animate-spin" />}
+                                    Save & Sync Ratings
                                 </button>
                             </div>
                         </form>

@@ -1,4 +1,5 @@
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Receipt, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
@@ -7,10 +8,11 @@ export default function AdminLayout() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, logout, hasAccess } = useAuth();
+    const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
 
     // Navigation items linked to their required module (null means always visible)
     const navigation = [
-        { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, requiredModule: null },
+        { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
         { name: 'AI CRM', href: '/admin/crm', icon: Users, requiredModule: 'crm' as AccessModule },
         { name: 'Clients', href: '/admin/clients', icon: Users, requiredModule: 'clients' as AccessModule },
         { name: 'AI HR', href: '/admin/hr', icon: UserCog, requiredModule: 'hr' as AccessModule },
@@ -18,9 +20,17 @@ export default function AdminLayout() {
     ];
 
     const filteredNavigation = navigation.filter(item => {
-        if (!item.requiredModule) return true; // Everyone sees Dashboard
+        if (!item.requiredModule) return true;
         return hasAccess(item.requiredModule);
     });
+
+    // If user is at /admin but doesn't have dashboard access, redirect to first allowed module
+    if (location.pathname === '/admin' && !hasAccess('dashboard')) {
+        const firstAllowed = filteredNavigation.find(item => item.href !== '/admin');
+        if (firstAllowed) {
+            return <Navigate to={firstAllowed.href} replace />;
+        }
+    }
 
     const handleLogout = () => {
         logout();
@@ -33,7 +43,7 @@ export default function AdminLayout() {
             <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden lg:flex">
                 {/* Logo */}
                 <div className="h-16 flex items-center px-6 border-b border-slate-100">
-                    <Link to="/" className="flex items-center gap-2" title="Go back to public site">
+                    <Link to="/admin" className="flex items-center gap-2" title="Dashboard">
                         <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                             <span className="text-white font-bold text-lg leading-none">H</span>
                         </div>
@@ -116,13 +126,47 @@ export default function AdminLayout() {
 
                     {/* Right actions */}
                     <div className="flex items-center gap-4 ml-auto">
-                        <button className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors">
-                            <Bell className="w-5 h-5" />
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-                        </button>
-                        <Link to="/" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors hidden sm:block">
+                        <div className="relative">
+                            <button 
+                                onClick={() => setIsGlobalNotificationsOpen(!isGlobalNotificationsOpen)}
+                                className={`relative p-2 transition-colors rounded-full ${isGlobalNotificationsOpen ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                <Bell className="w-5 h-5" />
+                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                            </button>
+                            
+                            {isGlobalNotificationsOpen && (
+                                <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="p-4 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                                        <h3 className="font-bold text-slate-900 text-sm">Notifications</h3>
+                                        <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 border border-slate-200 rounded-full shadow-sm">3 New</span>
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto divide-y divide-slate-50">
+                                        <div className="p-4 hover:bg-slate-50 transition-colors cursor-pointer bg-primary/5">
+                                            <p className="text-sm font-semibold text-slate-900">System Update</p>
+                                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">HealthFirst OS has been updated to v2.1 with new CRM features.</p>
+                                            <p className="text-[10px] text-slate-400 mt-2 font-medium">Just now</p>
+                                        </div>
+                                        <div className="p-4 hover:bg-slate-50 transition-colors cursor-pointer bg-primary/5">
+                                            <p className="text-sm font-semibold text-slate-900">AI Weekly Report</p>
+                                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">Your AI Agents have handled 48 calls and booked 12 appointments this week.</p>
+                                            <p className="text-[10px] text-slate-400 mt-2 font-medium">2 hours ago</p>
+                                        </div>
+                                        <div className="p-4 hover:bg-slate-50 transition-colors cursor-pointer bg-primary/5">
+                                            <p className="text-sm font-semibold text-slate-900">Payment Received</p>
+                                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">A new deposit of ₹15,000 has been recorded for active worker deployment.</p>
+                                            <p className="text-[10px] text-slate-400 mt-2 font-medium">5 hours ago</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-3 text-center bg-slate-50/50 border-t border-slate-50">
+                                        <button className="text-xs font-bold text-primary hover:underline transition-transform inline-block">Mark all as read</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <a href="http://localhost:5174" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors hidden sm:block">
                             View Public Site
-                        </Link>
+                        </a>
                     </div>
                 </header>
 
