@@ -28,9 +28,10 @@ export default function CRM() {
 
     const fetchCrmConfig = async () => {
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const response = await fetch('http://localhost:3001/api/crm-config/config', {
-                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            // Use pure token from localStorage (no Supabase session required)
+            const token = localStorage.getItem('healthfirst_pure_token') || 'pure_dev_token_admin';
+            const response = await fetch('/api/crm-config/config', {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
             setCrmConfig(data);
