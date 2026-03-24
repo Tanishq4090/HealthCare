@@ -52,6 +52,21 @@ serve(async (req) => {
             content: m.content
         }));
 
+        // Determine if the AI already finished the sequence
+        const toolAlreadyCalled = chatHistory.some(m => m.role === 'assistant' && 
+            m.content.includes("I've sent everything to our care coordination team"));
+
+        // If tool was already called and user just says "okay/thanks", silently ignore to gracefully end chat
+        const isShortGoodbye = userMessage.trim().length <= 20 && /ok|okay|k|thanks|thank you|bye|cool|done/i.test(userMessage);
+        
+        if (toolAlreadyCalled && isShortGoodbye) {
+            console.log("[WhatsApp AI] Silently ending conversation for short goodbye.");
+            return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+                headers: { "Content-Type": "text/xml; charset=utf-8" },
+                status: 200
+            });
+        }
+
         // 2. Prepare Tool Schema
         const tools = [
             {
@@ -77,10 +92,23 @@ serve(async (req) => {
         // 3. Call Groq LLaMA 3
         const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
         const messagesPayload = [
-            { role: "system", content: SYSTEM_PROMPT },
+            { role: "system", content: SYSTEM_PROMPT + (toolAlreadyCalled ? "\n\nCRITICAL: The lead details have already been saved. Do NOT ask any more qualifying questions. Just answer the user's final question simply. If it's a casual goodbye, just say a short 'You're welcome!'." : "") },
             ...chatHistory,
             { role: "user", content: userMessage.trim() }
         ];
+
+        const groqBody: any = {
+            model: "llama-3.3-70b-versatile",
+            messages: messagesPayload,
+            max_tokens: 250,
+            temperature: 0.6,
+        };
+
+        // Only attach tools if we haven't already saved the lead
+        if (!toolAlreadyCalled) {
+            groqBody.tools = tools;
+            groqBody.tool_choice = "auto";
+        }
 
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -88,14 +116,7 @@ serve(async (req) => {
                 "Authorization": `Bearer ${GROQ_API_KEY}`,
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
-                messages: messagesPayload,
-                tools: tools,
-                tool_choice: "auto",
-                max_tokens: 250,
-                temperature: 0.6,
-            }),
+            body: JSON.stringify(groqBody),
         });
 
         if (!groqRes.ok) throw new Error(`Groq ${groqRes.status}`);
