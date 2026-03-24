@@ -42,10 +42,31 @@ serve(async (req) => {
              continue;
           }
 
+          // Exact pipeline stages from the frontend
+          const allowedStages = [
+            'New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 
+            'Form Submitted', 'Staff Assigned', 'Deposit Pending', 
+            'Active Client', 'Monthly Billing', 'Closed Won', 'On Hold'
+          ];
+
+          // Smartly map AI output to our exact stages (case-insensitive)
+          const normalizedStatusFromAI = status.toLowerCase().replace('_', ' ');
+          let finalStatus = allowedStages.find(s => s.toLowerCase() === normalizedStatusFromAI) || status;
+
+          // Special mapping if the AI uses common phrases
+          if (normalizedStatusFromAI.includes('hold') || normalizedStatusFromAI.includes('wait') || normalizedStatusFromAI.includes('pause')) {
+              finalStatus = 'On Hold';
+          }
+          if (normalizedStatusFromAI.includes('quote') || normalizedStatusFromAI.includes('quotation')) {
+              finalStatus = 'Quotation Sent';
+          }
+
+          console.log(`Instructed to move lead ${client_id} to stage: ${finalStatus} (Raw: ${status})`);
+
           // Update the crm_leads table
           const { error } = await supabaseClient
             .from('crm_leads')
-            .update({ pipeline_stage: status })
+            .update({ pipeline_stage: finalStatus })
             .eq('id', client_id);
 
           if (error) {
