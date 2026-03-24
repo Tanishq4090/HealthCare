@@ -134,13 +134,12 @@ serve(async (req) => {
 
                     // Insert or update Supabase CRM
                     const { error: insertErr } = await supabase.from("crm_leads").insert([{
-                        name: args.name,
+                        name: `${args.name} — ${args.service_required} (${args.location}, ${args.duration})`,
                         phone: phoneDigits,
                         whatsapp_number: phoneDigits,
                         source: "WhatsApp AI",
                         status: "Processed",
-                        pipeline_stage: args.pipeline_stage,
-                        service_type: `${args.service_required} (Loc: ${args.location}, Time: ${args.duration})`
+                        pipeline_stage: args.pipeline_stage
                     }]);
                     if (insertErr) console.error("Failed to insert CRM Lead:", insertErr.message);
 
