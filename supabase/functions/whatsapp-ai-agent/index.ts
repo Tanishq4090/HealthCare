@@ -133,15 +133,16 @@ serve(async (req) => {
                     console.log("[Tool Call Triggered] Saving Lead:", args);
 
                     // Insert or update Supabase CRM
-                    await supabase.from("crm_leads").insert({
+                    const { error: insertErr } = await supabase.from("crm_leads").insert([{
                         name: args.name,
                         phone: phoneDigits,
+                        whatsapp_number: phoneDigits,
                         source: "WhatsApp AI",
                         status: "Processed",
                         pipeline_stage: args.pipeline_stage,
-                        service_type: args.service_required,
-                        notes: `Location: ${args.location} | Duration: ${args.duration || 'Not specified'}`
-                    });
+                        service_type: `${args.service_required} (Loc: ${args.location}, Time: ${args.duration})`
+                    }]);
+                    if (insertErr) console.error("Failed to insert CRM Lead:", insertErr.message);
 
                     // Generate a nice exit response natively since the AI stopped talking to call the tool
                     finalReply = "Got it! Thanks for sharing those details. I've sent everything to our care coordination team. They will review your requirements and call you back in 10-15 minutes with a customized quotation and staff profiles! 🙏";
