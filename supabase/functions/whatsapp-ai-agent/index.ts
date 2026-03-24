@@ -1,72 +1,86 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ─── 99 Care AI Persona ──────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Priya, a warm and professional customer support assistant for 99 Care — a trusted home healthcare service provider in India.
 
-## Services We Offer
-1. Home-based personal care
-2. Elderly care (loving assistance for senior citizens)
-3. Child and mother care (specially caring service)
-4. Home nursing and injection services
-5. Tiffin service (meal delivery)
-6. Doctor on call
-7. Physiotherapist at home
-8. Health Card AMC (Annual Maintenance Contract)
-9. Laboratory tests at home
-10. Medical equipment on rent
-11. Home delivery of medicines
-12. Home dressing and wound treatment
-13. Doctor visit at home
+## Goal: Lead Qualification Flow
+You must qualify the prospect by asking these exact questions ONE BY ONE. Wait for their answer before asking the next question. Do not ask multiple questions in one message!
+1. "Namaste! Welcome to 99 Care. Before I can assist you with pricing or details, may I know your name and who needs the care?"
+2. "What specific service are you looking for? (e.g., Home Nursing, Elder Care, Baby Care, Physiotherapist)"
+3. "Which area or city are you located in?"
+4. "Got it. And how long do you need the service? (e.g., 10-hour day shift, 24-hour live-in, or just a few days?)"
 
-## Day/Night Duty Policy (10-hour shifts)
-- If a caregiver takes 1 day off, no replacement will be provided
-- If leave is more than 1 day, a replacement caregiver will be arranged (subject to availability)
-- If a client cancels the service after a 2-day trial, they will be charged ₹1,050 per day for those days
+## Tool Execution Rule
+Once the user has answered ALL 4 questions (Name, Service, Location, Duration), you MUST immediately call the \`save_lead_info\` tool with the extracted details and set the pipeline_stage to "Form Submitted". Do not say anything else until the tool finishes.
 
-## Deposit
-- Initial deposit: ₹15,000
-- This amount will be fully adjusted against the final payment at the end of service
-
-## Pricing Rules — VERY IMPORTANT
-- NEVER quote specific prices or rates to clients
-- Pricing varies depending on the exact service, location, shift duration, and requirements
-- When asked about pricing, say: "Pricing is customized based on your specific requirements. Please share your needs and our team will get back to you shortly with a tailored plan."
-- Always collect: (1) what service they need, (2) location/city, (3) duration/shift preference, (4) their contact number
-
-## Your Behavior
-- Reply in the SAME language the client uses (Hindi, English, or Hinglish)
-- Keep replies SHORT — max 3–4 sentences for WhatsApp
-- Be warm, empathetic, and professional — like a real care coordinator
-- If a client seems distressed or has an urgent medical need, prioritize asking for their number so the team can call them immediately
-- End every message with a helpful question or next step
-- Do NOT reveal you are an AI unless directly asked`;
+## Behavioral Rules
+- Reply in the exact same language the client uses (Hindi, English, or Hinglish).
+- Be incredibly succinct. Keep replies to 2 sentences max. You are chatting on WhatsApp.
+- NEVER quote specific prices. Say: "Pricing depends on the exact shift and location. Our care coordinator will give you the exact quote."`;
 
 serve(async (req) => {
-    if (req.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405 });
-    }
+    if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
     try {
-        // Twilio sends form-encoded webhook data
         const text = await req.text();
         const params = new URLSearchParams(text);
 
-        const from = params.get("From") || "unknown";
+        const from = params.get("From") || "unknown"; // e.g. "whatsapp:+919876543210"
+        const phoneDigits = from.replace(/\D/g, "");
         const userMessage = params.get("Body") || "";
 
-        console.log(`[WhatsApp AI] From: ${from} | Message: "${userMessage}"`);
+        console.log(`[WhatsApp AI] From: ${phoneDigits} | Message: "${userMessage}"`);
 
-        if (!userMessage.trim()) {
-            return twiml("Namaste! 99 Care mein aapka swagat hai. Aap kaise madad kar sakte hain?");
-        }
+        // Setup Supabase (Service Role to bypass policies for Webhooks)
+        const supabase = createClient(
+            Deno.env.get("SUPABASE_URL") ?? "",
+            Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+        );
 
-        // ── Groq API Call ─────────────────────────────────────────────────────
+        // 1. Fetch Chat History Memory
+        const { data: pastMessages } = await supabase
+            .from("whatsapp_messages")
+            .select("role, content")
+            .eq("phone", phoneDigits)
+            .order("created_at", { ascending: false })
+            .limit(10);
+            
+        // Groq requires oldest first
+        const chatHistory = (pastMessages || []).reverse().map(m => ({
+            role: m.role,
+            content: m.content
+        }));
+
+        // 2. Prepare Tool Schema
+        const tools = [
+            {
+                type: "function",
+                function: {
+                    name: "save_lead_info",
+                    description: "Saves the extracted lead information to the CRM pipeline database.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            name: { type: "string", description: "The full name of the client" },
+                            service_required: { type: "string", description: "The healthcare service they need" },
+                            location: { type: "string", description: "City or specific area" },
+                            duration: { type: "string", description: "Shift preference (e.g., 24hr, 10hr)" },
+                            pipeline_stage: { type: "string", description: "Must be exactly 'Form Submitted'" }
+                        },
+                        required: ["name", "service_required", "location", "pipeline_stage"]
+                    }
+                }
+            }
+        ];
+
+        // 3. Call Groq LLaMA 3
         const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
-
-        if (!GROQ_API_KEY) {
-            console.error("[WhatsApp AI] GROQ_API_KEY secret not set in Supabase.");
-            return twiml("Namaste! Humari AI abhi setup ho rahi hai. Thodi der mein try karein. 🙏");
-        }
+        const messagesPayload = [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...chatHistory,
+            { role: "user", content: userMessage.trim() }
+        ];
 
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -76,52 +90,71 @@ serve(async (req) => {
             },
             body: JSON.stringify({
                 model: "llama-3.3-70b-versatile",
-                messages: [
-                    { role: "system", content: SYSTEM_PROMPT },
-                    { role: "user", content: userMessage.trim() },
-                ],
-                max_tokens: 150,
-                temperature: 0.7,
+                messages: messagesPayload,
+                tools: tools,
+                tool_choice: "auto",
+                max_tokens: 250,
+                temperature: 0.6,
             }),
         });
 
-        if (!groqRes.ok) {
-            const err = await groqRes.text();
-            console.error("[Groq Error]", err);
-            throw new Error(`Groq ${groqRes.status}: ${err}`);
+        if (!groqRes.ok) throw new Error(`Groq ${groqRes.status}`);
+        const groqData = await groqRes.json();
+        const responseMessage = groqData.choices?.[0]?.message;
+
+        let finalReply = responseMessage?.content || "";
+
+        // 4. Handle Tool Calls if Groq decided to save the lead
+        if (responseMessage?.tool_calls) {
+            for (const toolCall of responseMessage.tool_calls) {
+                if (toolCall.function.name === "save_lead_info") {
+                    const args = JSON.parse(toolCall.function.arguments);
+                    console.log("[Tool Call Triggered] Saving Lead:", args);
+
+                    // Insert or update Supabase CRM
+                    await supabase.from("crm_leads").insert({
+                        name: args.name,
+                        phone: phoneDigits,
+                        source: "WhatsApp AI",
+                        status: "Processed",
+                        pipeline_stage: args.pipeline_stage,
+                        service_type: args.service_required,
+                        notes: `Location: ${args.location} | Duration: ${args.duration || 'Not specified'}`
+                    });
+
+                    // Generate a nice exit response natively since the AI stopped talking to call the tool
+                    finalReply = "Got it! Thanks for sharing those details. I've sent everything to our care coordination team. They will review your requirements and call you back in 10-15 minutes with a customized quotation and staff profiles! 🙏";
+                }
+            }
         }
 
-        const data = await groqRes.json();
-        const aiReply = data.choices?.[0]?.message?.content?.trim()
-            || "Namaste! 99 Care mein aapka swagat hai. Aap ki kaise madad kar sakte hain?";
+        if (!finalReply) {
+             finalReply = "Namaste! 99 Care mein aapka swagat hai. Aap ki kaise madad kar sakte hain?";
+        }
 
-        console.log(`[WhatsApp AI] Reply: "${aiReply}"`);
+        console.log(`[WhatsApp AI] Reply: "${finalReply}"`);
 
-        // Return TwiML — Twilio sends this automatically as a WhatsApp reply
-        return twiml(aiReply);
+        // 5. Save the Conversation to Memory asynchronously
+        await supabase.from("whatsapp_messages").insert([
+            { phone: phoneDigits, role: "user", content: userMessage.trim() },
+            { phone: phoneDigits, role: "assistant", content: finalReply }
+        ]).catch(e => console.error("Warning: Could not save message to memory, ensure table exists.", e.message));
+
+        // 6. Return Twilio TwiML
+        return twiml(finalReply);
 
     } catch (err: any) {
         console.error("[WhatsApp AI] Error:", err.message);
-        // Fallback reply so the client always gets a response
-        return twiml("Namaste! Abhi thodi technical dikkat hai. Kripya thodi der mein dobara try karein ya +91-XXXXX call karein. 🙏");
+        return twiml("Namaste! Abhi thodi technical dikkat hai. Kripya thodi der mein dobara try karein. 🙏");
     }
 });
 
 // ── TwiML helper ──────────────────────────────────────────────────────────────
 function twiml(message: string) {
-    // Escape XML special chars
-    const safe = message
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-
+    const safe = message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Message>${safe}</Message>
 </Response>`;
-
-    return new Response(xml, {
-        headers: { "Content-Type": "text/xml; charset=utf-8" },
-        status: 200,
-    });
+    return new Response(xml, { headers: { "Content-Type": "text/xml; charset=utf-8" }, status: 200 });
 }
