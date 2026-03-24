@@ -135,10 +135,11 @@ serve(async (req) => {
         console.log(`[WhatsApp AI] Reply: "${finalReply}"`);
 
         // 5. Save the Conversation to Memory asynchronously
-        await supabase.from("whatsapp_messages").insert([
+        const { error: memoryErr } = await supabase.from("whatsapp_messages").insert([
             { phone: phoneDigits, role: "user", content: userMessage.trim() },
             { phone: phoneDigits, role: "assistant", content: finalReply }
-        ]).catch(e => console.error("Warning: Could not save message to memory, ensure table exists.", e.message));
+        ]);
+        if (memoryErr) console.error("Warning: Could not save message memory.", memoryErr.message);
 
         // 6. Return Twilio TwiML
         return twiml(finalReply);
