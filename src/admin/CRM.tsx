@@ -711,9 +711,39 @@ export default function CRM() {
         toast.success("Leads pipeline exported successfully!");
     };
 
-    // Fetch leads from Supabase
+    // Fetch leads from Supabase and Subscribe to Realtime Updates
     useEffect(() => {
         fetchLeads();
+
+        // Enable real-time magic for AI Pipeline Automation
+        const subscription = supabase
+            .channel('crm_leads_ai_updates')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'crm_leads' },
+                (payload) => {
+                    const newLead = payload.new;
+                    setLeads(prev => prev.map(lead => lead.id === newLead.id ? { ...lead, ...newLead } : lead));
+                    
+                    // Trigger a toast notification if the AI moved the lead
+                    const oldLead = payload.old;
+                    if (oldLead && newLead.pipeline_stage !== oldLead.pipeline_stage) {
+                        toast.success(`🤖 AI Agent moved ${newLead.name} to "${newLead.pipeline_stage}"!`);
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'crm_leads' },
+                (payload) => {
+                    setLeads(prev => [payload.new, ...prev]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(subscription);
+        };
     }, []);
 
     const handleMoveLead = async (id: string, newStage: string) => {
