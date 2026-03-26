@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, ClipboardList, ShieldCheck, AlertCircle, Save } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
-import Client from '@vapi-ai/web';
+import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 
-const VAPI_PUBLIC_KEY = "3cd76924-ad95-4b41-8018-26d22b309bbf";
-const VAPI_ASSISTANT_ID = "2de7804c-6087-43bf-8098-dfc787aa3dee";
+const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'content'>('pipeline');
@@ -146,8 +145,23 @@ export default function CRM() {
         leadsCaptured: 0
     });
 
-    // --- VAPI INTEGRATION ---
-    const vapiRef = useRef<any>(null);
+    // --- ELEVENLABS INTEGRATION ---
+    const conversation = useConversation({
+        onConnect: () => {
+            setCallStatus('active');
+            console.log('ElevenLabs: connected');
+        },
+        onDisconnect: () => {
+            setCallStatus('idle');
+            console.log('ElevenLabs: disconnected');
+            setTimeout(() => fetchVoiceData(), 3000);
+        },
+        onError: (error: any) => {
+            console.error('ElevenLabs Error', error);
+            setCallStatus('idle');
+            toast.error('ElevenLabs encountered an error. Please check console.');
+        },
+    });
     const [callStatus, setCallStatus] = useState<'idle' | 'loading' | 'active'>('idle');
 
     // WhatsApp Messaging Logic
@@ -187,97 +201,46 @@ export default function CRM() {
         }
     };
 
-    useEffect(() => {
-        // Initialize Vapi object
-        vapiRef.current = new Client(VAPI_PUBLIC_KEY);
-
-        vapiRef.current.on('call-start', () => {
-            setCallStatus('active');
-            console.log('Call started');
-        });
-
-        vapiRef.current.on('call-end', () => {
-            setCallStatus('idle');
-            console.log('Call ended');
-            // Optional: immediately refresh call logs to show the new call
-            setTimeout(() => fetchVoiceData(), 3000); // 3 sec delay to allow Vapi to process the recording/summary
-        });
-
-        vapiRef.current.on('speech-start', () => console.log('Assistant started speaking'));
-        vapiRef.current.on('speech-end', () => console.log('Assistant stopped speaking'));
-        vapiRef.current.on('error', (e: any) => {
-            console.error('Vapi Error', e);
-            setCallStatus('idle');
-            toast.error('Vapi encountered an error. Please check console.');
-        });
-
-        return () => {
-            if (vapiRef.current) {
-                vapiRef.current.stop();
-            }
-        };
-    }, []);
-
     const toggleCall = async () => {
         if (callStatus === 'active') {
-            vapiRef.current?.stop();
+            await conversation.endSession();
             setCallStatus('idle');
         } else {
             setCallStatus('loading');
             try {
-                await vapiRef.current?.start(VAPI_ASSISTANT_ID);
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                await conversation.startSession({ agentId: String(ELEVENLABS_AGENT_ID), connectionType: 'webrtc' });
             } catch (err) {
-                console.error("Failed to start call", err);
+                console.error('Failed to start ElevenLabs call', err);
                 setCallStatus('idle');
+                toast.error('Failed to start call. Please allow microphone access.');
             }
         }
     };
 
-    // --- FETCH REAL VAPI DATA ---
+    // --- FETCH VOICE DATA (From ElevenLabs webhook via crm_call_logs) ---
     const fetchVoiceData = async () => {
         setIsLoadingVoice(true);
         try {
-            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-            // 1. Fetch Calls from Vapi Edge Function
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-get-calls`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'apikey': SUPABASE_ANON_KEY,
-                },
-                body: JSON.stringify({ assistantId: VAPI_ASSISTANT_ID, limit: 30 })
+            // Fetch calls from our new Edge Function to bypass RLS
+            const { data: edgeResponse, error: callsError } = await supabase.functions.invoke('get-elevenlabs-calls', {
+                body: { limit: 30 }
             });
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.error || `HTTP ${response.status}`);
-            }
+            if (callsError) throw callsError;
+            
+            const callsData = edgeResponse?.data || [];
 
-            const callsData = await response.json();
-
-            // 2. Fetch Leads to cross-reference "Processed" status
-            const { data: leadsData } = await supabase
-                .from('crm_leads')
-                .select('id, name, phone, source');
-
-            const voiceLeads = leadsData?.filter(l => l.source === 'AI Phone Call') || [];
-
-            // 3. Process and format Vapi calls
+            // Process and format calls
             let todayCalls = 0;
             let totalDurationToday = 0;
             const todayStr = new Date().toDateString();
 
-            const formattedCalls = (callsData || []).filter((call: any) => call.status === 'ended').map((call: any) => {
-                const startedAt = new Date(call.createdAt);
+            const formattedCalls = (callsData || []).map((call: any) => {
+                const startedAt = new Date(call.created_at);
                 const isToday = startedAt.toDateString() === todayStr;
 
-                let durationSeconds = 0;
-                if (call.endedAt && call.startedAt) {
-                    durationSeconds = Math.round((new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000);
-                }
+                const durationSeconds = call.duration_seconds || 0;
 
                 if (isToday) {
                     todayCalls++;
@@ -289,51 +252,37 @@ export default function CRM() {
                 const dSecs = durationSeconds % 60;
                 const durationStr = dMins > 0 ? `${dMins}m ${dSecs}s` : `${dSecs}s`;
 
-                // Try to extract name/whatsapp from the AI's standard output structure
-                // Alternatively, determine if there's a matching lead already created
-                let capturedName = null;
-                let capturedWhatsapp = null;
-                let capturedValue = 5000; // Baseline assumed value
-
-                // Very basic heuristic for demo: if summary mentions a name, or if we find a lead with this phone number
-                const matchingLead = voiceLeads.find(l => l.phone && call.customer?.number && l.phone.includes(call.customer.number.replace(/\D/g, '')));
-                let callStatus = 'Unprocessed';
-
-                if (matchingLead) {
-                    callStatus = 'Processed';
-                    capturedName = matchingLead.name;
-                } else if (call.summary && call.summary.length > 20) {
-                    // Try to guess a name if it's unprocessed but seems to have data
-                    const nameMatch = call.summary.match(/name is ([A-Z][a-z]+ [A-Z][a-z]+)/i);
-                    if (nameMatch) capturedName = nameMatch[1];
-                    else capturedName = "Unknown Caller";
-                }
+                // If lead_id exists, it means the webhook successfully associated this call with a lead
+                const callStatus = call.lead_id ? 'Processed' : 'Unprocessed';
 
                 return {
                     id: call.id,
-                    phone: call.customer?.number || "Unknown Number",
-                    type: call.type === 'inboundPhoneCall' ? 'Inbound' : 'Outbound',
+                    phone: call.phone_number || "Unknown Number",
+                    type: 'Inbound', // or 'Outbound' if tracking that separately
                     duration: durationStr,
                     time: isToday ? startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : startedAt.toLocaleDateString(),
-                    intent: call.analysis?.successEvaluation || "Inquiry",
+                    intent: call.intent || "Inquiry",
                     summary: call.summary || "No summary available.",
-                    recordingUrl: call.recordingUrl,
-                    capturedName,
-                    capturedWhatsapp,
-                    capturedValue,
-                    status: callStatus
+                    recordingUrl: call.recording_url,
+                    capturedName: call.lead_id ? (call.capturedName || "Known Lead") : call.capturedName,
+                    capturedWhatsapp: call.phone_number,
+                    status: callStatus,
+                    transcript: call.transcript // Stored but not shown inline by default
                 };
             });
+
+            // Filter calls that successfully captured a lead (lead_id is not null)
+            const actualVoiceLeadsCaptured = formattedCalls.filter((c: any) => c.status === 'Processed').length;
 
             setCalls(formattedCalls);
             setVoiceMetrics({
                 totalCallsToday: todayCalls,
                 avgDurationSeconds: todayCalls > 0 ? Math.round(totalDurationToday / todayCalls) : 0,
-                leadsCaptured: voiceLeads.length
+                leadsCaptured: actualVoiceLeadsCaptured
             });
 
         } catch (error: any) {
-            console.error("Failed to fetch voice data:", error);
+            console.error('Failed to fetch voice data:', error);
             toast.error(`Unable to load voice logs: ${error.message}`);
         } finally {
             setIsLoadingVoice(false);
@@ -900,7 +849,7 @@ export default function CRM() {
         }
     };
 
-    const captureCallAsLead = async (callId: number) => {
+    const captureCallAsLead = async (callId: string | number) => {
         const call = calls.find(c => c.id === callId);
         if (!call || !call.capturedName) return;
 
@@ -1346,7 +1295,7 @@ export default function CRM() {
                             <p className="text-3xl font-bold">{isLoadingVoice ? '-' : voiceMetrics.totalCallsToday}</p>
                             <div className="flex items-center gap-2 mt-2 text-sm">
                                 <span className="text-emerald-400 font-medium">Auto-tracked</span>
-                                <span className="text-slate-400">via Vapi</span>
+                                <span className="text-slate-400">via ElevenLabs</span>
                             </div>
                         </div>
                         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
@@ -1397,7 +1346,7 @@ export default function CRM() {
                                 ) : (
                                     <>
                                         <Plus className="w-6 h-6" />
-                                        Start Web Call (Vapi)
+                                        Start Web Call (ElevenLabs)
                                     </>
                                 )}
                             </button>
@@ -1420,7 +1369,7 @@ export default function CRM() {
                                         </div>
                                         <div>
                                             <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="font-bold text-slate-900 text-lg">{call.phone}</h3>
+                                                <h3 className="font-bold text-slate-900 text-lg">{call.capturedName || call.phone}</h3>
                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${call.type === 'Inbound' ? 'bg-primary/10 text-primary' : 'bg-purple-100 text-purple-700'}`}>
                                                     {call.type}
                                                 </span>
@@ -1463,7 +1412,7 @@ export default function CRM() {
                                             <p className="text-sm text-slate-600 leading-relaxed italic bg-slate-50 p-3 rounded-lg border border-slate-100">"{call.summary}"</p>
                                         </div>
 
-                                        {call.status === 'Unprocessed' && call.capturedName && (
+                                        {(call.status === 'Unprocessed' && (call.capturedName || (call.phone && call.phone !== 'Unknown' && call.phone !== 'Unknown Number'))) && (
                                             <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
                                                 <div>
                                                     <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
@@ -1496,7 +1445,7 @@ export default function CRM() {
                             {isLoadingVoice && (
                                 <div className="text-center py-10">
                                     <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-3" />
-                                    <h3 className="text-slate-500 font-medium">Loading real-time voice data from Vapi...</h3>
+                                    <h3 className="text-slate-500 font-medium">Loading voice data...</h3>
                                 </div>
                             )}
                             {calls.length > 0 && (

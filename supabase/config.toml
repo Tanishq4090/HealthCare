@@ -1,0 +1,22 @@
+
+[functions.elevenlabs-webhook]
+enabled = true
+verify_jwt = true
+import_map = "./functions/elevenlabs-webhook/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/elevenlabs-webhook/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/elevenlabs-webhook/*.html" ]
+
+[functions.get-elevenlabs-calls]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-elevenlabs-calls/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/get-elevenlabs-calls/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/get-elevenlabs-calls/*.html" ]
