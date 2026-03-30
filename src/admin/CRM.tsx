@@ -359,6 +359,7 @@ export default function CRM() {
         }
     };
 
+
     const handleBulkGreeting = async () => {
         if (!workflows.greeting) {
             toast.info("Toggle ON 'Instant Greeting & Triage' first before dispatching.");
@@ -552,25 +553,30 @@ export default function CRM() {
 
     const handleDispatchMessage = async () => {
         setIsAgentModalOpen(false);
-        const toastId = toast.loading("Dispatching to WhatsApp via Twilio...");
+        const toastId = toast.loading(`Dispatching AI Message to ${agentTargetLead?.name || 'Lead'}...`);
 
         try {
             let phoneDigits = '918000044090'; // Default to test number
             if (agentTargetLead) {
-                // Prioritize dedicated WhatsApp number if Vapi captured it
                 const targetNumber = agentTargetLead.whatsapp_number || agentTargetLead.phone;
-                if (targetNumber) {
-                    phoneDigits = targetNumber.replace(/\D/g, ''); // Extract only digits
+                console.log(`[Debug] Lead: ${agentTargetLead.name}, Raw Phone: ${agentTargetLead.phone}, Raw WhatsApp: ${agentTargetLead.whatsapp_number}`);
+                
+                if (targetNumber && targetNumber !== 'Unknown Number' && targetNumber !== 'Unknown') {
+                    phoneDigits = targetNumber.replace(/\D/g, ''); 
+                    if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+                } else {
+                    toast.error(`⚠️ No valid number for ${agentTargetLead.name}. Falling back to test number.`, { id: toastId });
                 }
+            } else {
+                toast.error("⚠️ No target lead selected!", { id: toastId });
             }
 
-            console.log(`[Dispatch] Sending WhatsApp to: +${phoneDigits}`);
-
-            // Call Edge Function directly using fetch (bypasses SDK key format issues)
+            console.log(`[Dispatch] Sending WhatsApp via Twilio API to ${agentTargetLead?.name}: +${phoneDigits}`);
+            
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/twilio-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -581,18 +587,25 @@ export default function CRM() {
             });
 
             const resData = await response.json().catch(() => ({ error: response.statusText }));
-            console.log('[Dispatch] Function response:', resData);
-
             if (!response.ok) {
                 throw new Error(resData.error || resData.message || `HTTP ${response.status}`);
             }
 
-            // Post-dispatch: move lead if staff action, and update worker assignment
+            // Post-dispatch pipeline advancement
             if (agentTargetLead) {
-                // If this was a staff assignment, move lead to Staff Assigned and update worker record
-                if (agentTargetAction === 'staff' && selectedWorker) {
+                // If Inquiry -> move to In Discussion
+                if (agentTargetAction === 'inquiry') {
+                    await handleMoveLead(agentTargetLead.id, 'In Discussion');
+                    toast.success(`Greeting dispatched! Moved ${agentTargetLead.name} to In Discussion.`, { id: toastId, duration: 4000 });
+                }
+                // If it was quotations -> move to Quotation Sent
+                else if (agentTargetAction === 'quotation') {
+                    await handleMoveLead(agentTargetLead.id, 'Quotation Sent');
+                    toast.success(`Quotation sent! Moved ${agentTargetLead.name} to Quotation Sent.`, { id: toastId, duration: 4000 });
+                }
+                // If staff assignment -> move to Staff Assigned
+                else if (agentTargetAction === 'staff' && selectedWorker) {
                     await handleMoveLead(agentTargetLead.id, 'Staff Assigned');
-                    // Update worker's assigned_client in Supabase
                     try {
                         await supabase.from('workers')
                             .update({ assigned_client: agentTargetLead.name, status: 'Active' })
@@ -601,28 +614,30 @@ export default function CRM() {
                         console.warn('Could not update worker in DB (may be mock):', e);
                     }
                     setSelectedWorker(null);
-                    toast.success(`${selectedWorker.name} assigned to ${agentTargetLead.name} and moved to Staff Assigned! 🎉`, { id: toastId, duration: 6000 });
-                } else {
-                    toast.success(`✅ WhatsApp sent to +${phoneDigits}! Check your phone. (SID: ...${resData.sid?.slice(-6) || 'ok'})`, { id: toastId, duration: 6000 });
+                    toast.success(`${selectedWorker.name} assigned! Moved ${agentTargetLead.name} to Staff Assigned.`, { id: toastId, duration: 6000 });
                 }
-
-                const newLog = {
+                // Billing/Deposit/Consent
+                else {
+                    toast.success(`WhatsApp message delivered to +${phoneDigits}!`, { id: toastId, duration: 4000 });
+                }
+                
+                // Add to automation logs
+                setAutomationLogs(prev => [{
                     id: Date.now(),
-                    type: 'system',
-                    icon: Bot,
-                    title: `WhatsApp Dispatched to ${agentTargetLead.name}`,
+                    type: agentTargetAction === 'staff' ? 'system' : agentTargetAction,
+                    icon: MessageSquare,
+                    title: `Automated WhatsApp - ${agentTargetAction}`,
                     desc: agentTargetAction === 'staff' && selectedWorker
                         ? `Assigned ${selectedWorker.name} (${selectedWorker.role}) to ${agentTargetLead.name} via WhatsApp.`
-                        : `AI Agent dispatched message in ${agentDraftLang} via Twilio to +${phoneDigits}.`,
+                        : `Successfully dispatched template to ${agentTargetLead.name}`,
                     time: 'Just now',
                     status: 'success'
-                };
-                setAutomationLogs(prev => [newLog, ...prev]);
+                }, ...prev]);
             }
 
-        } catch (err: any) {
-            console.error("WhatsApp dispatch failed", err);
-            toast.error(`WhatsApp dispatch failed: ${err.message}`, { id: toastId });
+        } catch (error: any) {
+            console.error('Dispatch error:', error);
+            toast.error(error.message || 'Error pushing to WhatsApp Cloud API', { id: toastId });
         }
     };
 
@@ -792,7 +807,7 @@ export default function CRM() {
         title: stage,
         count: leads.filter(l => l.pipeline_stage === stage).length,
         items: leads.filter(l => l.pipeline_stage === stage).map(l => ({
-            id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage
+            id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage, phone: l.phone, whatsapp_number: l.whatsapp_number
         }))
     }));
 
@@ -1059,8 +1074,16 @@ export default function CRM() {
                                         {col.items.map((item) => (
                                             <div key={item.id} onClick={() => { setSelectedLeadId(item.id); setIsIntelligenceModalOpen(true); }} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group relative">
                                                 <div className="flex items-start justify-between mb-2">
-                                                    <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{item.name}</h4>
-                                                    <div onClick={(e) => e.stopPropagation()} className="relative">
+                                                    <div className="flex flex-col">
+                                                        <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{item.name}</h4>
+                                                        {(item.whatsapp_number || item.phone) && (
+                                                            <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-500" title="Contact Number">
+                                                                <Phone className="w-3 h-3 text-slate-400" />
+                                                                {item.whatsapp_number || item.phone}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div onClick={(e) => e.stopPropagation()} className="relative shrink-0 ml-2 mt-0.5">
                                                         <select
                                                             value={item.pipeline_stage}
                                                             onChange={(e) => handleMoveLead(item.id, e.target.value)}
