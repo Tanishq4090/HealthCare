@@ -5,11 +5,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Approved Meta WhatsApp Template SID
-// Template: "Hi {{1}}, welcome to 99 Care! We've received your inquiry.
-// Our team is ready to provide the best healthcare staff for your home.
-// Please share your requirements and we'll get back to you shortly!"
-const INQUIRY_TEMPLATE_SID = 'HXd2395942efa3143732f4844391e982b3';
+// Approved Meta WhatsApp Template Text (must match character-for-character)
+// Template name: crm_inquiry_greeting
+// Approved via: Twilio WhatsApp Senders → Templates
+const INQUIRY_TEMPLATE = (name: string) =>
+  `Hi ${name}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -48,16 +48,11 @@ serve(async (req) => {
     formData.append('To', formattedPhone);
 
     if (useTemplate !== false && leadName) {
-      // ✅ Content Template: REQUIRES MessagingServiceSid (not From) to bypass Meta 24-hr restriction
-      const MESSAGING_SERVICE_SID = Deno.env.get('TWILIO_MESSAGING_SERVICE_SID') || '';
-      if (MESSAGING_SERVICE_SID) {
-        formData.append('MessagingServiceSid', MESSAGING_SERVICE_SID);
-      } else {
-        formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
-      }
-      formData.append('ContentSid', INQUIRY_TEMPLATE_SID);
-      formData.append('ContentVariables', JSON.stringify({ "1": leadName }));
-      console.log(`[Twilio WhatsApp] Using approved template for new lead: ${leadName}`);
+      // ✅ Body-text matching: Twilio auto-detects this as the approved WhatsApp Sender Template
+      // and bypasses Meta's 24-hr restriction on new contacts without needing ContentSid
+      formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
+      formData.append('Body', INQUIRY_TEMPLATE(leadName));
+      console.log(`[Twilio WhatsApp] Sending approved template body for new lead: ${leadName}`);
     } else if (message) {
       // Free-form — only works after lead has opened a 24-hr conversation window
       formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
