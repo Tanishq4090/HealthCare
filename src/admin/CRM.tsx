@@ -595,10 +595,11 @@ export default function CRM() {
                 })
             });
 
-            const resData = await response.json().catch(() => ({ error: response.statusText, details: null }));
+            const resData = await response.json().catch(() => ({ error: response.statusText }));
             if (!response.ok) {
-                const detailedError = resData.details?.message || resData.error || resData.message || `HTTP ${response.status}`;
-                throw new Error(detailedError);
+                const twilioMsg = resData.details?.message || resData.message || resData.error || response.statusText;
+                const twilioCode = resData.details?.code ? `(Code ${resData.details.code})` : '';
+                throw new Error(`${twilioMsg} ${twilioCode}`);
             }
 
             // Post-dispatch pipeline advancement

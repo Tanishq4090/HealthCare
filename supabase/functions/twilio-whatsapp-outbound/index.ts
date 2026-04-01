@@ -5,30 +5,48 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Approved Meta WhatsApp Template Text (must match character-for-character)
+// Approved Meta WhatsApp Template Text
 const INQUIRY_TEMPLATE = (name: string) =>
   `Hi ${name}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!`;
 
+// Simple in-memory log buffer for diagnostics (RESET ON DEPLOY/IDLE)
+const LOG_BUFFER: any[] = [];
+
 serve(async (req) => {
-  const { pathname } = new URL(req.url);
+  const url = new URL(req.url);
 
   // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // LOG ALL INCOMING WEBHOOKS FROM TWILIO (Status Callbacks)
-  if (pathname.includes('status')) {
-    const body = await req.formData();
-    const sid = body.get('MessageSid');
-    const status = body.get('MessageStatus');
-    const errorCode = body.get('ErrorCode');
-    const errorMessage = body.get('ErrorMessage');
+  // --- DIAGNOSTIC ENDPOINT ---
+  if (url.searchParams.get('get_logs') === 'true') {
+    return new Response(JSON.stringify(LOG_BUFFER), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  // --- STATUS CALLBACK HANDLER ---
+  if (url.pathname.endsWith('/status')) {
+    const formData = await req.formData();
+    const result = {
+        timestamp: new Date().toISOString(),
+        sid: formData.get('MessageSid'),
+        status: formData.get('MessageStatus'),
+        errorCode: formData.get('ErrorCode'),
+        errorMessage: formData.get('ErrorMessage'),
+    };
     
-    console.log(`[Twilio Status Callback] SID: ${sid} | Status: ${status} | Error: ${errorCode} - ${errorMessage}`);
+    LOG_BUFFER.unshift(result);
+    if (LOG_BUFFER.length > 20) LOG_BUFFER.pop();
+    
+    console.log(`[Twilio Status] ${result.sid}: ${result.status} | Error: ${result.errorCode}`);
     return new Response('ok', { status: 200 });
   }
 
+  // --- OUTBOUND MESSAGE HANDLER ---
   try {
     const { phone, message, leadName, useTemplate } = await req.json();
 
@@ -56,20 +74,17 @@ serve(async (req) => {
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
     const formData = new URLSearchParams();
     formData.append('To', formattedPhone);
-    formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`); // No service, matching the successful "Read" log
+    formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
     
-    // Status Callback to this same function to catch "Undelivered" reasons
-    const functionUrl = req.url.split('?')[0]; // Current URL
-    formData.append('StatusCallback', `${functionUrl}/status`);
+    // Status Callback to itself
+    const callbackUrl = `${url.origin}${url.pathname}/status`;
+    formData.append('StatusCallback', callbackUrl);
 
     if (useTemplate !== false && leadName) {
-      // ✅ Using direct Body matching (matches the successful MM... success path)
       const bodyText = INQUIRY_TEMPLATE(leadName.trim());
       formData.append('Body', bodyText);
-      console.log(`[Twilio WhatsApp] Dispatching Template Body to ${formattedPhone}`);
     } else {
       formData.append('Body', message || '');
-      console.log(`[Twilio WhatsApp] Dispatching Free-form Body.`);
     }
 
     const twilioResponse = await fetch(twilioUrl, {
@@ -82,28 +97,12 @@ serve(async (req) => {
     });
 
     const twilioData = await twilioResponse.json();
-
-    if (!twilioResponse.ok) {
-        console.error("[Twilio WhatsApp] Request Failed:", twilioData);
-        return new Response(JSON.stringify({ error: "Request Failed", details: twilioData }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    }
-
-    console.log("[Twilio WhatsApp] Message Enqueued. SID:", twilioData.sid);
-
-    return new Response(JSON.stringify({
-      success: true,
-      sid: twilioData.sid,
-      status: twilioData.status
-    }), {
-      status: 200,
+    return new Response(JSON.stringify(twilioData), {
+      status: twilioResponse.ok ? 200 : 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error: any) {
-    console.error("Internal Error:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
