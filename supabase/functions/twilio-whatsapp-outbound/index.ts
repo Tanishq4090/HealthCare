@@ -5,13 +5,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Approved Meta WhatsApp Template SID from Content Template Builder
-// This SID was active during the successful MM09... delivery at 2:24 AM
-const INQUIRY_TEMPLATE_SID = 'HXd2395942efa3143732f4844391e982b3';
+// Approved Meta WhatsApp Template Text (must match character-for-character)
+const INQUIRY_TEMPLATE = (name: string) =>
+  `Hi ${name}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!`;
 
 serve(async (req) => {
+  const { pathname } = new URL(req.url);
+
+  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  // LOG ALL INCOMING WEBHOOKS FROM TWILIO (Status Callbacks)
+  if (pathname.includes('status')) {
+    const body = await req.formData();
+    const sid = body.get('MessageSid');
+    const status = body.get('MessageStatus');
+    const errorCode = body.get('ErrorCode');
+    const errorMessage = body.get('ErrorMessage');
+    
+    console.log(`[Twilio Status Callback] SID: ${sid} | Status: ${status} | Error: ${errorCode} - ${errorMessage}`);
+    return new Response('ok', { status: 200 });
   }
 
   try {
@@ -26,11 +41,10 @@ serve(async (req) => {
 
     const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
     const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-    const MESSAGING_SERVICE_SID = Deno.env.get('TWILIO_MESSAGING_SERVICE_SID');
     const TWILIO_WHATSAPP_NUMBER = Deno.env.get('TWILIO_WHATSAPP_NUMBER') || '+14782155879';
 
     if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-      return new Response(JSON.stringify({ error: "Missing Twilio API credentials in Supabase secrets." }), {
+      return new Response(JSON.stringify({ error: "Missing Twilio credentials." }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -39,32 +53,23 @@ serve(async (req) => {
     const digits = phone.replace(/\D/g, '');
     const formattedPhone = `whatsapp:+${digits}`;
 
-    console.log(`[Twilio WhatsApp] Target: ${formattedPhone} | Template Mode: ${useTemplate !== false}`);
-
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
     const formData = new URLSearchParams();
     formData.append('To', formattedPhone);
+    formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`); // No service, matching the successful "Read" log
+    
+    // Status Callback to this same function to catch "Undelivered" reasons
+    const functionUrl = req.url.split('?')[0]; // Current URL
+    formData.append('StatusCallback', `${functionUrl}/status`);
 
     if (useTemplate !== false && leadName) {
-      // ✅ REPLICATION PATH: MM... SID generation via ContentSid + ServiceSid
-      if (MESSAGING_SERVICE_SID) {
-        formData.append('MessagingServiceSid', MESSAGING_SERVICE_SID);
-      } else {
-        formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
-      }
-      
-      formData.append('ContentSid', INQUIRY_TEMPLATE_SID);
-      formData.append('ContentVariables', JSON.stringify({ "1": leadName.trim() }));
-      
-      // Secondary fallback body matching
-      formData.append('Body', `Hi ${leadName.trim()}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!`);
-      
-      console.log(`[Twilio WhatsApp] Sending Content Template ${INQUIRY_TEMPLATE_SID} to new lead.`);
+      // ✅ Using direct Body matching (matches the successful MM... success path)
+      const bodyText = INQUIRY_TEMPLATE(leadName.trim());
+      formData.append('Body', bodyText);
+      console.log(`[Twilio WhatsApp] Dispatching Template Body to ${formattedPhone}`);
     } else {
-      // Direct From + Body for free-form
-      formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
       formData.append('Body', message || '');
-      console.log(`[Twilio WhatsApp] Sending free-form message.`);
+      console.log(`[Twilio WhatsApp] Dispatching Free-form Body.`);
     }
 
     const twilioResponse = await fetch(twilioUrl, {
@@ -79,21 +84,19 @@ serve(async (req) => {
     const twilioData = await twilioResponse.json();
 
     if (!twilioResponse.ok) {
-      console.error("[Twilio WhatsApp] Failure:", JSON.stringify(twilioData));
-      return new Response(JSON.stringify({
-        error: "Twilio API failure",
-        details: twilioData
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+        console.error("[Twilio WhatsApp] Request Failed:", twilioData);
+        return new Response(JSON.stringify({ error: "Request Failed", details: twilioData }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
     }
 
-    console.log("[Twilio WhatsApp] SUCCESS SID:", twilioData.sid);
+    console.log("[Twilio WhatsApp] Message Enqueued. SID:", twilioData.sid);
 
     return new Response(JSON.stringify({
       success: true,
-      sid: twilioData.sid
+      sid: twilioData.sid,
+      status: twilioData.status
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
