@@ -5,16 +5,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Approved Meta WhatsApp Template SID
+// Template: "Hi {{1}}, welcome to 99 Care! We've received your inquiry.
+// Our team is ready to provide the best healthcare staff for your home.
+// Please share your requirements and we'll get back to you shortly!"
+const INQUIRY_TEMPLATE_SID = 'HXd2395942efa3143732f4844391e982b3';
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { phone, message } = await req.json();
+    const { phone, message, leadName, useTemplate } = await req.json();
 
-    if (!phone || !message) {
-      return new Response(JSON.stringify({ error: "Missing 'phone' or 'message'" }), {
+    if (!phone) {
+      return new Response(JSON.stringify({ error: "Missing 'phone'" }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -22,8 +28,7 @@ serve(async (req) => {
 
     const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
     const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-    // Default to the Twilio Sandbox test number if TWILIO_WHATSAPP_NUMBER is somehow missing
-    const TWILIO_WHATSAPP_NUMBER = Deno.env.get('TWILIO_WHATSAPP_NUMBER') || '+14155238886'; 
+    const TWILIO_WHATSAPP_NUMBER = Deno.env.get('TWILIO_WHATSAPP_NUMBER') || '+14782155879';
 
     if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
       return new Response(JSON.stringify({ error: "Missing Twilio API credentials in environment." }), {
@@ -32,16 +37,32 @@ serve(async (req) => {
       });
     }
 
-    // Format target phone (Twilio requires 'whatsapp:+91...' prefix)
-    const formattedPhone = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
+    // Format target phone — Twilio requires '+91...' format, then we add 'whatsapp:' prefix
+    const digits = phone.replace(/\D/g, '');
+    const formattedPhone = `whatsapp:+${digits}`;
 
-    console.log(`[Twilio WhatsApp] Sending message to ${formattedPhone}...`);
+    console.log(`[Twilio WhatsApp] Target: ${formattedPhone} | Template: ${useTemplate !== false}`);
 
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
     const formData = new URLSearchParams();
-    formData.append('To', `whatsapp:${formattedPhone}`);
+    formData.append('To', formattedPhone);
     formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
-    formData.append('Body', message);
+
+    if (useTemplate !== false && leadName) {
+      // Use the approved Meta Content Template — bypasses 24-hr window for new leads
+      formData.append('ContentSid', INQUIRY_TEMPLATE_SID);
+      formData.append('ContentVariables', JSON.stringify({ "1": leadName }));
+      console.log(`[Twilio WhatsApp] Using approved template for new lead: ${leadName}`);
+    } else if (message) {
+      // Free-form message — only works if lead has opened a 24-hr window first
+      formData.append('Body', message);
+      console.log(`[Twilio WhatsApp] Using free-form message body.`);
+    } else {
+      return new Response(JSON.stringify({ error: "Must provide either leadName (for template) or message (free-form)." }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     const twilioResponse = await fetch(twilioUrl, {
       method: 'POST',
@@ -55,7 +76,7 @@ serve(async (req) => {
     const twilioData = await twilioResponse.json();
 
     if (!twilioResponse.ok) {
-      console.error("[Twilio WhatsApp] Error:", twilioData);
+      console.error("[Twilio WhatsApp] Error:", JSON.stringify(twilioData));
       return new Response(JSON.stringify({
         error: "Twilio API failed to send message",
         details: twilioData
@@ -65,11 +86,12 @@ serve(async (req) => {
       });
     }
 
-    console.log("[Twilio WhatsApp] Message sent!", twilioData.sid);
+    console.log("[Twilio WhatsApp] Message queued!", twilioData.sid, "Status:", twilioData.status);
 
     return new Response(JSON.stringify({
       success: true,
-      message_id: twilioData.sid
+      message_id: twilioData.sid,
+      status: twilioData.status
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

@@ -62,7 +62,7 @@ export default function CRM() {
     const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
     const [selectedWorker, setSelectedWorker] = useState<any>(null);
     const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
-    const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
+    const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('English');
     const [agentDraftText, setAgentDraftText] = useState('');
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
     const [templateDraftText, setTemplateDraftText] = useState('');
@@ -395,21 +395,24 @@ export default function CRM() {
                 let targetNumber = lead.whatsapp_number || lead.phone || '918000044090';
                 const phoneDigits = targetNumber.replace(/\D/g, '');
 
-                const message = generateWhatsappDraft(lead.name, 'inquiry', agentDraftLang);
-
-                const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/twilio-whatsapp-outbound`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                         'apikey': SUPABASE_ANON_KEY,
                     },
-                    body: JSON.stringify({ phone: phoneDigits, message }),
+                    body: JSON.stringify({
+                        phone: phoneDigits,
+                        // Use approved Meta template for bulk greetings — bypasses Meta 24-hr restriction
+                        leadName: lead.name,
+                        useTemplate: true,
+                    }),
                 });
 
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `HTTP ${response.status}`);
+                    throw new Error(err.details?.message || err.error || err.message || `HTTP ${response.status}`);
                 }
 
                 sentCount++;
@@ -583,12 +586,19 @@ export default function CRM() {
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                     'apikey': SUPABASE_ANON_KEY,
                 },
-                body: JSON.stringify({ phone: phoneDigits, message: agentDraftText })
+                body: JSON.stringify({
+                    phone: phoneDigits,
+                    message: agentDraftText,
+                    // For new lead greetings, use the approved Meta template (bypasses 24-hr window)
+                    leadName: agentTargetAction === 'inquiry' ? (agentTargetLead?.name || 'there') : undefined,
+                    useTemplate: agentTargetAction === 'inquiry',
+                })
             });
 
-            const resData = await response.json().catch(() => ({ error: response.statusText }));
+            const resData = await response.json().catch(() => ({ error: response.statusText, details: null }));
             if (!response.ok) {
-                throw new Error(resData.error || resData.message || `HTTP ${response.status}`);
+                const detailedError = resData.details?.message || resData.error || resData.message || `HTTP ${response.status}`;
+                throw new Error(detailedError);
             }
 
             // Post-dispatch pipeline advancement
@@ -866,13 +876,13 @@ export default function CRM() {
 
     const captureCallAsLead = async (callId: string | number) => {
         const call = calls.find(c => c.id === callId);
-        if (!call || !call.capturedName) return;
+        if (!call) return;
 
         try {
             const { error } = await supabase.from('crm_leads').insert([{
-                name: call.capturedName,
-                phone: call.phone,
-                whatsapp_number: call.capturedWhatsapp || null,
+                name: call.capturedName || 'Voice Lead',
+                phone: call.phone === 'Unknown Number' ? null : call.phone,
+                whatsapp_number: call.capturedWhatsapp === 'Unknown Number' ? null : call.capturedWhatsapp,
                 source: 'AI Phone Call',
                 status: 'AI Handled',
                 pipeline_stage: 'New Inquiry',
