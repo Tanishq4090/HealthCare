@@ -46,15 +46,21 @@ serve(async (req) => {
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
     const formData = new URLSearchParams();
     formData.append('To', formattedPhone);
-    formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
 
     if (useTemplate !== false && leadName) {
-      // Use the approved Meta Content Template — bypasses 24-hr window for new leads
+      // ✅ Content Template: REQUIRES MessagingServiceSid (not From) to bypass Meta 24-hr restriction
+      const MESSAGING_SERVICE_SID = Deno.env.get('TWILIO_MESSAGING_SERVICE_SID') || '';
+      if (MESSAGING_SERVICE_SID) {
+        formData.append('MessagingServiceSid', MESSAGING_SERVICE_SID);
+      } else {
+        formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
+      }
       formData.append('ContentSid', INQUIRY_TEMPLATE_SID);
       formData.append('ContentVariables', JSON.stringify({ "1": leadName }));
       console.log(`[Twilio WhatsApp] Using approved template for new lead: ${leadName}`);
     } else if (message) {
-      // Free-form message — only works if lead has opened a 24-hr window first
+      // Free-form — only works after lead has opened a 24-hr conversation window
+      formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
       formData.append('Body', message);
       console.log(`[Twilio WhatsApp] Using free-form message body.`);
     } else {
@@ -72,6 +78,7 @@ serve(async (req) => {
       },
       body: formData.toString()
     });
+
 
     const twilioData = await twilioResponse.json();
 
