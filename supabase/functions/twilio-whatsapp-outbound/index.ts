@@ -6,13 +6,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Official Template Parameters
+// Official Production Template / Service SIDs
 const CONTENT_SID = 'HXd2395942efa3143732f4844391e982b3';
 const SERVICE_SID = 'MGbe9775ea8aa459a5e88292470ee7afb6';
 
 serve(async (req) => {
   const url = new URL(req.url);
 
+  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -21,40 +22,39 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // --- DIAGNOSTIC: GET LOGS ---
-  if (url.searchParams.get('get_logs') === 'true') {
-    const { data } = await supabase.from('whatsapp_logs').select('*').order('created_at', { ascending: false }).limit(20);
-    return new Response(JSON.stringify(data || []), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  // --- WEBHOOK: STATUS CALLBACK ---
+  // --- WEBHOOK: STATUS CALLBACK (POST ?status=true) ---
   if (url.searchParams.get('status') === 'true') {
     try {
       const body = await req.formData();
+      const sid = body.get('MessageSid');
+      const status = body.get('MessageStatus');
+      
       await supabase.from('whatsapp_logs').upsert({
-        sid: body.get('MessageSid'),
-        status: body.get('MessageStatus'),
+        sid: sid,
+        status: status,
         error_code: body.get('ErrorCode'),
         error_message: body.get('ErrorMessage'),
         payload: Object.fromEntries(body.entries())
       });
+      
+      console.log(`[Twilio Webhook] ${sid}: ${status}`);
     } catch (e) {
-      console.error("Webhook error:", e);
+      console.error("Webhook processing error:", e);
     }
     return new Response('ok', { status: 200 });
   }
 
-  // --- OUTBOUND: MAIN HANDLER ---
+  // --- OUTBOUND: MESSAGE DISPATCH ---
   try {
     const payload = await req.json();
-    const { phone, leadName, useTemplate } = payload;
+    const { phone, leadName, message, useTemplate } = payload;
 
-    // Pre-flight database entry
-    await supabase.from('whatsapp_logs').insert({
-      sid: `START_${Date.now()}`,
-      status: 'INITIATED',
-      error_message: `Number: ${phone} | Name: ${leadName}`
-    });
+    if (!phone) {
+      return new Response(JSON.stringify({ error: "Missing 'phone'" }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
     const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -66,28 +66,25 @@ serve(async (req) => {
     const formData = new URLSearchParams();
     formData.append('To', formattedPhone);
     
-    // Absolute production URL for status callback
+    // Hardcoded production status callback URL
     const callbackUrl = `https://sgyladamwnanudnropwl.supabase.co/functions/v1/twilio-whatsapp-outbound?status=true`;
     formData.append('StatusCallback', callbackUrl);
 
     if (useTemplate !== false && leadName) {
-      // ✅ USING THE COMBINATION THAT WORKS WITH NEW TWILIO CONTENT BUILDER
+      // ✅ Twilio Content API Pattern
       formData.append('MessagingServiceSid', SERVICE_SID);
       formData.append('ContentSid', CONTENT_SID);
       formData.append('ContentVariables', JSON.stringify({ "1": leadName.trim() }));
       
-      // Fallback body for session-stale templates
+      // Secondary fallback body (required by some Meta endpoints)
       formData.append('Body', `Hi ${leadName.trim()}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!`);
-      
-      console.log(`[Twilio] Dispatching via Content API: ${CONTENT_SID}`);
     } else {
       formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
-      formData.append('Body', payload.message || '');
-      console.log(`[Twilio] Dispatching free-form`);
+      formData.append('Body', message || '');
     }
 
-    const restUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-    const response = await fetch(restUrl, {
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+    const twilioResponse = await fetch(twilioUrl, {
       method: 'POST',
       headers: {
         'Authorization': 'Basic ' + btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`),
@@ -96,23 +93,27 @@ serve(async (req) => {
       body: formData.toString()
     });
 
-    const data = await response.json();
+    const twilioData = await twilioResponse.json();
     
-    // Log initial success
-    if (response.ok) {
+    // Log the initial handoff
+    if (twilioResponse.ok) {
         await supabase.from('whatsapp_logs').insert({
-            sid: data.sid,
-            status: 'ACCEPTED_BY_TWILIO',
-            payload: data
+            sid: twilioData.sid,
+            status: 'accepted_by_twilio',
+            payload: twilioData
         });
     }
 
-    return new Response(JSON.stringify(data), {
-      status: response.ok ? 200 : 400,
+    return new Response(JSON.stringify(twilioData), {
+      status: twilioResponse.ok ? 200 : 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (error: any) {
+    console.error("Internal Error:", error.message);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
 });
