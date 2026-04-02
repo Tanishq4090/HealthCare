@@ -757,7 +757,7 @@ export default function CRM() {
         if (leadId.length < 10) return;
 
         try {
-            const { error } = await supabase.from('leads').delete().eq('id', leadId);
+            const { error } = await supabase.from('crm_leads').delete().eq('id', leadId);
             if (error) throw error;
         } catch (err: any) {
             console.error('Failed to delete lead:', err);
