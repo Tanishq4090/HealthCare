@@ -746,6 +746,26 @@ export default function CRM() {
         }
     };
 
+    const handleDeleteLead = async (leadId: string, leadName: string) => {
+        if (!window.confirm(`Are you sure you want to delete "${leadName}"? This action cannot be undone.`)) return;
+
+        // Remove from UI immediately
+        setLeads(prev => prev.filter(l => l.id !== leadId));
+        toast.success(`Lead "${leadName}" deleted.`);
+
+        // If mock lead (short ID), skip Supabase
+        if (leadId.length < 10) return;
+
+        try {
+            const { error } = await supabase.from('leads').delete().eq('id', leadId);
+            if (error) throw error;
+        } catch (err: any) {
+            console.error('Failed to delete lead:', err);
+            toast.error(`Failed to delete from database: ${err.message}`);
+            fetchLeads(); // Re-fetch to restore
+        }
+    };
+
     const handleAddStage = () => {
         if (newStageName.trim() && !pipelineStages.includes(newStageName.trim())) {
             setPipelineStages([...pipelineStages, newStageName.trim()]);
@@ -1094,7 +1114,7 @@ export default function CRM() {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    <div onClick={(e) => e.stopPropagation()} className="relative shrink-0 ml-2 mt-0.5">
+                                                    <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0 ml-2 mt-0.5">
                                                         <select
                                                             value={item.pipeline_stage}
                                                             onChange={(e) => handleMoveLead(item.id, e.target.value)}
@@ -1104,6 +1124,13 @@ export default function CRM() {
                                                                 <option key={stage} value={stage}>{stage}</option>
                                                             ))}
                                                         </select>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteLead(item.id, item.name); }}
+                                                            className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                                                            title="Delete Lead"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
                                                     </div>
                                                 </div>
 
