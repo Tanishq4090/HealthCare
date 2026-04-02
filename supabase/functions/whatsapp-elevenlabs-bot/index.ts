@@ -1,135 +1,102 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+
+const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
+const AGENT_ID = Deno.env.get('VITE_ELEVENLABS_AGENT_ID') || 'agent_7601kmj6d0dxf8ha6vkrkan0mc00';
 
 serve(async (req) => {
     try {
-        // Twilio sends data as application/x-www-form-urlencoded by default
         const textData = await req.text();
         const params = new URLSearchParams(textData);
-
+        
         const body = params.get('Body') || '';
-        const from = params.get('From') || ''; // e.g. whatsapp:+917600004090
-        const to = params.get('To') || '';
-
+        const from = params.get('From') || '';
+        
         console.log(`[Incoming WhatsApp] From: ${from}, Message: ${body}`);
 
-        if (!body || body.trim().length === 0) {
-            return new Response("OK", { status: 200 }); // Ignore empty messages
+        if (!body.trim()) {
+            return new Response("OK", { status: 200 });
         }
 
-        const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
-        const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-        const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
-
-        if (!GROQ_API_KEY) {
-            console.error("Missing GROQ_API_KEY");
-            return new Response("Configuration Error", { status: 500 });
+        if (!ELEVENLABS_API_KEY) {
+            console.error("Missing ELEVENLABS_API_KEY");
+            return new Response("Config Error", { status: 500 });
         }
 
-        // 1. Generate Intelligent Text Response via Groq (Llama 3 70B)
-        const systemPrompt = `You are Eric, the warm, professional, and efficient AI assistant for 99 Care Home Healthcare Services on WhatsApp.
-Your goal is to provide helpful, concise answers about our services:
-- New Born Baby Care (Japa Maid, Nanny)
-- Old Age/Patient Care
-- Professional Nursing
-- Physiotherapy at Home
+        console.log("Fetching Signed URL...");
+        const signedUrlRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${AGENT_ID}`, {
+            headers: { 'xi-api-key': ELEVENLABS_API_KEY }
+        });
+        
+        if (!signedUrlRes.ok) throw new Error("Failed to get signed URL: " + await signedUrlRes.text());
+        const { signed_url } = await signedUrlRes.json();
 
-Rules:
-- Keep responses short (under 60 words) and conversational.
-- Use warmEmojis (🙏, ✨, 💙, ✅) professionally.
-- No markdown like **bold** or *italics*.
-- Language: Respond in the same language the user uses (Hindi, Hinglish, or English).
-- Encourage the user to share their specific requirement or location so we can help them better.`;
+        // Wrap WebSocket logic in a Promise to wait for the complete response
+        const agentText = await new Promise<string>((resolve, reject) => {
+            console.log("Connecting to ElevenLabs WebSocket...");
+            const ws = new WebSocket(signed_url);
+            let fullResponse = "";
+            
+            // Timeout gracefully after 12 seconds to ensure Twilio doesn't drop
+            const timeout = setTimeout(() => {
+                console.log("Timeout waiting for full response. Returning what we have.");
+                ws.close();
+                resolve(fullResponse || "I'm having a bit of trouble connecting right now. Please try again soon! 🙏");
+            }, 12000);
 
-        let replyText = "I'm sorry, I'm having a bit of trouble connecting at the moment. Please try again in 1 minute!";
+            ws.onopen = () => {
+                console.log("WS Connected. Sending user message...");
+                
+                // Wait a brief moment to let the agent context load before injecting user text
+                setTimeout(() => {
+                    ws.send(JSON.stringify({
+                        type: "user_message",
+                        user_message_event: { text: body }
+                    }));
+                }, 500);
+            };
 
-        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${GROQ_API_KEY}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: "llama-3.1-8b-instant",
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: body }
-                ],
-                max_tokens: 200,
-                temperature: 0.6
-            })
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === "agent_response") {
+                        const chunk = data.agent_response_event?.agent_response || "";
+                        fullResponse += chunk;
+                        
+                        // We heuristically check if the agent finished its turn.
+                        // Sometimes ElevenLabs streams chunk by chunk. We'll wait a bit.
+                        // If we see it's a complete sentence or we wait a certain amount of time.
+                    }
+                } catch (e) {
+                    console.error("Parse error:", e);
+                }
+            };
+            
+            // Wait 5 seconds after sending the message to gather all text chunks, then close.
+            setTimeout(() => {
+                clearTimeout(timeout);
+                ws.close();
+                resolve(fullResponse);
+            }, 5500);
+
+            ws.onerror = (e) => {
+                console.error("WS Error");
+                clearTimeout(timeout);
+                reject(e);
+            };
         });
 
-        if (groqRes.ok) {
-            const groqData = await groqRes.json();
-            replyText = groqData.choices[0]?.message?.content || replyText;
-        } else {
-            console.error("Groq API error:", await groqRes.text());
-        }
+        console.log(`[Agent Reply]: ${agentText}`);
 
-        // 2. Generate Premium AI Voice Note via ElevenLabs
-        let audioUrl = '';
-        const ENABLE_VOICE_NOTES = false; // Turned off per user request
+        // Strip out audio directives like "[warmly]" from ElevenLabs
+        const cleanText = agentText.replace(/\[.*?\]/g, '').trim();
 
-        if (ENABLE_VOICE_NOTES && ELEVENLABS_API_KEY) {
-            try {
-                // Ensure audio bucket exists
-                await supabaseClient.storage.createBucket('whatsapp_audio', { public: true });
-
-                // Voice ID: 'pNInz6obpgDQGcFmaJgB' (Adam - professional & deep) 
-                // OR 'EXAVITQu4vr4xnSDxMaL' (Bella - soft & helpful)
-                const voiceId = 'pNInz6obpgDQGcFmaJgB';
-                const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
-                    method: 'POST',
-                    headers: {
-                        'xi-api-key': ELEVENLABS_API_KEY,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        text: replyText,
-                        model_id: "eleven_multilingual_v2",
-                        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-                    })
-                });
-
-                if (ttsRes.ok) {
-                    const audioBuffer = await ttsRes.arrayBuffer();
-                    const fileName = `voicenote-${Date.now()}-${from.replace(/\D/g, '')}.mp3`;
-
-                    const { error: uploadError } = await supabaseClient.storage
-                        .from('whatsapp_audio')
-                        .upload(fileName, audioBuffer, { contentType: 'audio/mpeg', cacheControl: '3600' });
-
-                    if (!uploadError) {
-                        const { data } = supabaseClient.storage.from('whatsapp_audio').getPublicUrl(fileName);
-                        audioUrl = data.publicUrl;
-                    } else {
-                        console.error("Storage upload error:", uploadError);
-                    }
-                } else {
-                    console.error("ElevenLabs error:", await ttsRes.text());
-                }
-            } catch (err: any) {
-                console.error('[Audio Engine Error]', err);
-            }
-        } else {
-            console.error("Missing ELEVENLABS_API_KEY flag in env.");
-        }
-
-        // 3. Return TwiML to Twilio to dispatch the response
-        let twiml = `<?xml version="1.0" encoding="UTF-8"?>
+        // Return TwiML
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>
-        <Body>${replyText}</Body>`;
-
-        if (audioUrl) {
-            twiml += `\n        <Media>${audioUrl}</Media>`;
-        }
-
-        twiml += `\n    </Message>\n</Response>`;
+        <Body>${cleanText}</Body>
+    </Message>
+</Response>`;
 
         return new Response(twiml, {
             headers: { "Content-Type": "text/xml" },
@@ -138,6 +105,9 @@ Rules:
 
     } catch (error: any) {
         console.error("[Webhook Critical Error]", error);
-        return new Response("Internal Server Error", { status: 500 });
+        
+        // Fallback TwiML
+        const fallback = `<?xml version="1.0" encoding="UTF-8"?><Response><Message><Body>We are currently experiencing high volume. Our team will get back to you shortly! 🙏</Body></Message></Response>`;
+        return new Response(fallback, { headers: { "Content-Type": "text/xml" }, status: 200 });
     }
 });
