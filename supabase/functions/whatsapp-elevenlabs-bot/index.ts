@@ -124,7 +124,6 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
             console.log("Connecting to ElevenLabs WebSocket...");
             const ws = new WebSocket(signed_url);
             let fullResponse = "";
-            let streamContextualResponse = false;
             
             const timeout = setTimeout(() => {
                 ws.close();
@@ -132,28 +131,29 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
             }, 10000); // 10s master timeout
 
             ws.onopen = () => {
-                console.log("WS Connected. Sending contextual payload...");
+                console.log("WS Connected. Sending initiation and contextual payload...");
                 
-                // Blast the user_message immediately so the LLM starts processing
+                // 1. Send the official override to SILENCE the mandatory first message
                 ws.send(JSON.stringify({
-                    type: "user_message",
-                    user_message_event: { text: formattedMessageForAgent }
+                    type: "conversation_initiation_client_data",
+                    conversation_config_override: {
+                        agent: {
+                            first_message: " " // A single space forcefully suppresses the greeting
+                        }
+                    }
                 }));
 
-                // Swallowing the First Message: 
-                // The agent natively outputs its "First Message" immediately upon connection.
-                // By waiting 1.2 seconds, we allow the agent's interruption sequence to finish,
-                // and we drop all the First Message chunks. The LLM takes >1.2s to generate the new reply.
+                // 2. Wait 200ms for settings to apply, then blast the historical context & user message
                 setTimeout(() => {
-                    fullResponse = "";
-                    streamContextualResponse = true;
-                    console.log("Buffer cleared. Now listening for pure contextual LLM response...");
-                }, 1200);
+                    ws.send(JSON.stringify({
+                        type: "user_message",
+                        user_message_event: { text: formattedMessageForAgent }
+                    }));
+                    console.log("Context sent. Listening for response...");
+                }, 200);
             };
 
             ws.onmessage = (event) => {
-                if (!streamContextualResponse) return; // Drop First Message chunks!
-
                 try {
                     const data = JSON.parse(event.data);
                     if (data.type === "agent_response") {
@@ -165,12 +165,12 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
                 }
             };
             
-            // Gather text chunks for 6.5 seconds total, then close
+            // Gather text chunks for 6 seconds total, then close
             setTimeout(() => {
                 clearTimeout(timeout);
                 ws.close();
                 resolve(fullResponse);
-            }, 6500);
+            }, 6000);
 
             ws.onerror = (e) => {
                 clearTimeout(timeout);
