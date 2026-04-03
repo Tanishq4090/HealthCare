@@ -38,12 +38,14 @@ serve(async (req) => {
         const purePhone = from.replace('whatsapp:', '').trim();
 
         // 1. Fetch Chat History (Memory)
-        const { data: historyData } = await supabase
+        const { data: rawHistory } = await supabase
             .from('whatsapp_messages')
             .select('*')
             .eq('phone', purePhone)
-            .order('created_at', { ascending: true })
+            .order('created_at', { ascending: false })
             .limit(10);
+            
+        const historyData = rawHistory?.reverse() || [];
             
         // Build History string for ElevenLabs Native Agent
         let historyString = "";
