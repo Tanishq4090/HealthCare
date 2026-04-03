@@ -1,8 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
-const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-const AGENT_ID = Deno.env.get('VITE_ELEVENLABS_AGENT_ID') || 'agent_7601kmj6d0dxf8ha6vkrkan0mc00';
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -29,7 +27,7 @@ serve(async (req) => {
             return new Response("OK", { status: 200 });
         }
 
-        if (!ELEVENLABS_API_KEY || !SUPABASE_URL || !SUPABASE_KEY || !GROQ_API_KEY) {
+        if (!GROQ_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
             console.error("Missing critical environment variables.");
             return new Response("Config Error", { status: 500 });
         }
@@ -37,7 +35,7 @@ serve(async (req) => {
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
         const purePhone = from.replace('whatsapp:', '').trim();
 
-        // 1. Fetch Chat History (Memory)
+        // 1. Fetch Chat History (Memory) -> Fix applied: descending order, then reversed for chronological context
         const { data: rawHistory } = await supabase
             .from('whatsapp_messages')
             .select('*')
@@ -46,19 +44,42 @@ serve(async (req) => {
             .limit(10);
             
         const historyData = rawHistory?.reverse() || [];
-            
-        // Build History string for ElevenLabs Native Agent
-        let historyString = "";
-        if (historyData && historyData.length > 0) {
-            historyString = "### PREVIOUS CHAT HISTORY (Do not reply to this, just remember it for context):\n";
+
+        // Map history to Groq format
+        const messages: any[] = [
+            {
+                role: "system",
+                content: `You are Eric, the warm and professional AI assistant for 99 Care Home Healthcare Services on WhatsApp.
+Services we provide: New Born Baby care (Japa Maid, Nanny), Old Age/patient care, Professional Nursing, Physiotherapy at home.
+
+CRITICAL RULES:
+- You must ONLY reply in valid JSON format. Do not add conversational text outside the JSON.
+- Output JSON schema MUST contain two fields: "replyToUser" (string) and "pipelineStageUpdate" (string OR null).
+- Keep "replyToUser" short (under 40 words), highly conversational, and DO NOT use markdown formatting (no bold/italics!). Use nice emojis.
+- Understand Hindi, Hinglish, and English. Respond naturally in the language the user speaks.
+
+CRM AUTOMATION RULES for "pipelineStageUpdate":
+Based on user intent, return one of these exact strings for 'pipelineStageUpdate' (or null if unchanged):
+- If user asks for pricing/quotation -> "Quotation Sent"
+- If user agrees to book/demo / wants to start -> "Demo Scheduled"
+- If user is not interested/wrong number -> "Lost"
+- If user is just asking generic questions -> "In Discussion"`
+            }
+        ];
+
+        if (historyData) {
             historyData.forEach(msg => {
-                const speaker = msg.role === 'user' ? 'User' : 'You (Agent)';
-                historyString += `${speaker}: ${msg.content}\n`;
+                if (msg.content) {
+                    messages.push({
+                        role: msg.role === 'user' ? 'user' : 'assistant',
+                        // Avoid feeding bad JSON to history. Just give plain content back for context.
+                        content: msg.content
+                    });
+                }
             });
-            historyString += "### END PREVIOUS CHAT HISTORY\n\n";
         }
 
-        const formattedMessageForAgent = `${historyString}### NEW USER MESSAGE (Reply directly to this contextually):\n${body}`;
+        messages.push({ role: "user", content: body });
 
         // Save incoming user message to memory immediately
         await supabase.from('whatsapp_messages').insert([{
@@ -67,162 +88,70 @@ serve(async (req) => {
             content: body
         }]);
 
-        // 2. Background Task: Silent CRM Updater using Groq
-        const silentCRMUpdate = async () => {
+        // 2. Call Groq with STRICT JSON Mode (Eliminates XML tag bleeding)
+        console.log("Calling Groq LLM with JSON Mode...");
+        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${GROQ_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "llama-3.3-70b-versatile",
+                messages: messages,
+                response_format: { type: "json_object" },
+                max_tokens: 250,
+                temperature: 0.2
+            })
+        });
+
+        let aiReplyMsg = "I'm having a bit of trouble reaching our servers right now. Please test again in a minute! 🙏";
+
+        if (groqRes.ok) {
+            const groqData = await groqRes.json();
+            const rawContent = groqData.choices[0]?.message?.content || '{}';
+            
             try {
-                const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${GROQ_API_KEY}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        model: "llama-3.1-8b-instant",
-                        messages: [
-                            {
-                                role: "system",
-                                content: `You are a background routing AI for 99 Care Home Healthcare Services (services: New Born Baby Care, Professional Nursing, Old Age Care, Physiotherapy). Look at the user's latest message and return ONLY a single JSON object classifying their pipeline stage based on intent. 
-Valid stages: "New", "In Discussion", "Quotation Sent", "Demo Scheduled", "Lost", "Junk".
-Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stage": "In Discussion"}`
-                            },
-                            { role: "user", content: `History:\n${historyString}\n\nUser's Latest Message: ${body}` }
-                        ],
-                        response_format: { type: "json_object" },
-                        temperature: 0.1
-                    })
-                });
+                const parsedResult = JSON.parse(rawContent);
 
-                if (groqRes.ok) {
-                    const groqData = await groqRes.json();
-                    const intent = JSON.parse(groqData.choices[0]?.message?.content || '{}');
-                    if (intent.stage) {
-                        console.log(`[CRM Background Updater] Found intent: ${intent.stage} for phone ${purePhone}`);
-                        await supabase
-                            .from('crm_leads')
-                            .update({ pipeline_stage: intent.stage })
-                            .like('whatsapp_number', `%${purePhone.slice(-10)}%`);
-                    }
+                // 1. Extract clean reply for WhatsApp
+                if (parsedResult.replyToUser) {
+                    aiReplyMsg = parsedResult.replyToUser;
                 }
-            } catch (err) {
-                console.error("[CRM Background Updater Error]:", err);
+
+                // 2. Handle CRM Stage Update 
+                const newStage = parsedResult.pipelineStageUpdate;
+                const validStages = ["New", "In Discussion", "Quotation Sent", "Demo Scheduled", "Lost", "Junk"];
+                if (newStage && validStages.includes(newStage)) {
+                    console.log(`[CRM Integration] Updating Lead ${purePhone} to Pipeline Stage: ${newStage}`);
+                    await supabase
+                        .from('crm_leads')
+                        .update({ pipeline_stage: newStage })
+                        .like('whatsapp_number', `%${purePhone.slice(-10)}%`);
+                }
+
+            } catch (jsonErr) {
+                console.error("Failed to parse Groq JSON:", rawContent);
+                aiReplyMsg = "Oops! We hit a bit of internal turbulence, please say that again! 💙";
             }
-        };
-
-        // Fire the background updater without waiting
-        silentCRMUpdate();
-
-        // 3. Connect to ElevenLabs Agent
-        console.log("Fetching ElevenLabs Signed URL...");
-        const signedUrlRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${AGENT_ID}`, {
-            headers: { 'xi-api-key': ELEVENLABS_API_KEY }
-        });
-        
-        if (!signedUrlRes.ok) throw new Error("Failed to get signed URL: " + await signedUrlRes.text());
-        const { signed_url } = await signedUrlRes.json();
-
-        const agentText = await new Promise<string>((resolve, reject) => {
-            console.log("Connecting to ElevenLabs WebSocket...");
-            const ws = new WebSocket(signed_url);
-            let fullResponse = "";
-            
-            const timeout = setTimeout(() => {
-                ws.close();
-                resolve(fullResponse || "I'm having a bit of trouble connecting right now! 🙏");
-            }, 10000); // 10s master timeout
-
-            ws.onopen = () => {
-                console.log("WS Connected. Sending contextual payload...");
-                
-                // Blast the historical context & user message directly
-                // (Removed override payload to fix connection crashes for accounts without overrides enabled)
-                ws.send(JSON.stringify({
-                    type: "user_message",
-                    user_message_event: { text: formattedMessageForAgent }
-                }));
-                console.log("Context sent. Listening for response...");
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === "agent_response") {
-                        const chunk = data.agent_response_event?.agent_response || "";
-                        fullResponse += chunk;
-                    }
-                } catch (e) {
-                    console.error("Parse error:", e);
-                }
-            };
-            
-            // Gather text chunks for 6 seconds total, then close
-            setTimeout(() => {
-                clearTimeout(timeout);
-                ws.close();
-                resolve(fullResponse);
-            }, 6000);
-
-            ws.onerror = (e) => {
-                clearTimeout(timeout);
-                reject(e);
-            };
-        });
-
-        // Strip audio directives like "[warmly]"
-        let rawElevenLabsReply = agentText.replace(/\[.*?\]/g, '').trim();
-        console.log(`[Raw ElevenLabs Reply]: ${rawElevenLabsReply}`);
-
-        // 4. Synchronous Response Cleaner Route (Strips "First Message" greeting via ultra-fast Groq LLM)
-        let finalReply = rawElevenLabsReply;
-        try {
-            console.log("Filtering greeting via Groq...");
-            const stripRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${GROQ_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    model: "llama-3.3-70b-versatile",
-                    messages: [
-                        {
-                            role: "system",
-                            content: `You are an exact text extractor. I will give you a transcript of a voice Assistant answering a user. Due to system limits, the Assistant always starts its response by repeating its generic intro greeting (e.g., "Hello, welcome to 99 Care..."). You must strip out the generic greeting and output ONLY the actual direct, contextual response to the user's specific question. Output RAW text only. DO NOT add any conversational filler like "Here is the filtered text". Output in the same language as the text.`
-                        },
-                        {
-                            role: "user",
-                            content: `User Question: "${body}"\n\nRaw Assistant Transcript: "${rawElevenLabsReply}"`
-                        }
-                    ],
-                    max_tokens: 250,
-                    temperature: 0.1
-                })
-            });
-
-            if (stripRes.ok) {
-                const stripData = await stripRes.json();
-                const cleanedContent = stripData.choices[0]?.message?.content?.trim();
-                if (cleanedContent && cleanedContent.length > 5) {
-                    finalReply = cleanedContent;
-                }
-            }
-        } catch (e) {
-            console.error("Failed to strip greeting via Groq:", e);
+        } else {
+            console.error("Groq API error:", await groqRes.text());
         }
 
-        console.log(`[Final WhatsApp Reply]: ${finalReply}`);
+        console.log(`[Final WhatsApp Reply]: ${aiReplyMsg}`);
 
-        // Save AI reply to memory
+        // Save AI reply to memory for context
         await supabase.from('whatsapp_messages').insert([{
             phone: purePhone,
             role: 'assistant',
-            content: finalReply
+            content: aiReplyMsg
         }]);
 
         // Return TwiML
         const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>
-        <Body>${finalReply.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Body>
+        <Body>${aiReplyMsg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Body>
     </Message>
 </Response>`;
 
