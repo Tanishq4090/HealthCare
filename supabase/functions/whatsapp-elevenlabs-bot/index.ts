@@ -122,7 +122,7 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
             console.log("Connecting to ElevenLabs WebSocket...");
             const ws = new WebSocket(signed_url);
             let fullResponse = "";
-            let messageSent = false;
+            let streamContextualResponse = false;
             
             const timeout = setTimeout(() => {
                 ws.close();
@@ -132,17 +132,26 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
             ws.onopen = () => {
                 console.log("WS Connected. Sending contextual payload...");
                 
-                // Wait briefly for ElevenLabs session to init
+                // Blast the user_message immediately so the LLM starts processing
+                ws.send(JSON.stringify({
+                    type: "user_message",
+                    user_message_event: { text: formattedMessageForAgent }
+                }));
+
+                // Swallowing the First Message: 
+                // The agent natively outputs its "First Message" immediately upon connection.
+                // By waiting 1.2 seconds, we allow the agent's interruption sequence to finish,
+                // and we drop all the First Message chunks. The LLM takes >1.2s to generate the new reply.
                 setTimeout(() => {
-                    ws.send(JSON.stringify({
-                        type: "user_message",
-                        user_message_event: { text: formattedMessageForAgent }
-                    }));
-                    messageSent = true;
-                }, 800);
+                    fullResponse = "";
+                    streamContextualResponse = true;
+                    console.log("Buffer cleared. Now listening for pure contextual LLM response...");
+                }, 1200);
             };
 
             ws.onmessage = (event) => {
+                if (!streamContextualResponse) return; // Drop First Message chunks!
+
                 try {
                     const data = JSON.parse(event.data);
                     if (data.type === "agent_response") {
@@ -154,12 +163,12 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
                 }
             };
             
-            // Gather text chunks for 6 seconds, then close
+            // Gather text chunks for 6.5 seconds total, then close
             setTimeout(() => {
                 clearTimeout(timeout);
                 ws.close();
                 resolve(fullResponse);
-            }, 6000);
+            }, 6500);
 
             ws.onerror = (e) => {
                 clearTimeout(timeout);
