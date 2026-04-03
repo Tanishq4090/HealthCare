@@ -131,26 +131,15 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
             }, 10000); // 10s master timeout
 
             ws.onopen = () => {
-                console.log("WS Connected. Sending initiation and contextual payload...");
+                console.log("WS Connected. Sending contextual payload...");
                 
-                // 1. Send the official override to SILENCE the mandatory first message
+                // Blast the historical context & user message directly
+                // (Removed override payload to fix connection crashes for accounts without overrides enabled)
                 ws.send(JSON.stringify({
-                    type: "conversation_initiation_client_data",
-                    conversation_config_override: {
-                        agent: {
-                            first_message: " " // A single space forcefully suppresses the greeting
-                        }
-                    }
+                    type: "user_message",
+                    user_message_event: { text: formattedMessageForAgent }
                 }));
-
-                // 2. Wait 200ms for settings to apply, then blast the historical context & user message
-                setTimeout(() => {
-                    ws.send(JSON.stringify({
-                        type: "user_message",
-                        user_message_event: { text: formattedMessageForAgent }
-                    }));
-                    console.log("Context sent. Listening for response...");
-                }, 200);
+                console.log("Context sent. Listening for response...");
             };
 
             ws.onmessage = (event) => {
@@ -178,22 +167,62 @@ Rule: Return ONLY RAW JSON. No markdown, no tags, no extra text. Example: {"stag
             };
         });
 
-        // Strip out audio directives like "[warmly]" & format for WhatsApp
-        const cleanText = agentText.replace(/\[.*?\]/g, '').trim();
-        console.log(`[ElevenLabs Native Reply]: ${cleanText}`);
+        // Strip audio directives like "[warmly]"
+        let rawElevenLabsReply = agentText.replace(/\[.*?\]/g, '').trim();
+        console.log(`[Raw ElevenLabs Reply]: ${rawElevenLabsReply}`);
+
+        // 4. Synchronous Response Cleaner Route (Strips "First Message" greeting via ultra-fast Groq LLM)
+        let finalReply = rawElevenLabsReply;
+        try {
+            console.log("Filtering greeting via Groq...");
+            const stripRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${GROQ_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "llama-3.3-70b-versatile",
+                    messages: [
+                        {
+                            role: "system",
+                            content: `You are an exact text extractor. I will give you a transcript of a voice Assistant answering a user. Due to system limits, the Assistant always starts its response by repeating its generic intro greeting (e.g., "Hello, welcome to 99 Care..."). You must strip out the generic greeting and output ONLY the actual direct, contextual response to the user's specific question. Output RAW text only. DO NOT add any conversational filler like "Here is the filtered text". Output in the same language as the text.`
+                        },
+                        {
+                            role: "user",
+                            content: `User Question: "${body}"\n\nRaw Assistant Transcript: "${rawElevenLabsReply}"`
+                        }
+                    ],
+                    max_tokens: 250,
+                    temperature: 0.1
+                })
+            });
+
+            if (stripRes.ok) {
+                const stripData = await stripRes.json();
+                const cleanedContent = stripData.choices[0]?.message?.content?.trim();
+                if (cleanedContent && cleanedContent.length > 5) {
+                    finalReply = cleanedContent;
+                }
+            }
+        } catch (e) {
+            console.error("Failed to strip greeting via Groq:", e);
+        }
+
+        console.log(`[Final WhatsApp Reply]: ${finalReply}`);
 
         // Save AI reply to memory
         await supabase.from('whatsapp_messages').insert([{
             phone: purePhone,
             role: 'assistant',
-            content: cleanText
+            content: finalReply
         }]);
 
         // Return TwiML
         const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>
-        <Body>${cleanText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Body>
+        <Body>${finalReply.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Body>
     </Message>
 </Response>`;
 
