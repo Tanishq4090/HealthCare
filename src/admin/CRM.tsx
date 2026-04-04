@@ -124,6 +124,10 @@ export default function CRM() {
     const [editingLeadValueId, setEditingLeadValueId] = useState<string | null>(null);
     const [editingLeadValueAmount, setEditingLeadValueAmount] = useState<string>('');
 
+    const [editingLeadDetailsId, setEditingLeadDetailsId] = useState<string | null>(null);
+    const [editingLeadName, setEditingLeadName] = useState<string>('');
+    const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
+
     // Predefined stages that cannot be deleted or renamed easily (or you can allow all to be deleted)
     const PROTECTED_STAGES = ['New Lead', 'Closed Won'];
 
@@ -757,8 +761,13 @@ export default function CRM() {
         if (leadId.length < 10) return;
 
         try {
-            const { error } = await supabase.from('crm_leads').delete().eq('id', leadId);
-            if (error) throw error;
+            const { error, data } = await supabase.functions.invoke('delete-crm-lead', {
+                body: { lead_id: leadId }
+            });
+
+            if (error || data?.error) {
+                throw new Error((error?.message || data?.error) || "Delete blocked");
+            }
         } catch (err: any) {
             console.error('Failed to delete lead:', err);
             toast.error(`Failed to delete from database: ${err.message}`);
@@ -871,6 +880,36 @@ export default function CRM() {
             }
         } else {
             toast.success('Lead value updated (Mock lead)');
+        }
+    };
+
+    const handleUpdateLeadDetails = async (leadId: string) => {
+        const newName = editingLeadName.trim();
+        const newPhone = editingLeadPhone.trim();
+
+        if (!newName) {
+            setEditingLeadDetailsId(null);
+            return;
+        }
+
+        // Optimistic update
+        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, name: newName, phone: newPhone || null } : l));
+        setEditingLeadDetailsId(null);
+
+        if (leadId.length >= 10) {
+            try {
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .update({ name: newName, phone: newPhone || null })
+                    .eq('id', leadId);
+
+                if (error) throw error;
+                toast.success('Lead details updated');
+            } catch (err: any) {
+                console.error("Error updating lead details", err);
+                toast.error("Failed to update details");
+                fetchLeads(); // revert
+            }
         }
     };
 
@@ -1105,13 +1144,47 @@ export default function CRM() {
                                         {col.items.map((item) => (
                                             <div key={item.id} onClick={() => { setSelectedLeadId(item.id); setIsIntelligenceModalOpen(true); }} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group relative">
                                                 <div className="flex items-start justify-between mb-2">
-                                                    <div className="flex flex-col">
-                                                        <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{item.name}</h4>
-                                                        {(item.whatsapp_number || item.phone) && (
-                                                            <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-500" title="Contact Number">
-                                                                <Phone className="w-3 h-3 text-slate-400" />
-                                                                {item.whatsapp_number || item.phone}
+                                                    <div
+                                                        className="flex flex-col flex-1"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onDoubleClick={() => {
+                                                            setEditingLeadDetailsId(item.id);
+                                                            setEditingLeadName(item.name);
+                                                            setEditingLeadPhone(item.phone || item.whatsapp_number || '');
+                                                        }}
+                                                    >
+                                                        {editingLeadDetailsId === item.id ? (
+                                                            <div className="space-y-1 pr-2">
+                                                                <input
+                                                                    autoFocus
+                                                                    type="text"
+                                                                    value={editingLeadName}
+                                                                    onChange={e => setEditingLeadName(e.target.value)}
+                                                                    className="w-full text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
+                                                                    placeholder="Lead Name"
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingLeadPhone}
+                                                                    onChange={e => setEditingLeadPhone(e.target.value)}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') handleUpdateLeadDetails(item.id);
+                                                                    }}
+                                                                    onBlur={() => handleUpdateLeadDetails(item.id)}
+                                                                    className="w-full text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
+                                                                    placeholder="Phone Number"
+                                                                />
                                                             </div>
+                                                        ) : (
+                                                            <>
+                                                                <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors" title="Double click to edit">{item.name}</h4>
+                                                                {(item.whatsapp_number || item.phone) && (
+                                                                    <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-500" title="Contact Number (Double click to edit)">
+                                                                        <Phone className="w-3 h-3 text-slate-400" />
+                                                                        {item.whatsapp_number || item.phone}
+                                                                    </div>
+                                                                )}
+                                                            </>
                                                         )}
                                                     </div>
                                                     <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0 ml-2 mt-0.5">
