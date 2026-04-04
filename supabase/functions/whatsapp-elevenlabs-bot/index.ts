@@ -2,6 +2,8 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
+const AGENT_ID = Deno.env.get('VITE_ELEVENLABS_AGENT_ID') || 'agent_4401kn9khqyzf68t6d99s2a8n9gt';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
@@ -34,8 +36,9 @@ serve(async (req) => {
 
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
         const purePhone = from.replace('whatsapp:', '').trim();
+        const last10 = purePhone.slice(-10);
 
-        // 1. Fetch Chat History (Memory) -> Fix applied: descending order, then reversed for chronological context
+        // Step 1: Fetch WhatsApp Chat History (most recent 10 messages)
         const { data: rawHistory } = await supabase
             .from('whatsapp_messages')
             .select('*')
@@ -45,51 +48,118 @@ serve(async (req) => {
             
         const historyData = rawHistory?.reverse() || [];
 
-        // Map history to Groq format
-        const messages: any[] = [
-            {
-                role: "system",
-                content: `You are Eric, the warm and professional AI assistant for 99 Care Home Healthcare Services on WhatsApp.
-Services we provide: New Born Baby care (Japa Maid, Nanny), Old Age/patient care, Professional Nursing, Physiotherapy at home.
-
-CRITICAL RULES:
-- You must ONLY reply in valid JSON format. Do not add conversational text outside the JSON.
-- Output JSON schema MUST contain two fields: "replyToUser" (string) and "pipelineStageUpdate" (string OR null).
-- Keep "replyToUser" short (under 40 words), highly conversational, and DO NOT use markdown formatting (no bold/italics!). Use nice emojis.
-- Understand Hindi, Hinglish, and English. Respond naturally in the language the user speaks.
-
-CRM AUTOMATION RULES for "pipelineStageUpdate":
-Based on user intent, return one of these exact strings for 'pipelineStageUpdate' (or null if unchanged):
-- If user asks for pricing/quotation -> "Quotation Sent"
-- If user agrees to book/demo / wants to start -> "Demo Scheduled"
-- If user is not interested/wrong number -> "Lost"
-- If user is just asking generic questions -> "In Discussion"`
-            }
-        ];
-
-        if (historyData) {
-            historyData.forEach(msg => {
-                if (msg.content) {
-                    messages.push({
-                        role: msg.role === 'user' ? 'user' : 'assistant',
-                        // Avoid feeding bad JSON to history. Just give plain content back for context.
-                        content: msg.content
-                    });
-                }
-            });
-        }
-
-        messages.push({ role: "user", content: body });
-
-        // Save incoming user message to memory immediately
+        // Step 2: Save this incoming user message immediately
         await supabase.from('whatsapp_messages').insert([{
             phone: purePhone,
             role: 'user',
             content: body
         }]);
 
-        // 2. Call Groq with STRICT JSON Mode (Eliminates XML tag bleeding)
-        console.log("Calling Groq LLM with JSON Mode...");
+        // Step 3: Fetch ElevenLabs Voice Call Transcripts for this lead
+        let callTranscriptContext = "";
+        try {
+            if (ELEVENLABS_API_KEY) {
+                console.log(`[ElevenLabs] Fetching call transcripts for ${last10}...`);
+                
+                const convListRes = await fetch(
+                    `https://api.elevenlabs.io/v1/convai/conversations?agent_id=${AGENT_ID}&page_size=25`,
+                    { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
+                );
+
+                if (convListRes.ok) {
+                    const convListData = await convListRes.json();
+                    const allConvs = convListData.conversations || [];
+                    
+                    // Find conversations where the metadata contains this lead's phone number
+                    const matchingConvs = allConvs.filter((c: any) => {
+                        const meta = JSON.stringify(c.metadata || {});
+                        return meta.includes(last10);
+                    }).slice(0, 3);
+
+                    const transcriptParts: string[] = [];
+                    for (const conv of matchingConvs) {
+                        const convDetailRes = await fetch(
+                            `https://api.elevenlabs.io/v1/convai/conversations/${conv.conversation_id}`,
+                            { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
+                        );
+                        if (convDetailRes.ok) {
+                            const convDetail = await convDetailRes.json();
+                            const transcript = convDetail.transcript || [];
+                            const transcriptText = transcript
+                                .map((t: any) => `${t.role === 'agent' ? 'Khushi' : 'Lead'}: ${t.message}`)
+                                .join('\n');
+                            if (transcriptText) {
+                                const callDate = conv.start_time_unix_secs
+                                    ? new Date(conv.start_time_unix_secs * 1000).toLocaleDateString('en-IN')
+                                    : 'Recent';
+                                transcriptParts.push(`--- Voice Call on ${callDate} ---\n${transcriptText}`);
+                            }
+                        }
+                    }
+                    
+                    if (transcriptParts.length > 0) {
+                        callTranscriptContext = `\n\n### PREVIOUS VOICE CALL TRANSCRIPTS WITH THIS LEAD:\n${transcriptParts.join('\n\n')}\n### END CALL TRANSCRIPTS`;
+                        console.log(`[ElevenLabs] Injecting ${transcriptParts.length} call transcript(s).`);
+                    } else {
+                        console.log(`[ElevenLabs] No call transcripts matched for ${last10}.`);
+                    }
+                }
+            }
+        } catch (transcriptErr) {
+            console.error("[ElevenLabs Transcript Error]:", transcriptErr);
+            // Non-critical — Groq will still respond without transcript context
+        }
+
+        // Step 4: Build Groq messages with full context
+        const systemPrompt = `You are Khushi, a friendly, professional, and empathetic virtual assistant for 99Care Home Healthcare Services on WhatsApp.
+Your goal is to quickly qualify leads and collect essential details before handing them off for a callback.
+
+### PERSONALITY & TONE
+- Warm, calm, and concise (1-2 sentences max).
+- Speak naturally like a human. Use emojis (👋, ✨, 🙏) naturally.
+- Use conversational fillers: "Okay", "Got it", "Perfect".
+- Understand Hindi, Hinglish, and English. Respond in the language the user speaks.
+
+### CONVERSATION FLOW (STRICT SEQUENCE)
+1. Greeting: "Namaste! Thank you for contacting 99Care. 🙏 I'll quickly take a few details to assist you better."
+2. Ask for their Name.
+3. Ask what service they need (Elderly care, Baby care, Nursing, Physiotherapy, etc.).
+4. Ask when they want the service to start.
+5. Ask if they need a 10-hour full-day or half-day shift.
+6. Closing once all details collected: "Thank you! Our team will call you back shortly with complete details. 📞 A refundable deposit of fifteen thousand rupees is required to confirm the service. Thank you for contacting 99Care."
+
+### IF USER ALREADY CALLED US:
+If there is a PREVIOUS VOICE CALL TRANSCRIPT section below, you ALREADY know their name, service, and other details. Reference it naturally: "Based on your call with us, I see you were interested in [service]. Is that still correct?" Do NOT re-ask for information already collected on the call.
+
+### CRITICAL RULES
+- ONLY reply in valid JSON format with EXACTLY two keys: "replyToUser" (string) and "pipelineStageUpdate" (string or null).
+- Keep replyToUser under 40 words, conversational, no markdown or bold text.
+- If user asks for pricing: "Our team will share full pricing details on the call. Let me quickly take your details first."
+- If user asks about the deposit: "Yes, it is a standard refundable deposit required before the service starts."
+- DO NOT give medical advice.
+
+### CRM PIPELINE STAGES
+- Pricing/Quotation discussion -> "Quotation Sent"
+- Agreement to book/start -> "Demo Scheduled"
+- Not interested/wrong number -> "Lost"
+- General questions -> "In Discussion"${callTranscriptContext}`;
+
+        const messages: any[] = [{ role: "system", content: systemPrompt }];
+
+        // Inject WhatsApp chat history as conversation turns
+        historyData.forEach((msg: any) => {
+            if (msg.content) {
+                messages.push({
+                    role: msg.role === 'user' ? 'user' : 'assistant',
+                    content: msg.content
+                });
+            }
+        });
+
+        messages.push({ role: "user", content: body });
+
+        // Step 5: Call Groq with strict JSON Mode
+        console.log("Calling Groq LLM...");
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -105,7 +175,7 @@ Based on user intent, return one of these exact strings for 'pipelineStageUpdate
             })
         });
 
-        let aiReplyMsg = "I'm having a bit of trouble reaching our servers right now. Please test again in a minute! 🙏";
+        let aiReplyMsg = "I'm having a bit of trouble reaching our servers right now. Please try again in a moment! 🙏";
 
         if (groqRes.ok) {
             const groqData = await groqRes.json();
@@ -114,20 +184,19 @@ Based on user intent, return one of these exact strings for 'pipelineStageUpdate
             try {
                 const parsedResult = JSON.parse(rawContent);
 
-                // 1. Extract clean reply for WhatsApp
                 if (parsedResult.replyToUser) {
                     aiReplyMsg = parsedResult.replyToUser;
                 }
 
-                // 2. Handle CRM Stage Update 
+                // Update CRM pipeline stage if detected
                 const newStage = parsedResult.pipelineStageUpdate;
                 const validStages = ["New", "In Discussion", "Quotation Sent", "Demo Scheduled", "Lost", "Junk"];
                 if (newStage && validStages.includes(newStage)) {
-                    console.log(`[CRM Integration] Updating Lead ${purePhone} to Pipeline Stage: ${newStage}`);
+                    console.log(`[CRM] Updating ${last10} to stage: ${newStage}`);
                     await supabase
                         .from('crm_leads')
                         .update({ pipeline_stage: newStage })
-                        .like('whatsapp_number', `%${purePhone.slice(-10)}%`);
+                        .like('whatsapp_number', `%${last10}%`);
                 }
 
             } catch (jsonErr) {
@@ -140,14 +209,14 @@ Based on user intent, return one of these exact strings for 'pipelineStageUpdate
 
         console.log(`[Final WhatsApp Reply]: ${aiReplyMsg}`);
 
-        // Save AI reply to memory for context
+        // Step 6: Save AI reply to memory
         await supabase.from('whatsapp_messages').insert([{
             phone: purePhone,
             role: 'assistant',
             content: aiReplyMsg
         }]);
 
-        // Return TwiML
+        // Step 7: Return TwiML response to Twilio
         const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>
