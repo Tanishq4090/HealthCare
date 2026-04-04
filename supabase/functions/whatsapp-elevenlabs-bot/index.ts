@@ -55,59 +55,30 @@ serve(async (req) => {
             content: body
         }]);
 
-        // Step 3: Fetch ElevenLabs Voice Call Transcripts for this lead
+        // Step 3: Fetch Voice Call Transcripts for this lead from Supabase (saved by ElevenLabs webhook)
         let callTranscriptContext = "";
         try {
-            if (ELEVENLABS_API_KEY) {
-                console.log(`[ElevenLabs] Fetching call transcripts for ${last10}...`);
-                
-                const convListRes = await fetch(
-                    `https://api.elevenlabs.io/v1/convai/conversations?agent_id=${AGENT_ID}&page_size=25`,
-                    { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
-                );
+            const { data: callTranscripts } = await supabase
+                .from('call_transcripts')
+                .select('transcript_text, called_at, call_duration_secs')
+                .like('phone_number', `%${last10}%`)
+                .order('called_at', { ascending: false })
+                .limit(3);
 
-                if (convListRes.ok) {
-                    const convListData = await convListRes.json();
-                    const allConvs = convListData.conversations || [];
-                    
-                    // Find conversations where the metadata contains this lead's phone number
-                    const matchingConvs = allConvs.filter((c: any) => {
-                        const meta = JSON.stringify(c.metadata || {});
-                        return meta.includes(last10);
-                    }).slice(0, 3);
-
-                    const transcriptParts: string[] = [];
-                    for (const conv of matchingConvs) {
-                        const convDetailRes = await fetch(
-                            `https://api.elevenlabs.io/v1/convai/conversations/${conv.conversation_id}`,
-                            { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
-                        );
-                        if (convDetailRes.ok) {
-                            const convDetail = await convDetailRes.json();
-                            const transcript = convDetail.transcript || [];
-                            const transcriptText = transcript
-                                .map((t: any) => `${t.role === 'agent' ? 'Khushi' : 'Lead'}: ${t.message}`)
-                                .join('\n');
-                            if (transcriptText) {
-                                const callDate = conv.start_time_unix_secs
-                                    ? new Date(conv.start_time_unix_secs * 1000).toLocaleDateString('en-IN')
-                                    : 'Recent';
-                                transcriptParts.push(`--- Voice Call on ${callDate} ---\n${transcriptText}`);
-                            }
-                        }
-                    }
-                    
-                    if (transcriptParts.length > 0) {
-                        callTranscriptContext = `\n\n### PREVIOUS VOICE CALL TRANSCRIPTS WITH THIS LEAD:\n${transcriptParts.join('\n\n')}\n### END CALL TRANSCRIPTS`;
-                        console.log(`[ElevenLabs] Injecting ${transcriptParts.length} call transcript(s).`);
-                    } else {
-                        console.log(`[ElevenLabs] No call transcripts matched for ${last10}.`);
-                    }
-                }
+            if (callTranscripts && callTranscripts.length > 0) {
+                const parts = callTranscripts.map((c: any) => {
+                    const date = c.called_at
+                        ? new Date(c.called_at).toLocaleDateString('en-IN')
+                        : 'Recent';
+                    return `--- Voice Call on ${date} (${Math.round((c.call_duration_secs || 0) / 60)} min) ---\n${c.transcript_text}`;
+                });
+                callTranscriptContext = `\n\n### PREVIOUS VOICE CALL TRANSCRIPTS WITH THIS LEAD:\n${parts.join('\n\n')}\n### END CALL TRANSCRIPTS`;
+                console.log(`[Transcripts] Found ${callTranscripts.length} call(s) for ${last10}`);
+            } else {
+                console.log(`[Transcripts] No call history found for ${last10}`);
             }
         } catch (transcriptErr) {
-            console.error("[ElevenLabs Transcript Error]:", transcriptErr);
-            // Non-critical — Groq will still respond without transcript context
+            console.error("[Transcript Fetch Error]:", transcriptErr);
         }
 
         // Step 4: Build Groq messages with full context
