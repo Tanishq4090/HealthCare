@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, ClipboardList, ShieldCheck, AlertCircle, Save } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -16,9 +16,7 @@ export default function CRM() {
         { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Deposit Pending', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000, service_type: 'japa_care' },
         { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Active Client', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000, service_type: 'physiotherapy' }
     ]);
-    const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-    const [isIntelligenceModalOpen, setIsIntelligenceModalOpen] = useState(false);
+
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSendingFolio, setIsSendingFolio] = useState(false);
@@ -168,14 +166,6 @@ export default function CRM() {
     });
     const [callStatus, setCallStatus] = useState<'idle' | 'loading' | 'active'>('idle');
 
-    // WhatsApp Messaging Logic
-    const sendRequirementsWhatsApp = (lead: any, category: any) => {
-        const text = `HealthFirst CRM: Namaste ${lead.name}! Aapne ${category.name} service ke liye enquiry ki hai. Inquiry details fill karne ke liye niche di gayi kripya jankari dein:\n\n${category.questions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}\n\nAap message ka reply de sakte hain ya call karein. Dhanyawad! 🙏`;
-        const phone = lead.phone?.replace(/\D/g, '') || '917575041313';
-        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
-        toast.success(`Questionnaire draft opened for ${lead.name}!`);
-    };
-
     const sendWorkerProfileWhatsApp = (lead: any, worker: any) => {
         const baseUrl = window.location.origin;
         const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}`;
@@ -185,25 +175,7 @@ export default function CRM() {
         toast.success(`Worker profile shared with ${lead.name}!`);
     };
 
-    const saveRequirements = async () => {
-        const lead = leads.find(l => l.id === selectedLeadId);
-        if (!lead || !selectedLeadId) return;
 
-        try {
-            const { error } = await supabase
-                .from('crm_leads')
-                .update({ 
-                    service_type: lead.service_type
-                })
-                .eq('id', selectedLeadId);
-
-            if (error) throw error;
-            toast.success("Client requirements updated successfully!");
-            setIsDetailsModalOpen(false);
-        } catch (err: any) {
-            toast.error("Failed to save to database: " + err.message);
-        }
-    };
 
     const toggleCall = async () => {
         if (callStatus === 'active') {
@@ -1142,7 +1114,7 @@ export default function CRM() {
 
                                     <div className="p-3 flex-1 overflow-y-auto space-y-3">
                                         {col.items.map((item) => (
-                                            <div key={item.id} onClick={() => { setSelectedLeadId(item.id); setIsIntelligenceModalOpen(true); }} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group relative">
+                                            <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default group relative">
                                                 <div className="flex items-start justify-between mb-2">
                                                     <div
                                                         className="flex flex-col flex-1"
@@ -1949,209 +1921,8 @@ export default function CRM() {
                 </div>
             )}
 
-            {/* Lead Details Modal (Dynamic Questionnaire) */}
-            {isDetailsModalOpen && selectedLeadId && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
-                    <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-                        <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                    <ClipboardList className="w-5 h-5 text-primary" />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-slate-900">Lead Requirements</h2>
-                                    <p className="text-xs text-slate-500 font-medium tracking-wide">
-                                        CLIENT: {leads.find(l => l.id === selectedLeadId)?.name}
-                                    </p>
-                                </div>
-                            </div>
-                            <button onClick={() => setIsDetailsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        
-                        <div className="p-6 space-y-6 overflow-y-auto">
-                            {/* Service Category Selection */}
-                            <div className="space-y-3">
-                                <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4 text-primary" /> Service Category
-                                </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                    {crmConfig?.serviceCategories?.map((cat: any) => (
-                                        <button
-                                            key={cat.id}
-                                            onClick={() => {
-                                                const updatedLeads = leads.map(l => 
-                                                    l.id === selectedLeadId ? { ...l, service_type: cat.id } : l
-                                                );
-                                                setLeads(updatedLeads);
-                                            }}
-                                            className={`px-3 py-2 rounded-xl text-xs font-bold border-2 transition-all ${
-                                                leads.find(l => l.id === selectedLeadId)?.service_type === cat.id
-                                                    ? 'border-primary bg-primary/5 text-primary'
-                                                    : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200'
-                                            }`}
-                                        >
-                                            {cat.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
 
-                            {/* Dynamic Questions */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-primary" /> Specific Requirements
-                                    </label>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded">
-                                        {crmConfig?.serviceCategories?.find((c: any) => c.id === leads.find(l => l.id === selectedLeadId)?.service_type)?.name || 'Select Service'}
-                                    </span>
-                                </div>
-                                
-                                <div className="space-y-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                                    {crmConfig?.serviceCategories?.find((cat: any) => cat.id === leads.find(l => l.id === selectedLeadId)?.service_type)?.questions.map((q: string, idx: number) => (
-                                        <div key={idx} className="space-y-1.5">
-                                            <label className="text-xs font-bold text-slate-600 ml-1">{q}</label>
-                                            <input 
-                                                type="text"
-                                                placeholder="Type response..."
-                                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm bg-white shadow-sm transition-all"
-                                            />
-                                        </div>
-                                    ))}
-                                    {!leads.find(l => l.id === selectedLeadId)?.service_type && (
-                                        <div className="py-10 text-center space-y-2">
-                                            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto">
-                                                <AlertCircle className="w-6 h-6 text-slate-300" />
-                                            </div>
-                                            <p className="text-sm text-slate-400 font-medium">Please select a service category above to see the requirements list.</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            {/* WhatsApp Send Button */}
-                            <div className="mt-2 p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-bold text-emerald-900">Send to Client</p>
-                                    <p className="text-xs text-emerald-600">Send these requirements via WhatsApp</p>
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        const category = crmConfig?.serviceCategories?.find((c: any) => c.id === leads.find(l => l.id === selectedLeadId)?.service_type);
-                                        if (category && selectedLeadId) {
-                                            const lead = leads.find(l => l.id === selectedLeadId);
-                                            if (lead) sendRequirementsWhatsApp(lead, category);
-                                        }
-                                    }}
-                                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
-                                >
-                                    <Send className="w-4 h-4" />
-                                    Send via WhatsApp
-                                </button>
-                            </div>
-                        </div>
 
-                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-                            <button onClick={() => setIsDetailsModalOpen(false)} className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
-                                Close
-                            </button>
-                            <button 
-                                onClick={saveRequirements}
-                                className="flex-1 py-2.5 rounded-xl font-bold text-white bg-primary hover:bg-primary/90 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                            >
-                                <Save className="w-4 h-4" /> Save Requirements
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {/* AI Captured Intelligence Modal (Read-Only Summary) */}
-            {isIntelligenceModalOpen && selectedLeadId && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
-                    <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
-                        <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-primary/5 to-transparent flex justify-between items-center">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center animate-pulse">
-                                    <Bot className="w-6 h-6 text-primary" />
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-bold text-slate-900">AI Captured Intelligence</h2>
-                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-                                        Client: {leads.find(l => l.id === selectedLeadId)?.name}
-                                    </p>
-                                </div>
-                            </div>
-                            <button onClick={() => setIsIntelligenceModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2.5 rounded-full hover:bg-slate-100 transition-colors">
-                                <X className="w-6 h-6" />
-                            </button>
-                        </div>
-                        
-                        <div className="p-8 space-y-8 overflow-y-auto">
-                            {/* AI Summary Card */}
-                            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden group">
-                                <div className="absolute top-0 right-0 p-3">
-                                    <ShieldCheck className="w-10 h-10 text-emerald-500/10 rotate-12 group-hover:rotate-0 transition-transform duration-500" />
-                                </div>
-                                <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
-                                    <Bot className="w-4 h-4 text-primary" /> AI Conversation Summary
-                                </h3>
-                                <p className="text-sm text-slate-600 leading-relaxed italic">
-                                    "The lead was captured via {leads.find(l => l.id === selectedLeadId)?.source}. The AI Agent engaged in a triage conversation, identifying requirements for {leads.find(l => l.id === selectedLeadId)?.service_type?.replace('_', ' ') || 'healthcare'} services. The client indicated urgency and requested a callback regarding pricing."
-                                </p>
-                            </div>
-
-                            {/* Captured Requirements List */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                                        <ClipboardList className="w-4 h-4 text-primary" /> Automated Requirement Capture
-                                    </h3>
-                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full animate-pulse">LIVE DATA</span>
-                                </div>
-
-                                <div className="grid gap-3">
-                                    {[
-                                        { label: 'Primary Need', value: leads.find(l => l.id === selectedLeadId)?.service_type?.replace('_', ' ').toUpperCase() || 'GENERAL INQUIRY' },
-                                        { label: 'Patient Readiness', value: 'IMMEDIATE' },
-                                        { label: 'Service Duration', value: '30+ DAYS CONTENT' },
-                                        { label: 'Location Context', value: leads.find(l => l.id === selectedLeadId)?.phone?.startsWith('+91') ? 'INDIA (SURAT)' : 'INTERNATIONAL' }
-                                    ].map((field, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-primary/20 transition-colors group">
-                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{field.label}</span>
-                                            <span className="text-sm font-bold text-slate-900 bg-slate-50 px-3 py-1 rounded-lg group-hover:bg-primary/5 group-hover:text-primary transition-colors">{field.value}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Verification Badge */}
-                            <div className="flex items-center justify-center gap-2 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50">
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                                <span className="text-xs font-bold text-emerald-700">Information automatically verified by AI Agent — No manual entry required.</span>
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex gap-4">
-                            <button 
-                                onClick={() => setIsIntelligenceModalOpen(false)}
-                                className="flex-1 py-3.5 rounded-2xl font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
-                            >
-                                Close Intelligence View
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    setIsIntelligenceModalOpen(false);
-                                    setActiveTab('automations');
-                                }}
-                                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-primary hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center justify-center gap-2"
-                            >
-                                <Bot className="w-4 h-4" /> View Full Chat Logs
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         {/* Transcript Modal */}
         {isTranscriptModalOpen && selectedCall && (
             <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
