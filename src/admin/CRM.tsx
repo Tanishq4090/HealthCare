@@ -9,13 +9,7 @@ const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'content'>('pipeline');
-    const [leads, setLeads] = useState<any[]>([
-        { id: '1', name: 'Meet Makwana', email: 'meetmakwana2004@gmail.com', phone: '+91 7575041313', source: 'Web Chat', status: 'AI Handled', pipeline_stage: 'New Inquiry', created_at: new Date().toISOString(), estimated_value_monthly: 5000, service_type: 'baby_care' },
-        { id: '2', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', source: 'Email', status: 'System', pipeline_stage: 'Quotation Sent', created_at: new Date(Date.now() - 86400000).toISOString(), estimated_value_monthly: 12000, service_type: 'old_age_care' },
-        { id: '3', name: 'Jane Smith', email: 'jane@example.com', phone: '+1987654321', source: 'Contact Form', status: 'Pending', pipeline_stage: 'Form Submitted', created_at: new Date(Date.now() - 172800000).toISOString(), estimated_value_monthly: 8000, service_type: 'nursing_care' },
-        { id: '4', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', source: 'AI Phone Call', status: 'Processed', pipeline_stage: 'Deposit Pending', created_at: new Date(Date.now() - 259200000).toISOString(), estimated_value_monthly: 15000, service_type: 'japa_care' },
-        { id: '5', name: 'Emily Davis', email: 'emily@example.com', phone: '+1555666777', source: 'AI Phone Call', status: 'Unprocessed', pipeline_stage: 'Active Client', created_at: new Date(Date.now() - 36400000).toISOString(), estimated_value_monthly: 25000, service_type: 'physiotherapy' }
-    ]);
+    const [leads, setLeads] = useState<any[]>([]);
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -432,10 +426,7 @@ export default function CRM() {
             const { data, error } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
             if (error) throw error;
 
-            setLeads(prev => {
-                const mockLeads = prev.filter(l => l.id.length < 10);
-                return data ? [...data, ...mockLeads] : mockLeads;
-            });
+            setLeads(data || []);
         } catch (err: any) {
             console.error('Error fetching leads:', err);
         } finally {
@@ -865,14 +856,14 @@ export default function CRM() {
         }
 
         // Optimistic update
-        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, name: newName, phone: newPhone || null } : l));
+        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, name: newName, phone: newPhone || null, whatsapp_number: newPhone || null } : l));
         setEditingLeadDetailsId(null);
 
         if (leadId.length >= 10) {
             try {
                 const { error } = await supabase
                     .from('crm_leads')
-                    .update({ name: newName, phone: newPhone || null })
+                    .update({ name: newName, phone: newPhone || null, whatsapp_number: newPhone || null })
                     .eq('id', leadId);
 
                 if (error) throw error;
@@ -1150,10 +1141,15 @@ export default function CRM() {
                                                         ) : (
                                                             <>
                                                                 <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors" title="Double click to edit">{item.name}</h4>
-                                                                {(item.whatsapp_number || item.phone) && (
+                                                                {(item.whatsapp_number || item.phone) ? (
                                                                     <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-500" title="Contact Number (Double click to edit)">
                                                                         <Phone className="w-3 h-3 text-slate-400" />
                                                                         {item.whatsapp_number || item.phone}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-400 italic" title="No contact info (Double click to add)">
+                                                                        <Phone className="w-3 h-3 text-slate-300" />
+                                                                        Add phone...
                                                                     </div>
                                                                 )}
                                                             </>
