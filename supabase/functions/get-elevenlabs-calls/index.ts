@@ -26,7 +26,7 @@ serve(async (req) => {
     const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
     if (!ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not configured.");
 
-    const agentId = payload.agent_id || 'agent_7601kmj6d0dxf8ha6vkrkan0mc00'; // Default agent
+    const agentId = payload.agent_id || Deno.env.get('VITE_ELEVENLABS_AGENT_ID') || 'agent_4401kn9khqyzf68t6d99s2a8n9gt';
 
     const listRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversations?agent_id=${agentId}`, {
         headers: { "xi-api-key": ELEVENLABS_API_KEY }
