@@ -73,7 +73,7 @@ serve(async (req) => {
         const summaryStr = c.analysis?.transcript_summary || c.metadata?.call_summary_title || "Call completed.";
         const duration = c.metadata?.call_duration_secs || 0;
 
-        // Extract structured data if ElevenLabs Agent successfully collected it
+        // Layer 1: ElevenLabs structured data collection
         if (c.analysis && c.analysis.data_collection_results) {
             const dc = c.analysis.data_collection_results;
             capturedName = dc.customer_name?.value || dc.name?.value || null;
@@ -82,14 +82,36 @@ serve(async (req) => {
             else if (dc.service_type?.value) intent = dc.service_type.value;
         }
 
-        // Fallback: If Data Collection failed, try searching the transcript summary for the name/phone
-        if (!capturedName && summaryStr) {
-            const nameMatch = summaryStr.match(/The user, ([^,]+),/);
-            if (nameMatch) capturedName = nameMatch[1].trim();
+        // Layer 2: Metadata phone_number (set by ElevenLabs for actual phone/SIP calls)
+        if (!capturedPhone && c.metadata?.phone_number) {
+            capturedPhone = c.metadata.phone_number;
         }
+
+        // Layer 3: Scan user (Lead) lines in transcript for Indian mobile numbers
+        if (!capturedPhone && c.transcript) {
+            const userLines = (c.transcript as any[])
+                .filter((t: any) => t.role === 'user')
+                .map((t: any) => t.message || '')
+                .join(' ');
+            const phoneMatches = userLines.match(/(?:\+?91[\s\-]?)?([6-9]\d{9})/g);
+            if (phoneMatches && phoneMatches.length > 0) {
+                // Take last confirmed match (user typically confirms at end of call)
+                capturedPhone = phoneMatches[phoneMatches.length - 1].replace(/[\s\-]/g, '');
+                // Normalize to +91 format
+                if (capturedPhone.length === 10) capturedPhone = '+91' + capturedPhone;
+            }
+        }
+
+        // Layer 4: Fallback — scan summary text
         if (!capturedPhone && summaryStr) {
-            const phoneMatch = summaryStr.match(/\(?(\d{8,12})\)?/);
-            if (phoneMatch) capturedPhone = phoneMatch[1];
+            const phoneMatch = summaryStr.match(/(?:\+?91[\s\-]?)?([6-9]\d{9})/);
+            if (phoneMatch) capturedPhone = (phoneMatch[1].length === 10 ? '+91' : '') + phoneMatch[1].replace(/[\s\-]/g, '');
+        }
+
+        // Name fallback from summary
+        if (!capturedName && summaryStr) {
+            const nameMatch = summaryStr.match(/The user,? ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/);
+            if (nameMatch) capturedName = nameMatch[1].trim();
         }
 
         const isProcessed = capturedPhone && processedPhones.has(capturedPhone);
