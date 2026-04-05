@@ -570,6 +570,7 @@ export default function CRM() {
                 body: JSON.stringify({
                     phone: phoneDigits,
                     message: agentDraftText,
+                    leadId: agentTargetLead?.id,
                     // For new lead greetings, use the approved Meta template (bypasses 24-hr window)
                     leadName: agentTargetAction === 'inquiry' ? (agentTargetLead?.name || 'there') : undefined,
                     useTemplate: agentTargetAction === 'inquiry',
