@@ -29,13 +29,17 @@ serve(async (req) => {
       const sid = body.get('MessageSid');
       const status = body.get('MessageStatus');
       
+      const leadId = url.searchParams.get('leadId');
+      const payloadObj = Object.fromEntries(body.entries());
+      if (leadId) payloadObj.lead_id = leadId;
+
       await supabase.from('whatsapp_logs').upsert({
         sid: sid,
         status: status,
         error_code: body.get('ErrorCode'),
         error_message: body.get('ErrorMessage'),
-        payload: Object.fromEntries(body.entries())
-      });
+        payload: payloadObj
+      }, { onConflict: 'sid' });
       
       console.log(`[Twilio Webhook] ${sid}: ${status}`);
     } catch (e) {
@@ -66,8 +70,8 @@ serve(async (req) => {
     const formData = new URLSearchParams();
     formData.append('To', formattedPhone);
     
-    // Hardcoded production status callback URL
-    const callbackUrl = `https://sgyladamwnanudnropwl.supabase.co/functions/v1/twilio-whatsapp-outbound?status=true`;
+    const leadIdParam = payload.leadId ? `&leadId=${payload.leadId}` : '';
+    const callbackUrl = `https://sgyladamwnanudnropwl.supabase.co/functions/v1/twilio-whatsapp-outbound?status=true${leadIdParam}`;
     formData.append('StatusCallback', callbackUrl);
 
     if (useTemplate !== false && leadName) {
@@ -100,7 +104,7 @@ serve(async (req) => {
         await supabase.from('whatsapp_logs').insert({
             sid: twilioData.sid,
             status: 'accepted_by_twilio',
-            payload: twilioData
+            payload: { ...twilioData, lead_id: payload.leadId }
         });
     }
 
