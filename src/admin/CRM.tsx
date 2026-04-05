@@ -1155,40 +1155,42 @@ export default function CRM() {
                                                             </div>
                                                         ) : (
                                                             <>
-                                                                <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors pr-6" title="Double click to edit">{item.name}</h4>
+                                                                <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors" title="Double click to edit">{item.name}</h4>
                                                                 
-                                                                {/* WhatsApp Delivery Status Bubble */}
-                                                                {(() => {
-                                                                    const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
-                                                                    if (!log) return null;
-                                                                    const isFailed = ['failed', 'undelivered'].includes(log.status);
-                                                                    const isDelivered = ['delivered', 'read'].includes(log.status);
-                                                                    return (
-                                                                        <div className="absolute top-3 right-3 flex items-center justify-center">
-                                                                            {isFailed ? (
-                                                                                <div className="group/err relative" title="WhatsApp Failed">
-                                                                                    <AlertCircle className="w-4 h-4 text-red-500" />
-                                                                                    <div className="pointer-events-none absolute right-0 bottom-full mb-1 w-48 opacity-0 group-hover/err:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] p-2 rounded-lg shadow-xl z-50">
-                                                                                        WhatsApp Failed: {log.error_message || 'Twilio Error'}
-                                                                                    </div>
-                                                                                </div>
-                                                                            ) : isDelivered ? (
-                                                                                <span title="WhatsApp Delivered">
-                                                                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                                                                                </span>
-                                                                            ) : (
-                                                                                <span title={log.status}>
-                                                                                    <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin" />
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })()}
-
                                                                 {(item.whatsapp_number || item.phone) ? (
-                                                                    <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-500" title="Contact Number (Double click to edit)">
-                                                                        <Phone className="w-3 h-3 text-slate-400" />
-                                                                        {item.whatsapp_number || item.phone}
+                                                                    <div className="flex items-center gap-2 mt-0.5" title="Contact Number (Double click to edit)">
+                                                                        <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                                                                            <Phone className="w-3 h-3 text-slate-400" />
+                                                                            {item.whatsapp_number || item.phone}
+                                                                        </div>
+
+                                                                        {/* WhatsApp Delivery Status Inline */}
+                                                                        {(() => {
+                                                                            const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
+                                                                            if (!log) return null;
+                                                                            const isFailed = ['failed', 'undelivered'].includes(log.status);
+                                                                            const isDelivered = ['delivered', 'read'].includes(log.status);
+                                                                            return (
+                                                                                <div className="flex items-center">
+                                                                                    {isFailed ? (
+                                                                                        <div className="group/err relative cursor-help" title="WhatsApp Failed">
+                                                                                            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                                                                                            <div className="pointer-events-none absolute left-0 bottom-full mb-1 w-48 opacity-0 group-hover/err:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] p-2 rounded-lg shadow-xl z-50">
+                                                                                                WhatsApp Failed: {log.error_message || 'Twilio Error'}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    ) : isDelivered ? (
+                                                                                        <span title="WhatsApp Delivered">
+                                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span title={log.status}>
+                                                                                            <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })()}
                                                                     </div>
                                                                 ) : (
                                                                     <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-400 italic" title="No contact info (Double click to add)">
