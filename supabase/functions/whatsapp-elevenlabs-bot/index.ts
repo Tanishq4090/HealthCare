@@ -43,14 +43,35 @@ serve(async (req) => {
         
         const value = entry.changes[0].value;
 
-        // If this is a status update, we let the OTHER endpoint (meta-whatsapp-outbound) handle statuses.
-        // But if meta sends it here because the user hooked the webhook uniformly, just ack it.
+        // --- 1. HANDLE DELIVERY STATUS REPORTS ---
         if (value.statuses && value.statuses.length > 0) {
-            // (Status tracking logic should already be handled by the other endpoint if configured properly, but just in case we return 200)
+            const statusObj = value.statuses[0];
+            const wamid = statusObj.id;
+            const status = statusObj.status;
+            
+            const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+            const { data: existingLog } = await supabase
+              .from('whatsapp_logs')
+              .select('payload')
+              .eq('sid', wamid)
+              .single();
+
+            const updatedPayload = existingLog?.payload 
+              ? { ...existingLog.payload, statuses: value.statuses } 
+              : { statuses: value.statuses };
+
+            await supabase.from('whatsapp_logs').update({
+              status: status,
+              error_code: statusObj.errors ? statusObj.errors[0].code : null,
+              error_message: statusObj.errors ? statusObj.errors[0].title : null,
+              payload: updatedPayload
+            }).eq('sid', wamid);
+
+            console.log(`[Meta Webhook] Delivery Updated: ${wamid} -> ${status}`);
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
-        // Handle Incoming Messages
+        // --- 2. HANDLE INCOMING MESSAGES (AI REPLIES) ---
         if (!value.messages || value.messages.length === 0) {
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
