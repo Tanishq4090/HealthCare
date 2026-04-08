@@ -378,7 +378,7 @@ export default function CRM() {
                 let targetNumber = lead.whatsapp_number || lead.phone || '918000044090';
                 const phoneDigits = targetNumber.replace(/\D/g, '');
 
-                const response = await fetch(`${SUPABASE_URL}/functions/v1/twilio-whatsapp-outbound`, {
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -560,7 +560,7 @@ export default function CRM() {
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/twilio-whatsapp-outbound`, {
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
