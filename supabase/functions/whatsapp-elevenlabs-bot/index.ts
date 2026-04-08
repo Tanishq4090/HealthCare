@@ -2,32 +2,72 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
-const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-const AGENT_ID = Deno.env.get('VITE_ELEVENLABS_AGENT_ID') || 'agent_4401kn9khqyzf68t6d99s2a8n9gt';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 serve(async (req) => {
     try {
         const url = new URL(req.url);
-        let body = '';
-        let from = '';
 
-        if (req.method === 'POST') {
-            const textData = await req.text();
-            const params = new URLSearchParams(textData);
-            body = params.get('Body') || '';
-            from = params.get('From') || '';
-        } else {
-            body = url.searchParams.get('Body') || '';
-            from = url.searchParams.get('From') || '';
+        // --- META WEBHOOK VERIFICATION (GET hub.challenge) ---
+        if (req.method === 'GET' && url.searchParams.has('hub.mode')) {
+            const mode = url.searchParams.get('hub.mode');
+            const token = url.searchParams.get('hub.verify_token');
+            const challenge = url.searchParams.get('hub.challenge');
+            
+            const META_VERIFY_TOKEN = Deno.env.get('META_VERIFY_TOKEN') || '99care_meta_webhook';
+
+            if (mode === 'subscribe' && token === META_VERIFY_TOKEN) {
+                console.log('Webhook verified successfully!');
+                return new Response(challenge, { status: 200 });
+            } else {
+                return new Response('Forbidden', { status: 403 });
+            }
         }
-        
-        console.log(`[Incoming WhatsApp] From: ${from}, Message: ${body}`);
 
-        if (!body.trim()) {
+        if (req.method !== 'POST') {
             return new Response("OK", { status: 200 });
         }
+
+        const body = await req.json();
+
+        // Ensure this is a Meta payload
+        if (body.object !== 'whatsapp_business_account' || !body.entry || body.entry.length === 0) {
+            return new Response("OK", { status: 200 });
+        }
+
+        const entry = body.entry[0];
+        if (!entry.changes || entry.changes.length === 0) {
+             return new Response("OK", { status: 200 });
+        }
+        
+        const value = entry.changes[0].value;
+
+        // If this is a status update, we let the OTHER endpoint (meta-whatsapp-outbound) handle statuses.
+        // But if meta sends it here because the user hooked the webhook uniformly, just ack it.
+        if (value.statuses && value.statuses.length > 0) {
+            // (Status tracking logic should already be handled by the other endpoint if configured properly, but just in case we return 200)
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        // Handle Incoming Messages
+        if (!value.messages || value.messages.length === 0) {
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        const incomingMsg = value.messages[0];
+        const contact = value.contacts ? value.contacts[0] : null;
+
+        if (!incomingMsg.text || !incomingMsg.text.body || !contact) {
+            // Ignore media/audio for now, just ACK
+            console.log("Received non-text message format.");
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        const rawBody = incomingMsg.text.body;
+        const fromPhone = contact.wa_id; // "918000044090"
+        
+        console.log(`[Incoming Meta WhatsApp] From: ${fromPhone}, Message: ${rawBody}`);
 
         if (!GROQ_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
             console.error("Missing critical environment variables.");
@@ -35,7 +75,7 @@ serve(async (req) => {
         }
 
         const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-        const purePhone = from.replace('whatsapp:', '').trim();
+        const purePhone = fromPhone.trim(); // Meta already strips 'whatsapp:+'
         const last10 = purePhone.slice(-10);
 
         // Step 1: Fetch WhatsApp Chat History (most recent 10 messages)
@@ -52,7 +92,7 @@ serve(async (req) => {
         await supabase.from('whatsapp_messages').insert([{
             phone: purePhone,
             role: 'user',
-            content: body
+            content: rawBody
         }]);
 
         // Step 3: Fetch Voice Call Transcripts for this lead from Supabase (saved by ElevenLabs webhook)
@@ -208,7 +248,7 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
             }
         });
 
-        messages.push({ role: "user", content: body });
+        messages.push({ role: "user", content: rawBody });
 
         // Step 5: Call Groq with strict JSON Mode
         console.log("Calling Groq LLM...");
@@ -222,7 +262,7 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
                 model: "llama-3.3-70b-versatile",
                 messages: messages,
                 response_format: { type: "json_object" },
-                max_tokens: 250,
+                max_tokens: 300,
                 temperature: 0.2
             })
         });
@@ -259,7 +299,7 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
             console.error("Groq API error:", await groqRes.text());
         }
 
-        console.log(`[Final WhatsApp Reply]: ${aiReplyMsg}`);
+        console.log(`[Final Meta WhatsApp Reply]: ${aiReplyMsg}`);
 
         // Step 6: Save AI reply to memory
         await supabase.from('whatsapp_messages').insert([{
@@ -268,22 +308,38 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
             content: aiReplyMsg
         }]);
 
-        // Step 7: Return TwiML response to Twilio
-        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Message>
-        <Body>${aiReplyMsg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Body>
-    </Message>
-</Response>`;
+        // Step 7: Post proactive reply back to Meta API
+        const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
+        const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
+        
+        if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+            await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${META_SYSTEM_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: purePhone,
+                    type: "text",
+                    text: {
+                       preview_url: false,
+                       body: aiReplyMsg
+                    }
+                })
+            });
+            console.log("Successfully POSTed back to Meta.");
+        } else {
+            console.error("META_SYSTEM_TOKEN or META_PHONE_ID missing for reply!");
+        }
 
-        return new Response(twiml, {
-            headers: { "Content-Type": "text/xml" },
-            status: 200
-        });
+        // Return standard Webhook ACK to Meta
+        return new Response('EVENT_RECEIVED', { status: 200 });
 
     } catch (error: any) {
         console.error("[Webhook Critical Error]", error);
-        const fallback = `<?xml version="1.0" encoding="UTF-8"?><Response><Message><Body>We are currently experiencing high volume! Our team will get back to you shortly 🙏</Body></Message></Response>`;
-        return new Response(fallback, { headers: { "Content-Type": "text/xml" }, status: 200 });
+        return new Response('EVENT_RECEIVED', { status: 200 }); // Still return 200 so Meta doesn't retry infinitely
     }
 });
