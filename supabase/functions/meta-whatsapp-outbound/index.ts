@@ -134,10 +134,21 @@ serve(async (req) => {
     if (useTemplate) {
       metaBody.type = "template";
       metaBody.template = {
-        name: "hello_world",
+        name: "greeting_msg", // Officially approved Meta template
         language: {
           code: "en_US"
-        }
+        },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              {
+                type: "text",
+                text: leadName ? leadName.trim() : 'Customer'
+              }
+            ]
+          }
+        ]
       };
     } else {
       metaBody.type = "text";
