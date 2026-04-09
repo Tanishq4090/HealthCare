@@ -79,13 +79,21 @@ serve(async (req) => {
         const incomingMsg = value.messages[0];
         const contact = value.contacts ? value.contacts[0] : null;
 
-        if (!incomingMsg.text || !incomingMsg.text.body || !contact) {
+        let rawBody = '';
+        if (incomingMsg.text && incomingMsg.text.body) {
+            rawBody = incomingMsg.text.body;
+        } else if (incomingMsg.interactive && incomingMsg.interactive.list_reply) {
+            rawBody = incomingMsg.interactive.list_reply.title;
+        } else if (incomingMsg.interactive && incomingMsg.interactive.button_reply) {
+            rawBody = incomingMsg.interactive.button_reply.title;
+        }
+
+        if (!rawBody || !contact) {
             // Ignore media/audio for now, just ACK
-            console.log("Received non-text message format.");
+            console.log("Received non-text/non-interactive message format.");
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
-        const rawBody = incomingMsg.text.body;
         const fromPhone = contact.wa_id; // "918000044090"
         
         console.log(`[Incoming Meta WhatsApp] From: ${fromPhone}, Message: ${rawBody}`);
@@ -115,6 +123,58 @@ serve(async (req) => {
             role: 'user',
             content: rawBody
         }]);
+
+        // --- NEW LEAD INTERCEPTION (INTERACTIVE MENU) ---
+        if (historyData.length === 0) {
+            const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
+            const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
+            
+            if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                const listPayload = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: purePhone,
+                    type: "interactive",
+                    interactive: {
+                        type: "list",
+                        header: { type: "text", text: "Welcome to 99 Care!" },
+                        body: { text: "Namaste! 🙏 I'm Khushi. Please select a service from the menu below to get started:" },
+                        footer: { text: "Serving Surat for 5+ years" },
+                        action: {
+                            button: "Select Service",
+                            sections: [
+                                {
+                                    title: "Available Services",
+                                    rows: [
+                                        { id: "baby_care", title: "Baby Card / Newborn" },
+                                        { id: "japa_care", title: "Japa Care" },
+                                        { id: "elderly", title: "Old Age Care" },
+                                        { id: "nursing", title: "Nursing Care" },
+                                        { id: "physio", title: "Physiotherapy" },
+                                        { id: "doc_call", title: "Doctor Visit at Home" },
+                                        { id: "medicines", title: "Medicine Delivery" },
+                                        { id: "equiprent", title: "Medical Equip. Rent" }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                };
+
+                await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(listPayload)
+                });
+                
+                await supabase.from('whatsapp_messages').insert([{
+                    phone: purePhone, role: 'assistant',
+                    content: "Namaste! 🙏 I'm Khushi. Please select a service from the menu below to get started:"
+                }]);
+
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+        }
 
         // Step 3: Fetch Voice Call Transcripts for this lead from Supabase (saved by ElevenLabs webhook)
         let callTranscriptContext = "";
@@ -244,7 +304,8 @@ Name → City/Area → Who needs it → Relationship → Patient gender → Age 
 If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some details. Reference them naturally and skip questions already answered.
 
 ### IMPORTANT RULES
-- ONLY respond in valid JSON: {"replyToUser": "string", "pipelineStageUpdate": "string or null"}
+- ONLY respond in valid JSON: {"replyToUser": "string or empty string", "pipelineStageUpdate": "string or null"}
+- If the user is just ending the conversation (e.g. saying "okay", "thanks", "thik hai", "done") and the conversation is naturally over, silently acknowledge them by setting "replyToUser" to an empty string "". This stops the chatbot from replying unecessarily to dead ends.
 - replyToUser must never contain markdown bold/italic. Plain text + emojis only.
 - Never give medical advice or diagnosis.
 - Never discuss staff salary or payment with leads — redirect to office.
@@ -318,6 +379,12 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
             }
         } else {
             console.error("Groq API error:", await groqRes.text());
+        }
+
+        // Return early if the LLM chose to end the conversation gracefully
+        if (!aiReplyMsg || aiReplyMsg.trim() === '') {
+            console.log(`[Final Meta WhatsApp Reply]: Silenced automatically to prevent infinite chat loop.`);
+            return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
         console.log(`[Final Meta WhatsApp Reply]: ${aiReplyMsg}`);
