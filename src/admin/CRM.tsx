@@ -119,6 +119,7 @@ export default function CRM() {
     const [agentDraftText, setAgentDraftText] = useState('');
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
     const [templateDraftText, setTemplateDraftText] = useState('');
+    const [quotationVars, setQuotationVars] = useState({ v1: '', v2: '', v3: '', v4: '' });
 
     // Transcript Modal State
     const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
@@ -600,6 +601,9 @@ export default function CRM() {
         setAgentTargetLead(lead);
         setAgentTargetAction(action);
         setIsEditingTemplate(false);
+        if (action === 'quotation') {
+            setQuotationVars({ v1: '', v2: '', v3: '', v4: '' });
+        }
         const draft = generateWhatsappDraft(lead.name, action, agentDraftLang, selectedWorker);
         setAgentDraftText(draft);
         setIsAgentModalOpen(true);
@@ -664,9 +668,12 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: agentDraftText,
                     leadId: agentTargetLead?.id,
-                    // For new lead greetings, use the approved Meta template (bypasses 24-hr window)
-                    leadName: agentTargetAction === 'inquiry' ? (agentTargetLead?.name || 'there') : undefined,
-                    useTemplate: agentTargetAction === 'inquiry',
+                    useTemplate: agentTargetAction === 'inquiry' || agentTargetAction === 'quotation',
+                    templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
+                                  : (agentTargetAction === 'quotation' ? 'quotation_msg' : undefined),
+                    templateParams: agentTargetAction === 'quotation' 
+                                    ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
+                                    : (agentTargetAction === 'inquiry' ? [(agentTargetLead?.name || 'there')] : undefined),
                 })
             });
 
@@ -2057,16 +2064,42 @@ export default function CRM() {
                                     </button>
                                 </div>
                                 <div className="relative">
-                                    <textarea
-                                        value={isEditingTemplate ? templateDraftText : agentDraftText}
-                                        onChange={(e) => isEditingTemplate ? setTemplateDraftText(e.target.value) : setAgentDraftText(e.target.value)}
-                                        className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed"
-                                    />
-                                    <div className="absolute bottom-3 right-3 flex gap-1">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
-                                        <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
-                                    </div>
+                                    {agentTargetAction === 'quotation' && !isEditingTemplate ? (
+                                        <div className="space-y-3 bg-white p-4 rounded-xl border border-emerald-200 shadow-sm relative z-10 w-full mb-6">
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Service Name</label>
+                                                <input type="text" value={quotationVars.v1} onChange={e => setQuotationVars({...quotationVars, v1: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. Registered Nurse" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Hours of Service</label>
+                                                    <input type="text" value={quotationVars.v2} onChange={e => setQuotationVars({...quotationVars, v2: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. 12 Hours" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Complete Month</label>
+                                                    <input type="text" value={quotationVars.v3} onChange={e => setQuotationVars({...quotationVars, v3: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. ₹ 45,000" />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Incomplete Month</label>
+                                                <input type="text" value={quotationVars.v4} onChange={e => setQuotationVars({...quotationVars, v4: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. ₹ 1,500/day" />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <textarea
+                                            value={isEditingTemplate ? templateDraftText : agentDraftText}
+                                            onChange={(e) => isEditingTemplate ? setTemplateDraftText(e.target.value) : setAgentDraftText(e.target.value)}
+                                            className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed mb-6"
+                                        />
+                                    )}
+                                    
+                                    {(!isEditingTemplate && agentTargetAction !== 'quotation') && (
+                                        <div className="absolute bottom-3 right-3 flex gap-1">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
+                                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {isEditingTemplate ? (
