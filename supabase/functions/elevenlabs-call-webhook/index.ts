@@ -28,8 +28,8 @@ serve(async (req) => {
         const transcript = data.transcript || [];
         const metadata = data.metadata || {};
 
-        // Extract phone number — ElevenLabs stores it in metadata.phone_number
-        const phoneNumber = metadata.phone_number || metadata.caller_id || '';
+        // Extract Caller ID — ElevenLabs stores it in metadata.phone_number
+        const callerPhone = metadata.phone_number || metadata.caller_id || '';
         const callDurationSecs = metadata.call_duration_secs || 0;
         const startTime = metadata.start_time_unix_secs
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
@@ -39,8 +39,49 @@ serve(async (req) => {
         const transcriptText = transcript
             .map((t: any) => `${t.role === 'agent' ? 'Khushi' : 'Lead'}: ${t.message}`)
             .join('\n');
+            
+        // --- WHATSAPP NUMBER EXTRACTION LOGIC ---
+        let finalWhatsappNumber = '';
+
+        // 1. Check Data Collection (if ElevenLabs natively extracted it)
+        const analysis = data.analysis || {};
+        if (analysis.data_collection_results && analysis.data_collection_results.whatsapp) {
+             finalWhatsappNumber = analysis.data_collection_results.whatsapp.value;
+        }
+
+        // 2. Transcript Analysis for "Yes" confirmation or dictated number
+        if (!finalWhatsappNumber && transcript.length > 0) {
+            for (let i = 0; i < transcript.length; i++) {
+                const turn = transcript[i];
+                const msg = turn.message?.toLowerCase() || '';
+
+                // If user dictates a 10 digit number anywhere, grab it
+                if (turn.role === 'user') {
+                    const phoneMatch = msg.replace(/[\s\-\.]/g, '').match(/(?:\+?91)?([6-9]\d{9})/);
+                    if (phoneMatch) {
+                        finalWhatsappNumber = '+91' + phoneMatch[1];
+                    }
+                }
+
+                // If agent asks if this is their WhatsApp number
+                if (turn.role === 'agent' && (msg.includes('whatsapp number') || msg.includes('whatsapp pe'))) {
+                    // Check the immediate next reply from the user
+                    if (i + 1 < transcript.length && transcript[i+1].role === 'user') {
+                        const userReply = transcript[i+1].message?.toLowerCase() || '';
+                        if (userReply.includes('yes') || userReply.includes('haan') || userReply.includes('ji') || userReply.includes('yep') || userReply.includes('same')) {
+                            finalWhatsappNumber = callerPhone;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to caller ID if completely empty?
+        // Let's only set it if explicitly found, or provide the caller_phone as a potential.
+        // Wait, normally the caller ID *is* the phone number for the Lead record.
+        const effectivePhoneNumber = finalWhatsappNumber || callerPhone;
         
-        console.log(`[Webhook] Call from ${phoneNumber}, duration: ${callDurationSecs}s, turns: ${transcript.length}`);
+        console.log(`[Webhook] Call from ${callerPhone}, Extracted WA: ${finalWhatsappNumber}, duration: ${callDurationSecs}s, turns: ${transcript.length}`);
 
         if (!SUPABASE_URL || !SUPABASE_KEY) {
             console.error("Missing Supabase env vars");
@@ -55,7 +96,7 @@ serve(async (req) => {
             .upsert({
                 conversation_id: conversationId,
                 agent_id: agentId,
-                phone_number: phoneNumber,
+                phone_number: effectivePhoneNumber,
                 transcript_text: transcriptText,
                 transcript_json: transcript,
                 call_duration_secs: callDurationSecs,
@@ -68,17 +109,27 @@ serve(async (req) => {
             return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 200 });
         }
 
-        // If we have a phone number, also update CRM lead with last_called info
-        if (phoneNumber) {
-            const last10 = phoneNumber.replace(/\D/g, '').slice(-10);
+        // If we have a caller phone, let's update their CRM lead record
+        if (callerPhone) {
+            const last10Caller = callerPhone.replace(/\D/g, '').slice(-10);
+            
+            // Always update their latest WhatsApp number if we found a new one from transcript
+            if (finalWhatsappNumber && finalWhatsappNumber !== callerPhone) {
+                await supabase
+                    .from('crm_leads')
+                    .update({ whatsapp_number: finalWhatsappNumber })
+                    .or(`whatsapp_number.ilike.%${last10Caller}%,phone.ilike.%${last10Caller}%`);
+            }
+
+            // Update pipeline stage to 'In Discussion' only if they were 'New'
             await supabase
                 .from('crm_leads')
                 .update({ 
                     last_called_at: startTime,
                     pipeline_stage: 'In Discussion' 
                 })
-                .like('whatsapp_number', `%${last10}%`)
-                .eq('pipeline_stage', 'New'); // Only auto-update if still "New"
+                .or(`whatsapp_number.ilike.%${last10Caller}%,phone.ilike.%${last10Caller}%`)
+                .eq('pipeline_stage', 'New');
         }
 
         console.log(`[Webhook] Transcript saved for conversation: ${conversationId}`);
