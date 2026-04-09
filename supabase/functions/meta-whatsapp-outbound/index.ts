@@ -114,7 +114,7 @@ serve(async (req) => {
         return new Response('ok', { status: 200, headers: corsHeaders });
     }
 
-    const { phone, leadName, message, useTemplate, leadId } = payload;
+    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams } = payload;
     const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
     const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 
@@ -133,20 +133,32 @@ serve(async (req) => {
 
     if (useTemplate) {
       metaBody.type = "template";
+      
+      const parameters = [];
+      if (templateParams && Array.isArray(templateParams)) {
+          for (const param of templateParams) {
+              parameters.push({
+                  type: "text",
+                  text: param ? param.trim() : ''
+              });
+          }
+      } else {
+          // Fallback to legacy greeting_msg parameter
+          parameters.push({
+              type: "text",
+              text: leadName ? leadName.trim() : 'Customer'
+          });
+      }
+
       metaBody.template = {
-        name: "greeting_msg", // Officially approved Meta template
+        name: templateName || "greeting_msg", 
         language: {
           code: "en"
         },
         components: [
           {
             type: "body",
-            parameters: [
-              {
-                type: "text",
-                text: leadName ? leadName.trim() : 'Customer'
-              }
-            ]
+            parameters: parameters
           }
         ]
       };
