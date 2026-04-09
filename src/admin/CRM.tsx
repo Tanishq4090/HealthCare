@@ -443,11 +443,11 @@ export default function CRM() {
             return;
         }
 
-        // Target leads in New Inquiry stage only
-        const newInquiryLeads = leads.filter(l => l.pipeline_stage === 'New Inquiry');
+        // Target leads in New stage only
+        const newInquiryLeads = leads.filter(l => l.pipeline_stage === 'New');
 
         if (newInquiryLeads.length === 0) {
-            toast.info("No leads in 'New Inquiry' stage to greet. Move leads into that stage first.");
+            toast.info("No leads in 'New' stage to greet. There may not be any fresh ungreeted leads right now.");
             return;
         }
 
@@ -481,10 +481,10 @@ export default function CRM() {
                     },
                     body: JSON.stringify({
                         phone: phoneDigits,
-                        // Use approved Meta template for bulk greetings — bypasses Meta 24-hr restriction
-                        leadName: lead.name,
                         leadId: lead.id,
                         useTemplate: true,
+                        templateName: 'greeting_msg',
+                        templateParams: [lead.name ? lead.name.split('—')[0].trim() : 'there'],
                     }),
                 });
 
