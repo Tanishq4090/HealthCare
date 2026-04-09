@@ -1841,61 +1841,6 @@ export default function CRM() {
                                 </button>
                             </div>
 
-                            <div className={`p-4 rounded-lg border transition-colors ${workflows.folio ? 'border-purple-300 bg-purple-50' : 'border-slate-200'}`}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <FileText className={`w-5 h-5 ${workflows.folio ? 'text-purple-600' : 'text-slate-400'}`} />
-                                        <h3 className={`font-semibold ${workflows.folio ? 'text-purple-700' : 'text-slate-600'}`}>Automated Folio Dispatch</h3>
-                                    </div>
-                                    <button
-                                        onClick={() => toggleWorkflow('folio', 'Automated Folio Dispatch')}
-                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.folio ? 'bg-purple-500' : 'bg-slate-200'}`}
-                                    >
-                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.folio ? 'right-0.5' : 'left-0.5'}`}></div>
-                                    </button>
-                                </div>
-                                <p className="text-sm text-slate-500 mb-3">If a lead asks for services, the AI automatically emails the "2026 Health Services Catalog.pdf".</p>
-                                <button
-                                    onClick={handleFolioDispatch}
-                                    disabled={isSendingFolio || !workflows.folio}
-                                    className="text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5"
-                                >
-                                    {isSendingFolio ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                                    Test Folio Dispatch
-                                </button>
-                            </div>
-
-                            <div className={`p-4 rounded-lg border transition-colors ${workflows.quotation ? 'border-amber-300 bg-amber-50' : 'border-slate-200'}`}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <FileText className={`w-5 h-5 ${workflows.quotation ? 'text-amber-600' : 'text-slate-400'}`} />
-                                        <h3 className={`font-semibold ${workflows.quotation ? 'text-amber-700' : 'text-slate-600'}`}>Auto-Quotation Generation</h3>
-                                    </div>
-                                    <button
-                                        onClick={() => toggleWorkflow('quotation', 'Auto-Quotation Generation')}
-                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.quotation ? 'bg-amber-500' : 'bg-slate-200'}`}
-                                    >
-                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.quotation ? 'right-0.5' : 'left-0.5'}`}></div>
-                                    </button>
-                                </div>
-                                <p className="text-sm text-slate-500">The HR/Admin specifies services; AI automatically drafts and emails a professional quotation to the client.</p>
-                            </div>
-
-                            <div className={`p-4 rounded-lg border transition-colors ${workflows.consent_form ? 'border-primary/40 bg-primary/10' : 'border-slate-200'}`}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle2 className={`w-5 h-5 ${workflows.consent_form ? 'text-primary' : 'text-slate-400'}`} />
-                                        <h3 className={`font-semibold ${workflows.consent_form ? 'text-primary' : 'text-slate-600'}`}>Form Link & Receipt Grtg.</h3>
-                                    </div>
-                                    <button
-                                        onClick={() => toggleWorkflow('consent_form', 'Form Link & Receipt Grtg.')}
-                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.consent_form ? 'bg-primary' : 'bg-slate-200'}`}
-                                    >
-                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.consent_form ? 'right-0.5' : 'left-0.5'}`}></div>
-                                    </button>
-                                </div>
-                                <p className="text-sm text-slate-500">Automatically shares consent links upon quote acceptance, and sends a "Form Submitted" greeting upon receipt.</p>
-                            </div>
 
                             <div className={`p-4 rounded-lg border transition-colors ${workflows.drip ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'}`}>
                                 <div className="flex items-center justify-between mb-2">
