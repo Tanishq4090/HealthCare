@@ -13,7 +13,6 @@ export default function CRM() {
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSendingFolio, setIsSendingFolio] = useState(false);
     const [isSimulatingInquiry, setIsSimulatingInquiry] = useState(false);
     const [crmConfig, setCrmConfig] = useState<any>(null);
     const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
@@ -223,9 +222,6 @@ export default function CRM() {
 
     const [workflows, setWorkflows] = useState({
         greeting: true,
-        folio: true,
-        quotation: false,
-        consent_form: false,
         drip: false
     });
 
@@ -390,51 +386,7 @@ export default function CRM() {
         setAutomationLogs(prev => [newLog, ...prev]);
     };
 
-    const handleFolioDispatch = async () => {
-        const testEmail = window.prompt("Resend Sandbox limits testing to your verified email. Enter your Resend email to receive the mock Folio:");
-        if (!testEmail) return;
 
-        setIsSendingFolio(true);
-        try {
-            const { error } = await supabase.functions.invoke('resend-email', {
-                body: {
-                    to: testEmail,
-                    subject: 'Your Requested HealthFirst Services Folio',
-                    html: `
-    < div style = "font-family: sans-serif; max-width: 600px; margin: 0 auto;" >
-                            <h2>Hi there! 👋</h2>
-                            <p>You recently inquired about our services at HealthFirst. Our AI agent has automatically dispatched our current digital folio for your review.</p>
-                            <p><strong>Note:</strong> In a production environment, the actual PDF brochure would be attached to this email.</p>
-                            <br/>
-                            <p>Let us know if you want to schedule a quick call!</p>
-                            <p>- The HealthFirst Team</p>
-                        </div >
-    `
-                },
-            });
-
-            if (error) throw error;
-
-            // Log success event
-            const newLog = {
-                id: Date.now(),
-                type: 'folio',
-                icon: FileText,
-                title: 'Folio Dispatched (Manual Test)',
-                desc: `Emailed "Requested Services Folio" to ${testEmail}.`,
-                time: 'Just now',
-                status: 'success'
-            };
-            setAutomationLogs(prev => [newLog, ...prev]);
-
-            toast.success(`Success! The automated Folio email was sent to ${testEmail} `);
-        } catch (error: any) {
-            console.error('Error sending folio:', error);
-            toast.error(`Error: ${error.message || 'Failed to send email'}. Ensure you used your verified Resend email!`);
-        } finally {
-            setIsSendingFolio(false);
-        }
-    };
 
 
     const handleBulkGreeting = async () => {
