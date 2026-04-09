@@ -320,8 +320,17 @@ export default function CRM() {
                 };
             });
 
-            // Filter calls that successfully captured a lead (lead_id is not null)
-            const actualVoiceLeadsCaptured = formattedCalls.filter((c: any) => c.status === 'Processed').length;
+            // Filter calls that successfully captured a lead (lead_id is not null) or phone matches existing lead
+            const actualVoiceLeadsCaptured = formattedCalls.filter((c: any) => {
+                const isAlreadyInPipeline = leads.some(l => {
+                    const strippedLPhone = (l.phone || '').replace(/\D/g, '');
+                    const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
+                    const strippedCallPhone = (c.phone || '').replace(/\D/g, '');
+                    return (strippedLPhone && strippedLPhone === strippedCallPhone) || 
+                           (strippedLWa && strippedLWa === strippedCallPhone);
+                });
+                return c.status === 'Processed' || isAlreadyInPipeline;
+            }).length;
 
             setCalls(formattedCalls);
             setVoiceMetrics({
