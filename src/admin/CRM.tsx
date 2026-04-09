@@ -8,13 +8,13 @@ import { MOCK_WORKERS } from '../data/mockWorkers';
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice' | 'content'>('pipeline');
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>('pipeline');
     const [leads, setLeads] = useState<any[]>([]);
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSimulatingInquiry, setIsSimulatingInquiry] = useState(false);
-    const [crmConfig, setCrmConfig] = useState<any>(null);
+
     const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
 
     const fetchDeliveryLogs = async () => {
@@ -24,22 +24,8 @@ export default function CRM() {
         } catch (err) { }
     };
 
-    const fetchCrmConfig = async () => {
-        try {
-            // Use pure token from localStorage (no Supabase session required)
-            const token = localStorage.getItem('healthfirst_pure_token') || 'pure_dev_token_admin';
-            const response = await fetch('/api/crm-config/config', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-            setCrmConfig(data);
-        } catch (e) {
-            console.error("Failed to fetch CRM config", e);
-        }
-    };
 
     useEffect(() => {
-        fetchCrmConfig();
         fetchLeads();
         fetchDeliveryLogs();
         
@@ -1099,12 +1085,7 @@ export default function CRM() {
                         >
                             Voice AI Calls
                         </button>
-                        <button
-                            onClick={() => setActiveTab('content')}
-                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'content' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
-                        >
-                            Content & FAQ
-                        </button>
+
                     </div>
                 </div>
             </div>
@@ -1723,49 +1704,7 @@ export default function CRM() {
                         </div>
                     </div>
                 </div>
-            ) : activeTab === 'content' ? (
-                /* Content & FAQ View */
-                <div className="flex-1 flex flex-col gap-6 overflow-hidden">
-                    <div className="grid lg:grid-cols-2 gap-6 flex-1 overflow-hidden">
-                        {/* Company Intro Section */}
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                            <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                                <h2 className="text-lg font-bold text-slate-900">Company Introduction</h2>
-                                <Globe className="w-5 h-5 text-primary" />
-                            </div>
-                            <div className="p-5 space-y-6 overflow-y-auto flex-1">
-                                {['english', 'hindi', 'gujarati'].map(lang => (
-                                    <div key={lang} className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">{lang}</label>
-                                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 leading-relaxed min-h-[100px]">
-                                            {crmConfig?.companyIntro?.[lang] || 'Loading...'}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
 
-                        {/* FAQ Section */}
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                            <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                                <h2 className="text-lg font-bold text-slate-900">Frequently Asked Questions</h2>
-                                <Bot className="w-5 h-5 text-emerald-500" />
-                            </div>
-                            <div className="p-5 space-y-4 overflow-y-auto flex-1">
-                                {crmConfig?.faqs?.map((faq: any, idx: number) => (
-                                    <div key={idx} className="p-4 rounded-xl border border-slate-100 bg-emerald-50/30 hover:bg-emerald-50/50 transition-colors">
-                                        <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2 text-sm">
-                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px]">Q</div>
-                                            {faq.q}
-                                        </h4>
-                                        <p className="text-sm text-slate-600 pl-8">{faq.a}</p>
-                                    </div>
-                                ))}
-                                {!crmConfig?.faqs && <p className="text-center text-slate-400 py-10">No FAQs loaded.</p>}
-                            </div>
-                        </div>
-                    </div>
-                </div>
             ) : (
                 /* AI Automations View */
                 <div className="flex-1 grid lg:grid-cols-2 gap-6 pb-4">
