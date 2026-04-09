@@ -496,8 +496,15 @@ export default function CRM() {
                 sentCount++;
                 toast.loading(`Sending greetings… ${sentCount}/${newInquiryLeads.length}`, { id: progressId });
 
-                // Move lead to In Discussion after greeting
-                await handleMoveLead(lead.id, 'In Discussion');
+                // Move lead to In Discussion after greeting and record timestamp for drip campaign
+                await supabase
+                    .from('crm_leads')
+                    .update({ 
+                        pipeline_stage: 'In Discussion',
+                        last_greeted_at: new Date().toISOString(),
+                        drip_step: 0
+                    })
+                    .eq('id', lead.id);
 
             } catch (e: any) {
                 console.warn(`Failed to greet ${lead.name}:`, e.message);
