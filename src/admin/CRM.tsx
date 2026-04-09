@@ -706,18 +706,7 @@ export default function CRM() {
                     toast.success(`WhatsApp message delivered to +${phoneDigits}!`, { id: toastId, duration: 4000 });
                 }
                 
-                // Add to automation logs
-                setAutomationLogs(prev => [{
-                    id: Date.now(),
-                    type: agentTargetAction === 'staff' ? 'system' : agentTargetAction,
-                    icon: MessageSquare,
-                    title: `Automated WhatsApp - ${agentTargetAction}`,
-                    desc: agentTargetAction === 'staff' && selectedWorker
-                        ? `Assigned ${selectedWorker.name} (${selectedWorker.role}) to ${agentTargetLead.name} via WhatsApp.`
-                        : `Successfully dispatched template to ${agentTargetLead.name}`,
-                    time: 'Just now',
-                    status: 'success'
-                }, ...prev]);
+                fetchDeliveryLogs();
             }
 
         } catch (error: any) {
@@ -1790,7 +1779,14 @@ export default function CRM() {
                             <p className="text-sm text-slate-500 mt-1">Live log of actions taken by the AI agent.</p>
                         </div>
                         <div className="p-5 flex-1 overflow-y-auto space-y-4">
-                            {automationLogs.map((log) => (
+                            {automationLogs.length === 0 ? (
+                                <div className="text-center py-10">
+                                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <Bot className="w-6 h-6 text-slate-300" />
+                                    </div>
+                                    <p className="text-sm text-slate-400 font-medium">No recent activity logged.</p>
+                                </div>
+                            ) : automationLogs.map((log) => (
                                 <div key={log.id} className="flex gap-4">
                                     <div className="flex flex-col items-center">
                                         <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center shrink-0 z-10">
