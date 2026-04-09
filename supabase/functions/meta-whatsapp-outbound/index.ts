@@ -136,7 +136,7 @@ serve(async (req) => {
       metaBody.template = {
         name: "greeting_msg", // Officially approved Meta template
         language: {
-          code: "en_US"
+          code: "en"
         },
         components: [
           {
