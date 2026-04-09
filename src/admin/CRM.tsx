@@ -672,9 +672,22 @@ export default function CRM() {
 
             const resData = await response.json().catch(() => ({ error: response.statusText }));
             if (!response.ok) {
-                const twilioMsg = resData.details?.message || resData.message || resData.error || response.statusText;
-                const twilioCode = resData.details?.code ? `(Code ${resData.details.code})` : '';
-                throw new Error(`${twilioMsg} ${twilioCode}`);
+                let errMsg = response.statusText;
+                let errCode = '';
+
+                if (resData.error && typeof resData.error === 'object') {
+                    errMsg = resData.error.message || resData.error.error_user_title || JSON.stringify(resData.error);
+                    errCode = resData.error.code ? `(Code ${resData.error.code})` : '';
+                } else if (typeof resData.error === 'string') {
+                    errMsg = resData.error;
+                } else if (resData.message) {
+                    errMsg = resData.message;
+                } else if (resData.details?.message) {
+                    errMsg = resData.details.message;
+                }
+
+                const finalCode = resData.details?.code ? `(Code ${resData.details.code})` : errCode;
+                throw new Error(`${errMsg} ${finalCode}`.trim());
             }
 
             // Post-dispatch pipeline advancement
