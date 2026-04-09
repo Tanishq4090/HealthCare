@@ -1689,16 +1689,37 @@ export default function CRM() {
                                                     <Bot className="w-4 h-4 text-emerald-500" />
                                                     <span className="text-sm font-semibold text-slate-900">AI Summary & Intent: <span className="font-normal text-slate-600 bg-slate-100 px-2 py-0.5 rounded ml-1">{call.intent}</span></span>
                                                 </div>
-                                                {call.status === 'Processed' && (
-                                                    <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-                                                        <CheckCircle2 className="w-3.5 h-3.5" /> ADDED TO CRM
-                                                    </span>
-                                                )}
+                                                {(() => {
+                                                    const isAlreadyInPipeline = leads.some(l => {
+                                                        const strippedLPhone = (l.phone || '').replace(/\D/g, '');
+                                                        const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
+                                                        const strippedCallPhone = (call.phone || '').replace(/\D/g, '');
+                                                        return (strippedLPhone && strippedLPhone === strippedCallPhone) || 
+                                                               (strippedLWa && strippedLWa === strippedCallPhone);
+                                                    });
+                                                    const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
+
+                                                    return isProcessed ? (
+                                                        <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded" title={isAlreadyInPipeline ? "Found existing Lead with this phone number." : ""}>
+                                                            <CheckCircle2 className="w-3.5 h-3.5" /> ADDED TO CRM
+                                                        </span>
+                                                    ) : null;
+                                                })()}
                                             </div>
                                             <p className="text-sm text-slate-600 leading-relaxed italic bg-slate-50 p-3 rounded-lg border border-slate-100">"{call.summary}"</p>
                                         </div>
 
-                                        {(call.status === 'Unprocessed' && (call.capturedName || (call.summary && call.summary !== 'No summary available.' && call.summary !== 'Call completed.'))) && (
+                                        {(() => {
+                                            const isAlreadyInPipeline = leads.some(l => {
+                                                const strippedLPhone = (l.phone || '').replace(/\D/g, '');
+                                                const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
+                                                const strippedCallPhone = (call.phone || '').replace(/\D/g, '');
+                                                return (strippedLPhone && strippedLPhone === strippedCallPhone) || 
+                                                       (strippedLWa && strippedLWa === strippedCallPhone);
+                                            });
+                                            const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
+
+                                            return (!isProcessed && (call.capturedName || (call.summary && call.summary !== 'No summary available.' && call.summary !== 'Call completed.'))) ? (
                                             <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
                                                 <div>
                                                     <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
@@ -1718,7 +1739,8 @@ export default function CRM() {
                                                     <Plus className="w-4 h-4" /> Add to Pipeline
                                                 </button>
                                             </div>
-                                        )}
+                                            ) : null;
+                                        })()}
                                     </div>
                                 </div>
                             ))}
