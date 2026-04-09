@@ -188,7 +188,14 @@ serve(async (req) => {
         await supabase.from('whatsapp_logs').insert({
             sid: wamid,
             status: 'accepted_by_meta',
-            payload: { ...metaData, lead_id: leadId, original_recipient: digits }
+            payload: { 
+                ...metaData, 
+                lead_id: leadId, 
+                original_recipient: digits,
+                templateName,
+                useTemplate,
+                message
+            }
         });
     }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, PlayCircle, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
@@ -19,7 +19,11 @@ export default function CRM() {
 
     const fetchDeliveryLogs = async () => {
         try {
-            const { data } = await supabase.from('whatsapp_logs').select('status, error_message, payload').order('created_at', { ascending: false }).limit(200);
+            const { data } = await supabase
+                .from('whatsapp_logs')
+                .select('id, status, error_message, payload, created_at')
+                .order('created_at', { ascending: false })
+                .limit(20);
             if (data) setDeliveryLogs(data);
         } catch (err) { }
     };
@@ -82,12 +86,50 @@ export default function CRM() {
         };
     }, []);
 
-    // AI Automation State
-    const [automationLogs, setAutomationLogs] = useState([
-        { id: 1, type: 'greeting', icon: MessageSquare, title: 'Auto-Greeting Sent', desc: 'Sent "Welcome to HealthFirst" SMS to Sarah Jenkins.', time: '10:45 AM', status: 'success' },
-        { id: 2, type: 'folio', icon: FileText, title: 'Folio Dispatched', desc: 'Emailed "Enterprise Health Services" PDF to Michael Ross.', time: '09:30 AM', status: 'success' },
-        { id: 3, type: 'followup', icon: Send, title: 'Drip Sequence Triggered', desc: 'Added David Chen to "Post-Meeting Follow-up" sequence.', time: 'Yesterday, 4:00 PM', status: 'success' },
-    ]);
+    // AI Automation State (Real-time from whatsapp_logs)
+    const automationLogs = useMemo(() => {
+        return deliveryLogs.map((log: any) => {
+            const payload = log.payload || {};
+            const createdDate = new Date(log.created_at);
+            const timeStr = createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const dateStr = createdDate.toLocaleDateString();
+            const now = new Date();
+            const isToday = createdDate.toDateString() === now.toDateString();
+            const displayTime = isToday ? timeStr : `${dateStr}, ${timeStr}`;
+
+            let title = 'Action Executed';
+            let desc = 'AI performed an automated action.';
+            let icon = Bot;
+
+            if (payload.templateName === 'greeting_msg') {
+                title = 'Auto-Greeting Sent';
+                desc = `Sent welcome menu to customer at ${payload.original_recipient}.`;
+                icon = MessageSquare;
+            } else if (payload.templateName?.startsWith('drip')) {
+                title = 'Drip Sequence Triggered';
+                desc = `Sent follow-up step ${payload.templateName.split('_')[2]} to ${payload.original_recipient}.`;
+                icon = Send;
+            } else if (payload.templateName) {
+                title = 'Template Dispatched';
+                desc = `Sent ${payload.templateName} to ${payload.original_recipient}.`;
+                icon = FileText;
+            } else if (payload.message) {
+                title = 'AI Response Sent';
+                desc = `Message: "${payload.message.substring(0, 40)}..."`;
+                icon = MessageCircle;
+            }
+
+            return {
+                id: log.id,
+                type: payload.templateName || 'custom',
+                icon,
+                title,
+                desc,
+                time: displayTime,
+                status: log.status === 'error' ? 'error' : 'success'
+            };
+        });
+    }, [deliveryLogs]);
 
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
@@ -364,21 +406,13 @@ export default function CRM() {
     }, [activeTab]);
     // -------------------------
 
-    const toggleWorkflow = (key: keyof typeof workflows, name: string) => {
+    const toggleWorkflow = (key: keyof typeof workflows) => {
         const isTurningOn = !workflows[key];
         setWorkflows(prev => ({ ...prev, [key]: isTurningOn }));
 
-        // Add to log
-        const newLog = {
-            id: Date.now(),
-            type: 'system',
-            icon: Bot,
-            title: `Workflow ${isTurningOn ? 'Activated' : 'Paused'} `,
-            desc: `${name} has been ${isTurningOn ? 'enabled' : 'disabled'} by Admin.`,
-            time: 'Just now',
-            status: 'success'
-        };
-        setAutomationLogs(prev => [newLog, ...prev]);
+        // In a real system, you might log this to a 'system_audit' table. 
+        // For now, we'll just show the toast.
+        fetchDeliveryLogs();
     };
 
 
@@ -461,16 +495,7 @@ export default function CRM() {
 
         toast.dismiss(progressId);
 
-        const logDesc = `Greeted ${sentCount} lead(s) via WhatsApp and moved them to "In Discussion".${failCount > 0 ? ` ${failCount} failed.` : ''}`;
-        setAutomationLogs(prev => [{
-            id: Date.now(),
-            type: 'greeting',
-            icon: MessageSquare,
-            title: `Bulk Greeting — ${sentCount}/${newInquiryLeads.length} Sent`,
-            desc: logDesc,
-            time: 'Just now',
-            status: 'success'
-        }, ...prev]);
+        fetchDeliveryLogs();
 
         if (sentCount > 0) {
             toast.success(`✅ Greeted ${sentCount} lead(s)! They've been moved to "In Discussion".`);
@@ -964,16 +989,7 @@ export default function CRM() {
             setLeads(prev => prev.filter(l => l.id !== leadId));
 
             // Add to log
-            const newLog = {
-                id: Date.now(),
-                type: 'system',
-                icon: Users,
-                title: 'Client Converted',
-                desc: `${leadName} was successfully converted to a permanent Client.`,
-                time: 'Just now',
-                status: 'success'
-            };
-            setAutomationLogs(prev => [newLog, ...prev]);
+            fetchDeliveryLogs();
 
             toast.success(`${leadName} has been converted successfully!`);
         }
@@ -1731,7 +1747,7 @@ export default function CRM() {
                                         <h3 className={`font-semibold ${workflows.greeting ? 'text-primary' : 'text-slate-600'}`}>Instant Greeting & Triage</h3>
                                     </div>
                                     <button
-                                        onClick={() => toggleWorkflow('greeting', 'Instant Greeting')}
+                                        onClick={() => toggleWorkflow('greeting')}
                                         className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.greeting ? 'bg-primary' : 'bg-slate-200'}`}
                                     >
                                         <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.greeting ? 'right-0.5' : 'left-0.5'}`}></div>
@@ -1756,7 +1772,7 @@ export default function CRM() {
                                         <h3 className={`font-semibold ${workflows.drip ? 'text-emerald-700' : 'text-slate-600'}`}>No-Response Drip Campaign</h3>
                                     </div>
                                     <button
-                                        onClick={() => toggleWorkflow('drip', 'No-Response Drip Campaign')}
+                                        onClick={() => toggleWorkflow('drip')}
                                         className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.drip ? 'bg-emerald-500' : 'bg-slate-200'}`}
                                     >
                                         <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.drip ? 'right-0.5' : 'left-0.5'}`}></div>
