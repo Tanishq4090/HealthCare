@@ -265,11 +265,21 @@ export default function CRM() {
             });
 
         } catch (error: any) {
-            console.error('Failed to fetch voice data:', error);
-            toast.error(`Unable to load voice logs: ${error.message}`);
+            console.error('CRITICAL: Voice logs fetch failed:', {
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+                code: error.code,
+                stack: error.stack
+            });
+            toast.error(`Unable to load voice logs: ${error.message}. Check console for network details.`);
         } finally {
             setIsLoadingVoice(false);
         }
+    };
+
+    const handleRetryVoice = () => {
+        fetchVoiceData();
     };
 
     useEffect(() => {
@@ -1507,6 +1517,14 @@ export default function CRM() {
                                 <h2 className="text-lg font-bold text-slate-900">Recent Call Logs</h2>
                                 <p className="text-sm text-slate-500 mt-1">Review AI voice interactions and capture leads directly to pipeline.</p>
                             </div>
+                            <button 
+                                onClick={handleRetryVoice}
+                                disabled={isLoadingVoice}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+                            >
+                                {isLoadingVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Loader2 className="w-4 h-4" />}
+                                Refresh Logs
+                            </button>
                         </div>
                         <div className="flex-1 overflow-auto p-5 space-y-4">
                             {calls.map((call) => (

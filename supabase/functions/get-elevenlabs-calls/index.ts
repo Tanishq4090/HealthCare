@@ -12,14 +12,18 @@ serve(async (req) => {
   }
 
   try {
-    // Determine limit from request, default to 30
     let limit = 30;
     let payload: any = {};
-    try {
-      payload = await req.json();
-      if (payload.limit) limit = Math.min(100, Math.max(1, payload.limit));
-    } catch (e) {
-      // ignore JSON parse error if it's a simple GET or body is empty
+    if (req.method === 'POST') {
+      try {
+        const text = await req.text();
+        if (text) {
+          payload = JSON.parse(text);
+          if (payload.limit) limit = Math.min(100, Math.max(1, payload.limit));
+        }
+      } catch (e) {
+        console.error("JSON parse error:", e);
+      }
     }
 
     // Fetch the conversation list from ElevenLabs API
