@@ -358,7 +358,7 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
             try {
                 const parsedResult = JSON.parse(rawContent);
 
-                if (parsedResult.replyToUser) {
+                if (typeof parsedResult.replyToUser === 'string') {
                     aiReplyMsg = parsedResult.replyToUser;
                 }
 
