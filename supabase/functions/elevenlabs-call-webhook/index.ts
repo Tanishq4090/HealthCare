@@ -49,7 +49,21 @@ serve(async (req) => {
              finalWhatsappNumber = analysis.data_collection_results.whatsapp.value;
         }
 
-        // 2. Transcript Analysis for "Yes" confirmation or dictated number
+        // 2. Dynamic wildcard SIP Header parsing
+        let metadataPhone = metadata?.phone_number || metadata?.caller_id || null;
+        if (!metadataPhone && metadata) {
+            for (const key in metadata) {
+                if (typeof metadata[key] === 'string') {
+                    const match = metadata[key].replace(/\D/g, '').match(/(?:91)?([6-9]\d{9})/);
+                    if (match) {
+                        metadataPhone = '+91' + match[1];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 3. Transcript Analysis for "Yes" confirmation or dictated number
         if (!finalWhatsappNumber && transcript.length > 0) {
             for (let i = 0; i < transcript.length; i++) {
                 const turn = transcript[i];
@@ -63,13 +77,13 @@ serve(async (req) => {
                     }
                 }
 
-                // If agent asks if this is their WhatsApp number
-                if (turn.role === 'agent' && (msg.includes('whatsapp number') || msg.includes('whatsapp pe'))) {
+                // If agent asks if this is their WhatsApp number natively in English or Hindi
+                if (turn.role === 'agent' && msg.includes('whatsapp')) {
                     // Check the immediate next reply from the user
                     if (i + 1 < transcript.length && transcript[i+1].role === 'user') {
                         const userReply = transcript[i+1].message?.toLowerCase() || '';
-                        if (userReply.includes('yes') || userReply.includes('haan') || userReply.includes('ji') || userReply.includes('yep') || userReply.includes('same')) {
-                            finalWhatsappNumber = callerPhone;
+                        if (['yes', 'haan', 'ji', 'yep', 'hanji', 'ha', 'same', 'yup', 'हाँ', 'जी', 'हां'].some(word => userReply.includes(word))) {
+                            finalWhatsappNumber = metadataPhone || "Confirmed (No Caller ID)";
                         }
                     }
                 }

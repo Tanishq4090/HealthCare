@@ -124,6 +124,41 @@ export default function CRM() {
     const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
     const [selectedCall, setSelectedCall] = useState<any>(null);
 
+    // WhatsApp Chat Modal State
+    const [isWhatsappChatOpen, setIsWhatsappChatOpen] = useState(false);
+    const [selectedWhatsappLead, setSelectedWhatsappLead] = useState<any>(null);
+    const [whatsappChat, setWhatsappChat] = useState<any[]>([]);
+    const [isFetchingChat, setIsFetchingChat] = useState(false);
+
+    const fetchWhatsappChat = async (lead: any) => {
+        setSelectedWhatsappLead(lead);
+        setIsWhatsappChatOpen(true);
+        setIsFetchingChat(true);
+        setWhatsappChat([]);
+        try {
+            let phoneDigits = 'Unknown';
+            const targetNumber = lead.whatsapp_number || lead.phone;
+            if (targetNumber && targetNumber !== 'Unknown Number' && targetNumber !== 'Unknown') {
+                phoneDigits = targetNumber.replace(/\D/g, ''); 
+                if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+            }
+
+            const { data, error } = await supabase
+                .from("whatsapp_messages")
+                .select("role, content, created_at")
+                .eq("phone", phoneDigits)
+                .order("created_at", { ascending: true }); // chronological
+
+            if (error) throw error;
+            setWhatsappChat(data || []);
+        } catch (err: any) {
+            console.error('Failed to fetch chat logs:', err);
+            toast.error(`Unable to load chat: ${err.message}`);
+        } finally {
+            setIsFetchingChat(false);
+        }
+    };
+
     const [whatsappTemplates, setWhatsappTemplates] = useState<Record<string, Record<string, string>>>({
         inquiry: {
             Hinglish: "🌟 Welcome to 99 Care! 🌟\n{{name}} sir/ma'am, aapki inquiry mili humein. Hamari team aapke ghar par best healthcare staff provide karne ke liye ready hai!\n\nKoi bhi sawaal ho toh seedha reply karein. Hum aapki service mein!💙✨",
@@ -289,16 +324,16 @@ export default function CRM() {
                 return {
                     id: call.id,
                     phone: call.phone_number || "Unknown Number",
-                    type: 'Inbound', // or 'Outbound' if tracking that separately
+                    type: 'Inbound',
                     duration: durationStr,
                     time: isToday ? startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : startedAt.toLocaleDateString(),
                     intent: call.intent || "Inquiry",
                     summary: call.summary || "No summary available.",
                     recordingUrl: call.recording_url,
                     capturedName: call.lead_id ? (call.capturedName || "Known Lead") : call.capturedName,
-                    capturedWhatsapp: call.phone_number,
+                    capturedWhatsapp: call.capturedWhatsapp || call.phone_number || null,
                     status: callStatus,
-                    transcript: call.transcript // Stored but not shown inline by default
+                    transcript: call.transcript
                 };
             });
 
@@ -975,25 +1010,34 @@ export default function CRM() {
         if (!call) return;
 
         try {
-            const { error } = await supabase.from('crm_leads').insert([{
+            const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: call.capturedName || 'Voice Lead',
-                phone: call.phone === 'Unknown Number' ? null : call.phone,
-                whatsapp_number: call.capturedWhatsapp === 'Unknown Number' ? null : call.capturedWhatsapp,
+                phone: (!call.phone || call.phone === 'Unknown Number') ? null : call.phone,
+                whatsapp_number: (!call.capturedWhatsapp || call.capturedWhatsapp === 'Unknown Number') ? null : call.capturedWhatsapp,
                 source: 'AI Phone Call',
                 status: 'AI Handled',
                 pipeline_stage: 'New Inquiry',
                 estimated_value_monthly: call.capturedValue || 0,
-            }]);
+            }]).select('id').single();
 
             if (error) throw error;
 
-            // Mark call as processed
-            setCalls(prev => prev.map(c => c.id === callId ? { ...c, status: 'Processed' } : c));
+            // Mark this conversation_id as processed in call_transcripts
+            // so the Edge Function's new conversation_id-based check picks it up
+            if (newLead?.id && call.id) {
+                await supabase.from('call_transcripts').upsert({
+                    conversation_id: String(call.id),
+                    lead_id: newLead.id,
+                    phone_number: call.phone === 'Unknown Number' ? null : call.phone,
+                    called_at: new Date().toISOString(),
+                }, { onConflict: 'conversation_id' });
+            }
 
-            // Refresh list
+            // Optimistically mark the call as processed in the UI
+            setCalls(prev => prev.map(c => c.id === callId ? { ...c, status: 'Processed' } : c));
             fetchLeads();
 
-            toast.success(`Successfully added ${call.capturedName} to the pipeline!`);
+            toast.success(`Successfully added ${call.capturedName || 'Lead'} to the pipeline!`);
         } catch (error: any) {
             console.error("Error creating lead from call:", error);
             toast.error(`Failed to create lead: ${error.message}`);
@@ -1222,7 +1266,6 @@ export default function CRM() {
                                                                             {item.whatsapp_number || item.phone}
                                                                         </div>
 
-                                                                        {/* WhatsApp Delivery Status Inline */}
                                                                         {(() => {
                                                                             const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
                                                                             if (!log) return null;
@@ -1347,6 +1390,15 @@ export default function CRM() {
 
                                                     {/* Client Process Flow Actions */}
                                                     <div className="mt-4 flex flex-col gap-2">
+                                                        {/* AI Chat Viewer Button (General Action) */}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); fetchWhatsappChat(item); }}
+                                                            className="w-full bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 text-slate-700 hover:text-emerald-700 text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                        >
+                                                            <MessageCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                                            View AI Chat History
+                                                        </button>
+
                                                         {item.pipeline_stage === 'New Inquiry' && (
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'inquiry'); }}
@@ -1626,7 +1678,7 @@ export default function CRM() {
                                             <p className="text-sm text-slate-600 leading-relaxed italic bg-slate-50 p-3 rounded-lg border border-slate-100">"{call.summary}"</p>
                                         </div>
 
-                                        {(call.status === 'Unprocessed' && (call.capturedName || (call.phone && call.phone !== 'Unknown' && call.phone !== 'Unknown Number'))) && (
+                                        {(call.status === 'Unprocessed' && (call.capturedName || (call.summary && call.summary !== 'No summary available.' && call.summary !== 'Call completed.'))) && (
                                             <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
                                                 <div>
                                                     <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
@@ -2105,6 +2157,71 @@ export default function CRM() {
                 </div>
             </div>
         )}
+
+        {/* WhatsApp Chat Modal */}
+        {isWhatsappChatOpen && selectedWhatsappLead && (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                    <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/80 sticky top-0 z-10">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-600">
+                                <MessageCircle className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-900">WhatsApp Chat History</h2>
+                                <p className="text-sm text-slate-500 mt-0.5">Contact: {selectedWhatsappLead.name}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setIsWhatsappChatOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    
+                    <div className="p-6 flex-1 overflow-y-auto space-y-4 bg-[#efeae2]">
+                        {isFetchingChat ? (
+                            <div className="flex flex-col items-center justify-center py-10">
+                                <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
+                                <p className="text-slate-600 font-medium">Loading chat history...</p>
+                            </div>
+                        ) : whatsappChat.length > 0 ? (
+                            <div className="space-y-3">
+                                {whatsappChat.map((msg, idx) => {
+                                    const isAI = msg.role === 'assistant';
+                                    const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                    const date = new Date(msg.created_at).toLocaleDateString();
+                                    
+                                    // simple date separator
+                                    const showDate = idx === 0 || new Date(whatsappChat[idx-1].created_at).toLocaleDateString() !== date;
+
+                                    return (
+                                        <div key={idx}>
+                                            {showDate && (
+                                                <div className="flex justify-center my-4">
+                                                    <span className="bg-white/80 rounded-md px-3 py-1 text-[11px] font-bold text-slate-500 shadow-sm">{date}</span>
+                                                </div>
+                                            )}
+                                            <div className={`flex ${isAI ? 'justify-start' : 'justify-end'}`}>
+                                                <div className={`max-w-[75%] rounded-lg px-3 py-2 shadow-sm flex flex-col relative ${isAI ? 'bg-white rounded-tl-none' : 'bg-[#d9fdd3] rounded-tr-none'}`}>
+                                                    <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                                                    <span className="text-[10px] text-slate-500 text-right mt-1 ml-4 block">{time}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-12 text-center bg-white/50 rounded-xl border border-dashed border-slate-300">
+                                <MessageCircle className="w-10 h-10 text-slate-300 mb-3" />
+                                <h3 className="font-semibold text-slate-700">No Chat History</h3>
+                                <p className="text-sm text-slate-500">The AI hasn't conversed with this lead yet.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
         </div>
     );
+
 }

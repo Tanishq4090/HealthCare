@@ -53,20 +53,60 @@ serve(async (req) => {
         }
     }));
 
+    // --- VOBIZ CDR LOOKUP: Fetch recent inbound calls to match caller phone numbers by timestamp ---
+    const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
+    const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
+    const vobizCallerMap: Record<string, string> = {}; // startTimeISO → from_number
+
+    if (VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN) {
+        try {
+            const today = new Date();
+            const yesterday = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            const startDate = yesterday.toISOString().slice(0, 10);
+            const endDate = today.toISOString().slice(0, 10);
+
+            const cdrRes = await fetch(
+                `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=50`,
+                { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
+            );
+            if (cdrRes.ok) {
+                const cdrData = await cdrRes.json();
+                const records = cdrData.data || [];
+                // Build a map: for each CDR record, key = start_time rounded to 10s, value = caller phone
+                for (const rec of records) {
+                    if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
+                        const t = new Date(rec.start_time).getTime();
+                        // Store under multiple keys (every 10 seconds within ±60s) for fuzzy matching
+                        for (let offset = -60000; offset <= 60000; offset += 10000) {
+                            const key = Math.floor((t + offset) / 10000).toString();
+                            if (!vobizCallerMap[key]) vobizCallerMap[key] = rec.caller_id_number;
+                        }
+                    }
+                }
+                console.log(`[Vobiz CDR] Loaded ${records.length} CDR records, built ${Object.keys(vobizCallerMap).length} time keys`);
+            } else {
+                console.warn('[Vobiz CDR] Failed to fetch CDRs:', cdrRes.status, cdrRes.statusText);
+            }
+        } catch (e: any) {
+            console.error('[Vobiz CDR] Exception:', e.message);
+        }
+    }
+
     // Initialize Supabase with Service Role to check which calls are already 'Processed' in CRM Pipeline
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { data: leads } = await supabaseClient.from('crm_leads').select('whatsapp_number, phone, name').eq('source', 'AI Phone Call');
-    const processedPhones = new Set();
-    if (leads) {
-        leads.forEach((l: any) => {
-            if (l.whatsapp_number) processedPhones.add(l.whatsapp_number);
-            if (l.phone) processedPhones.add(l.phone);
-        });
-    }
+    // Fetch which conversation_ids have ALREADY been explicitly added to the CRM pipeline
+    // Only mark a call as 'Processed' if its specific conversation_id has a lead_id in call_transcripts
+    const { data: processedTranscripts } = await supabaseClient
+        .from('call_transcripts')
+        .select('conversation_id')
+        .not('lead_id', 'is', null);
+    const processedConversationIds = new Set(
+        (processedTranscripts || []).map((t: any) => t.conversation_id).filter(Boolean)
+    );
 
     // Format calls for CRM Dashboard
     const formattedLogs = detailedCalls.filter(Boolean).map((c: any) => {
@@ -86,30 +126,97 @@ serve(async (req) => {
             else if (dc.service_type?.value) intent = dc.service_type.value;
         }
 
+        // Layer 1b: Transcript-based Name Extraction with Intelligent Cleaning
+        if (!capturedName && c.transcript && c.transcript.length > 0) {
+            // Helper: strip spoken fillers ("Uh", "Aa", "Hmm", "Um") and extract clean name
+            const cleanName = (raw: string): string | null => {
+                // Pattern: "mera naam X hai" or "mera shubh naam X hai"
+                const naaamPatterns = [
+                    /mera(?:\s+shubh)?\s+naam\s+(.+?)(?:\s+hai\.?)?$/i,
+                    /my name is\s+(.+?)\.?$/i,
+                ];
+                for (const pattern of naaamPatterns) {
+                    const m = raw.match(pattern);
+                    if (m) return m[1].replace(/[.,!?]+$/, '').trim();
+                }
+                // Strip common spoken fillers at beginning: "Uh, Tanishq." → "Tanishq"
+                const fillers = /^(?:uh[\s,-]+|aa[\s,-]+|hmm[\s,-]+|um[\s,-]+|oh[\s,-]+|ah[\s,-]+|acha[\s,-]+|accha[\s,-]+)+/i;
+                const stripped = raw.replace(fillers, '').replace(/[.,!?]+$/, '').trim();
+                // Accept if it looks like a name (1-3 words, short)
+                const words = stripped.split(/\s+/).filter(Boolean);
+                if (words.length >= 1 && words.length <= 3 && stripped.length < 35) {
+                    return stripped;
+                }
+                return null;
+            };
+
+            for (let i = 0; i < c.transcript.length; i++) {
+                const turn = c.transcript[i];
+                const msg = (turn.message || '').toLowerCase();
+                if (turn.role === 'agent' && (msg.includes('naam') || msg.includes('your name') || msg.includes('aapka naam') || msg.includes('aapka shubh'))) {
+                    if (i + 1 < c.transcript.length && c.transcript[i + 1].role === 'user') {
+                        const raw = (c.transcript[i + 1].message || '').trim();
+                        const cleaned = cleanName(raw);
+                        if (cleaned) { capturedName = cleaned; break; }
+                    }
+                }
+            }
+        }
+
         // Layer 2: Metadata phone_number (set by ElevenLabs for actual phone/SIP calls)
         if (!capturedPhone && c.metadata?.phone_number) {
             capturedPhone = c.metadata.phone_number;
         }
 
-        // Layer 3: Scan transcript for Boolean confirmations ("yes", "hanji") to WhatsApp query
+        // Layer 2.5: Vobiz CDR Timestamp Cross-Reference
+        // Match this ElevenLabs call's start time against Vobiz CDR records to get real caller phone
+        if (!capturedPhone && Object.keys(vobizCallerMap).length > 0) {
+            const callStartMs = c.metadata?.start_time_unix_secs
+                ? c.metadata.start_time_unix_secs * 1000
+                : null;
+            if (callStartMs) {
+                const key = Math.floor(callStartMs / 10000).toString();
+                if (vobizCallerMap[key]) {
+                    capturedPhone = vobizCallerMap[key];
+                    console.log(`[Vobiz CDR] Matched caller: ${capturedPhone} for call at ${new Date(callStartMs).toISOString()}`);
+                }
+            }
+        }
+
+        // Layer 3: Dynamic wildcard SIP Header parsing
+        let metadataPhone = capturedPhone || c.metadata?.phone_number || c.metadata?.caller_id || null;
+        if (!metadataPhone && c.metadata) {
+            for (const key in c.metadata) {
+                if (typeof c.metadata[key] === 'string') {
+                    const match = c.metadata[key].replace(/\D/g, '').match(/(?:91)?([6-9]\d{9})/);
+                    if (match) {
+                        metadataPhone = '+91' + match[1];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Layer 4: Scan transcript for Boolean confirmations to WhatsApp query (English/Hinglish/Hindi natively)
         if (!capturedPhone && c.transcript && c.transcript.length > 0) {
             for (let i = 0; i < c.transcript.length; i++) {
                 const turn = c.transcript[i];
                 const msg = turn.message?.toLowerCase() || '';
 
-                if (turn.role === 'agent' && (msg.includes('whatsapp number') || msg.includes('whatsapp pe') || msg.includes('whatsapp par'))) {
+                if (turn.role === 'agent' && msg.includes('whatsapp')) {
                     // Check user's next reply
                     if (i + 1 < c.transcript.length && c.transcript[i+1].role === 'user') {
                         const userReply = c.transcript[i+1].message?.toLowerCase() || '';
-                        if (userReply.includes('yes') || userReply.includes('haan') || userReply.includes('ji') || userReply.includes('yep') || userReply.includes('hanji') || userReply.includes('ha') || userReply.includes('same')) {
-                            capturedPhone = c.metadata?.phone_number || c.metadata?.caller_id || null;
+                        if (['yes', 'haan', 'ji', 'yep', 'hanji', 'ha', 'same', 'yup', 'हाँ', 'जी', 'हां'].some(word => userReply.includes(word))) {
+                            // Use real metadata phone if available; otherwise leave null (cannot know number without SIP CallerID)
+                            capturedPhone = metadataPhone || null;
                         }
                     }
                 }
             }
         }
 
-        // Layer 4: Scan user (Lead) lines in transcript for Indian mobile numbers
+        // Layer 5: Scan user (Lead) lines in transcript for dictated Indian mobile numbers
         if (!capturedPhone && c.transcript) {
             const userLines = (c.transcript as any[])
                 .filter((t: any) => t.role === 'user')
@@ -124,7 +231,7 @@ serve(async (req) => {
             }
         }
 
-        // Layer 5: Fallback — scan summary text
+        // Layer 6: Fallback — scan summary text
         if (!capturedPhone && summaryStr) {
             const phoneMatch = summaryStr.match(/(?:\+?91[\s\-]?)?([6-9]\d{9})/);
             if (phoneMatch) capturedPhone = (phoneMatch[1].length === 10 ? '+91' : '') + phoneMatch[1].replace(/[\s\-]/g, '');
@@ -136,7 +243,8 @@ serve(async (req) => {
             if (nameMatch) capturedName = nameMatch[1].trim();
         }
 
-        const isProcessed = capturedPhone && processedPhones.has(capturedPhone);
+        // A call is only 'Processed' if it was EXPLICITLY added to the pipeline via the button
+        const isProcessed = processedConversationIds.has(c.conversation_id);
 
         return {
            id: c.conversation_id,
@@ -146,9 +254,10 @@ serve(async (req) => {
            summary: summaryStr,
            transcript: transcriptStr,
            recording_url: null,
-           phone_number: capturedPhone || "Unknown",
+           phone_number: capturedPhone || null,
            capturedName: capturedName,
-           lead_id: isProcessed ? 'processed' : null // Matches CRM logic for 'status'
+           capturedWhatsapp: capturedPhone || null,
+           lead_id: isProcessed ? 'processed' : null
         };
     });
 
