@@ -46,7 +46,55 @@ export default function CRM() {
         
         // Setup real-time polling every 5 seconds for WhatsApp statuses
         const interval = setInterval(fetchDeliveryLogs, 5000);
-        return () => clearInterval(interval);
+
+        // --- BROWSER NOTIFICATIONS & REALTIME SUBSCRIPTIONS ---
+        if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
+
+        const callSub = supabase.channel('realtime_calls')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_transcripts' }, (payload) => {
+                const call = payload.new;
+                toast.success(`Voice Call Ended: ${call.phone_number}`, { 
+                    description: `Duration: ${call.call_duration_secs}s. Reloading logs...` 
+                });
+                
+                if ("Notification" in window && Notification.permission === 'granted') {
+                    new Notification("📞 Voice Call Completed", {
+                        body: `Call finished from ${call.phone_number} (Duration: ${call.call_duration_secs}s)`,
+                        icon: '/favicon.ico'
+                    });
+                }
+                
+                // Refresh UI automatically
+                fetchVoiceData();
+            })
+            .subscribe();
+
+        const leadsSub = supabase.channel('realtime_leads')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_leads' }, (payload) => {
+                const lead = payload.new;
+                toast.info(`New Lead Added: ${lead.name || lead.phone || 'Unknown'}`, {
+                    description: `Pipeline: ${lead.pipeline_stage}`
+                });
+
+                if ("Notification" in window && Notification.permission === 'granted') {
+                    new Notification("👋 New Lead Detected!", {
+                        body: `${lead.name || lead.phone || 'A new lead'} has entered the CRM via ${lead.source || 'Inbound'}!`,
+                        icon: '/favicon.ico'
+                    });
+                }
+
+                // Refresh leads board automatically
+                fetchLeads();
+            })
+            .subscribe();
+
+        return () => {
+            clearInterval(interval);
+            supabase.removeChannel(callSub);
+            supabase.removeChannel(leadsSub);
+        };
     }, []);
 
     // AI Automation State

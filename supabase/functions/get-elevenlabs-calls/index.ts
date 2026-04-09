@@ -91,7 +91,25 @@ serve(async (req) => {
             capturedPhone = c.metadata.phone_number;
         }
 
-        // Layer 3: Scan user (Lead) lines in transcript for Indian mobile numbers
+        // Layer 3: Scan transcript for Boolean confirmations ("yes", "hanji") to WhatsApp query
+        if (!capturedPhone && c.transcript && c.transcript.length > 0) {
+            for (let i = 0; i < c.transcript.length; i++) {
+                const turn = c.transcript[i];
+                const msg = turn.message?.toLowerCase() || '';
+
+                if (turn.role === 'agent' && (msg.includes('whatsapp number') || msg.includes('whatsapp pe') || msg.includes('whatsapp par'))) {
+                    // Check user's next reply
+                    if (i + 1 < c.transcript.length && c.transcript[i+1].role === 'user') {
+                        const userReply = c.transcript[i+1].message?.toLowerCase() || '';
+                        if (userReply.includes('yes') || userReply.includes('haan') || userReply.includes('ji') || userReply.includes('yep') || userReply.includes('hanji') || userReply.includes('ha') || userReply.includes('same')) {
+                            capturedPhone = c.metadata?.phone_number || c.metadata?.caller_id || null;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Layer 4: Scan user (Lead) lines in transcript for Indian mobile numbers
         if (!capturedPhone && c.transcript) {
             const userLines = (c.transcript as any[])
                 .filter((t: any) => t.role === 'user')
@@ -106,7 +124,7 @@ serve(async (req) => {
             }
         }
 
-        // Layer 4: Fallback — scan summary text
+        // Layer 5: Fallback — scan summary text
         if (!capturedPhone && summaryStr) {
             const phoneMatch = summaryStr.match(/(?:\+?91[\s\-]?)?([6-9]\d{9})/);
             if (phoneMatch) capturedPhone = (phoneMatch[1].length === 10 ? '+91' : '') + phoneMatch[1].replace(/[\s\-]/g, '');
