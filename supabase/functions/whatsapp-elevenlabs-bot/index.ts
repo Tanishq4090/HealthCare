@@ -306,31 +306,33 @@ ${leadDataContext}
         });
         messages.push({ role: "user", content: rawBody });
 
-        // Step 5: Call Groq (llama3-8b-8192 — stable, supported model)
-        console.log(`[Groq] Calling API with ${messages.length} messages...`);
+        // Step 5: Call Groq
+        console.log(`[Groq] Calling API with ${messages.length} messages, model: llama-3.3-70b-versatile`);
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
             headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "llama3-8b-8192",
+                model: "llama-3.3-70b-versatile",
                 messages: messages,
-                response_format: { type: "json_object" },
-                max_tokens: 300,
+                max_tokens: 400,
                 temperature: 0.2
             })
         });
 
-        let aiReplyMsg = "Sorry, I'm having a bit of trouble right now. Please try again in a moment! 🙏";
+        let aiReplyMsg = "Namaste! 🙏 I'm having a small technical issue. Please send your message again and I'll respond right away!";
         if (!groqRes.ok) {
             const errStatus = groqRes.status;
             const errBody = await groqRes.text();
             console.error(`[Groq Error] Status: ${errStatus}, Body: ${errBody}`);
         } else {
             const groqData = await groqRes.json();
-            console.log(`[Groq OK] Model: ${groqData.model}, Tokens: ${groqData.usage?.total_tokens}`);
-            const rawContent = groqData.choices[0]?.message?.content || '{}';
+            const rawContent = groqData.choices[0]?.message?.content || '';
+            console.log(`[Groq OK] Model: ${groqData.model}, Tokens: ${groqData.usage?.total_tokens}, Raw: ${rawContent.substring(0, 100)}`);
             try {
-                const parsedResult = JSON.parse(rawContent);
+                // Try parsing JSON from response (with or without markdown code fences)
+                const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+                const jsonStr = jsonMatch ? jsonMatch[0] : rawContent;
+                const parsedResult = JSON.parse(jsonStr);
                 if (typeof parsedResult.replyToUser === 'string' && parsedResult.replyToUser.trim() !== "") {
                     aiReplyMsg = parsedResult.replyToUser;
                 }
@@ -340,7 +342,13 @@ ${leadDataContext}
                         .update({ pipeline_stage: parsedResult.pipelineStageUpdate })
                         .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
                 }
-            } catch (pErr) { console.error("[JSON Parse Error]:", pErr, "Raw:", rawContent); }
+            } catch (pErr) {
+                // If JSON fails, use raw text directly as reply
+                console.error("[JSON Parse Error]:", pErr, "Raw:", rawContent);
+                if (rawContent.trim().length > 0 && !rawContent.includes('{')) {
+                    aiReplyMsg = rawContent.trim();
+                }
+            }
         }
 
         // Step 6: Save AI reply
