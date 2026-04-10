@@ -1273,11 +1273,8 @@ export default function CRM() {
                                                                             return (
                                                                                 <div className="flex items-center">
                                                                                     {isFailed ? (
-                                                                                        <div className="group/err relative cursor-help" title="WhatsApp Failed">
+                                                                                        <div className="group/err relative cursor-help" title={`WhatsApp Failed: ${log.error_message || 'Twilio Error'}`}>
                                                                                             <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                                                                                            <div className="pointer-events-none absolute left-0 bottom-full mb-1 w-48 opacity-0 group-hover/err:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] p-2 rounded-lg shadow-xl z-50">
-                                                                                                WhatsApp Failed: {log.error_message || 'Twilio Error'}
-                                                                                            </div>
                                                                                         </div>
                                                                                     ) : isDelivered ? (
                                                                                         <span title="WhatsApp Delivered">
@@ -1301,7 +1298,7 @@ export default function CRM() {
                                                             </>
                                                         )}
                                                     </div>
-                                                    <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0 ml-2 mt-0.5">
+                                                    <div onClick={(e) => e.stopPropagation()} className="flex items-center shrink-0">
                                                         <select
                                                             value={item.pipeline_stage}
                                                             onChange={(e) => handleMoveLead(item.id, e.target.value)}
@@ -1313,10 +1310,10 @@ export default function CRM() {
                                                         </select>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleDeleteLead(item.id, item.name); }}
-                                                            className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                                                            className="absolute top-2 right-2 p-1.5 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 bg-white/90 backdrop-blur"
                                                             title="Delete Lead"
                                                         >
-                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            <Trash2 className="w-3 h-3" />
                                                         </button>
                                                     </div>
                                                 </div>
