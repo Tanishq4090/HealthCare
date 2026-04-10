@@ -30,12 +30,13 @@ serve(async (req) => {
         }
 
         const body = await req.json();
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // Ensure this is a Meta payload
         if (body.object !== 'whatsapp_business_account' || !body.entry || body.entry.length === 0) {
             return new Response("OK", { status: 200 });
         }
-
+        
         const entry = body.entry[0];
         if (!entry.changes || entry.changes.length === 0) {
              return new Response("OK", { status: 200 });
@@ -49,12 +50,11 @@ serve(async (req) => {
             const wamid = statusObj.id;
             const status = statusObj.status;
             
-            const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
             const { data: existingLog } = await supabase
               .from('whatsapp_logs')
               .select('payload')
               .eq('sid', wamid)
-              .single();
+              .maybeSingle();
 
             const updatedPayload = existingLog?.payload 
               ? { ...existingLog.payload, statuses: value.statuses } 
@@ -94,7 +94,41 @@ serve(async (req) => {
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
-        const fromPhone = contact.wa_id; // "918000044090"
+        const fromPhone = contact.wa_id; 
+        const purePhone = fromPhone.trim();
+        const last10 = purePhone.slice(-10);
+        const wamid = incomingMsg.id;
+
+        // Step 0.5: Check Automation Settings (If Greeting is disabled, stop here)
+        const { data: settings } = await supabase
+            .from('automation_settings')
+            .select('greeting_enabled')
+            .eq('id', 'global')
+            .maybeSingle();
+
+        if (settings && settings.greeting_enabled === false) {
+            console.log(`[Settings] Greeting is DISABLED. Skipping message from ${fromPhone}`);
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        // Idempotency Check: Prevent duplicate processing if Meta retries the webhook
+        const { data: duplicateCheck } = await supabase
+            .from('whatsapp_logs')
+            .select('sid')
+            .eq('sid', wamid)
+            .maybeSingle();
+
+        if (duplicateCheck) {
+            console.log(`[Idempotency] Already processed or processing message: ${wamid}`);
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        // Mark as processing immediately
+        await supabase.from('whatsapp_logs').insert([{
+            sid: wamid,
+            status: 'processing',
+            payload: { type: 'incoming_message', raw_text: rawBody }
+        }]);
         
         console.log(`[Incoming Meta WhatsApp] From: ${fromPhone}, Message: ${rawBody}`);
 
@@ -103,15 +137,11 @@ serve(async (req) => {
             return new Response("Config Error", { status: 500 });
         }
 
-        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-        const purePhone = fromPhone.trim(); // Meta already strips 'whatsapp:+'
-        const last10 = purePhone.slice(-10);
-
         // Step 1: Fetch WhatsApp Chat History (most recent 10 messages)
         const { data: rawHistory } = await supabase
             .from('whatsapp_messages')
             .select('*')
-            .eq('phone', purePhone)
+            .ilike('phone', `%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(10);
             
@@ -176,9 +206,34 @@ serve(async (req) => {
             }
         }
 
-        // Step 3: Fetch Voice Call Transcripts for this lead from Supabase (saved by ElevenLabs webhook)
-        let callTranscriptContext = "";
+        // Step 3: Fetch Lead Data & Voice Call Transcripts for this lead
+        let leadDataContext = "";
+        let leadRecord: any = null;
         try {
+            const { data, error: leadError } = await supabase
+                .from('crm_leads')
+                .select('*')
+                .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                .maybeSingle();
+            
+            leadRecord = data;
+
+            if (leadError) console.error("[Lead Fetch Error]:", leadError);
+
+            if (leadRecord) {
+                // If lead is already beyond the discussion stage, tell LLM to be brief
+                const isFinished = ['Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
+                
+                leadDataContext = `\n\n### EXISTING CRM LEAD DATA:\n` +
+                    `- Name: ${leadRecord.name || 'Unknown'}\n` +
+                    `- Status: ${leadRecord.status || 'New'}\n` +
+                    `- Stage: ${leadRecord.pipeline_stage || 'New'}\n` +
+                    `- Est. Value: ${leadRecord.estimated_value_monthly || 'Not set'}\n` +
+                    `- Source: ${leadRecord.source || 'Unknown'}\n` +
+                    (isFinished ? `### CRITICAL: This lead has ALREADY COMPLETED the intake. Do NOT ask for info. Say you'll contact them soon.\n` : "") +
+                    `### END CRM LEAD DATA`;
+            }
+
             const { data: callTranscripts } = await supabase
                 .from('call_transcripts')
                 .select('transcript_text, called_at, call_duration_secs')
@@ -193,134 +248,46 @@ serve(async (req) => {
                         : 'Recent';
                     return `--- Voice Call on ${date} (${Math.round((c.call_duration_secs || 0) / 60)} min) ---\n${c.transcript_text}`;
                 });
-                callTranscriptContext = `\n\n### PREVIOUS VOICE CALL TRANSCRIPTS WITH THIS LEAD:\n${parts.join('\n\n')}\n### END CALL TRANSCRIPTS`;
-                console.log(`[Transcripts] Found ${callTranscripts.length} call(s) for ${last10}`);
-            } else {
-                console.log(`[Transcripts] No call history found for ${last10}`);
+                leadDataContext += `\n\n### PREVIOUS VOICE CALL TRANSCRIPTS WITH THIS LEAD:\n${parts.join('\n\n')}\n### END CALL TRANSCRIPTS`;
             }
-        } catch (transcriptErr) {
-            console.error("[Transcript Fetch Error]:", transcriptErr);
+        } catch (err) {
+            console.error("[Context Fetch Error]:", err);
         }
 
         // Step 4: Build Groq messages with full context
-        const systemPrompt = `You are Khushi, the warm, professional WhatsApp AI assistant for 99Care Home Healthcare Services.
-99Care has been serving Surat for 5+ years with 17 years of experienced staff and faculty. You are the first point of contact for all WhatsApp inquiries.
+        const systemPrompt = `You are Khushi, the warm and efficient WhatsApp AI assistant for 99Care Home Healthcare Services in Surat.
+Your goal is to collect or verify 6 basic pieces of information from the user conversationally, ONE BY ONE.
 
-### YOUR PERSONALITY
-- Warm, empathetic, and concise (1-3 sentences per reply max).
-- Respond in the SAME LANGUAGE the user writes in (Hindi, Hinglish, Gujarati, English).
-- Use natural emojis (🙏, 💙, ✨, 😊) but never overdo it.
-- Never make promises about specific staff availability or exact pricing without gathering full details first.
+### INFORMATION TO COLLECT/VERIFY:
+1. **Name**: Their full name.
+2. **Service Needed**: Which healthcare service they require (Old Age Care, Nursing, Japa, etc.).
+3. **Contact Confirmation**: Verify if the current WhatsApp number is the right one for further process.
+4. **Shift Type**: Do they need a 10-hour shift or a 24-hour shift?
+5. **Location**: Their specific City and Area in Surat.
+6. **Relation**: Who is this service for? (Parent, Grandparent, Spouse, Self, etc.)
 
-### ABOUT 99CARE
-- Full Name: 99 Care Helping Hand
-- Location: 104, Fortune Mall, Galaxy Circle, Adajan, Surat
-- Contact: +91 9016116564
-- Website: www.99care.org
-- Operating in Surat for 5+ years, 17 years of faculty experience.
+### CONVERSATION LOGIC:
+- If you ALREADY have any of these details from the "EXISTING CRM LEAD DATA" or "PREVIOUS VOICE CALL" provided below, DO NOT ask for them again. Instead, briefly verify them (e.g., "I see you mentioned needing Old Age care for your father during the call, is that correct?").
+- Ask for missing information one or two questions at a time, never a long list.
+- **NO MEDICAL DETAILS**: Do not ask about medical conditions, bathing, walking, or specific care needs. Keep it basic.
+- **END OF CHAT**: Once all 6 points are collected/verified, say: "Thank you! I have all the basic details. Our team will prepare a quotation and contact you on this number shortly with more details. 🙏😊"
+- **STRICTLY END THERE**: Do not ask any more questions after the final confirmation.
 
-### SERVICES OFFERED
-1. Baby Care / Newborn Care (Twins available)
-   - Feeding, diapering, bathing, comforting, night support
-   - Breastfeeding guidance for new mothers
-   - Postpartum support for mothers
-   - Sibling care if there are older children
-2. Japa Care (Post-delivery mother + baby care)
-   - Full maternity support for mother and newborn
-   - Available for single or twins
-3. Old Age Care / Elderly Care
-   - Assistance with daily activities, mobility, medication
-   - Health monitoring, emotional support
-4. Nursing Care (Home nursing + caretaker)
-   - Post-surgery: vital sign monitoring, medication, wound dressing, pain management
-   - Diabetes/Hypertension/Wound care: cleaning, infection control, pressure ulcer treatment
-   - Hospice care: symptom management, pain relief, emotional support
-   - Specialized: IV therapy, catheterization, tracheostomy care, tube feeding
-5. On-Call Nursing / Injection at Home
-   - Skilled nurses visit home to administer injections with prescription
-6. Physiotherapy at Home
-   - Qualified physiotherapist visits at preferred time
-7. Doctor on Call / Doctor Visit at Home
-8. Home Dressing & Wound Treatment
-   - Professional wound dressing for surgical/chronic wounds
-   - Respiratory care at home for chronic conditions
-9. Laboratory Tests at Home
-10. Medical Equipment on Rent
-11. Home Delivery of Medicines
-12. Tiffin Service
-13. Health Card AMC
+### PERSONALITY & STYLE:
+- Warm, empathetic, and very concise (1-2 sentences per reply).
+- Respond in the SAME LANGUAGE as the user (English, Hindi, Hinglish, Gujarati).
+- Use natural emojis (🙏, 😊, ✨).
+- PRICING: Never quote prices. Say "Our team will send a detailed quotation based on these details."
 
-### STRICT PRICING RULE — CRITICAL
-- NEVER quote any prices, rates, or amounts to the customer.
-- If asked about pricing, say: "Our team will send you a detailed quotation based on your requirements. Please share all the details and we'll get back to you shortly! 😊"
-- Do NOT mention ₹850, ₹1050, or any specific pricing numbers in the conversation.
-- The ONLY financial detail you can confirm if directly asked: the ₹15,000 deposit is required to START the service and is adjusted in the final bill.
+### DATA CONTEXT (Use this to avoid redundant questions):
+${leadDataContext}
 
-### DEPOSIT & BILLING RULES (Answer these if asked)
-- Deposit: ₹15,000 required to START service. It is NOT a fee — it is adjusted in the FINAL bill.
-- Monthly bill generated on 1st of every month; must be paid between 1st–5th.
-- If service is closed, final bill is generated. If bill < ₹15,000, REFUND is given within 5 working days.
-- Payment is strictly between the client and 99Care office. NEVER discuss payment with staff directly.
-
-### LEAVE & REPLACEMENT POLICY (Answer these if asked)
-- 1 day leave: No replacement provided.
-- More than 1 day leave: Replacement arranged (subject to availability).
-- Service cancellation after 2-day trial: Remaining incomplete month billed at ₹1,050/day.
-
-### BOOKING PROCESS (Share when relevant)
-Step 1: Fill Client Confirmation Form → https://shorturl.at/1rmJI
-Step 2: Submit Work Form → https://docs.google.com/forms/d/e/1FAIpQLSeHS5ZHvQT4AMLV9lTcNk524ntiFSL_73YF3Hy9WTNqIB0JgA/viewform
-Step 3: 99Care team visits the patient
-Step 4: Caregiver is allocated
-Step 5: ₹15,000 deposit to be submitted
-
-### INTAKE QUESTIONS BY SERVICE TYPE
-When a user shows interest in a service, ask the relevant questions one or two at a time (not all at once):
-
-**Baby Care:**
-Name → City/Area in Surat → Single or Twins → Baby's age → Any medical issues → Day/Night/24hr shift → Duties required → Language preference (Gujarati/Hindi/Marathi/English) → Preferred age of babysitter → Start date → Any special requirements
-
-**Japa Care (New Mother + Baby):**
-Name → City/Area → Relationship → Only baby OR mother + baby both → Single or Twins → Delivery done or pending → Duration needed → Day/Night/24hr shift → Duties → Language preference → Staff age preference → Start date → Special requirements
-
-**Old Age Care:**
-Name → City/Area → Who is the service for → Relationship with patient → Patient gender → Age and weight → Medical condition (explain properly) → Day/Night/24hr shift → Duties → Language preference → Staff age preference → Start date → Special requirements
-
-**Nursing Care:**
-Name → City/Area → Who is the service for → Relationship → Patient gender → Age and weight → Medical condition → Day/Night/24hr shift → Duties → Need: nurse only / caretaker only / both → Language preference → Staff age → Start date → Special requirements
-
-**Japa Care (On-Call Nursing / Injection):**
-Name → City/Area → Who needs the service → Relationship → Patient gender → Which injection / what condition → Doctor consultation done? File available? → Photo of prescription if possible → Start date → How many days → Times per day → Preferred time (morning/afternoon/night) → Special requirements
-
-**Physiotherapy:**
-Name → City/Area → Who needs it → Relationship → Patient gender → Age and weight → Medical condition → Preferred timing → Start date → Special requirements
-
-### CONVERSATION FLOW
-1. Greet warmly: "Namaste! 🙏 Welcome to 99Care. I'm Khushi, here to help you. Which service are you looking for?"
-2. Once they mention a service → ask intake questions for THAT service (1-2 at a time, conversationally).
-3. Once all key details collected → say: "Thank you [Name]! 😊 I've noted all your requirements. Our team will review them and send you a detailed quotation and next steps shortly on this number. Thank you for choosing 99Care! 💙"
-
-### IF USER ALREADY CALLED US:
-If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some details. Reference them naturally and skip questions already answered.
-
-### IMPORTANT RULES
-- ONLY respond in valid JSON: {"replyToUser": "string or empty string", "pipelineStageUpdate": "string or null"}
-- If the user is just ending the conversation (e.g. saying "okay", "thanks", "thik hai", "done") and the conversation is naturally over, silently acknowledge them by setting "replyToUser" to an empty string "". This stops the chatbot from replying unecessarily to dead ends.
-- replyToUser must never contain markdown bold/italic. Plain text + emojis only.
-- Never give medical advice or diagnosis.
-- Never discuss staff salary or payment with leads — redirect to office.
-- If out of scope: "I'll pass this to our team who will get back to you shortly! 🙏"
-
-### CRM PIPELINE STAGES
-- "New" — just started talking
-- "In Discussion" — asking about services / giving info
-- "Quotation Sent" — all details collected, told team will send quotation
-- "Demo Scheduled" — agreed to booking / trial / team visit
-- "Lost" — not interested or wrong number${callTranscriptContext}`;
+### TECHNICAL RULES:
+- ONLY respond in valid JSON: {"replyToUser": "string", "pipelineStageUpdate": "string or null"}
+- replyToUser: Plain text + emojis only (no markdown).
+- pipelineStageUpdate: Use "In Discussion" once all 6 details are captured.`;
 
         const messages: any[] = [{ role: "system", content: systemPrompt }];
-
-        // Inject WhatsApp chat history as conversation turns
         historyData.forEach((msg: any) => {
             if (msg.content) {
                 messages.push({
@@ -329,19 +296,14 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
                 });
             }
         });
-
         messages.push({ role: "user", content: rawBody });
 
-        // Step 5: Call Groq with strict JSON Mode
-        console.log("Calling Groq LLM...");
+        // Step 5: Call Groq
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${GROQ_API_KEY}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
+                model: "llama-3.1-8b-instant",
                 messages: messages,
                 response_format: { type: "json_object" },
                 max_tokens: 300,
@@ -349,85 +311,65 @@ If there is a PREVIOUS VOICE CALL TRANSCRIPT below, you already know some detail
             })
         });
 
-        let aiReplyMsg = "I'm having a bit of trouble reaching our servers right now. Please try again in a moment! 🙏";
-
-        if (groqRes.ok) {
+        let aiReplyMsg = "How can I help you today? 🙏";
+        if (!groqRes.ok) {
+            const errStatus = groqRes.status;
+            const errBody = await groqRes.text();
+            console.error(`[Groq Error] Status: ${errStatus}, Body: ${errBody}`);
+        } else {
             const groqData = await groqRes.json();
             const rawContent = groqData.choices[0]?.message?.content || '{}';
-            
             try {
                 const parsedResult = JSON.parse(rawContent);
-
-                if (typeof parsedResult.replyToUser === 'string') {
+                if (typeof parsedResult.replyToUser === 'string' && parsedResult.replyToUser.trim() !== "") {
                     aiReplyMsg = parsedResult.replyToUser;
                 }
-
-                // Update CRM pipeline stage if detected
-                const newStage = parsedResult.pipelineStageUpdate;
-                const validStages = ["New", "In Discussion", "Quotation Sent", "Demo Scheduled", "Lost", "Junk"];
-                if (newStage && validStages.includes(newStage)) {
-                    console.log(`[CRM] Updating ${last10} to stage: ${newStage}`);
+                if (parsedResult.pipelineStageUpdate && typeof parsedResult.pipelineStageUpdate === 'string') {
                     await supabase
                         .from('crm_leads')
-                        .update({ pipeline_stage: newStage })
-                        .like('whatsapp_number', `%${last10}%`);
+                        .update({ pipeline_stage: parsedResult.pipelineStageUpdate })
+                        .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
                 }
-
-            } catch (jsonErr) {
-                console.error("Failed to parse Groq JSON:", rawContent);
-                aiReplyMsg = "Oops! We hit a bit of internal turbulence, please say that again! 💙";
-            }
-        } else {
-            console.error("Groq API error:", await groqRes.text());
+            } catch (pErr) { console.error("[JSON Parse Error]:", pErr); }
         }
 
-        // Return early if the LLM chose to end the conversation gracefully
-        if (!aiReplyMsg || aiReplyMsg.trim() === '') {
-            console.log(`[Final Meta WhatsApp Reply]: Silenced automatically to prevent infinite chat loop.`);
-            return new Response('EVENT_RECEIVED', { status: 200 });
-        }
-
-        console.log(`[Final Meta WhatsApp Reply]: ${aiReplyMsg}`);
-
-        // Step 6: Save AI reply to memory
+        // Step 6: Save AI reply
         await supabase.from('whatsapp_messages').insert([{
-            phone: purePhone,
-            role: 'assistant',
-            content: aiReplyMsg
+            phone: purePhone, role: 'assistant', content: aiReplyMsg
         }]);
 
-        // Step 7: Post proactive reply back to Meta API
+        // Step 6.5: Update Log with Result
+        await supabase.from('whatsapp_logs').update({
+            status: 'success',
+            payload: {
+                type: 'ai_response',
+                message: aiReplyMsg,
+                original_recipient: fromPhone,
+                pipelineStageUpdate: (leadRecord?.pipeline_stage !== 'In Discussion') ? 'In Discussion' : null
+            }
+        }).eq('sid', wamid);
+
+        // Step 7: Meta POST
         const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
         const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
-        
         if (META_SYSTEM_TOKEN && META_PHONE_ID) {
             await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${META_SYSTEM_TOKEN}`,
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messaging_product: "whatsapp",
                     recipient_type: "individual",
                     to: purePhone,
                     type: "text",
-                    text: {
-                       preview_url: false,
-                       body: aiReplyMsg
-                    }
+                    text: { preview_url: false, body: aiReplyMsg }
                 })
             });
-            console.log("Successfully POSTed back to Meta.");
-        } else {
-            console.error("META_SYSTEM_TOKEN or META_PHONE_ID missing for reply!");
         }
 
-        // Return standard Webhook ACK to Meta
         return new Response('EVENT_RECEIVED', { status: 200 });
 
-    } catch (error: any) {
-        console.error("[Webhook Critical Error]", error);
-        return new Response('EVENT_RECEIVED', { status: 200 }); // Still return 200 so Meta doesn't retry infinitely
+    } catch (err) {
+        console.error("[Global Webhook Error]:", err);
+        return new Response('Error', { status: 500 });
     }
 });
