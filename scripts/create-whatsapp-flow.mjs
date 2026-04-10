@@ -79,25 +79,46 @@ const FLOW_JSON = {
                 "helper-text": "e.g. Rajesh Patel"
               },
               {
-                type: "TextInput",
+                type: "Dropdown",
                 name: "country",
-                "input-type": "text",
                 label: "Country",
-                required: true
+                required: true,
+                "data-source": [
+                  { id: "India", title: "India" },
+                  { id: "USA", title: "USA" },
+                  { id: "UK", title: "UK" },
+                  { id: "Canada", title: "Canada" },
+                  { id: "Australia", title: "Australia" },
+                  { id: "Other", title: "Other" }
+                ]
               },
               {
-                type: "TextInput",
+                type: "Dropdown",
                 name: "state",
-                "input-type": "text",
                 label: "State",
-                required: true
+                required: true,
+                "data-source": [
+                  { id: "Gujarat", title: "Gujarat" },
+                  { id: "Maharashtra", title: "Maharashtra" },
+                  { id: "Delhi", title: "Delhi" },
+                  { id: "Karnataka", title: "Karnataka" },
+                  { id: "Tamil Nadu", title: "Tamil Nadu" },
+                  { id: "Other", title: "Other" }
+                ]
               },
               {
-                type: "TextInput",
+                type: "Dropdown",
                 name: "city",
-                "input-type": "text",
                 label: "City",
-                required: true
+                required: true,
+                "data-source": [
+                  { id: "Surat", title: "Surat" },
+                  { id: "Ahmedabad", title: "Ahmedabad" },
+                  { id: "Vadodara", title: "Vadodara" },
+                  { id: "Rajkot", title: "Rajkot" },
+                  { id: "Mumbai", title: "Mumbai" },
+                  { id: "Other", title: "Other" }
+                ]
               },
               {
                 type: "TextInput",
