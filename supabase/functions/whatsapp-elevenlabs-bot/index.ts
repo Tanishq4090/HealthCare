@@ -157,58 +157,53 @@ serve(async (req) => {
             content: rawBody
         }]);
 
-        // --- NEW LEAD INTERCEPTION (INTERACTIVE MENU) ---
+        // --- NEW LEAD: Send one-shot intake form ---
         if (historyData.length === 0) {
             const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
             const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
-            
-            if (META_SYSTEM_TOKEN && META_PHONE_ID) {
-                const listPayload = {
-                    messaging_product: "whatsapp",
-                    recipient_type: "individual",
-                    to: purePhone,
-                    type: "interactive",
-                    interactive: {
-                        type: "list",
-                        header: { type: "text", text: "Welcome to 99 Care!" },
-                        body: { text: "Namaste! 🙏 I'm Khushi. Please select a service from the menu below to get started:" },
-                        footer: { text: "Serving Surat for 5+ years" },
-                        action: {
-                            button: "Select Service",
-                            sections: [
-                                {
-                                    title: "Available Services",
-                                    rows: [
-                                        { id: "baby_care", title: "Baby Card / Newborn" },
-                                        { id: "japa_care", title: "Japa Care" },
-                                        { id: "elderly", title: "Old Age Care" },
-                                        { id: "nursing", title: "Nursing Care" },
-                                        { id: "physio", title: "Physiotherapy" },
-                                        { id: "doc_call", title: "Doctor Visit at Home" },
-                                        { id: "medicines", title: "Medicine Delivery" },
-                                        { id: "equiprent", title: "Medical Equip. Rent" }
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                };
 
-                const menuRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+            if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                const intakeMessage = `Namaste! 🙏 I'm Khushi from 99 Care Home Healthcare Services, Surat.
+
+To serve you better, please reply with all the following details in one message:
+
+1️⃣ *Your full name*
+2️⃣ *Service needed* (e.g. Old Age Care / Nursing / Japa / Physiotherapy / Doctor Visit)
+3️⃣ *City & Area* (e.g. Surat, Vesu)
+4️⃣ *Shift type* – 10-hour or 24-hour?
+5️⃣ *Who is the care for?* (e.g. Mother, Father, Spouse, Self)
+
+Example reply:
+Rajesh Patel | Old Age Care | Surat, Adajan | 10-hour | Mother
+
+Our team will prepare a customised quotation right after! 😊✨`;
+
+                const sendRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(listPayload)
+                    body: JSON.stringify({
+                        messaging_product: "whatsapp",
+                        recipient_type: "individual",
+                        to: purePhone,
+                        type: "text",
+                        text: { preview_url: false, body: intakeMessage }
+                    })
                 });
 
-                if (!menuRes.ok) {
-                    const menuErr = await menuRes.text();
-                    console.error(`[Meta Menu Error] ${menuRes.status}: ${menuErr}`);
+                if (!sendRes.ok) {
+                    const sendErr = await sendRes.text();
+                    console.error(`[Intake Form Error] ${sendRes.status}: ${sendErr}`);
                 }
-                
+
                 await supabase.from('whatsapp_messages').insert([{
-                    phone: purePhone, role: 'assistant',
-                    content: "Namaste! 🙏 I'm Khushi. Please select a service from the menu below to get started:"
+                    phone: purePhone, role: 'assistant', content: intakeMessage
                 }]);
+
+                // Update log
+                await supabase.from('whatsapp_logs').update({
+                    status: 'success',
+                    payload: { type: 'ai_response', message: intakeMessage, original_recipient: fromPhone }
+                }).eq('sid', wamid);
 
                 return new Response('EVENT_RECEIVED', { status: 200 });
             }
@@ -217,6 +212,7 @@ serve(async (req) => {
         // Step 3: Fetch Lead Data & Voice Call Transcripts for this lead
         let leadDataContext = "";
         let leadRecord: any = null;
+        let hasCallData = false;
         try {
             const { data, error: leadError } = await supabase
                 .from('crm_leads')
@@ -225,13 +221,54 @@ serve(async (req) => {
                 .maybeSingle();
             
             leadRecord = data;
-
             if (leadError) console.error("[Lead Fetch Error]:", leadError);
 
+            const { data: callTranscripts } = await supabase
+                .from('call_transcripts')
+                .select('transcript_text, called_at, call_duration_secs')
+                .like('phone_number', `%${last10}%`)
+                .order('called_at', { ascending: false })
+                .limit(3);
+
+            hasCallData = !!(callTranscripts && callTranscripts.length > 0);
+
+            // --- RETURNING LEAD WITH CALL DATA: Skip intake, send quotation coming message ---
+            if (hasCallData) {
+                const leadName = leadRecord?.name ? leadRecord.name.split('—')[0].trim() : 'there';
+                const quotationMsg = `Namaste ${leadName} ji! 🙏
+
+We already have your details from our recent call. Our team is preparing a personalised quotation for you and will share it on this WhatsApp number shortly.
+
+Feel free to ask any questions in the meantime. We're always here to help! 😊✨`;
+
+                const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
+                const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
+                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            messaging_product: "whatsapp",
+                            recipient_type: "individual",
+                            to: purePhone,
+                            type: "text",
+                            text: { preview_url: false, body: quotationMsg }
+                        })
+                    });
+                }
+
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: quotationMsg }]);
+                await supabase.from('whatsapp_logs').update({
+                    status: 'success',
+                    payload: { type: 'ai_response', message: quotationMsg, original_recipient: fromPhone }
+                }).eq('sid', wamid);
+
+                console.log(`[Bot] Sent call-data quotation message to ${purePhone}`);
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+
             if (leadRecord) {
-                // If lead is already beyond the discussion stage, tell LLM to be brief
                 const isFinished = ['Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
-                
                 leadDataContext = `\n\n### EXISTING CRM LEAD DATA:\n` +
                     `- Name: ${leadRecord.name || 'Unknown'}\n` +
                     `- Status: ${leadRecord.status || 'New'}\n` +
@@ -242,18 +279,9 @@ serve(async (req) => {
                     `### END CRM LEAD DATA`;
             }
 
-            const { data: callTranscripts } = await supabase
-                .from('call_transcripts')
-                .select('transcript_text, called_at, call_duration_secs')
-                .like('phone_number', `%${last10}%`)
-                .order('called_at', { ascending: false })
-                .limit(3);
-
             if (callTranscripts && callTranscripts.length > 0) {
                 const parts = callTranscripts.map((c: any) => {
-                    const date = c.called_at
-                        ? new Date(c.called_at).toLocaleDateString('en-IN')
-                        : 'Recent';
+                    const date = c.called_at ? new Date(c.called_at).toLocaleDateString('en-IN') : 'Recent';
                     return `--- Voice Call on ${date} (${Math.round((c.call_duration_secs || 0) / 60)} min) ---\n${c.transcript_text}`;
                 });
                 leadDataContext += `\n\n### PREVIOUS VOICE CALL TRANSCRIPTS WITH THIS LEAD:\n${parts.join('\n\n')}\n### END CALL TRANSCRIPTS`;
@@ -262,38 +290,28 @@ serve(async (req) => {
             console.error("[Context Fetch Error]:", err);
         }
 
-        // Step 4: Build Groq messages with full context
+        // Step 4: Build Groq messages — used only for leads without call data replying to the intake form
         const systemPrompt = `You are Khushi, the warm and efficient WhatsApp AI assistant for 99Care Home Healthcare Services in Surat.
-Your goal is to collect or verify 6 basic pieces of information from the user conversationally, ONE BY ONE.
-
-### INFORMATION TO COLLECT/VERIFY:
-1. **Name**: Their full name.
-2. **Service Needed**: Which healthcare service they require (Old Age Care, Nursing, Japa, etc.).
-3. **Contact Confirmation**: Verify if the current WhatsApp number is the right one for further process.
-4. **Shift Type**: Do they need a 10-hour shift or a 24-hour shift?
-5. **Location**: Their specific City and Area in Surat.
-6. **Relation**: Who is this service for? (Parent, Grandparent, Spouse, Self, etc.)
-
-### CONVERSATION LOGIC:
-- If you ALREADY have any of these details from the "EXISTING CRM LEAD DATA" or "PREVIOUS VOICE CALL" provided below, DO NOT ask for them again. Instead, briefly verify them (e.g., "I see you mentioned needing Old Age care for your father during the call, is that correct?").
-- Ask for missing information one or two questions at a time, never a long list.
-- **NO MEDICAL DETAILS**: Do not ask about medical conditions, bathing, walking, or specific care needs. Keep it basic.
-- **END OF CHAT**: Once all 6 points are collected/verified, say: "Thank you! I have all the basic details. Our team will prepare a quotation and contact you on this number shortly with more details. 🙏😊"
-- **STRICTLY END THERE**: Do not ask any more questions after the final confirmation.
+The lead has been asked to share all their details in ONE message (Name, Service, City/Area, Shift type, Who care is for).
+Your job is to:
+1. Extract any provided details from their message.
+2. If all 5 details are present, confirm them warmly and say the team will prepare a quotation and send it shortly.
+3. If some details are missing, ask for ONLY the missing ones together (not one by one).
+4. Keep replies very short (2-3 lines max).
 
 ### PERSONALITY & STYLE:
-- Warm, empathetic, and very concise (1-2 sentences per reply).
+- Warm, empathetic, very concise.
 - Respond in the SAME LANGUAGE as the user (English, Hindi, Hinglish, Gujarati).
-- Use natural emojis (🙏, 😊, ✨).
-- PRICING: Never quote prices. Say "Our team will send a detailed quotation based on these details."
+- Use natural emojis (🙏, 😊, ✨). No markdown formatting.
+- PRICING: Never quote prices.
 
-### DATA CONTEXT (Use this to avoid redundant questions):
+### DATA CONTEXT:
 ${leadDataContext}
 
 ### TECHNICAL RULES:
 - ONLY respond in valid JSON: {"replyToUser": "string", "pipelineStageUpdate": "string or null"}
-- replyToUser: Plain text + emojis only (no markdown).
-- pipelineStageUpdate: Use "In Discussion" once all 6 details are captured.`;
+- replyToUser: Plain text + emojis only, NO markdown.
+- pipelineStageUpdate: Use "In Discussion" once you have confirmed all details.`;
 
         const messages: any[] = [{ role: "system", content: systemPrompt }];
         historyData.forEach((msg: any) => {
