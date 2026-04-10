@@ -39,7 +39,7 @@ async function getWabaId() {
 
 // The WhatsApp Flow JSON schema
 const FLOW_JSON = {
-  version: "3.0",
+  version: "5.1",
   screens: [
     {
       id: "INTAKE_FORM",
@@ -135,7 +135,7 @@ async function createFlow(wabaId) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      name: '99_Care_Lead_Intake_v1',
+      name: '99_Care_Lead_Intake_' + Date.now(),
       categories: ['LEAD_GENERATION']
     })
   });

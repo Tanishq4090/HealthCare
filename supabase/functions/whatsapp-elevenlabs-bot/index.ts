@@ -184,6 +184,23 @@ serve(async (req) => {
 
         // --- 7. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
         if (historyData.length === 0) {
+            // Upsert into CRM leads immediately so they show up on Kanban
+            const { data: earlyLead } = await supabase
+                .from('crm_leads')
+                .select('id')
+                .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                .maybeSingle();
+
+            if (!earlyLead) {
+                await supabase.from('crm_leads').insert([{ 
+                    name: contact?.profile?.name || 'Unknown Lead',
+                    whatsapp_number: purePhone,
+                    source: 'WhatsApp Chat',
+                    pipeline_stage: 'New Lead',
+                    status: 'new'
+                }]);
+            }
+
             if (META_SYSTEM_TOKEN && META_PHONE_ID && WHATSAPP_FLOW_ID) {
                 // Send native WhatsApp Flow form
                 const flowMessage = {
