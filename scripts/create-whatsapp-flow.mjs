@@ -80,11 +80,31 @@ const FLOW_JSON = {
               },
               {
                 type: "TextInput",
-                label: "City & Area",
-                name: "location",
-                required: true,
+                name: "country",
                 "input-type": "text",
-                "helper-text": "e.g. Surat, Vesu"
+                label: "Country",
+                required: true
+              },
+              {
+                type: "TextInput",
+                name: "state",
+                "input-type": "text",
+                label: "State",
+                required: true
+              },
+              {
+                type: "TextInput",
+                name: "city",
+                "input-type": "text",
+                label: "City",
+                required: true
+              },
+              {
+                type: "TextInput",
+                name: "area",
+                "input-type": "text",
+                label: "Area / Pincode",
+                required: true
               },
               {
                 type: "RadioButtonsGroup",
@@ -112,7 +132,10 @@ const FLOW_JSON = {
                   payload: {
                     name: "${form.name}",
                     service: "${form.service}",
-                    location: "${form.location}",
+                    country: "${form.country}",
+                    state: "${form.state}",
+                    city: "${form.city}",
+                    area: "${form.area}",
                     shift_type: "${form.shift_type}",
                     care_for: "${form.care_for}"
                   }
