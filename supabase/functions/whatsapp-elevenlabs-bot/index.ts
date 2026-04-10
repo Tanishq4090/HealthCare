@@ -99,14 +99,17 @@ serve(async (req) => {
         const last10 = purePhone.slice(-10);
         const wamid = incomingMsg.id;
 
-        // Step 0.5: Check Automation Settings (If Greeting is disabled, stop here)
-        const { data: settings } = await supabase
+        // Step 0.5: Check Automation Settings (Only block if EXPLICITLY set to false)
+        const { data: settings, error: settingsError } = await supabase
             .from('automation_settings')
             .select('greeting_enabled')
             .eq('id', 'global')
             .maybeSingle();
 
-        if (settings && settings.greeting_enabled === false) {
+        console.log(`[Settings] greeting_enabled=${settings?.greeting_enabled}, settingsError=${settingsError?.message}`);
+
+        // Only skip if the row exists AND greeting_enabled is explicitly false
+        if (settings !== null && settings?.greeting_enabled === false) {
             console.log(`[Settings] Greeting is DISABLED. Skipping message from ${fromPhone}`);
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
@@ -133,7 +136,7 @@ serve(async (req) => {
         console.log(`[Incoming Meta WhatsApp] From: ${fromPhone}, Message: ${rawBody}`);
 
         if (!GROQ_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
-            console.error("Missing critical environment variables.");
+            console.error("Missing critical environment variables. GROQ_API_KEY present:", !!GROQ_API_KEY);
             return new Response("Config Error", { status: 500 });
         }
 
@@ -191,11 +194,16 @@ serve(async (req) => {
                     }
                 };
 
-                await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                const menuRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify(listPayload)
                 });
+
+                if (!menuRes.ok) {
+                    const menuErr = await menuRes.text();
+                    console.error(`[Meta Menu Error] ${menuRes.status}: ${menuErr}`);
+                }
                 
                 await supabase.from('whatsapp_messages').insert([{
                     phone: purePhone, role: 'assistant',
@@ -298,12 +306,13 @@ ${leadDataContext}
         });
         messages.push({ role: "user", content: rawBody });
 
-        // Step 5: Call Groq
+        // Step 5: Call Groq (llama3-8b-8192 — stable, supported model)
+        console.log(`[Groq] Calling API with ${messages.length} messages...`);
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
             headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "llama-3.1-8b-instant",
+                model: "llama3-8b-8192",
                 messages: messages,
                 response_format: { type: "json_object" },
                 max_tokens: 300,
@@ -311,13 +320,14 @@ ${leadDataContext}
             })
         });
 
-        let aiReplyMsg = "How can I help you today? 🙏";
+        let aiReplyMsg = "Sorry, I'm having a bit of trouble right now. Please try again in a moment! 🙏";
         if (!groqRes.ok) {
             const errStatus = groqRes.status;
             const errBody = await groqRes.text();
             console.error(`[Groq Error] Status: ${errStatus}, Body: ${errBody}`);
         } else {
             const groqData = await groqRes.json();
+            console.log(`[Groq OK] Model: ${groqData.model}, Tokens: ${groqData.usage?.total_tokens}`);
             const rawContent = groqData.choices[0]?.message?.content || '{}';
             try {
                 const parsedResult = JSON.parse(rawContent);
@@ -330,7 +340,7 @@ ${leadDataContext}
                         .update({ pipeline_stage: parsedResult.pipelineStageUpdate })
                         .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
                 }
-            } catch (pErr) { console.error("[JSON Parse Error]:", pErr); }
+            } catch (pErr) { console.error("[JSON Parse Error]:", pErr, "Raw:", rawContent); }
         }
 
         // Step 6: Save AI reply
@@ -353,7 +363,7 @@ ${leadDataContext}
         const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
         const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
         if (META_SYSTEM_TOKEN && META_PHONE_ID) {
-            await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+            const sendRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -364,6 +374,14 @@ ${leadDataContext}
                     text: { preview_url: false, body: aiReplyMsg }
                 })
             });
+            if (!sendRes.ok) {
+                const sendErr = await sendRes.text();
+                console.error(`[Meta Send Error] ${sendRes.status}: ${sendErr}`);
+            } else {
+                console.log(`[Meta Send OK] Message delivered to ${purePhone}`);
+            }
+        } else {
+            console.error("[Meta Send] Missing META_SYSTEM_TOKEN or META_PHONE_ID env vars!");
         }
 
         return new Response('EVENT_RECEIVED', { status: 200 });
