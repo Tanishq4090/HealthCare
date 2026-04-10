@@ -85,13 +85,16 @@ serve(async (req) => {
                 console.error('[Flow] Failed to parse form response_json:', e);
             }
 
-            const name = formData.name || contact.profile?.name || 'Unknown';
+            const name = formData.name || contact?.profile?.name || 'Unknown';
             const service = formData.service || 'Unknown';
-            const location = formData.location || '';
+            const country = formData.country || '';
+            const state = formData.state || '';
+            const city = formData.city || '';
+            const area = formData.area || '';
             const shiftType = formData.shift_type || '';
             const careFor = formData.care_for || '';
 
-            console.log(`[Flow] Parsed: name=${name}, service=${service}, location=${location}`);
+            console.log(`[Flow] Parsed: name=${name}, service=${service}, location=${city}, ${state}`);
 
             // Upsert into CRM leads
             const { data: existingLead } = await supabase
@@ -105,7 +108,7 @@ serve(async (req) => {
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Flow',
                 pipeline_stage: 'In Discussion',
-                notes: `Service: ${service} | Shift: ${shiftType} | Area: ${location} | Care for: ${careFor}`,
+                notes: `Service: ${service} | Shift: ${shiftType} | Location: ${area}, ${city}, ${state}, ${country} | Care for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
             };
 
