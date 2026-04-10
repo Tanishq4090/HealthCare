@@ -1,7 +1,7 @@
 
 [functions.elevenlabs-webhook]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/elevenlabs-webhook/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -12,7 +12,7 @@ entrypoint = "./functions/elevenlabs-webhook/index.ts"
 
 [functions.get-elevenlabs-calls]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/get-elevenlabs-calls/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -23,7 +23,7 @@ entrypoint = "./functions/get-elevenlabs-calls/index.ts"
 
 [functions.whatsapp-elevenlabs-bot]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/whatsapp-elevenlabs-bot/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -34,7 +34,7 @@ entrypoint = "./functions/whatsapp-elevenlabs-bot/index.ts"
 
 [functions.meta-whatsapp-outbound]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/meta-whatsapp-outbound/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -45,7 +45,7 @@ entrypoint = "./functions/meta-whatsapp-outbound/index.ts"
 
 [functions.delete-crm-lead]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/delete-crm-lead/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx

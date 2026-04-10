@@ -30,51 +30,46 @@ export default function CRM() {
 
 
     useEffect(() => {
+        const fetchAutomationSettings = async () => {
+            const { data, error } = await supabase
+                .from('automation_settings')
+                .select('*')
+                .eq('id', 'global')
+                .maybeSingle();
+            
+            console.log("[fetchAutomationSettings] data:", data, "error:", error);
+            if (data && !error) {
+                setWorkflows({
+                    greeting: data.greeting_enabled,
+                    drip: data.drip_enabled
+                });
+            } else if (!data && !error) {
+                console.log("[fetchAutomationSettings] row missing, initializing...");
+                await supabase.from('automation_settings').upsert({ id: 'global', greeting_enabled: true, drip_enabled: false }, { onConflict: 'id' });
+            }
+        };
+
         fetchLeads();
         fetchDeliveryLogs();
+        fetchAutomationSettings();
+
+        const interval = setInterval(() => {
+            fetchLeads();
+            fetchDeliveryLogs();
+            fetchVoiceData?.();
+        }, 1000 * 30); // 30s auto-refresh
         
-        // Setup real-time polling every 5 seconds for WhatsApp statuses
-        const interval = setInterval(fetchDeliveryLogs, 5000);
-
-        // --- BROWSER NOTIFICATIONS & REALTIME SUBSCRIPTIONS ---
-        if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-            Notification.requestPermission();
-        }
-
-        const callSub = supabase.channel('realtime_calls')
+        // --- REALTIME SUBSCRIPTIONS ---
+        const callSub = supabase.channel('realtime_calls_v2')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_transcripts' }, (payload) => {
                 const call = payload.new;
-                toast.success(`Voice Call Ended: ${call.phone_number}`, { 
-                    description: `Duration: ${call.call_duration_secs}s. Reloading logs...` 
-                });
-                
-                if ("Notification" in window && Notification.permission === 'granted') {
-                    new Notification("📞 Voice Call Completed", {
-                        body: `Call finished from ${call.phone_number} (Duration: ${call.call_duration_secs}s)`,
-                        icon: '/favicon.ico'
-                    });
-                }
-                
-                // Refresh UI automatically
-                fetchVoiceData();
+                toast.success(`Voice Call Ended: ${call.phone_number}`);
+                fetchVoiceData?.();
             })
             .subscribe();
 
-        const leadsSub = supabase.channel('realtime_leads')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_leads' }, (payload) => {
-                const lead = payload.new;
-                toast.info(`New Lead Added: ${lead.name || lead.phone || 'Unknown'}`, {
-                    description: `Pipeline: ${lead.pipeline_stage}`
-                });
-
-                if ("Notification" in window && Notification.permission === 'granted') {
-                    new Notification("👋 New Lead Detected!", {
-                        body: `${lead.name || lead.phone || 'A new lead'} has entered the CRM via ${lead.source || 'Inbound'}!`,
-                        icon: '/favicon.ico'
-                    });
-                }
-
-                // Refresh leads board automatically
+        const leadsSub = supabase.channel('realtime_leads_v2')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_leads' }, () => {
                 fetchLeads();
             })
             .subscribe();
@@ -101,7 +96,11 @@ export default function CRM() {
             let desc = 'AI performed an automated action.';
             let icon = Bot;
 
-            if (payload.templateName === 'greeting_msg') {
+            if (payload.pipelineStageUpdate) {
+                title = 'Stage Advanced';
+                desc = `Moved lead to "${payload.pipelineStageUpdate}".`;
+                icon = CheckCircle2;
+            } else if (payload.templateName === 'greeting_msg') {
                 title = 'Auto-Greeting Sent';
                 desc = `Sent welcome menu to customer at ${payload.original_recipient}.`;
                 icon = MessageSquare;
@@ -113,10 +112,18 @@ export default function CRM() {
                 title = 'Template Dispatched';
                 desc = `Sent ${payload.templateName} to ${payload.original_recipient}.`;
                 icon = FileText;
-            } else if (payload.message) {
+            } else if (payload.message || payload.type === 'ai_response') {
                 title = 'AI Response Sent';
-                desc = `Message: "${payload.message.substring(0, 40)}..."`;
+                desc = payload.message 
+                    ? `Replied: "${payload.message.substring(0, 40)}${payload.message.length > 40 ? '...' : ''}"`
+                    : 'Sent automated response to customer.';
                 icon = MessageCircle;
+            } else if (payload.type === 'incoming_message') {
+                title = 'Message Received';
+                desc = payload.raw_text 
+                    ? `From customer: "${payload.raw_text.substring(0, 40)}${payload.raw_text.length > 40 ? '...' : ''}"`
+                    : 'New incoming message detected.';
+                icon = MessageSquare;
             }
 
             return {
@@ -406,13 +413,31 @@ export default function CRM() {
     }, [activeTab]);
     // -------------------------
 
-    const toggleWorkflow = (key: keyof typeof workflows) => {
+    const toggleWorkflow = async (key: keyof typeof workflows) => {
         const isTurningOn = !workflows[key];
+        
+        // Update local state immediately for responsiveness
         setWorkflows(prev => ({ ...prev, [key]: isTurningOn }));
 
-        // In a real system, you might log this to a 'system_audit' table. 
-        // For now, we'll just show the toast.
-        fetchDeliveryLogs();
+        const updatePayload = {
+            id: 'global',
+            greeting_enabled: key === 'greeting' ? isTurningOn : workflows.greeting,
+            drip_enabled: key === 'drip' ? isTurningOn : workflows.drip
+        };
+
+        const { error } = await supabase
+            .from('automation_settings')
+            .upsert(updatePayload, { onConflict: 'id' });
+
+        if (error) {
+            console.error("[Settings Update Error]:", error);
+            toast.error(`Failed to update ${key} setting.`);
+            // Rollback
+            setWorkflows(prev => ({ ...prev, [key]: !isTurningOn }));
+        } else {
+            toast.success(`${key === 'greeting' ? 'Instant Greeting' : 'Drip Campaign'} ${isTurningOn ? 'Enabled' : 'Disabled'}`);
+            fetchDeliveryLogs();
+        }
     };
 
 
