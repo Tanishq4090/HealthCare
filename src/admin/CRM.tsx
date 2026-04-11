@@ -236,9 +236,26 @@ export default function CRM() {
         }
     }, []);
 
-    const [pipelineStages, setPipelineStages] = useState<string[]>([
-        'New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing', 'Closed Won'
-    ]);
+    const PROTECTED_STAGES = ['New Lead', 'Active Client', 'Closed Won', 'Lost'];
+
+    // Initialize pipelineStages from localStorage or defaults
+    const [pipelineStages, setPipelineStages] = useState<string[]>(() => {
+        const saved = localStorage.getItem('crmPipelineStages');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error("Failed to parse pipeline stages from local storage", e);
+            }
+        }
+        return ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing', 'Closed Won'];
+    });
+
+    // Sync pipelineStages to localStorage whenever it changes
+    useEffect(() => {
+        localStorage.setItem('crmPipelineStages', JSON.stringify(pipelineStages));
+    }, [pipelineStages]);
+
     const [isAddingStage, setIsAddingStage] = useState(false);
     const [newStageName, setNewStageName] = useState('');
     const [editingStageIdx, setEditingStageIdx] = useState<number | null>(null);
@@ -251,8 +268,6 @@ export default function CRM() {
     const [editingLeadName, setEditingLeadName] = useState<string>('');
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
 
-    // Predefined stages that cannot be deleted or renamed easily (or you can allow all to be deleted)
-    const PROTECTED_STAGES = ['New Lead', 'Closed Won'];
 
 
     const [workflows, setWorkflows] = useState({
