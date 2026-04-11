@@ -220,9 +220,9 @@ export default function CRM() {
             English: "Hi {{name}}, your customized quotation from 99 Care is ready! Please review the details here:\nhttps://99care.in/quote/{{link}}\n\nFeel free to reach out if you'd like any adjustments."
         },
         consent: {
-            Hinglish: "Hi {{name}} ji! Ek aakhri step baki hai — apna consent form yahan fill karein aur hum service start kar denge! ✅\nhttps://99care.in/consent\n\nSirf 2 minute lagenge!",
-            Hindi: "Namaste {{name}} ji, aage badhne ke liye kripya yeh consent form bharein:\nhttps://99care.in/consent",
-            English: "Hi {{name}}, just one final step — please complete the consent form below and we'll get your service started:\nhttps://99care.in/consent"
+            Hinglish: "Hi {{name}} ji! Ek aakhri step baki hai — apna consent form yahan fill karein aur hum service start kar denge! ✅\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform\n\nSirf 2 minute lagenge!",
+            Hindi: "Namaste {{name}} ji, aage badhne ke liye kripya yeh consent form bharein:\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform",
+            English: "Hi {{name}}, just one final step — please complete the consent form below and we'll get your service started:\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform"
         },
         staff: {
             Hinglish: "Good news {{name}} ji! 🎉 Aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai!\n\n👤 Unka profile aur joining date confirm karne ke liye yahan dekhen:\nhttps://99care.in/staff/{{link}}\n\nKoi concern ho toh hume batayein!",
