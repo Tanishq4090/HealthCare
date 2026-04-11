@@ -8,7 +8,13 @@ import { MOCK_WORKERS } from '../data/mockWorkers';
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>('pipeline');
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>(() => {
+        return (localStorage.getItem('crmActiveTab') as any) || 'pipeline';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('crmActiveTab', activeTab);
+    }, [activeTab]);
     const [leads, setLeads] = useState<any[]>([]);
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -43,6 +49,14 @@ export default function CRM() {
                     greeting: data.greeting_enabled,
                     drip: data.drip_enabled
                 });
+                
+                // Cloud Sync: If database has columns for stages/templates, use them
+                if (data.pipeline_stages) {
+                    setPipelineStages(data.pipeline_stages);
+                }
+                if (data.whatsapp_templates) {
+                    setWhatsappTemplates(data.whatsapp_templates);
+                }
             } else if (!data && !error) {
                 console.log("[fetchAutomationSettings] row missing, initializing...");
                 await supabase.from('automation_settings').upsert({ id: 'global', greeting_enabled: true, drip_enabled: false }, { onConflict: 'id' });
@@ -228,13 +242,19 @@ export default function CRM() {
     });
 
     useEffect(() => {
-        const saved = localStorage.getItem('whatsappTemplates');
-        if (saved) {
+        localStorage.setItem('whatsappTemplates', JSON.stringify(whatsappTemplates));
+        
+        // Safe Cloud Sync
+        const syncToCloud = async () => {
             try {
-                setWhatsappTemplates(JSON.parse(saved));
-            } catch (e) { }
-        }
-    }, []);
+                await supabase.from('automation_settings').upsert({ 
+                    id: 'global', 
+                    whatsapp_templates: whatsappTemplates 
+                }, { onConflict: 'id' });
+            } catch (e) { /* Fallback to local only if column doesn't exist */ }
+        };
+        syncToCloud();
+    }, [whatsappTemplates]);
 
     const PROTECTED_STAGES = ['New Lead', 'Active Client', 'Closed Won', 'Lost'];
 
@@ -254,6 +274,17 @@ export default function CRM() {
     // Sync pipelineStages to localStorage whenever it changes
     useEffect(() => {
         localStorage.setItem('crmPipelineStages', JSON.stringify(pipelineStages));
+
+        // Safe Cloud Sync
+        const syncToCloud = async () => {
+            try {
+                await supabase.from('automation_settings').upsert({ 
+                    id: 'global', 
+                    pipeline_stages: pipelineStages 
+                }, { onConflict: 'id' });
+            } catch (e) { /* Fallback to local only if column doesn't exist */ }
+        };
+        syncToCloud();
     }, [pipelineStages]);
 
     const [isAddingStage, setIsAddingStage] = useState(false);
@@ -517,11 +548,14 @@ export default function CRM() {
                 sentCount++;
                 toast.loading(`Sending greetings… ${sentCount}/${newInquiryLeads.length}`, { id: progressId });
 
-                // Move lead to In Discussion after greeting and record timestamp for drip campaign
+                // Determine target stage (usually the one after 'New Lead')
+                const targetStage = pipelineStages[1] || 'In Discussion';
+
+                // Move lead to target stage after greeting and record timestamp
                 await supabase
                     .from('crm_leads')
                     .update({ 
-                        pipeline_stage: 'In Discussion',
+                        pipeline_stage: targetStage,
                         last_greeted_at: new Date().toISOString(),
                         drip_step: 0
                     })
@@ -922,7 +956,21 @@ export default function CRM() {
         // Update all leads currently in this stage (optimistic)
         setLeads(prev => prev.map(l => l.pipeline_stage === oldName ? { ...l, pipeline_stage: editingStageName.trim() } : l));
 
-        // Note: In a real app, you would also trigger a Supabase bulk update here.
+        // Note: Update all leads in DB to match the new stage naming
+        const syncLeadsInDB = async () => {
+            try {
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .update({ pipeline_stage: editingStageName.trim() })
+                    .eq('pipeline_stage', oldName);
+                if (error) throw error;
+                toast.success(`Updated leads in database to match "${editingStageName.trim()}"`);
+            } catch (err) {
+                console.error("Failed to sync leads to renamed stage:", err);
+            }
+        };
+        syncLeadsInDB();
+
         setEditingStageIdx(null);
         toast.success(`Stage renamed to "${editingStageName.trim()}"`);
     };
