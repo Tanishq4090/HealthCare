@@ -1111,6 +1111,37 @@ export default function CRM() {
         }
     };
 
+    const handleAddManualLead = async () => {
+        try {
+            const { error } = await supabase.from('crm_leads').insert([{
+                name: 'New Lead',
+                phone: '',
+                whatsapp_number: '',
+                source: 'Manual Add',
+                status: 'New',
+                pipeline_stage: pipelineStages[0] || 'New Lead',
+                estimated_value_monthly: 0,
+            }]);
+            
+            if (error) throw error;
+            toast.success("Manual Lead created! Double-click to edit name/number.");
+            fetchLeads();
+        } catch (err: any) {
+            toast.error("Failed to add lead: " + err.message);
+        }
+    };
+
+    // Helper to standardize phone number display
+    const formatPhoneNumber = (num: string) => {
+        if (!num) return '';
+        const digits = num.replace(/\D/g, '');
+        if (digits.length === 10) return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+        if (digits.startsWith('91') && digits.length === 12) {
+            return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+        }
+        return `+${digits}`; // Fallback for other countries or malformed numbers
+    };
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -1199,9 +1230,14 @@ export default function CRM() {
                             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                             Live Sync Active
                         </div>
-                        <button onClick={handleExportLeadsToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
-                            Export Pipeline to CSV
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button onClick={handleAddManualLead} className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-bold rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2 shadow-sm">
+                                <Plus className="w-4 h-4" /> Add Lead
+                            </button>
+                            <button onClick={handleExportLeadsToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
+                                Export Pipeline to CSV
+                            </button>
+                        </div>
                     </div>
                 {/* Kanban Pipeline View */}
                 <div className="flex-1 flex gap-6 overflow-x-auto pb-4 custom-scrollbar">
@@ -1325,7 +1361,7 @@ export default function CRM() {
                                                                     <div className="flex items-center gap-2 mt-0.5" title="Contact Number (Double click to edit)">
                                                                         <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
                                                                             <Phone className="w-3 h-3 text-slate-400" />
-                                                                            {item.whatsapp_number || item.phone}
+                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone)}
                                                                         </div>
 
                                                                         {(() => {
