@@ -121,7 +121,8 @@ serve(async (req) => {
             }
 
             // Send warm confirmation
-            const confirmMsg = `Thank you ${name.split(' ')[0]}! 🙏😊\n\nWe've received your enquiry:\n✅ Service: ${service}\n📍 Area: ${location}\n⏱️ Shift: ${shiftType}\n👤 Care for: ${careFor}\n\nOur team will prepare your personalised quotation and share it on this number shortly. We're excited to serve you! ✨`;
+            const locationStr = [area, city, state, country].filter(Boolean).join(', ');
+            const confirmMsg = `Thank you ${name.split(' ')[0]}! 🙏😊\n\nWe've received your enquiry:\n✅ Service: ${service}\n📍 Area: ${locationStr}\n⏱️ Shift: ${shiftType}\n👤 Care for: ${careFor}\n\nOur team will prepare your personalised quotation and share it on this number shortly. We're excited to serve you! ✨`;
 
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
