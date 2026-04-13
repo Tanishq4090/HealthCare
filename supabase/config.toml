@@ -1,3 +1,8 @@
+[functions.get-call-audio]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/get-call-audio/index.ts"
+
 [functions.elevenlabs-webhook]
 enabled = true
 verify_jwt = false
