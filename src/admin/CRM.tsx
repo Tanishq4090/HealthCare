@@ -1291,7 +1291,7 @@ export default function CRM() {
             </div>
 
             {activeTab === 'pipeline' && (
-                <div className="flex flex-col flex-1 h-full min-h-0 gap-6 overflow-x-auto pb-4 custom-scrollbar">
+                <div className="flex flex-col flex-1 h-full min-h-0">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
                             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -1306,7 +1306,9 @@ export default function CRM() {
                             </button>
                         </div>
                     </div>
-                    {isLoading ? (
+
+                    <div className="flex-1 flex gap-6 overflow-x-auto pb-4 custom-scrollbar">
+                        {isLoading ? (
                         <div className="flex-1 flex items-center justify-center">
                             <Loader2 className="w-8 h-8 text-primary animate-spin" />
                             <span className="ml-3 text-slate-500 font-medium">Loading live pipeline...</span>
@@ -1700,6 +1702,7 @@ export default function CRM() {
                         </>
                     )}
                 </div>
+            </div>
             )}
             {activeTab === 'voice' && (
                 /* Voice AI Dashboard View */
