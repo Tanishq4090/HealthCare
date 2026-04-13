@@ -1738,19 +1738,22 @@ export default function CRM() {
                                                 <span>•</span>
                                                 <span className="font-medium">{call.time}</span>
                                             </div>
-                                            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100/80">
-                                                {call.recordingUrl ? (
-                                                    <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 transition-colors bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm">
-                                                        <PlayCircle className="w-4 h-4" /> Listen
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-sm font-medium text-slate-400 flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 cursor-not-allowed">
-                                                        <PlayCircle className="w-4 h-4" /> Audio Unavailable
-                                                    </span>
-                                                )}
-                                                <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm">
-                                                    <FileText className="w-4 h-4" /> View Transcript
-                                                </button>
+                                            <div className="mt-3 pt-3 border-t border-slate-100/80">
+                                                <audio
+                                                    controls
+                                                    preload="none"
+                                                    className="w-full h-8 rounded-lg"
+                                                    style={{ accentColor: '#0d9488' }}
+                                                    src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${call.id}`}
+                                                    onError={(e) => { (e.target as HTMLAudioElement).style.display = 'none'; }}
+                                                >
+                                                    Your browser does not support audio.
+                                                </audio>
+                                                <div className="flex items-center gap-3 mt-2">
+                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm">
+                                                        <FileText className="w-4 h-4" /> View Transcript
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
