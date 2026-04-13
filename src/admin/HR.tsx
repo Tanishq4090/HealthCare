@@ -75,7 +75,7 @@ export default function HR() {
             w.role,
             w.phone || "",
             w.status,
-            `INR ${w.monthly_daily_rate || 0}`,
+            `₹${w.monthly_daily_rate || 0}`,
             w.assigned_client || "Unassigned"
         ]);
 
@@ -434,9 +434,9 @@ export default function HR() {
                         head: [['Description', 'Amount']],
                         body: [
                             [`Total Days Worked`, `${daysWorked} days`],
-                            [`Daily Rate (${isMonthly ? 'Monthly' : 'Short Term'})`, `INR ${appliedRate.toFixed(2)}`],
-                            [`Total Baseline Value`, `INR ${totalCost.toFixed(2)}`],
-                            [`Minus: Deposit Received`, `- INR ${deposit.toFixed(2)}`],
+                            [`Daily Rate (${isMonthly ? 'Monthly' : 'Short Term'})`, `₹${appliedRate.toFixed(2)}`],
+                            [`Total Baseline Value`, `₹${totalCost.toFixed(2)}`],
+                            [`Minus: Deposit Received`, `- ₹${deposit.toFixed(2)}`],
                         ],
                     });
 
@@ -444,7 +444,7 @@ export default function HR() {
                     workerDoc.setFontSize(14);
                     workerDoc.setTextColor(15, 23, 42);
                     workerDoc.setFont("helvetica", "bold");
-                    workerDoc.text(`Net Balance To Pay: INR ${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
+                    workerDoc.text(`Net Balance To Pay: ₹${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
                     workerDoc.setFontSize(10);
                     workerDoc.setFont("helvetica", "normal");
                     workerDoc.setTextColor(148, 163, 184);
@@ -470,7 +470,7 @@ export default function HR() {
                         headStyles: { fillColor: [37, 99, 235] },
                         head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
                         body: [
-                            [`Manpower Supply (${worker.role})`, `INR ${appliedRate.toFixed(2)}`, `${daysWorked} days`, `INR ${totalCost.toFixed(2)}`],
+                            [`Manpower Supply (${worker.role})`, `₹${appliedRate.toFixed(2)}`, `${daysWorked} days`, `₹${totalCost.toFixed(2)}`],
                             [`Platform Fee (included)`, '0.00', '1', '0.00']
                         ],
                     });
@@ -478,8 +478,8 @@ export default function HR() {
                     finalY = (clientDoc as any).lastAutoTable.finalY || 120;
                     clientDoc.setFontSize(12);
                     clientDoc.setTextColor(15, 23, 42);
-                    clientDoc.text(`Total Amount Due: INR ${totalCost.toFixed(2)}`, 14, finalY + 15);
-                    clientDoc.text(`GST (18% Included): INR ${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
+                    clientDoc.text(`Total Amount Due: ₹${totalCost.toFixed(2)}`, 14, finalY + 15);
+                    clientDoc.text(`GST (18% Included): ₹${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
 
                     // Convert to base64 for Resend payload
                     const workerPdfBase64 = workerDoc.output('datauristring').split(',')[1];
@@ -570,14 +570,14 @@ export default function HR() {
             clientDoc.text(`Billing Period: ${currentMonth}/${currentYear}`, 14, 66);
 
             const tableBody: any[] = [
-                [`Manpower Supply`, `INR ${appliedRate.toFixed(2)}`, `${daysWorked} days`, `INR ${baseCost.toFixed(2)}`]
+                [`Manpower Supply`, `₹${appliedRate.toFixed(2)}`, `${daysWorked} days`, `₹${baseCost.toFixed(2)}`]
             ];
             
             if (Number(invoiceExtras.additionalCharge) > 0) {
-                tableBody.push([invoiceExtras.chargeDesc, '-', '-', `INR ${Number(invoiceExtras.additionalCharge).toFixed(2)}`]);
+                tableBody.push([invoiceExtras.chargeDesc, '-', '-', `₹${Number(invoiceExtras.additionalCharge).toFixed(2)}`]);
             }
             if (Number(invoiceExtras.discount) > 0) {
-                tableBody.push(['Discount Applied', '-', '-', `- INR ${Number(invoiceExtras.discount).toFixed(2)}`]);
+                tableBody.push(['Discount Applied', '-', '-', `- ₹${Number(invoiceExtras.discount).toFixed(2)}`]);
             }
 
             autoTable(clientDoc, {
@@ -590,8 +590,8 @@ export default function HR() {
             const finalY = (clientDoc as any).lastAutoTable.finalY || 120;
             clientDoc.setFontSize(12);
             clientDoc.setTextColor(15, 23, 42);
-            clientDoc.text(`Total Amount Due: INR ${totalCost.toFixed(2)}`, 14, finalY + 15);
-            clientDoc.text(`GST (18% Included): INR ${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
+            clientDoc.text(`Total Amount Due: ₹${totalCost.toFixed(2)}`, 14, finalY + 15);
+            clientDoc.text(`GST (18% Included): ₹${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
             
             clientDoc.save(`Client_Invoice_${(item.client_name || 'Client').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
             toast.success("Invoice PDF Downloaded Successfully!");

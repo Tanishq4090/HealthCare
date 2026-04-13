@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { DollarSign, FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Bot, Globe, QrCode, History, Search, Loader2 } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Bot, Globe, QrCode, History, Search, Loader2 } from 'lucide-react';
+
+const RupeeIcon = ({ className }: { className?: string }) => (
+    <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
+);
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 
@@ -216,7 +220,7 @@ export default function Billing() {
                             <div key={dep.id} className="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-sm transition-shadow">
                                 <div className="flex items-center gap-4">
                                     <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shrink-0">
-                                        <DollarSign className="w-6 h-6" />
+                                        <RupeeIcon className="w-6 h-6 text-xl" />
                                     </div>
                                     <div>
                                         <h3 className="font-bold text-slate-900 flex items-center gap-2">
@@ -304,7 +308,7 @@ export default function Billing() {
                                             </button>
                                         ) : (
                                             <button onClick={() => handleAction('Record Monthly Payment', bill.client, bill.id)} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
-                                                <DollarSign className="w-4 h-4 text-emerald-500" /> Record Payment
+                                                <RupeeIcon className="w-4 h-4 text-emerald-500 text-base" /> Record Payment
                                             </button>
                                         )}
                                     </div>
@@ -340,7 +344,7 @@ export default function Billing() {
                         ) : payments.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-center">
                                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                                    <DollarSign className="w-8 h-8 text-slate-400" />
+                                    <RupeeIcon className="w-8 h-8 text-slate-400 text-3xl" />
                                 </div>
                                 <h3 className="text-lg font-bold text-slate-900 mb-1">No Payments Recorded</h3>
                                 <p className="text-slate-500 max-w-xs">Use the "Record Payment" buttons in the other tabs to log collections here.</p>
@@ -395,7 +399,7 @@ export default function Billing() {
                     <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-slate-100 bg-white/50 flex justify-between items-center">
                             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                                <DollarSign className="w-5 h-5 text-emerald-500" /> Record Deposit
+                                <RupeeIcon className="w-5 h-5 text-emerald-500 text-lg" /> Record Deposit
                             </h2>
                         </div>
                         <form onSubmit={handleCollectDeposit} className="p-5 space-y-4">
