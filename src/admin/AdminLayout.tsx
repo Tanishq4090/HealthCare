@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Receipt, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
 
@@ -16,7 +16,7 @@ export default function AdminLayout() {
         { name: 'AI CRM', href: '/admin/crm', icon: Users, requiredModule: 'crm' as AccessModule },
         { name: 'Clients', href: '/admin/clients', icon: Users, requiredModule: 'clients' as AccessModule },
         { name: 'AI HR', href: '/admin/hr', icon: UserCog, requiredModule: 'hr' as AccessModule },
-        { name: 'Finance', href: '/admin/billing', icon: Receipt, requiredModule: 'finance' as AccessModule },
+        { name: 'Finance', href: '/admin/billing', icon: Landmark, requiredModule: 'finance' as AccessModule },
     ];
 
     const filteredNavigation = navigation.filter(item => {
