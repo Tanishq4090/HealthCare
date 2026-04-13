@@ -1706,9 +1706,9 @@ export default function CRM() {
 
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
                         <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-900">Recent Call Logs</h2>
-                                <p className="text-sm text-slate-500 mt-1">Review AI voice interactions and capture leads directly to pipeline.</p>
+                            <div className="mb-6">
+                                <h2 className="text-lg font-bold text-slate-900">Call Logs & Audio recordings</h2>
+                                <p className="text-sm text-slate-500">Listen to AI voice interactions and review transcripts instantly.</p>
                             </div>
                             <button 
                                 onClick={handleRetryVoice}
@@ -2164,6 +2164,18 @@ export default function CRM() {
                                     Intent: {selectedCall.intent}
                                 </div>
                             )}
+                            
+                            {/* Modal Audio Player */}
+                            <div className="mt-4 pt-4 border-t border-blue-100">
+                                <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Call Recording</p>
+                                <audio 
+                                    controls 
+                                    className="w-full h-10" 
+                                    src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${selectedCall.id}`}
+                                >
+                                    Your browser does not support audio.
+                                </audio>
+                            </div>
                         </div>
 
                         {/* Transcript Dialogue */}
