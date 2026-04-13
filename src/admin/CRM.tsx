@@ -411,20 +411,24 @@ export default function CRM() {
                     capturedName: call.lead_id ? (call.capturedName || "Known Lead") : call.capturedName,
                     capturedWhatsapp: call.capturedWhatsapp || call.phone_number || null,
                     status: callStatus,
-                    transcript: call.transcript
+                    transcript: call.transcript,
+                    lead_id: call.lead_id
                 };
             });
 
             // Filter calls that successfully captured a lead (lead_id is not null) or phone matches existing lead
             const actualVoiceLeadsCaptured = formattedCalls.filter((c: any) => {
                 const isAlreadyInPipeline = leads.some(l => {
+                    if (c.lead_id && l.id === c.lead_id) return true;
                     const strippedLPhone = (l.phone || '').replace(/\D/g, '');
                     const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
                     const strippedCallPhone = (c.phone || '').replace(/\D/g, '');
-                    return (strippedLPhone && strippedLPhone === strippedCallPhone) || 
-                           (strippedLWa && strippedLWa === strippedCallPhone);
+                    if (!strippedCallPhone || strippedCallPhone.length < 10) return false;
+                    const callLast10 = strippedCallPhone.slice(-10);
+                    return (strippedLPhone && strippedLPhone.slice(-10) === callLast10) || 
+                           (strippedLWa && strippedLWa.slice(-10) === callLast10);
                 });
-                return c.status === 'Processed' || isAlreadyInPipeline;
+                return isAlreadyInPipeline;
             }).length;
 
             setCalls(formattedCalls);
@@ -1766,13 +1770,16 @@ export default function CRM() {
                                                 </div>
                                                 {(() => {
                                                     const isAlreadyInPipeline = leads.some(l => {
+                                                        if (call.lead_id && l.id === call.lead_id) return true;
                                                         const strippedLPhone = (l.phone || '').replace(/\D/g, '');
                                                         const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
                                                         const strippedCallPhone = (call.phone || '').replace(/\D/g, '');
-                                                        return (strippedLPhone && strippedLPhone === strippedCallPhone) || 
-                                                               (strippedLWa && strippedLWa === strippedCallPhone);
+                                                        if (!strippedCallPhone || strippedCallPhone.length < 10) return false;
+                                                        const callLast10 = strippedCallPhone.slice(-10);
+                                                        return (strippedLPhone && strippedLPhone.slice(-10) === callLast10) || 
+                                                               (strippedLWa && strippedLWa.slice(-10) === callLast10);
                                                     });
-                                                    const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
+                                                    const isProcessed = isAlreadyInPipeline;
 
                                                     return isProcessed ? (
                                                         <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded" title={isAlreadyInPipeline ? "Found existing Lead with this phone number." : ""}>
@@ -1786,13 +1793,16 @@ export default function CRM() {
 
                                         {(() => {
                                             const isAlreadyInPipeline = leads.some(l => {
+                                                if (call.lead_id && l.id === call.lead_id) return true;
                                                 const strippedLPhone = (l.phone || '').replace(/\D/g, '');
                                                 const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
                                                 const strippedCallPhone = (call.phone || '').replace(/\D/g, '');
-                                                return (strippedLPhone && strippedLPhone === strippedCallPhone) || 
-                                                       (strippedLWa && strippedLWa === strippedCallPhone);
+                                                if (!strippedCallPhone || strippedCallPhone.length < 10) return false;
+                                                const callLast10 = strippedCallPhone.slice(-10);
+                                                return (strippedLPhone && strippedLPhone.slice(-10) === callLast10) || 
+                                                       (strippedLWa && strippedLWa.slice(-10) === callLast10);
                                             });
-                                            const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
+                                            const isProcessed = isAlreadyInPipeline;
 
                                             return (!isProcessed && (call.capturedName || (call.summary && call.summary !== 'No summary available.' && call.summary !== 'Call completed.'))) ? (
                                             <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
