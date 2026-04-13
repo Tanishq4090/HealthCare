@@ -420,13 +420,7 @@ export default function CRM() {
             const actualVoiceLeadsCaptured = formattedCalls.filter((c: any) => {
                 const isAlreadyInPipeline = leads.some(l => {
                     if (c.lead_id && l.id === c.lead_id) return true;
-                    const strippedLPhone = (l.phone || '').replace(/\D/g, '');
-                    const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
-                    const strippedCallPhone = (c.phone || '').replace(/\D/g, '');
-                    if (!strippedCallPhone || strippedCallPhone.length < 10) return false;
-                    const callLast10 = strippedCallPhone.slice(-10);
-                    return (strippedLPhone && strippedLPhone.slice(-10) === callLast10) || 
-                           (strippedLWa && strippedLWa.slice(-10) === callLast10);
+                    return false;
                 });
                 return isAlreadyInPipeline;
             }).length;
@@ -1771,13 +1765,7 @@ export default function CRM() {
                                                 {(() => {
                                                     const isAlreadyInPipeline = leads.some(l => {
                                                         if (call.lead_id && l.id === call.lead_id) return true;
-                                                        const strippedLPhone = (l.phone || '').replace(/\D/g, '');
-                                                        const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
-                                                        const strippedCallPhone = (call.phone || '').replace(/\D/g, '');
-                                                        if (!strippedCallPhone || strippedCallPhone.length < 10) return false;
-                                                        const callLast10 = strippedCallPhone.slice(-10);
-                                                        return (strippedLPhone && strippedLPhone.slice(-10) === callLast10) || 
-                                                               (strippedLWa && strippedLWa.slice(-10) === callLast10);
+                                                        return false;
                                                     });
                                                     const isProcessed = isAlreadyInPipeline;
 
@@ -1794,13 +1782,7 @@ export default function CRM() {
                                         {(() => {
                                             const isAlreadyInPipeline = leads.some(l => {
                                                 if (call.lead_id && l.id === call.lead_id) return true;
-                                                const strippedLPhone = (l.phone || '').replace(/\D/g, '');
-                                                const strippedLWa = (l.whatsapp_number || '').replace(/\D/g, '');
-                                                const strippedCallPhone = (call.phone || '').replace(/\D/g, '');
-                                                if (!strippedCallPhone || strippedCallPhone.length < 10) return false;
-                                                const callLast10 = strippedCallPhone.slice(-10);
-                                                return (strippedLPhone && strippedLPhone.slice(-10) === callLast10) || 
-                                                       (strippedLWa && strippedLWa.slice(-10) === callLast10);
+                                                return false;
                                             });
                                             const isProcessed = isAlreadyInPipeline;
 
