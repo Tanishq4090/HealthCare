@@ -122,7 +122,7 @@ serve(async (req) => {
 
             // Send warm confirmation
             const locationStr = [area, city, state, country].filter(Boolean).join(', ');
-            const confirmMsg = `Thank you ${name.split(' ')[0]}! 🙏😊\n\nWe've received your enquiry:\n✅ Service: ${service}\n📍 Area: ${locationStr}\n⏱️ Shift: ${shiftType}\n👤 Care for: ${careFor}\n\nOur team will prepare your personalised quotation and share it on this number shortly. We're excited to serve you! ✨`;
+            const confirmMsg = `Thank you ${name.split(' ')[0]}! 🙏😊\n\nWe've received your enquiry:\n✅ Service: ${service}\n📍 Area: ${locationStr}\n⏱️ Shift: ${shiftType}\n👤 Care for: ${careFor}\n\nOur 99 Care team will prepare your personalised quotation and share it on this number shortly. We're excited to serve you! ✨`;
 
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
@@ -283,7 +283,7 @@ serve(async (req) => {
 
             if (callTranscripts && callTranscripts.length > 0) {
                 const leadName = leadRecord?.name?.split('—')[0]?.trim() || 'there';
-                const quotationMsg = `Namaste ${leadName} ji! 🙏\n\nWe already have your details from our recent call. Our team is preparing your personalised quotation and will share it on this number shortly.\n\nFeel free to ask any questions in the meantime. We're always here for you! 😊✨`;
+                const quotationMsg = `Namaste ${leadName} ji! 🙏\n\nWe already have your details from our recent call. Our 99 Care team is preparing your personalised quotation and will share it on this number shortly.\n\nFeel free to ask any questions in the meantime. We're always here for you! 😊✨`;
 
                 if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                     await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
@@ -316,7 +316,7 @@ serve(async (req) => {
         // --- 9. GROQ AI FOR ONGOING CONVERSATION ---
         const systemPrompt = `You are Khushi, a warm WhatsApp AI for 99Care Home Healthcare Services, Surat.
 The lead has already submitted their intake form or is continuing a conversation.
-Respond warmly, answer questions about 99Care's services, and reassure them the team will be in touch.
+Respond warmly, answer questions about 99Care's services, and reassure them the 99 Care team will be in touch.
 Keep replies to 2-3 lines max. Use emojis. Same language as user.
 NEVER quote prices. NEVER ask for info already collected.
 Context: ${leadDataContext}
@@ -335,7 +335,7 @@ Respond ONLY as valid JSON: {"replyToUser": "string", "pipelineStageUpdate": "st
             body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, max_tokens: 300, temperature: 0.2 })
         });
 
-        let aiReplyMsg = "Namaste! 🙏 Our team will get back to you shortly!";
+        let aiReplyMsg = "Namaste! 🙏 Our 99 Care team will get back to you shortly!";
         if (!groqRes.ok) {
             const errBody = await groqRes.text();
             console.error(`[Groq Error] ${groqRes.status}: ${errBody}`);
