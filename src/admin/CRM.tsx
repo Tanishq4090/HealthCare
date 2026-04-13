@@ -1,11 +1,81 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, Play, Pause, Volume2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
+
+
+// --- CUSTOM AUDIO PLAYER COMPONENT ---
+const VoicePlayer = ({ src }: { src: string }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const togglePlay = () => {
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+    };
+
+    const handleTimeUpdate = () => {
+        if (audioRef.current) {
+            const currentProgress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+            setProgress(currentProgress || 0);
+        }
+    };
+
+    const handleEnded = () => {
+        setIsPlaying(false);
+        setProgress(0);
+    };
+
+    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (audioRef.current) {
+            const seekTo = (parseFloat(e.target.value) / 100) * audioRef.current.duration;
+            audioRef.current.currentTime = seekTo;
+            setProgress(parseFloat(e.target.value));
+        }
+    };
+
+    return (
+        <div className="flex items-center gap-3 bg-slate-50/50 border border-slate-200/60 p-2 rounded-xl w-full group transition-all hover:bg-white hover:shadow-sm">
+            <audio 
+                ref={audioRef} 
+                src={src} 
+                onTimeUpdate={handleTimeUpdate} 
+                onEnded={handleEnded}
+                preload="none"
+            />
+            <button 
+                onClick={togglePlay}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-700 transition-all transform active:scale-95 shrink-0"
+            >
+                {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
+            </button>
+            <div className="flex-1 space-y-1.5 flex flex-col justify-center pr-2">
+                <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={progress} 
+                    onChange={handleSeek}
+                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                />
+                <div className="flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    <span className="flex items-center gap-1"><Volume2 className="w-3 h-3 text-slate-300" /> Audio Track</span>
+                    <span className="text-emerald-500">{isPlaying ? 'Playing' : 'Ready'}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>(() => {
@@ -1726,7 +1796,6 @@ export default function CRM() {
                                         <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${call.type === 'Inbound' ? 'bg-primary/10 text-primary' : 'bg-purple-50 text-purple-600'}`}>
                                             <Phone className="w-5 h-5" />
                                         </div>
-                                        <div>
                                             <div className="flex items-center gap-2 mb-1">
                                                 <h3 className="font-bold text-slate-900 text-lg">{call.capturedName || call.phone}</h3>
                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${call.type === 'Inbound' ? 'bg-primary/10 text-primary' : 'bg-purple-100 text-purple-700'}`}>
@@ -1739,19 +1808,10 @@ export default function CRM() {
                                                 <span className="font-medium">{call.time}</span>
                                             </div>
                                             <div className="mt-3 pt-3 border-t border-slate-100/80">
-                                                <audio
-                                                    controls
-                                                    preload="none"
-                                                    className="w-full h-8 rounded-lg"
-                                                    style={{ accentColor: '#0d9488' }}
-                                                    src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${call.id}`}
-                                                    onError={(e) => { (e.target as HTMLAudioElement).style.display = 'none'; }}
-                                                >
-                                                    Your browser does not support audio.
-                                                </audio>
-                                                <div className="flex items-center gap-3 mt-2">
-                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm">
-                                                        <FileText className="w-4 h-4" /> View Transcript
+                                                <VoicePlayer src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${call.id}`} />
+                                                <div className="flex items-center gap-3 mt-3">
+                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm w-full justify-center">
+                                                        <FileText className="w-4 h-4" /> View Full Transcript
                                                     </button>
                                                 </div>
                                             </div>
@@ -2167,14 +2227,8 @@ export default function CRM() {
                             
                             {/* Modal Audio Player */}
                             <div className="mt-4 pt-4 border-t border-blue-100">
-                                <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Call Recording</p>
-                                <audio 
-                                    controls 
-                                    className="w-full h-10" 
-                                    src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${selectedCall.id}`}
-                                >
-                                    Your browser does not support audio.
-                                </audio>
+                                <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-3">Call Recording</p>
+                                <VoicePlayer src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${selectedCall.id}`} />
                             </div>
                         </div>
 
