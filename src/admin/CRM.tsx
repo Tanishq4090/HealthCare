@@ -1286,13 +1286,12 @@ export default function CRM() {
                         >
                             Voice AI Calls
                         </button>
-
                     </div>
                 </div>
             </div>
 
-            {activeTab === 'pipeline' ? (
-                <div className="flex flex-col flex-1 h-full min-h-0">
+            {activeTab === 'pipeline' && (
+                <div className="flex flex-col flex-1 h-full min-h-0 gap-6 overflow-x-auto pb-4 custom-scrollbar">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
                             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -1307,8 +1306,6 @@ export default function CRM() {
                             </button>
                         </div>
                     </div>
-                {/* Kanban Pipeline View */}
-                <div className="flex-1 flex gap-6 overflow-x-auto pb-4 custom-scrollbar">
                     {isLoading ? (
                         <div className="flex-1 flex items-center justify-center">
                             <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -1703,7 +1700,8 @@ export default function CRM() {
                         </>
                     )}
                 </div>
-            ) : activeTab === 'voice' ? (
+            )}
+            {activeTab === 'voice' && (
                 /* Voice AI Dashboard View */
                 <div className="flex-1 flex flex-col gap-6">
                     <div className="grid lg:grid-cols-4 gap-4">
@@ -1891,7 +1889,8 @@ export default function CRM() {
                         </div>
                     </div>
                 </div>
-            ) : (
+            )}
+            {activeTab === 'automations' && (
                 /* AI Automations View */
                 <div className="flex-1 grid lg:grid-cols-2 gap-6 pb-4">
                     {/* Active Workflows */}
@@ -2331,7 +2330,6 @@ export default function CRM() {
                 </div>
             </div>
         )}
-        </div>
         </div>
     );
 }
