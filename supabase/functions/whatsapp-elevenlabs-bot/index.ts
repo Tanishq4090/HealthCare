@@ -165,18 +165,26 @@ serve(async (req) => {
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
-        // --- 5. IDEMPOTENCY CHECK ---
-        const { data: duplicateCheck } = await supabase
-            .from('whatsapp_logs').select('sid').eq('sid', wamid).maybeSingle();
-        if (duplicateCheck) {
-            console.log(`[Idempotency] Already processed: ${wamid}`);
-            return new Response('EVENT_RECEIVED', { status: 200 });
-        }
-
-        await supabase.from('whatsapp_logs').insert([{
-            sid: wamid, status: 'processing',
+        // --- 5. IDEMPOTENCY CHECK (Atomic) ---
+        // Attempt to log the incoming message immediately. 
+        // If 'sid' is unique, this will fail for retries.
+        const { error: idempotencyError } = await supabase.from('whatsapp_logs').insert([{
+            sid: wamid, 
+            status: 'processing',
             payload: { type: 'incoming_message', raw_text: rawBody }
         }]);
+
+        if (idempotencyError) {
+            // Check for unique violation (23505) or if it's already being handled
+            if (idempotencyError.code === '23505') {
+                console.log(`[Idempotency] Message already being processed or finished: ${wamid}. Bailing.`);
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+            console.warn(`[Idempotency Warning] ${idempotencyError.code}: ${idempotencyError.message}`);
+            // If it's some other db error, we'll try to check one more time manually
+            const { data: duplicateCheck } = await supabase.from('whatsapp_logs').select('sid').eq('sid', wamid).maybeSingle();
+            if (duplicateCheck) return new Response('EVENT_RECEIVED', { status: 200 });
+        }
 
         console.log(`[Incoming] From: ${purePhone}, Message: ${rawBody}`);
 
