@@ -1756,7 +1756,35 @@ export default function CRM() {
                                                             <button
                                                                 onClick={async (e) => {
                                                                     e.stopPropagation();
+                                                                    const firstName = item.name.split(' ')[0] || 'there';
+                                                                    const message = `Great news ${firstName}! 🙏 We have received your deposit amount. You are officially an active client of 99 Care now! Our team will coordinate the start date with you shortly. We're honored to serve you! ✨`;
+                                                                    
+                                                                    // Move lead
                                                                     await handleMoveLead(item.id, 'Active Client');
+                                                                    
+                                                                    // Send automated confirmation
+                                                                    try {
+                                                                        const phoneDigits = (item.whatsapp_number || item.phone || '').replace(/\D/g, '');
+                                                                        const finalPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
+                                                                        
+                                                                        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                                                                            method: 'POST',
+                                                                            headers: {
+                                                                                'Content-Type': 'application/json',
+                                                                                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                                                                                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                                                                            },
+                                                                            body: JSON.stringify({
+                                                                                phone: finalPhone,
+                                                                                message: message,
+                                                                                leadId: item.id,
+                                                                                useTemplate: false
+                                                                            })
+                                                                        });
+                                                                    } catch (err) {
+                                                                        console.error("Failed to send automated deposit confirmation:", err);
+                                                                    }
+
                                                                     toast.success(`${item.name} is now an Active Client! 🎉`);
                                                                 }}
                                                                 className="w-full bg-[#1AA6A8] hover:bg-[#1AA6A8] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
