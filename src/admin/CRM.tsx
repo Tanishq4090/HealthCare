@@ -268,7 +268,7 @@ export default function CRM() {
             const { data, error } = await supabase
                 .from("whatsapp_messages")
                 .select("role, content, created_at")
-                .eq("phone", phoneDigits)
+                .ilike("phone", `%${phoneDigits.slice(-10)}%`)
                 .order("created_at", { ascending: true }); // chronological
 
             if (error) throw error;
