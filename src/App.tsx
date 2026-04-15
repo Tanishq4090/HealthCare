@@ -64,8 +64,9 @@ function AppContent() {
   useAttendanceSocket();
   const location = useLocation();
   const appDomain = import.meta.env.VITE_APP_DOMAIN;
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   
-  // Use Vercel VITE_APP_DOMAIN if it exists, otherwise fall back to local APP_MODE config
+  // Favor specific environment variables (Vercel) or the detected APP_MODE (which handles ports/env vars)
   const mode = appDomain === 'crm' ? 'os' : (appDomain === 'website' ? 'public' : APP_MODE);
 
   if (mode === 'public') {

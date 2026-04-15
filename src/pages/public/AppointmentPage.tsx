@@ -323,7 +323,7 @@ export default function AppointmentPage() {
                   <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">Need Help?</h3>
                   
                   <div className="space-y-6">
-                    <a href="tel:+919016116564" className="flex items-center gap-4 group">
+                    <a href="tel:+917971542924" className="flex items-center gap-4 group">
                       <div className="w-12 h-12 rounded-full bg-brand-blue-light flex items-center justify-center text-brand-blue group-hover:bg-brand-blue group-hover:text-white transition-colors">
                         <Phone className="w-5 h-5" />
                       </div>
@@ -344,7 +344,7 @@ export default function AppointmentPage() {
                     </a>
                     
                     <GradientButton asChild variant="success" className="w-full mt-4 h-14 shadow-md hover:shadow-lg transition-all flex justify-center items-center gap-2">
-                      <a href="https://wa.me/919016116564" target="_blank" rel="noopener noreferrer">
+                      <a href="https://wa.me/917971542924" target="_blank" rel="noopener noreferrer">
                          <MessageCircle className="w-5 h-5 fill-white" /> WhatsApp Us
                       </a>
                     </GradientButton>

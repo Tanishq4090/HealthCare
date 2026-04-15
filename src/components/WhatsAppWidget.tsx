@@ -11,7 +11,7 @@ export function WhatsAppWidget() {
     setCurrentTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   }, []);
 
-  const whatsappUrl = "https://api.whatsapp.com/send/?phone=919016116564&text&type=phone_number&app_absent=0";
+  const whatsappUrl = "https://api.whatsapp.com/send/?phone=917971542924&text&type=phone_number&app_absent=0";
 
   return (
     <div className="relative flex flex-col items-end">

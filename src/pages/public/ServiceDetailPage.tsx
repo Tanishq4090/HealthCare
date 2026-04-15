@@ -106,7 +106,7 @@ export default function ServiceDetailPage() {
                       whileHover={{ scale: 1.02, y: -2 }}
                       whileTap={{ scale: 0.98 }}
                       transition={{ duration: 0.2 }}
-                      href="tel:+919016116564" 
+                      href="tel:+917971542924" 
                       className="flex items-center gap-4 group cursor-pointer"
                     >
                       <div className="w-12 h-12 rounded-xl bg-gray-50 dark:bg-slate-800 flex items-center justify-center text-gray-600 dark:text-gray-400 group-hover:bg-brand-blue group-hover:text-white transition-colors">
@@ -126,7 +126,7 @@ export default function ServiceDetailPage() {
 
                     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
                       <GradientButton asChild variant="success" className="w-full flex justify-center items-center gap-2">
-                        <a href={`https://wa.me/919016116564?text=Hi, I want to inquire about ${service.title} services.`} target="_blank" rel="noopener noreferrer">
+                        <a href={`https://wa.me/917971542924?text=Hi, I want to inquire about ${service.title} services.`} target="_blank" rel="noopener noreferrer">
                            <MessageCircle className="w-5 h-5 flex-shrink-0 fill-white" /> Chat on WhatsApp
                         </a>
                       </GradientButton>

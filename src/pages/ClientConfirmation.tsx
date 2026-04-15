@@ -44,6 +44,7 @@ export default function ClientConfirmation() {
         setConfirming(true);
 
         try {
+            // 1. Mark worker as Active
             const { error } = await supabase
                 .from('workers')
                 .update({ status: 'Active' })
@@ -51,9 +52,17 @@ export default function ClientConfirmation() {
 
             if (error) throw error;
 
+            // 2. Advance the CRM lead to 'Active Client' now that client has confirmed
+            if (worker.assigned_client) {
+                await supabase.from('crm_leads')
+                    .update({ pipeline_stage: 'Active Client' })
+                    .eq('name', worker.assigned_client)
+                    .eq('pipeline_stage', 'Staff Assigned'); // Only advance from Staff Assigned
+            }
+
             setIsConfirmed(true);
             setWorker({ ...worker, status: 'Active' });
-            toast.success("Staff assignment confirmed successfully!");
+            toast.success("Staff assignment confirmed successfully! Service starts now.");
         } catch (err: any) {
             console.error("Error confirming worker:", err);
             toast.error("Failed to confirm staff: " + err.message);
