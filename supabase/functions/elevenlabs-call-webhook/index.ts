@@ -3,6 +3,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
+const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
+const WHATSAPP_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
+const FLOW_TEMPLATE_NAME = "post_call_intake";
 
 serve(async (req) => {
     // Must return 200 quickly or ElevenLabs will retry/disable the webhook
@@ -97,6 +101,44 @@ serve(async (req) => {
         
         console.log(`[Webhook] Call from ${callerPhone}, Extracted WA: ${finalWhatsappNumber}, duration: ${callDurationSecs}s, turns: ${transcript.length}`);
 
+        // --- 4. EXTRACT SERVICE & SHIFT FOR GREETING ---
+        let detectedService = "Home Healthcare";
+        let detectedShift = "General";
+        let detectedName = "Customer";
+
+        const serviceKeywords: Record<string, string[]> = {
+            "Baby Care": ["baby", "child", "infant", "newborn", "japa", "bachcha", "baccha"],
+            "Old Age Care": ["old age", "elderly", "senior", "parent", "mother", "father", "dadi", "dada", "nana", "nani"],
+            "Nursing Care": ["nursing", "medical", "hospital", "patient", "nurse", "injection", "wound"],
+            "Physiotherapy": ["physio", "exercise", "therapy", "rehab", "back pain", "paralysis"]
+        };
+
+        const shiftKeywords: Record<string, string[]> = {
+            "10-Hour": ["10", "day shift", "morning"],
+            "24-Hour": ["24", "day and night", "stay", "resident"]
+        };
+
+        const tLower = transcriptText.toLowerCase();
+        for (const [service, keywords] of Object.entries(serviceKeywords)) {
+            if (keywords.some(k => tLower.includes(k))) {
+                detectedService = service;
+                break;
+            }
+        }
+        for (const [shift, keywords] of Object.entries(shiftKeywords)) {
+            if (keywords.some(k => tLower.includes(k))) {
+                detectedShift = shift;
+                break;
+            }
+        }
+
+        // Try to get name from analysis or transcript
+        if (analysis.data_collection_results?.name) {
+            detectedName = analysis.data_collection_results.name.value;
+        } else if (metadata.customer_name) {
+            detectedName = metadata.customer_name;
+        }
+
         if (!SUPABASE_URL || !SUPABASE_KEY) {
             console.error("Missing Supabase env vars");
             return new Response(JSON.stringify({ ok: false }), { status: 500 });
@@ -144,6 +186,36 @@ serve(async (req) => {
                 })
                 .or(`whatsapp_number.ilike.%${last10Caller}%,phone.ilike.%${last10Caller}%`)
                 .eq('pipeline_stage', 'New');
+
+            // --- 5. DISPATCH AUTOMATED WHATSAPP GREETING (TEMPLATE + FLOW) ---
+            const purePhone = effectivePhoneNumber.replace(/\D/g, '');
+            if (purePhone) {
+                console.log(`[Webhook] Triggering greeting via meta-whatsapp-outbound for ${purePhone}`);
+                
+                const { data: outData, error: outError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                    body: {
+                        phone: purePhone,
+                        useTemplate: true,
+                        templateName: FLOW_TEMPLATE_NAME,
+                        templateParams: [
+                            detectedName.split(' ')[0],
+                            detectedService,
+                            detectedShift
+                        ]
+                    }
+                });
+
+                if (outError) {
+                    console.error(`[Webhook] Outbound Function Error:`, outError);
+                } else {
+                    console.log(`[Webhook] Greeting dispatched successfully:`, outData);
+                    await supabase.from('whatsapp_messages').insert([{ 
+                        phone: effectivePhoneNumber, 
+                        role: 'assistant', 
+                        content: `[Automated Greeting] Sent service details confirmation for ${detectedService} (${detectedShift} shift).` 
+                    }]);
+                }
+            }
         }
 
         console.log(`[Webhook] Transcript saved for conversation: ${conversationId}`);

@@ -150,17 +150,37 @@ serve(async (req) => {
           });
       }
 
+      const components: any[] = [
+        {
+          type: "body",
+          parameters: parameters
+        }
+      ];
+
+      // Special handling for Flow templates (like post_call_intake)
+      if (templateName === "post_call_intake") {
+        components.push({
+          type: "button",
+          sub_type: "flow",
+          index: "0",
+          parameters: [
+            {
+              type: "action",
+              action: {
+                flow_token: `call_${digits}_${Date.now()}`,
+                flow_action_payload: { screen: "INTAKE_FORM" }
+              }
+            }
+          ]
+        });
+      }
+
       metaBody.template = {
         name: templateName || "greeting_msg", 
         language: {
           code: "en"
         },
-        components: [
-          {
-            type: "body",
-            parameters: parameters
-          }
-        ]
+        components: components
       };
     } else {
       metaBody.type = "text";
