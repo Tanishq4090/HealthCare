@@ -205,6 +205,8 @@ serve(async (req) => {
     // Log initial acceptance by Meta for tracking in CRM
     if (metaResponse.ok && metaData.messages && metaData.messages.length > 0) {
         const wamid = metaData.messages[0].id;
+        
+        // Log to logs table for technical auditing
         await supabase.from('whatsapp_logs').insert({
             sid: wamid,
             status: 'accepted_by_meta',
@@ -217,6 +219,15 @@ serve(async (req) => {
                 message
             }
         });
+
+        // Insert into whatsapp_messages to show up in the CRM chat history viewer
+        if (message) {
+            await supabase.from('whatsapp_messages').insert([{ 
+                phone: digits, 
+                role: 'assistant', 
+                content: message 
+            }]);
+        }
     }
 
     return new Response(JSON.stringify(metaData), {
