@@ -348,25 +348,24 @@ export default function CRM() {
         return ['Active Client', 'Monthly Billing', 'Closed Won'];
     });
 
+    // Helper to sync to cloud only when manually changed
+    const syncStagesToCloud = async (pStages: string[], cStages: string[]) => {
+        try {
+            await supabase.from('automation_settings').upsert({ 
+                id: 'global', 
+                pipeline_stages: pStages,
+                client_stages: cStages
+            }, { onConflict: 'id' });
+        } catch (e) { }
+    };
+
     // Sync pipelineStages to localStorage whenever it changes
     useEffect(() => {
         localStorage.setItem('crmPipelineStages', JSON.stringify(pipelineStages));
-        const syncToCloud = async () => {
-            try {
-                await supabase.from('automation_settings').upsert({ id: 'global', pipeline_stages: pipelineStages }, { onConflict: 'id' });
-            } catch (e) { }
-        };
-        syncToCloud();
     }, [pipelineStages]);
 
     useEffect(() => {
         localStorage.setItem('crmClientStages', JSON.stringify(clientStages));
-        const syncToCloud = async () => {
-            try {
-                await supabase.from('automation_settings').upsert({ id: 'global', client_stages: clientStages }, { onConflict: 'id' });
-            } catch (e) { }
-        };
-        syncToCloud();
     }, [clientStages]);
 
     const [isAddingStage, setIsAddingStage] = useState(false);
@@ -1005,7 +1004,14 @@ export default function CRM() {
 
     const handleAddStage = () => {
         if (newStageName.trim() && !activeStages.includes(newStageName.trim())) {
-            setActiveStages([...activeStages, newStageName.trim()]);
+            const nextStages = [...activeStages, newStageName.trim()];
+            setActiveStages(nextStages);
+            
+            // Sync to cloud
+            const p = activeTab === 'clients' ? pipelineStages : nextStages;
+            const c = activeTab === 'clients' ? nextStages : clientStages;
+            syncStagesToCloud(p, c);
+
             setNewStageName('');
             setIsAddingStage(false);
             toast.success(`Stage "${newStageName.trim()}" added!`);
@@ -1029,6 +1035,12 @@ export default function CRM() {
             const newStages = [...activeStages];
             newStages.splice(idx, 1);
             setActiveStages(newStages);
+
+            // Sync to cloud
+            const p = activeTab === 'clients' ? pipelineStages : newStages;
+            const c = activeTab === 'clients' ? newStages : clientStages;
+            syncStagesToCloud(p, c);
+
             toast.success(`Stage "${stageToDelete}" deleted successfully.`);
         }
     };
@@ -1047,6 +1059,11 @@ export default function CRM() {
         const newStages = [...activeStages];
         newStages[idx] = editingStageName.trim();
         setActiveStages(newStages);
+
+        // Sync to cloud
+        const p = activeTab === 'clients' ? pipelineStages : newStages;
+        const c = activeTab === 'clients' ? newStages : clientStages;
+        syncStagesToCloud(p, c);
 
         // Update all leads currently in this stage (optimistic)
         setLeads(prev => prev.map(l => l.pipeline_stage === oldName ? { ...l, pipeline_stage: editingStageName.trim() } : l));
@@ -1082,6 +1099,11 @@ export default function CRM() {
         newStages[targetIdx] = temp;
 
         setActiveStages(newStages);
+
+        // Sync to cloud
+        const p = activeTab === 'clients' ? pipelineStages : newStages;
+        const c = activeTab === 'clients' ? newStages : clientStages;
+        syncStagesToCloud(p, c);
     };
 
     // Compute duplicate phone numbers so we can warn the user
