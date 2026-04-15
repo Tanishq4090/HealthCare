@@ -1085,7 +1085,7 @@ export default function CRM() {
         items: leads.filter(l => l.pipeline_stage === stage).map(l => {
             const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
             return {
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage, phone: l.phone, whatsapp_number: l.whatsapp_number,
+                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage, phone: l.phone, whatsapp_number: l.whatsapp_number, priority: l.priority || 'medium',
                 isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false
             };
         })
@@ -1148,6 +1148,22 @@ export default function CRM() {
             } catch (err: any) {
                 console.error("Error updating lead details", err);
                 toast.error("Failed to update details");
+                fetchLeads(); // revert
+            }
+        }
+    };
+
+    const handleUpdatePriority = async (leadId: string, newPriority: string) => {
+        // Optimistic
+        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: newPriority } : l));
+        if (leadId.length >= 10) {
+            try {
+                const { error } = await supabase.from('crm_leads').update({ priority: newPriority }).eq('id', leadId);
+                if (error) throw error;
+                toast.success('Priority updated');
+            } catch (err: any) {
+                console.error("Error updating priority", err);
+                toast.error("Failed to update priority");
                 fetchLeads(); // revert
             }
         }
@@ -1465,7 +1481,20 @@ export default function CRM() {
                                                             </div>
                                                         ) : (
                                                             <>
-                                                                <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors" title="Double click to edit">{item.name}</h4>
+                                                                <div className="flex justify-between items-start">
+                                                                    <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors flex-1" title="Double click to edit">{item.name}</h4>
+                                                                    <select 
+                                                                        value={item.priority || 'medium'} 
+                                                                        onChange={(e) => handleUpdatePriority(item.id, e.target.value)}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        className="bg-transparent border-none text-base cursor-pointer focus:outline-none appearance-none ml-1 p-0 leading-none hover:scale-110 transition-transform shrink-0 outline-none"
+                                                                        title="Lead Priority"
+                                                                    >
+                                                                        <option value="hot">🔥</option>
+                                                                        <option value="medium">☀️</option>
+                                                                        <option value="cold">❄️</option>
+                                                                    </select>
+                                                                </div>
                                                                 
                                                                 {(item.whatsapp_number || item.phone) ? (
                                                                     <div className="flex items-center gap-2 mt-0.5" title="Contact Number (Double click to edit)">
