@@ -188,6 +188,9 @@ serve(async (req) => {
 
         console.log(`[Incoming] From: ${purePhone}, Message: ${rawBody}`);
 
+        // --- 5.5 LOG USER MESSAGE (Only once) ---
+        await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
+
         if (!GROQ_API_KEY) {
             console.error("Missing GROQ_API_KEY!");
             return new Response("Config Error", { status: 500 });
@@ -229,7 +232,6 @@ serve(async (req) => {
         // If the lead exists, message is a closing remark, and NOT a positive intent → silent exit
         if (earlyLead && !isPositiveIntent && stopWords.includes(cleanMsg)) {
             console.log(`[Early Exit] Closing remark "${rawBody}" from known lead ${earlyLead.id}. No reply sent.`);
-            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
             await supabase.from('whatsapp_logs').update({
                 status: 'success',
                 payload: { type: 'acknowledgment_end', text: rawBody, original_recipient: fromPhone }
@@ -243,8 +245,6 @@ serve(async (req) => {
             .ilike('phone', `%${last10}%`)
             .order('created_at', { ascending: false }).limit(10);
         const historyData = rawHistory?.reverse() || [];
-
-        await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
 
         // --- 8. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
         if (!earlyLead) {
@@ -343,14 +343,18 @@ serve(async (req) => {
         };
 
         const leadStage = earlyLead?.pipeline_stage || '';
-        if (STAGE_SCRIPTS[leadStage]) {
-            const scriptedReply = STAGE_SCRIPTS[leadStage];
-            console.log(`[Stage Script] Stage: "${leadStage}" — sending scripted reply.`);
+        const scriptedReply = STAGE_SCRIPTS[leadStage];
 
-            // Log user message
-            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
+        if (scriptedReply) {
+            // Check if we already sent this exact scripted reply as the last message
+            // To prevent annoying loops if user keeps saying "thanks" or "ok"
+            const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
+            if (lastAssistantMsg?.content === scriptedReply) {
+                console.log(`[Stage Script Skip] Already sent "${leadStage}" script. Letting AI handle.`);
+            } else {
+                console.log(`[Stage Script] Stage: "${leadStage}" — sending scripted reply.`);
 
-            // Send to WhatsApp
+                // Send to WhatsApp
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 const sendRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
                     method: 'POST',
@@ -375,6 +379,7 @@ serve(async (req) => {
 
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
+    }
 
         // --- 10. RETURNING LEAD: Check for call transcript data ---
         let leadDataContext = "";
@@ -467,7 +472,6 @@ Respond ONLY as valid JSON: {"replyToUser": "string or null", "pipelineStageUpda
                 // If AI explicitly returns null for replyToUser, stay silent
                 if (parsed.replyToUser === null || parsed.replyToUser === undefined) {
                     console.log('[Groq] AI decided to stay silent (closing remark detected).');
-                    await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
                     await supabase.from('whatsapp_logs').update({
                         status: 'success',
                         payload: { type: 'ai_silent_exit', text: rawBody, original_recipient: fromPhone }
