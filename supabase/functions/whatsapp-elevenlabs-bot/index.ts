@@ -199,10 +199,10 @@ serve(async (req) => {
         // --- 7. EARLY EXIT FOR ACKNOWLEDGMENTS & GOODBYES ---
         // Any short CLOSING remark from a known lead: log it silently, do NOT reply.
         // IMPORTANT: Positive intent words like 'yes', 'proceed', 'haan' must NEVER be silenced.
-        const positiveIntentWords = ['yes', 'haan', 'ha', 'proceed', 'confirm', 'agree', 'start', 'let\'s go', 'go ahead', 'sahi hai', 'bilkul', 'zaroor'];
+        const positiveIntentWords = ['yes', 'haan', 'ha', 'proceed', 'confirm', 'agree', 'start', 'let\'s go', 'go ahead', 'sahi hai', 'bilkul', 'zaroor', 'done', 'ok', 'okay', 'k'];
         const stopWords = [
             // Acknowledgments (NOT positive intent)
-            'ok', 'okay', 'k', 'done', 'noted', 'received', 'got it', 'alright',
+            'noted', 'received', 'got it', 'alright',
             // Thanks
             'thanks', 'thank you', 'thankyou', 'thank u', 'ty', 'thx', 'shukriya', 'dhanyavad', 'dhanyawaad',
             // Hindi/Gujarati acks
@@ -425,7 +425,8 @@ RULES (follow strictly):
 - Use 1-2 emojis per message. Match the user's language (Hindi/Gujarati/English).
 - NEVER quote prices. NEVER ask for information already collected.
 - If the user's message is a GOODBYE or FAREWELL (e.g. "bye", "take care", "good night", "you too"), respond with EXACTLY: {"replyToUser": null, "pipelineStageUpdate": null}
-- If the user's message is a POSITIVE REPLY or shows INTENT (e.g. "yes", "okay", "sure", "proceed", "haan", "bilkul"), ALWAYS give a warm, helpful response. Do NOT go silent.
+- If the user's message is a POSITIVE REPLY or shows INTENT (e.g. "yes", "okay", "done", "sure", "proceed", "haan", "bilkul"), ALWAYS give a warm, helpful response. Do NOT go silent.
+- If the user says "done", "ok", or "okay" after you sent them a form or a quote, thank them and say "Our team will verify and assign staff shortly." DO NOT ask more questions.
 - NEVER ask follow-up questions if the lead's details are already collected.
 
 Context: ${leadDataContext}
