@@ -78,7 +78,7 @@ const VoicePlayer = ({ src }: { src: string }) => {
 };
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'automations' | 'voice'>(() => {
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'clients' | 'automations' | 'voice'>(() => {
         return (localStorage.getItem('crmActiveTab') as any) || 'pipeline';
     });
 
@@ -123,6 +123,9 @@ export default function CRM() {
                 // Cloud Sync: If database has columns for stages/templates, use them
                 if (data.pipeline_stages) {
                     setPipelineStages(data.pipeline_stages);
+                }
+                if (data.client_stages) {
+                    setClientStages(data.client_stages);
                 }
                 if (data.whatsapp_templates) {
                     setWhatsappTemplates(data.whatsapp_templates);
@@ -332,30 +335,39 @@ export default function CRM() {
     const [pipelineStages, setPipelineStages] = useState<string[]>(() => {
         const saved = localStorage.getItem('crmPipelineStages');
         if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error("Failed to parse pipeline stages from local storage", e);
-            }
+            try { return JSON.parse(saved); } catch (e) { }
         }
-        return ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing', 'Closed Won'];
+        return ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'];
+    });
+
+    const [clientStages, setClientStages] = useState<string[]>(() => {
+        const saved = localStorage.getItem('crmClientStages');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) { }
+        }
+        return ['Active Client', 'Monthly Billing', 'Closed Won'];
     });
 
     // Sync pipelineStages to localStorage whenever it changes
     useEffect(() => {
         localStorage.setItem('crmPipelineStages', JSON.stringify(pipelineStages));
-
-        // Safe Cloud Sync
         const syncToCloud = async () => {
             try {
-                await supabase.from('automation_settings').upsert({ 
-                    id: 'global', 
-                    pipeline_stages: pipelineStages 
-                }, { onConflict: 'id' });
-            } catch (e) { /* Fallback to local only if column doesn't exist */ }
+                await supabase.from('automation_settings').upsert({ id: 'global', pipeline_stages: pipelineStages }, { onConflict: 'id' });
+            } catch (e) { }
         };
         syncToCloud();
     }, [pipelineStages]);
+
+    useEffect(() => {
+        localStorage.setItem('crmClientStages', JSON.stringify(clientStages));
+        const syncToCloud = async () => {
+            try {
+                await supabase.from('automation_settings').upsert({ id: 'global', client_stages: clientStages }, { onConflict: 'id' });
+            } catch (e) { }
+        };
+        syncToCloud();
+    }, [clientStages]);
 
     const [isAddingStage, setIsAddingStage] = useState(false);
     const [newStageName, setNewStageName] = useState('');
@@ -988,12 +1000,15 @@ export default function CRM() {
         }
     };
 
+    const activeStages = activeTab === 'clients' ? clientStages : pipelineStages;
+    const setActiveStages = activeTab === 'clients' ? setClientStages : setPipelineStages;
+
     const handleAddStage = () => {
-        if (newStageName.trim() && !pipelineStages.includes(newStageName.trim())) {
-            setPipelineStages([...pipelineStages, newStageName.trim()]);
+        if (newStageName.trim() && !activeStages.includes(newStageName.trim())) {
+            setActiveStages([...activeStages, newStageName.trim()]);
             setNewStageName('');
             setIsAddingStage(false);
-            toast.success(`Pipeline stage "${newStageName.trim()}" added!`);
+            toast.success(`Stage "${newStageName.trim()}" added!`);
         }
     };
 
@@ -1011,9 +1026,9 @@ export default function CRM() {
         }
 
         if (window.confirm(`Are you sure you want to delete the "${stageToDelete}" stage?`)) {
-            const newStages = [...pipelineStages];
+            const newStages = [...activeStages];
             newStages.splice(idx, 1);
-            setPipelineStages(newStages);
+            setActiveStages(newStages);
             toast.success(`Stage "${stageToDelete}" deleted successfully.`);
         }
     };
@@ -1023,15 +1038,15 @@ export default function CRM() {
             setEditingStageIdx(null);
             return;
         }
-        if (pipelineStages.includes(editingStageName.trim())) {
+        if (activeStages.includes(editingStageName.trim())) {
             toast.error('A stage with this name already exists.');
             return;
         }
 
-        // Update stage in pipeline list
-        const newStages = [...pipelineStages];
+        // Update stage in list
+        const newStages = [...activeStages];
         newStages[idx] = editingStageName.trim();
-        setPipelineStages(newStages);
+        setActiveStages(newStages);
 
         // Update all leads currently in this stage (optimistic)
         setLeads(prev => prev.map(l => l.pipeline_stage === oldName ? { ...l, pipeline_stage: editingStageName.trim() } : l));
@@ -1056,9 +1071,9 @@ export default function CRM() {
     };
 
     const handleSlideStage = (idx: number, direction: 'left' | 'right') => {
-        if ((direction === 'left' && idx === 0) || (direction === 'right' && idx === pipelineStages.length - 1)) return;
+        if ((direction === 'left' && idx === 0) || (direction === 'right' && idx === activeStages.length - 1)) return;
 
-        const newStages = [...pipelineStages];
+        const newStages = [...activeStages];
         const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
 
         // Swap
@@ -1066,7 +1081,7 @@ export default function CRM() {
         newStages[idx] = newStages[targetIdx];
         newStages[targetIdx] = temp;
 
-        setPipelineStages(newStages);
+        setActiveStages(newStages);
     };
 
     // Compute duplicate phone numbers so we can warn the user
@@ -1078,8 +1093,8 @@ export default function CRM() {
         return acc;
     }, {} as Record<string, number>);
 
-    // Organize leads into pipeline columns
-    const columns = pipelineStages.map(stage => ({
+    // Organize leads into columns based on active tab
+    const columns = activeStages.map(stage => ({
         title: stage,
         count: leads.filter(l => l.pipeline_stage === stage).length,
         items: leads.filter(l => l.pipeline_stage === stage).map(l => {
@@ -1331,7 +1346,13 @@ export default function CRM() {
                             onClick={() => setActiveTab('pipeline')}
                             className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            Pipeline
+                            Sales Pipeline
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('clients')}
+                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Client Master
                         </button>
                         <button
                             onClick={() => setActiveTab('automations')}
@@ -1349,19 +1370,19 @@ export default function CRM() {
                 </div>
             </div>
 
-            {activeTab === 'pipeline' && (
+            {(activeTab === 'pipeline' || activeTab === 'clients') && (
                 <div className="flex flex-col flex-1 h-full min-h-0">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
                             <span className="w-2 h-2 rounded-full bg-[#1AA6A8]"></span>
-                            Live Sync Active
+                            Live Sync Active - {activeTab === 'pipeline' ? 'Sales Pipeline' : 'Client Master'}
                         </div>
                         <div className="flex items-center gap-3">
                             <button onClick={handleAddManualLead} className="px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-2 shadow-sm">
                                 <Plus className="w-4 h-4" /> Add Lead
                             </button>
                             <button onClick={handleExportLeadsToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
-                                Export Pipeline to CSV
+                                Export {activeTab === 'pipeline' ? 'Pipeline' : 'Clients'} to CSV
                             </button>
                         </div>
                     </div>
@@ -1424,7 +1445,7 @@ export default function CRM() {
                                                         <ArrowLeft className="w-3.5 h-3.5" />
                                                     </button>
                                                     <button
-                                                        disabled={idx === pipelineStages.length - 1}
+                                                        disabled={idx === activeStages.length - 1}
                                                         onClick={() => handleSlideStage(idx, 'right')}
                                                         className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100" title="Slide Right"
                                                     >
@@ -1549,7 +1570,12 @@ export default function CRM() {
                                                             onChange={(e) => handleMoveLead(item.id, e.target.value)}
                                                             className="text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-800 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-slate-200 transition-colors uppercase tracking-tight"
                                                         >
+                                                            <option disabled className="text-slate-400 font-bold bg-slate-50">-- Pipeline --</option>
                                                             {pipelineStages.map(stage => (
+                                                                <option key={stage} value={stage}>{stage}</option>
+                                                            ))}
+                                                            <option disabled className="text-slate-400 font-bold bg-slate-50">-- Clients --</option>
+                                                            {clientStages.map(stage => (
                                                                 <option key={stage} value={stage}>{stage}</option>
                                                             ))}
                                                         </select>
@@ -1619,11 +1645,12 @@ export default function CRM() {
                                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Process Flow</span>
                                                         </div>
                                                         <div className="flex gap-1 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                            {pipelineStages.map((stage, i) => {
-                                                                const currentIdx = pipelineStages.indexOf(item.pipeline_stage);
+                                                            {[...pipelineStages, ...clientStages].map((stage, i) => {
+                                                                const allStages = [...pipelineStages, ...clientStages];
+                                                                const currentIdx = allStages.indexOf(item.pipeline_stage);
                                                                 const isPast = i <= currentIdx;
                                                                 return (
-                                                                    <div key={stage} className={`flex-1 transition-all duration-500 ${isPast ? (i === pipelineStages.length - 1 ? 'bg-emerald-400' : 'bg-primary') : 'bg-slate-200'}`}></div>
+                                                                    <div key={stage} className={`flex-1 transition-all duration-500 ${isPast ? (i === allStages.length - 1 ? 'bg-emerald-400' : 'bg-primary') : 'bg-slate-200'}`} title={stage}></div>
                                                                 );
                                                             })}
                                                         </div>
