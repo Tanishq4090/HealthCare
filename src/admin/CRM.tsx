@@ -1873,13 +1873,14 @@ export default function CRM() {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <button
-                                                        onClick={() => captureCallAsLead(call.id)}
-                                                        className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
-                                                    >
-                                                        <Plus className="w-4 h-4" /> Add to Pipeline
-                                                    </button>
                                                 </div>
+                                                <button
+                                                    onClick={() => captureCallAsLead(call.id)}
+                                                    className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
+                                                >
+                                                    <Plus className="w-4 h-4" /> Add to Pipeline
+                                                </button>
+                                            </div>
                                             ) : null;
                                         })()}
                                     </div>
