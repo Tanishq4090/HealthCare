@@ -97,26 +97,34 @@ serve(async (req) => {
             console.log(`[Flow] Parsed: name=${name}, service=${service}, location=${city}, ${state}`);
 
             // Upsert into CRM leads
-            const { data: existingLead } = await supabase
+            const { data: existingLeads } = await supabase
                 .from('crm_leads')
-                .select('id')
+                .select('id, pipeline_stage')
                 .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
-                .maybeSingle();
+                .order('created_at', { ascending: false })
+                .limit(1);
+            const existingLead = existingLeads?.[0] ?? null;
+
+            // Only move to 'In Discussion' if lead is still in early stages.
+            // Never overwrite a downstream stage like 'Quotation Sent', 'Staff Assigned' etc.
+            const earlyStages = ['New Lead', 'New Inquiry', 'In Discussion', ''];
+            const currentStage = existingLead?.pipeline_stage || '';
+            const shouldUpdateStage = earlyStages.includes(currentStage);
 
             const leadPayload: any = {
                 name,
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Flow',
-                pipeline_stage: 'In Discussion',
+                ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
                 notes: `Service: ${service} | Shift: ${shiftType} | Location: ${area}, ${city}, ${state}, ${country} | Care for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
             };
 
             if (existingLead) {
                 await supabase.from('crm_leads').update(leadPayload).eq('id', existingLead.id);
-                console.log(`[Flow] Updated existing lead: ${existingLead.id}`);
+                console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'})`);
             } else {
-                await supabase.from('crm_leads').insert([{ ...leadPayload, status: 'new' }]);
+                await supabase.from('crm_leads').insert([{ ...leadPayload, pipeline_stage: 'In Discussion', status: 'new' }]);
                 console.log(`[Flow] Created new lead for ${name}`);
             }
 
@@ -177,14 +185,51 @@ serve(async (req) => {
             return new Response("Config Error", { status: 500 });
         }
 
-        // --- 6. CHECK CRM PRESENCE ---
-        const { data: earlyLead } = await supabase
+        // --- 6. LOOKUP EXISTING CRM LEAD ---
+        // Use limit(1) + order to avoid maybeSingle() silently returning null when duplicate leads exist
+        const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id')
+            .select('id, pipeline_stage, name')
             .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
-            .maybeSingle();
+            .order('created_at', { ascending: false })
+            .limit(1);
+        const earlyLead = earlyLeads?.[0] ?? null;
+        console.log(`[CRM] Existing lead: ${earlyLead ? earlyLead.id + ' (' + earlyLead.pipeline_stage + ')' : 'None'}`);
 
-        // --- 7. FETCH CHAT HISTORY ---
+        // --- 7. EARLY EXIT FOR ACKNOWLEDGMENTS & GOODBYES ---
+        // Any short CLOSING remark from a known lead: log it silently, do NOT reply.
+        // IMPORTANT: Positive intent words like 'yes', 'proceed', 'haan' must NEVER be silenced.
+        const positiveIntentWords = ['yes', 'haan', 'ha', 'proceed', 'confirm', 'agree', 'start', 'let\'s go', 'go ahead', 'sahi hai', 'bilkul', 'zaroor'];
+        const stopWords = [
+            // Acknowledgments (NOT positive intent)
+            'ok', 'okay', 'k', 'done', 'noted', 'received', 'got it', 'alright',
+            // Thanks
+            'thanks', 'thank you', 'thankyou', 'thank u', 'ty', 'thx', 'shukriya', 'dhanyavad', 'dhanyawaad',
+            // Hindi/Gujarati acks
+            'hanji', 'ji', 'acha', 'accha', 'theek hai', 'thik hai', 'haan ji',
+            // Goodbyes
+            'bye', 'goodbye', 'good bye', 'bye bye', 'alvida', 'tata',
+            // Take care / closing
+            'take care', 'you too', 'same to you', 'tc', 'see you', 'see ya', 'ttyl',
+            'have a nice day', 'have a good day', 'good night', 'good morning', 'good afternoon', 'good evening'
+        ];
+        const cleanMsg = rawBody.toLowerCase().trim().replace(/[^\w\s]/g, '').trim();
+        
+        // If it's a positive intent word, NEVER silence it — always let it through
+        const isPositiveIntent = positiveIntentWords.some(w => cleanMsg === w || cleanMsg.startsWith(w));
+
+        // If the lead exists, message is a closing remark, and NOT a positive intent → silent exit
+        if (earlyLead && !isPositiveIntent && stopWords.includes(cleanMsg)) {
+            console.log(`[Early Exit] Closing remark "${rawBody}" from known lead ${earlyLead.id}. No reply sent.`);
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
+            await supabase.from('whatsapp_logs').update({
+                status: 'success',
+                payload: { type: 'acknowledgment_end', text: rawBody, original_recipient: fromPhone }
+            }).eq('sid', wamid);
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        // --- 8. FETCH CHAT HISTORY ---
         const { data: rawHistory } = await supabase
             .from('whatsapp_messages').select('*')
             .ilike('phone', `%${last10}%`)
@@ -268,13 +313,70 @@ serve(async (req) => {
             }
         }
 
-        // --- 8. RETURNING LEAD: Check for call transcript data ---
+        // --- 9. STAGE-SCRIPTED RESPONSES ---
+        // For specific pipeline stages, send a precise pre-written reply instead of calling Groq.
+        // This guarantees consistent, on-brand messaging at every step of the customer journey.
+        // NOTE: We never update the pipeline stage here — the CRM team does that manually.
+        const STAGE_SCRIPTS: Record<string, string> = {
+            'Quotation Sent': 
+                `Thank you! 🙏 Our 99 Care team will send you the consent form link on this number shortly. Please keep an eye out for it — we're excited to get started! ✨`,
+
+            'Form Submitted':
+                `Thank you for filling the consent form! 🙏 Our 99 Care team is now identifying the best suited care professional for your needs and will be in touch with you very shortly. 😊`,
+
+            'Staff Assigned':
+                `Your care professional has been arranged! 🙏 Our 99 Care team will contact you shortly to confirm the start date and deposit details. We're almost there! 😊✨`,
+
+            'Deposit Pending':
+                `Thank you! 🙏 Once the deposit is confirmed, your service will begin. Our 99 Care team will guide you through the final steps — please don't hesitate to reach out if you have any questions. 😊`,
+
+            'Monthly Billing':
+                `Thank you for your message! 🙏 Our 99 Care team has noted your query and will get back to you shortly. We appreciate your trust in us! 😊`,
+        };
+
+        const leadStage = earlyLead?.pipeline_stage || '';
+        if (STAGE_SCRIPTS[leadStage]) {
+            const scriptedReply = STAGE_SCRIPTS[leadStage];
+            console.log(`[Stage Script] Stage: "${leadStage}" — sending scripted reply.`);
+
+            // Log user message
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
+
+            // Send to WhatsApp
+            if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                const sendRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messaging_product: "whatsapp",
+                        to: purePhone,
+                        type: "text",
+                        text: { preview_url: false, body: scriptedReply }
+                    })
+                });
+                if (!sendRes.ok) console.error(`[Stage Script Send Error] ${sendRes.status}: ${await sendRes.text()}`);
+                else console.log(`[Stage Script Send OK] to ${purePhone}`);
+            }
+
+            // Log assistant message and update log
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: scriptedReply }]);
+            await supabase.from('whatsapp_logs').update({
+                status: 'success',
+                payload: { type: 'stage_scripted_reply', stage: leadStage, message: scriptedReply, original_recipient: fromPhone }
+            }).eq('sid', wamid);
+
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        // --- 10. RETURNING LEAD: Check for call transcript data ---
         let leadDataContext = "";
         let leadRecord: any = null;
         try {
-            const { data } = await supabase.from('crm_leads').select('*')
-                .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`).maybeSingle();
-            leadRecord = data;
+            const { data: leadRows } = await supabase.from('crm_leads').select('*')
+                .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            leadRecord = leadRows?.[0] ?? null;
 
             const { data: callTranscripts } = await supabase.from('call_transcripts')
                 .select('transcript_text, called_at, call_duration_secs')
@@ -300,9 +402,9 @@ serve(async (req) => {
             }
 
             if (leadRecord) {
-                const isFinished = ['Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
+                const isFinished = ['In Discussion', 'Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
                 leadDataContext = `\n\n### CRM LEAD:\n- Name: ${leadRecord.name}\n- Stage: ${leadRecord.pipeline_stage}\n` +
-                    (isFinished ? `### This lead is done. Just say team will be in touch.\n` : '');
+                    (isFinished ? `### This lead is done or form filled. Be extremely brief. Reassure them the team will be in touch, then STOP asking questions.\n` : '');
             }
 
             if (callTranscripts && callTranscripts.length > 0) {
@@ -313,14 +415,21 @@ serve(async (req) => {
             console.error("[Context Error]:", err);
         }
 
-        // --- 9. GROQ AI FOR ONGOING CONVERSATION ---
-        const systemPrompt = `You are Khushi, a warm WhatsApp AI for 99Care Home Healthcare Services, Surat.
-The lead has already submitted their intake form or is continuing a conversation.
-Respond warmly, answer questions about 99Care's services, and reassure them the 99 Care team will be in touch.
-Keep replies to 2-3 lines max. Use emojis. Same language as user.
-NEVER quote prices. NEVER ask for info already collected.
+        // --- 10. GROQ AI FOR ONGOING CONVERSATION ---
+        const systemPrompt = `You are Khushi, a warm and professional WhatsApp AI assistant for 99 Care Home Healthcare Services, Surat.
+The lead has already submitted their intake form or is in an ongoing conversation.
+
+RULES (follow strictly):
+- Always refer to the business as "99 Care team" (e.g. "Our 99 Care team will be in touch shortly")
+- Keep ALL replies to 2-3 lines maximum. Never write paragraphs.
+- Use 1-2 emojis per message. Match the user's language (Hindi/Gujarati/English).
+- NEVER quote prices. NEVER ask for information already collected.
+- If the user's message is a GOODBYE or FAREWELL (e.g. "bye", "take care", "good night", "you too"), respond with EXACTLY: {"replyToUser": null, "pipelineStageUpdate": null}
+- If the user's message is a POSITIVE REPLY or shows INTENT (e.g. "yes", "okay", "sure", "proceed", "haan", "bilkul"), ALWAYS give a warm, helpful response. Do NOT go silent.
+- NEVER ask follow-up questions if the lead's details are already collected.
+
 Context: ${leadDataContext}
-Respond ONLY as valid JSON: {"replyToUser": "string", "pipelineStageUpdate": "string or null"}`;
+Respond ONLY as valid JSON: {"replyToUser": "string or null", "pipelineStageUpdate": "string or null"}`;
 
         const messages: any[] = [{ role: "system", content: systemPrompt }];
         historyData.forEach((msg: any) => {
@@ -346,6 +455,16 @@ Respond ONLY as valid JSON: {"replyToUser": "string", "pipelineStageUpdate": "st
             try {
                 const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
                 const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawContent);
+                // If AI explicitly returns null for replyToUser, stay silent
+                if (parsed.replyToUser === null || parsed.replyToUser === undefined) {
+                    console.log('[Groq] AI decided to stay silent (closing remark detected).');
+                    await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
+                    await supabase.from('whatsapp_logs').update({
+                        status: 'success',
+                        payload: { type: 'ai_silent_exit', text: rawBody, original_recipient: fromPhone }
+                    }).eq('sid', wamid);
+                    return new Response('EVENT_RECEIVED', { status: 200 });
+                }
                 if (parsed.replyToUser?.trim()) aiReplyMsg = parsed.replyToUser;
                 if (parsed.pipelineStageUpdate) {
                     await supabase.from('crm_leads').update({ pipeline_stage: parsed.pipelineStageUpdate })

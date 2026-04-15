@@ -1069,13 +1069,26 @@ export default function CRM() {
         setPipelineStages(newStages);
     };
 
+    // Compute duplicate phone numbers so we can warn the user
+    const phoneCounts = leads.reduce((acc, l) => {
+        const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
+        if (p && p.length === 10) {
+            acc[p] = (acc[p] || 0) + 1;
+        }
+        return acc;
+    }, {} as Record<string, number>);
+
     // Organize leads into pipeline columns
     const columns = pipelineStages.map(stage => ({
         title: stage,
         count: leads.filter(l => l.pipeline_stage === stage).length,
-        items: leads.filter(l => l.pipeline_stage === stage).map(l => ({
-            id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage, phone: l.phone, whatsapp_number: l.whatsapp_number
-        }))
+        items: leads.filter(l => l.pipeline_stage === stage).map(l => {
+            const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
+            return {
+                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage, phone: l.phone, whatsapp_number: l.whatsapp_number,
+                isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false
+            };
+        })
     }));
 
     const handleUpdateLeadValue = async (leadId: string) => {
@@ -1157,13 +1170,31 @@ export default function CRM() {
         if (!call) return;
 
         try {
+            // Determine initial pipeline stage based on greeting success
+            let initialStage = 'In Discussion';
+            const phoneToCheck = call.capturedWhatsapp || call.phone;
+            
+            if (phoneToCheck && phoneToCheck !== 'Unknown Number') {
+                const last10 = phoneToCheck.replace(/\D/g, '').slice(-10);
+                const { data: greetingSent } = await supabase
+                    .from('whatsapp_messages')
+                    .select('id')
+                    .ilike('phone', `%${last10}%`)
+                    .ilike('content', '%[Automated Greeting]%')
+                    .maybeSingle();
+                
+                if (greetingSent) {
+                    initialStage = 'In Discussion';
+                }
+            }
+
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: call.capturedName || 'Voice Lead',
                 phone: (!call.phone || call.phone === 'Unknown Number') ? null : call.phone,
                 whatsapp_number: (!call.capturedWhatsapp || call.capturedWhatsapp === 'Unknown Number') ? null : call.capturedWhatsapp,
                 source: 'AI Phone Call',
                 status: 'AI Handled',
-                pipeline_stage: 'New Inquiry',
+                pipeline_stage: initialStage,
                 estimated_value_monthly: call.capturedValue || 0,
             }]).select('id').single();
 
@@ -1471,6 +1502,13 @@ export default function CRM() {
                                                                     <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-400 italic" title="No contact info (Double click to add)">
                                                                         <Phone className="w-3 h-3 text-slate-300" />
                                                                         Add phone...
+                                                                    </div>
+                                                                )}
+
+                                                                {item.isDuplicate && (
+                                                                    <div className="mt-2 text-[10px] font-semibold text-red-700 bg-red-50 p-1.5 rounded border border-red-200 flex items-start gap-1">
+                                                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                                                        <span>Duplicate! 2+ leads share this number. Please delete one to avoid AI issues.</span>
                                                                     </div>
                                                                 )}
                                                             </>
