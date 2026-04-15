@@ -122,7 +122,8 @@ serve(async (req) => {
         throw new Error("Missing Meta Credentials in Secrets!");
     }
 
-    const digits = phone.replace(/\D/g, ''); // Extract just numbers (e.g. 918000044090)
+    let digits = phone.replace(/\D/g, ''); 
+    if (digits.length === 10) digits = `91${digits}`; // Standardize to 91 prefix for Indian numbers if not present
     
     // Meta payload structure
     const metaBody: any = {
