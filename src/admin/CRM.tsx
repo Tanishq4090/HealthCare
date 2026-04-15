@@ -854,19 +854,32 @@ export default function CRM() {
                     toast.success(`Quotation sent! Moved ${agentTargetLead.name} to Quotation Sent.`, { id: toastId, duration: 4000 });
                 }
                 // If staff assignment -> move to Staff Assigned
-                else if (agentTargetAction === 'staff' && selectedWorker) {
+                else if (agentTargetAction === 'staff' && (selectedWorker || agentTargetLead.assigned_staff)) {
                     await handleMoveLead(agentTargetLead.id, 'Staff Assigned');
-                    try {
-                        await supabase.from('workers')
-                            .update({ assigned_client: agentTargetLead.name, status: 'Active' })
-                            .eq('id', selectedWorker.id);
-                    } catch (e) {
-                        console.warn('Could not update worker in DB (may be mock):', e);
+                    if (selectedWorker) {
+                        try {
+                            await supabase.from('workers')
+                                .update({ assigned_client: agentTargetLead.name, status: 'Active' })
+                                .eq('id', selectedWorker.id);
+                        } catch (e) {
+                            console.warn('Could not update worker in DB (may be mock):', e);
+                        }
                     }
+                    const workerName = selectedWorker?.name || agentTargetLead.assigned_staff || 'Staff';
                     setSelectedWorker(null);
-                    toast.success(`${selectedWorker.name} assigned! Moved ${agentTargetLead.name} to Staff Assigned.`, { id: toastId, duration: 6000 });
+                    toast.success(`${workerName} assigned! Moved ${agentTargetLead.name} to Staff Assigned.`, { id: toastId, duration: 6000 });
                 }
-                // Billing/Deposit/Consent
+                // If Consent Form -> move to Form Submitted (or keep in Quotation Sent but user asked for automation)
+                else if (agentTargetAction === 'consent') {
+                    await handleMoveLead(agentTargetLead.id, 'Form Submitted');
+                    toast.success(`Consent Form link dispatched! Moved ${agentTargetLead.name} to Form Submitted.`, { id: toastId, duration: 4000 });
+                }
+                // If Deposit Invoice -> move to Deposit Pending
+                else if (agentTargetAction === 'deposit') {
+                    await handleMoveLead(agentTargetLead.id, 'Deposit Pending');
+                    toast.success(`Deposit Invoice dispatched! Moved ${agentTargetLead.name} to Deposit Pending.`, { id: toastId, duration: 4000 });
+                }
+                // Default acknowledgment
                 else {
                     toast.success(`WhatsApp message delivered to +${phoneDigits}!`, { id: toastId, duration: 4000 });
                 }
