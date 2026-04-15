@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History } from 'lucide-react';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { MOCK_WORKERS, MOCK_PAYROLL, MOCK_ATTENDANCE } from '../data/mockWorkers';
@@ -8,12 +8,16 @@ import { format } from 'date-fns';
 
 export default function HR() {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('payroll');
+    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
     const [isGenerating, setIsGenerating] = useState(false);
     const [workers, setWorkers] = useState<any[]>([]);
     const [payrollItems, setPayrollItems] = useState<any[]>([]);
     const [pipelineLeads, setPipelineLeads] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [workerSearch, setWorkerSearch] = useState('');
+    const [workerStatusFilter, setWorkerStatusFilter] = useState<string>('All');
+    const [deletingWorkerId, setDeletingWorkerId] = useState<string | null>(null);
+    const [isDeletingWorker, setIsDeletingWorker] = useState(false);
 
     const currentMonth = format(new Date(), 'MM');
     const currentYear = format(new Date(), 'yyyy');
@@ -22,10 +26,14 @@ export default function HR() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
+    // Track the original worker data when editing, so we can detect client reassignment
+    const [originalWorkerData, setOriginalWorkerData] = useState<any>(null);
 
     // Live Attendance State
     const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
     const [attendanceLoading, setAttendanceLoading] = useState(false);
+    const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+    const [inlineMarkingId, setInlineMarkingId] = useState<string | null>(null);
 
     // Initial data fetch
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +60,15 @@ export default function HR() {
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
     const [previewInvoiceItem, setPreviewInvoiceItem] = useState<any>(null);
     const [invoiceExtras, setInvoiceExtras] = useState({ discount: 0, additionalCharge: 0, chargeDesc: 'Extra Services' });
+
+    // Manual Attendance State
+    const [isManualAttendanceModalOpen, setIsManualAttendanceModalOpen] = useState(false);
+    const [manualAttendanceData, setManualAttendanceData] = useState({
+        worker_id: '',
+        status: 'On Duty',
+        check_in_time: new Date().toISOString().slice(0, 16),
+        hours_worked: '8'
+    });
 
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
@@ -95,12 +112,12 @@ export default function HR() {
         toast.success("Workforce Directory exported successfully!");
     };
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const { data: workerData, error: workerError } = await supabase.from('workers').select('*').order('created_at', { ascending: false });
+            const { data: workerData, error: workerError } = await supabase.from('workers').select('*');
             const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
-            const { data: leadData } = await supabase.from('crm_leads').select('id, name, pipeline_stage').order('created_at', { ascending: false });
+            const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage').order('created_at', { ascending: false });
 
             // Fetch Month-to-Date Stats for all workers
             const startOfMonth = new Date();
@@ -111,7 +128,11 @@ export default function HR() {
               .gte('duty_date', startOfMonth.toISOString().split('T')[0]);
 
             let finalWorkers = [];
-            if (workerError || !workerData || workerData.length === 0) {
+            if (workerError) {
+                console.error('Workers DB error:', workerError);
+                toast.error('DB connection issue — showing offline worker data.');
+                finalWorkers = MOCK_WORKERS;
+            } else if (!workerData || workerData.length === 0) {
                 finalWorkers = MOCK_WORKERS;
             } else {
                 finalWorkers = workerData.map(w => {
@@ -147,14 +168,16 @@ export default function HR() {
                     { id: 'm4', name: 'Emily Davis', pipeline_stage: 'Active Client' },
                 ]);
             }
-        } catch {
+        } catch (err: any) {
+            console.error('fetchData failed:', err);
+            toast.error('Failed to load workforce data. Running in offline mode.');
             setWorkers(MOCK_WORKERS);
             setPayrollItems(MOCK_PAYROLL);
             setPipelineLeads([]);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     // AI WhatsApp Agent Logic
     const generateWhatsappDraft = (worker: any, lang: string) => {
@@ -179,56 +202,92 @@ export default function HR() {
         }
     }, [agentDraftLang, agentTargetWorker]);
 
-    const handleDispatchMessage = () => {
-        // Launch real WhatsApp Web intent with drafted text
-        let phoneDigits = '917575041313'; // Default to test number
-        if (agentTargetWorker?.client_phone) {
-            phoneDigits = agentTargetWorker.client_phone.replace(/\D/g, ''); // Extract only digits
+    const handleDispatchMessage = async () => {
+        // Lookup client phone from CRM leads (includes phone field now)
+        const matchedLead = pipelineLeads.find((l: any) => l.name === agentTargetWorker?.assigned_client);
+        let phoneDigits = matchedLead?.phone ? matchedLead.phone.replace(/\D/g, '') : '';
+        if (phoneDigits.length === 10) phoneDigits = '91' + phoneDigits;
+
+        if (!phoneDigits) {
+            toast.warning('No phone on file for this client — opening WhatsApp without auto-fill.');
+            window.open(`https://wa.me/?text=${encodeURIComponent(agentDraftText)}`, '_blank');
+        } else {
+            window.open(`https://wa.me/${phoneDigits}?text=${encodeURIComponent(agentDraftText)}`, '_blank');
         }
-        const waUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(agentDraftText)}`;
-        window.open(waUrl, '_blank');
 
         setIsAgentModalOpen(false);
-        toast.success(`Worker profile WhatsApp intent opened for ${agentTargetWorker.name}! 📱`);
+        toast.success(`Profile for ${agentTargetWorker.name} shared with ${agentTargetWorker.assigned_client} via WhatsApp 📱`);
 
-        // Simulate client approving via WhatsApp and making them active
-        setTimeout(() => {
-            setWorkers(prev => prev.map(w => w.id === agentTargetWorker.id ? { ...w, status: 'Active' } : w));
-            toast.success(`WhatsApp Auto-Reply Received: ${agentTargetWorker.assigned_client} confirmed ${agentTargetWorker.name}.`);
-        }, 2000);
+        // Keep worker status as 'Available' — awaiting client confirmation
+        try {
+            await supabase.from('workers').update({ status: 'Available' }).eq('id', agentTargetWorker.id);
+        } catch (e) { console.warn('Could not update worker status in DB:', e); }
+        setWorkers(prev => prev.map(w => w.id === agentTargetWorker.id ? { ...w, status: 'Available' } : w));
     };
 
-    useEffect(() => {
-        fetchData();
+    const handleDeleteWorker = async (workerId: string, workerName: string) => {
+        setIsDeletingWorker(true);
+        try {
+            const { error } = await supabase.from('workers').delete().eq('id', workerId);
+            if (error) throw error;
+            setWorkers(prev => prev.filter(w => w.id !== workerId));
+            toast.success(`${workerName} removed from workforce directory.`);
+        } catch (err: any) {
+            toast.error(`Failed to delete: ${err.message}`);
+        } finally {
+            setIsDeletingWorker(false);
+            setDeletingWorkerId(null);
+        }
+    };
 
-        // Handle direct worker link
+    // Initial data load on mount only
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Supabase Realtime: sync workers table live across all admin sessions
+    useEffect(() => {
+        const channel = supabase
+            .channel('workers-realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'workers' }, (payload) => {
+                if (payload.eventType === 'INSERT') {
+                    setWorkers(prev => [payload.new as any, ...prev]);
+                } else if (payload.eventType === 'UPDATE') {
+                    setWorkers(prev => prev.map(w => w.id === (payload.new as any).id ? { ...w, ...(payload.new as any) } : w));
+                } else if (payload.eventType === 'DELETE') {
+                    setWorkers(prev => prev.filter(w => w.id !== (payload.old as any).id));
+                }
+            }).subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, []);
+
+    // Handle direct worker link via URL param
+    useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const workerId = urlParams.get('worker');
         if (workerId && workers.length > 0) {
             const worker = workers.find(w => w.id === workerId);
-            if (worker) {
-                openEditModal(worker);
-                // Clear param after opening to avoid re-opening on manual refresh if tab changes
-                // window.history.replaceState({}, '', window.location.pathname);
-            }
+            if (worker) openEditModal(worker);
         }
+    }, [workers.length]);
 
-        // Only fetch attendance when that tab is active
-        if (activeTab === 'attendance') {
-            fetchLiveAttendance();
-        }
-    }, [activeTab, workers.length]); // Added workers.length to trigger when data loads
+    // Fetch attendance only when that tab is active or date changes
+    useEffect(() => {
+        if (activeTab === 'attendance') fetchLiveAttendance();
+    }, [activeTab, selectedAttendanceDate]);
+
+    // Derived: filtered + searched worker list for the allocation table
+    const filteredWorkers = workers.filter(w => {
+        const q = workerSearch.toLowerCase();
+        const matchSearch = !q || w.name?.toLowerCase().includes(q) || w.role?.toLowerCase().includes(q) || (w.assigned_client || '').toLowerCase().includes(q);
+        const matchStatus = workerStatusFilter === 'All' || w.status === workerStatusFilter;
+        return matchSearch && matchStatus;
+    });
 
 
 
     const fetchLiveAttendance = async () => {
         setAttendanceLoading(true);
         try {
-            // Get today's date boundary
-            const startOfToday = new Date();
-            startOfToday.setHours(0, 0, 0, 0);
-
-            // Fetch attendance logs with joined worker details
+            // Fetch attendance logs with joined worker details for the selected date
             const { data, error } = await supabase
                 .from('attendance')
                 .select(`
@@ -243,7 +302,7 @@ export default function HR() {
                         assigned_client
                     )
                 `)
-                .gte('check_in_time', startOfToday.toISOString())
+                .eq('duty_date', selectedAttendanceDate)
                 .order('check_in_time', { ascending: false });
 
             if (error) throw error;
@@ -253,6 +312,95 @@ export default function HR() {
             toast.error('Failed to load recent attendance logs');
         } finally {
             setAttendanceLoading(false);
+        }
+    };
+
+    const handleInlineAttendanceMark = async (workerId: string, status: string) => {
+        setInlineMarkingId(workerId);
+        try {
+            // Check if record exists for this worker on selected date
+            const existing = attendanceLogs.find(log => log.worker_id === workerId);
+            
+            if (status === 'Pending') {
+                 if (existing) {
+                      const { error } = await supabase.from('attendance').delete().eq('id', existing.id);
+                      if (error) throw error;
+                 }
+                 toast.success('Status reset');
+                 fetchLiveAttendance(); // Silent refresh
+                 return;
+            }
+
+            const checkInTime = new Date(`${selectedAttendanceDate}T09:00:00`).toISOString();
+            const checkOutTime = status === 'Present' || status === 'Completed' || status === 'On Duty' 
+                ? new Date(`${selectedAttendanceDate}T17:00:00`).toISOString() 
+                : null;
+            const hoursWorked = status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0);
+
+            const payload = {
+                worker_id: workerId,
+                status: status,
+                duty_date: selectedAttendanceDate,
+                check_in_time: checkInTime,
+                check_out_time: existing?.check_out_time || checkOutTime,
+                hours_worked: existing?.hours_worked || hoursWorked
+            };
+
+            if (existing) {
+                const { error } = await supabase.from('attendance').update(payload).eq('id', existing.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('attendance').insert([payload]);
+                if (error) throw error;
+            }
+
+            toast.success(`Marked as ${status}`);
+            fetchLiveAttendance(); // Silent refresh
+        } catch (error: any) {
+            console.error("Manual attendance error:", error);
+            toast.error(`Failed to update: ${error.message}`);
+        } finally {
+            setInlineMarkingId(null);
+        }
+    };
+
+    const handleBulkMarkPresent = async () => {
+        setIsSubmitting(true);
+        toast.loading("Bulk updating roster...", { id: 'bulk-mark' });
+        try {
+            const activeWorkers = workers.filter((w: any) => w && w.status === 'Active');
+            
+            // Filter out workers who already have a log for the selected date
+            const existingWorkerIds = attendanceLogs.map(l => l.worker_id);
+            const workersToMark = activeWorkers.filter((w: any) => !existingWorkerIds.includes(w.id));
+
+            if (workersToMark.length === 0) {
+                toast.success("Roster is already fully marked for this date!", { id: 'bulk-mark' });
+                return;
+            }
+
+            const checkInTime = new Date(`${selectedAttendanceDate}T09:00:00`).toISOString();
+            const checkOutTime = new Date(`${selectedAttendanceDate}T17:00:00`).toISOString();
+
+            const payloads = workersToMark.map((w: any) => ({
+                worker_id: w.id,
+                status: 'Present',
+                duty_date: selectedAttendanceDate,
+                check_in_time: checkInTime,
+                check_out_time: checkOutTime,
+                hours_worked: 8
+            }));
+
+            const { error } = await supabase.from('attendance').insert(payloads);
+            if (error) throw error;
+
+            toast.success(`Bulk marked ${workersToMark.length} workers as Present.`, { id: 'bulk-mark' });
+            fetchLiveAttendance();
+        } catch (err: any) {
+            console.error("Bulk mark error:", err);
+            toast.error(`Failed to bulk update: ${err.message}`, { id: 'bulk-mark' });
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -268,7 +416,7 @@ export default function HR() {
         setModalMode('edit');
         setModalTab('profile');
         setEditingWorkerId(worker.id);
-        setFormData({
+        const data = {
             name: worker.name,
             role: worker.role,
             assigned_client: worker.assigned_client || '',
@@ -281,30 +429,60 @@ export default function HR() {
             address: worker.address || '',
             dob: worker.dob || '',
             documents: []
-        });
+        };
+        setFormData(data);
+        // Keep a snapshot of the original data to detect changes on save
+        setOriginalWorkerData({ ...worker });
         setIsModalOpen(true);
     };
 
     const handleWorkerSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsSubmitting(true);
 
+        // --- Client-side validation ---
+        if (!formData.name.trim()) { toast.error('Worker name is required.'); return; }
+        if (!formData.role.trim()) { toast.error('Role / Designation is required.'); return; }
+        if (!formData.monthly_daily_rate || parseFloat(formData.monthly_daily_rate) <= 0) {
+            toast.error('Monthly daily rate must be greater than 0.'); return;
+        }
+        if (formData.phone && !/^[6-9]\d{9}$/.test(formData.phone.replace(/\D/g, '').slice(-10))) {
+            toast.error('Enter a valid 10-digit Indian mobile number.'); return;
+        }
+        if (formData.aadhaar_number && formData.aadhaar_number.length > 0 && formData.aadhaar_number.length !== 12) {
+            toast.error('Aadhaar number must be exactly 12 digits.'); return;
+        }
+
+        setIsSubmitting(true);
         try {
+            const newClient = formData.assigned_client || null;
+            const oldClient = originalWorkerData?.assigned_client || null;
+            const clientChanged = modalMode === 'edit' && newClient !== oldClient;
+            const isBeingUnassigned = clientChanged && !newClient;
+            const isBeingReassigned = clientChanged && newClient && oldClient && newClient !== oldClient;
+
+            // Determine correct status:
+            // - If client is removed → Available
+            // - If client is newly assigned (or changed) → Available (awaiting confirmation)
+            // - If status is manually set by admin → respect that choice
+            // - If nothing changed regarding client → keep current formData.status
+            let resolvedStatus = formData.status;
+            if (isBeingUnassigned) resolvedStatus = 'Available';
+            else if (isBeingReassigned) resolvedStatus = 'Available'; // new client must re-confirm
+
             const payload = {
-                name: formData.name,
-                role: formData.role,
-                assigned_client: formData.assigned_client || null,
+                name: formData.name.trim(),
+                role: formData.role.trim(),
+                assigned_client: newClient,
+                hourly_rate: 0, // Fallback for legacy DB column that is NOT NULL
                 monthly_daily_rate: parseFloat(formData.monthly_daily_rate) || 0,
                 short_term_daily_rate: parseFloat(formData.short_term_daily_rate) || 0,
                 deposit_received: parseFloat(formData.deposit_received) || 0,
-                status: formData.status,
-                aadhaar_number: formData.aadhaar_number,
-                phone: formData.phone,
-                address: formData.address,
+                status: resolvedStatus,
+                aadhaar_number: formData.aadhaar_number || null,
+                phone: formData.phone.trim() || null,
+                address: formData.address.trim() || null,
                 dob: formData.dob || null
             };
-
-            // In a real application, you would upload formData.documents to Supabase Storage here
 
             if (modalMode === 'add') {
                 const { error } = await supabase.from('workers').insert([payload]);
@@ -314,21 +492,96 @@ export default function HR() {
                 if (error) throw error;
             }
 
-            if (formData.assigned_client) {
-                // Automation: If a worker is assigned, move the lead to 'Active Client' stage
+            // --- Pipeline automation ---
+            // 1. If worker is unassigned from a client, revert old client lead back to 'Staff Assigned' -> previous stage
+            //    (we leave the lead at Staff Assigned — admin can manually adjust it)
+            // 2. If worker is reassigned from old client to new client:
+            //    - Old client lead: note the change (leave at current stage, admin handles)
+            //    - New client lead: advance to 'Staff Assigned'
+            // 3. If newly assigned: advance new client to 'Staff Assigned' (only if they haven't passed that stage)
+            // 4. If admin manually sets status to 'Active' (bypassing WhatsApp confirm): advance lead to 'Active Client'
+
+            if (newClient && (modalMode === 'add' || clientChanged || formData.assigned_client !== originalWorkerData?.assigned_client)) {
+                // Advance new client lead to Staff Assigned (only from earlier stages)
+                await supabase.from('crm_leads')
+                    .update({ pipeline_stage: 'Staff Assigned' })
+                    .eq('name', newClient)
+                    .in('pipeline_stage', ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted']);
+                toast.success(`Pipeline: ${newClient} advanced to Staff Assigned`);
+            }
+
+            // If admin is manually confirming the worker as Active (bypass the WhatsApp flow)
+            if (resolvedStatus === 'Active' && newClient) {
                 await supabase.from('crm_leads')
                     .update({ pipeline_stage: 'Active Client' })
-                    .eq('name', formData.assigned_client);
-                
-                toast.success(`Pipeline Trigger: ${formData.assigned_client} moved to Active Client`);
+                    .eq('name', newClient)
+                    .eq('pipeline_stage', 'Staff Assigned');
+                toast.success(`Pipeline: ${newClient} confirmed as Active Client`);
             }
 
             setIsModalOpen(false);
-            fetchData(); // Refresh list
-            toast.success(`Worker ${modalMode === 'add' ? 'added' : 'updated'} successfully`);
+            setOriginalWorkerData(null);
+            fetchData();
+            toast.success(`Worker ${modalMode === 'add' ? 'onboarded' : 'updated'} successfully! ✅`);
         } catch (error: any) {
             console.error("Error saving worker:", error);
-            toast.error(`Error saving worker: ${error.message}`);
+            toast.error(`Failed to save worker: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleManualAttendanceSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!manualAttendanceData?.worker_id) {
+            toast.error("Please select a worker first.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const checkIn = new Date(manualAttendanceData.check_in_time);
+            let checkOut = null;
+            let hoursWorked = null;
+
+            if (manualAttendanceData.status === 'Completed') {
+                hoursWorked = parseFloat(manualAttendanceData.hours_worked) || 8;
+                checkOut = new Date(checkIn.getTime() + hoursWorked * 60 * 60 * 1000).toISOString();
+            }
+
+            const dutyDateStr = checkIn.toISOString().split('T')[0];
+            const { data: duplicateCheck } = await supabase.from('attendance')
+                .select('id').eq('worker_id', manualAttendanceData.worker_id)
+                .eq('duty_date', dutyDateStr)
+                .maybeSingle();
+
+            if (duplicateCheck) {
+                const { error } = await supabase.from('attendance').update({
+                    check_in_time: checkIn.toISOString(),
+                    check_out_time: checkOut,
+                    status: manualAttendanceData.status,
+                    hours_worked: hoursWorked
+                }).eq('id', duplicateCheck.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('attendance').insert([{
+                    worker_id: manualAttendanceData.worker_id,
+                    check_in_time: checkIn.toISOString(),
+                    check_out_time: checkOut,
+                    status: manualAttendanceData.status,
+                    duty_date: dutyDateStr,
+                    hours_worked: hoursWorked
+                }]);
+                if (error) throw error;
+            }
+
+            toast.success("Attendance marked successfully! ✅");
+            setIsManualAttendanceModalOpen(false);
+            // Quick refresh for the attendance logs
+            fetchLiveAttendance();
+        } catch (error: any) {
+            console.error("Manual attendance error:", error);
+            toast.error(`Failed to record attendance: ${error.message}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -636,148 +889,244 @@ export default function HR() {
             {activeTab === 'allocation' ? (
                 /* Worker Allocation View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-                        <h2 className="font-semibold text-slate-900">Active Workforce Directory</h2>
-                        <div className="flex items-center gap-3">
-                            <button onClick={handleExportWorkersToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
-                                Export CSV
-                            </button>
-                            <button onClick={openAddModal} className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm">
-                                + Add Worker
-                            </button>
+                    {/* Header */}
+                    <div className="p-5 border-b border-slate-200 bg-slate-50">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h2 className="font-semibold text-slate-900">Active Workforce Directory</h2>
+                                <p className="text-xs text-slate-500 mt-0.5">{workers.length} worker{workers.length !== 1 ? 's' : ''} total &bull; {workers.filter(w => w.status === 'Active').length} Active &bull; {workers.filter(w => w.status === 'Available').length} Available</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button onClick={() => fetchData()} title="Refresh" className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-500">
+                                    <RefreshCw className="w-4 h-4" />
+                                </button>
+                                <button onClick={handleExportWorkersToCSV} className="px-3 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
+                                    Export CSV
+                                </button>
+                                <button onClick={openAddModal} className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm">
+                                    + Add Worker
+                                </button>
+                            </div>
+                        </div>
+                        {/* Search + Filter Bar */}
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={workerSearch}
+                                    onChange={e => setWorkerSearch(e.target.value)}
+                                    placeholder="Search by name, role, or client..."
+                                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                />
+                            </div>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {(['All', 'Available', 'Active', 'On Leave', 'Terminated'] as const).map(s => (
+                                    <button
+                                        key={s}
+                                        onClick={() => setWorkerStatusFilter(s)}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all border ${workerStatusFilter === s
+                                            ? 'bg-primary text-white border-primary shadow-sm'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                    >
+                                        {s}
+                                        {s !== 'All' && (
+                                            <span className="ml-1 opacity-60">({workers.filter(w => w.status === s).length})</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
+
                     <div className="flex-1 overflow-auto">
                         {isLoading ? (
                             <div className="flex flex-col items-center justify-center py-20">
                                 <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
                                 <span className="text-slate-500 font-medium">Loading workforce directory...</span>
                             </div>
+                        ) : filteredWorkers.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                    <Users className="w-8 h-8 text-slate-300" />
+                                </div>
+                                <h3 className="font-semibold text-slate-700 mb-1">
+                                    {workerSearch || workerStatusFilter !== 'All' ? 'No workers match your search' : 'No workers yet'}
+                                </h3>
+                                <p className="text-sm text-slate-400 max-w-xs">
+                                    {workerSearch || workerStatusFilter !== 'All'
+                                        ? 'Try adjusting your search or filter.'
+                                        : 'Click "+ Add Worker" to onboard your first healthcare professional.'}
+                                </p>
+                                {(workerSearch || workerStatusFilter !== 'All') && (
+                                    <button onClick={() => { setWorkerSearch(''); setWorkerStatusFilter('All'); }} className="mt-4 text-sm text-primary font-medium hover:underline">
+                                        Clear filters
+                                    </button>
+                                )}
+                            </div>
                         ) : (
                             <table className="w-full text-left border-collapse">
                                 <thead>
-                                    <tr className="border-b border-slate-200 text-sm text-slate-500 bg-white">
-                                        <th className="font-medium py-4 px-4">Worker Name</th>
-                                        <th className="font-medium py-4 px-3 text-center">Performance</th>
-                                        <th className="font-medium py-4 px-4">Assigned Client</th>
-                                        <th className="font-medium py-4 px-4">Contact & ID</th>
-                                        <th className="font-medium py-4 px-4">Pay Rate</th>
-                                        <th className="font-medium py-4 px-4">Client Confirmation</th>
-                                        <th className="font-medium py-4 px-4">Status</th>
-                                        <th className="font-medium py-4 px-4 text-right">Actions</th>
+                                    <tr className="border-b border-slate-200 text-xs text-slate-500 bg-slate-50/50 uppercase tracking-wide">
+                                        <th className="font-semibold py-3 px-4">Worker</th>
+                                        <th className="font-semibold py-3 px-3 text-center">This Month</th>
+                                        <th className="font-semibold py-3 px-4">Assigned Client</th>
+                                        <th className="font-semibold py-3 px-4">Contact & KYC</th>
+                                        <th className="font-semibold py-3 px-4">Pay Rates</th>
+                                        <th className="font-semibold py-3 px-4">Confirmation</th>
+                                        <th className="font-semibold py-3 px-4">Status</th>
+                                        <th className="font-semibold py-3 px-4 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 bg-white">
-                                    {workers.map((worker) => (
-                                        <tr key={worker.id} className="hover:bg-slate-50 transition-colors">
-                                            <td className="py-4 px-4">
+                                    {filteredWorkers.map((worker) => (
+                                        <tr key={worker.id} className="hover:bg-slate-50/70 transition-colors group">
+                                            <td className="py-3.5 px-4">
                                                 <div className="flex flex-col">
-                                                    <span className="font-semibold text-slate-900">{worker.name}</span>
-                                                    <span className="text-xs text-slate-500">{worker.role}</span>
+                                                    <span className="font-semibold text-slate-900 text-sm">{worker.name}</span>
+                                                    <span className="text-xs text-slate-500 mt-0.5">{worker.role}</span>
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-3">
-                                                <div className="flex flex-col items-center">
-                                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold border border-amber-100 mb-1">
-                                                        <span className="text-amber-400">★</span> {worker.stats?.rating || '5.0'}
+                                            <td className="py-3.5 px-3">
+                                                <div className="flex flex-col items-center gap-1">
+                                                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-xs font-bold border border-amber-100">
+                                                        <span>★</span>{worker.stats?.rating || '5.0'}
                                                     </div>
-                                                    <div className="flex gap-2">
-                                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded" title="Present Days">P: {worker.stats?.presentDays || 0}d</span>
-                                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" title="Total Hours">H: {worker.stats?.totalHours || 0}h</span>
+                                                    <div className="flex gap-1.5">
+                                                        <span className="text-[10px] font-bold text-[#1AA6A8] bg-[#E6F7F7] px-1.5 py-0.5 rounded" title="Present Days">P:{worker.stats?.presentDays || 0}d</span>
+                                                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded" title="Hours Logged">H:{worker.stats?.totalHours || 0}h</span>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-4">
-                                                <div className="flex items-center gap-2">
-                                                    <Building className="w-4 h-4 text-slate-400 shrink-0" />
-                                                    <span className="text-sm text-slate-700">{worker.assigned_client || 'Unassigned'}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-4">
-                                                <div className="flex flex-col gap-1">
-                                                    {worker.phone && (
-                                                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                                                            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" /> {worker.phone}
-                                                        </div>
-                                                    )}
-                                                    {worker.aadhaar_number && (
-                                                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                                                            <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" /> Aadhaar: {worker.aadhaar_number}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-4 text-sm text-slate-700">
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span>₹{worker.monthly_daily_rate}/day <span className="text-xs text-slate-400">(Monthly)</span></span>
-                                                    <span>₹{worker.short_term_daily_rate}/day <span className="text-xs text-slate-400">(Short)</span></span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-4">
+                                            <td className="py-3.5 px-4">
                                                 {worker.assigned_client ? (
-                                                    worker.status === 'Available' ? (
-                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full whitespace-nowrap">
-                                                            <Clock className="w-3 h-3" /> Awaiting Confirmation
+                                                    <div className="flex items-center gap-2">
+                                                        <Building className="w-3.5 h-3.5 text-primary shrink-0" />
+                                                        <span className="text-sm text-slate-800 font-medium">{worker.assigned_client}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400 italic">Unassigned</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3.5 px-4">
+                                                <div className="flex flex-col gap-1">
+                                                    {worker.phone ? (
+                                                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                                            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                            {worker.phone}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-300 italic">No phone</span>
+                                                    )}
+                                                    {worker.aadhaar_number ? (
+                                                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                                            <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                            {'•'.repeat(8) + worker.aadhaar_number.slice(-4)}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-amber-500 flex items-center gap-1">
+                                                            <AlertTriangle className="w-3 h-3" />KYC Pending
                                                         </span>
-                                                    ) : worker.status === 'Active' ? (
-                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full whitespace-nowrap">
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="py-3.5 px-4 text-xs text-slate-700">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span>₹{(worker.monthly_daily_rate || 0).toLocaleString('en-IN')}/d <span className="text-slate-400">(≥30d)</span></span>
+                                                    {worker.short_term_daily_rate > 0 && (
+                                                        <span>₹{(worker.short_term_daily_rate || 0).toLocaleString('en-IN')}/d <span className="text-slate-400">(&lt;30d)</span></span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="py-3.5 px-4">
+                                                {worker.assigned_client ? (
+                                                    worker.status === 'Active' ? (
+                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-[#1AA6A8] bg-[#E6F7F7] border border-[#1AA6A8]/20 px-2 py-1 rounded-full whitespace-nowrap">
                                                             <CheckCircle2 className="w-3 h-3" /> Confirmed
                                                         </span>
                                                     ) : (
-                                                        <span className="text-xs text-slate-400">-</span>
+                                                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded-full whitespace-nowrap">
+                                                            <Clock className="w-3 h-3" /> Awaiting
+                                                        </span>
                                                     )
                                                 ) : (
-                                                    <span className="text-xs text-slate-400">-</span>
+                                                    <span className="text-xs text-slate-300">—</span>
                                                 )}
                                             </td>
-                                            <td className="py-4 px-4">
-                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${worker.status === 'Active' ? 'bg-emerald-100 text-emerald-800' :
-                                                    worker.status === 'Available' ? 'bg-primary/10 text-primary' :
-                                                        'bg-amber-100 text-amber-800'
-                                                    }`}>
+                                            <td className="py-3.5 px-4">
+                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                                    worker.status === 'Active' ? 'bg-[#EAFBFB] text-[#0E7C7E]' :
+                                                    worker.status === 'Available' ? 'bg-blue-50 text-blue-700' :
+                                                    worker.status === 'Terminated' ? 'bg-red-100 text-red-700' :
+                                                    'bg-amber-100 text-amber-800'
+                                                }`}>
                                                     {worker.status}
                                                 </span>
                                             </td>
-                                            <td className="py-4 px-4 text-right">
-                                                <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                                                    {worker.assigned_client && worker.status === 'Available' && (
+                                            <td className="py-3.5 px-4 text-right">
+                                                <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                                                    {/* AI Profile Share — show for any assigned worker */}
+                                                    {worker.assigned_client && (
                                                         <button
                                                             onClick={() => openAgentModal(worker)}
-                                                            className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition-colors flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-lg group"
-                                                            title="Open AI WhatsApp Agent"
+                                                            className="text-xs font-semibold text-[#1AA6A8] hover:text-[#0E7C7E] transition-colors flex items-center gap-1 bg-[#E6F7F7] hover:bg-[#EAFBFB] border border-[#1AA6A8]/20 px-2.5 py-1.5 rounded-lg"
+                                                            title={worker.status === 'Active' ? 'Re-share Profile' : 'Share Profile via WhatsApp'}
                                                         >
-                                                            <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" /> AI Profile Share
+                                                            <Bot className="w-3.5 h-3.5" />
+                                                            {worker.status === 'Active' ? 'Re-share' : 'Send Profile'}
                                                         </button>
                                                     )}
+                                                    {/* Send Joining Link — only for Active (confirmed) workers */}
                                                     {worker.status === 'Active' && (
                                                         <button
-                                                            onClick={async () => {
-                                                                toast.loading(`Sending joining link to ${worker.name}...`, { id: `joining-${worker.id}` });
-                                                                try {
-                                                                    const appUrl = window.location.origin;
-                                                                    const { error } = await supabase.functions.invoke('send-joining-link', {
-                                                                        body: {
-                                                                            workerId: worker.id,
-                                                                            workerName: worker.name,
-                                                                            workerPhone: worker.phone || '917575041313', // fallback to test number if blank
-                                                                            appUrl: appUrl
-                                                                        }
-                                                                    });
-                                                                    if (error) throw error;
-                                                                    toast.success(`Joining link sent via WhatsApp to ${worker.name}!`, { id: `joining-${worker.id}` });
-                                                                } catch (err: any) {
-                                                                    console.error("Failed to send joining link:", err);
-                                                                    toast.error(`Failed to send link: ${err.message}`, { id: `joining-${worker.id}` });
+                                                            onClick={() => {
+                                                                if (!worker.phone) {
+                                                                    toast.error(`${worker.name} has no phone number on file. Add it via Edit before sending a joining link.`);
+                                                                    return;
                                                                 }
+                                                                
+                                                                let phoneDigits = worker.phone.replace(/\D/g, '');
+                                                                if (phoneDigits.length === 10) phoneDigits = '91' + phoneDigits;
+
+                                                                const dutyLink = `${window.location.origin}/duty/${worker.id}`;
+                                                                const messageBody = `Hello ${worker.name}! 👋\n\nYou have been successfully confirmed for your new assignment with 99 Care.\n\nHere is your personal daily Duty & Attendance Tracker link:\n${dutyLink}\n\nPlease click this link every day when you arrive and leave the facility to log your hours.`;
+                                                                
+                                                                window.open(`https://wa.me/${phoneDigits}?text=${encodeURIComponent(messageBody)}`, '_blank');
+                                                                toast.success(`Opened WhatsApp with joining link for ${worker.name}!`);
                                                             }}
-                                                            className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition-colors flex items-center gap-1"
+                                                            className="text-xs font-semibold text-blue-700 hover:text-blue-900 flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border border-blue-100 px-2.5 py-1.5 rounded-lg transition-colors"
+                                                            title="Send Duty App Joining Link via WhatsApp"
                                                         >
-                                                            <Send className="w-3.5 h-3.5" /> Send Joining Link
+                                                            <Send className="w-3.5 h-3.5" /> Joining Link
                                                         </button>
                                                     )}
-                                                    <button onClick={() => openEditModal(worker)} className="text-sm font-medium text-primary hover:text-primary/80 transition-colors">
-                                                        Edit
+                                                    <button onClick={() => openEditModal(worker)} className="text-xs font-semibold text-slate-600 hover:text-primary flex items-center gap-1 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg transition-colors">
+                                                        <Edit3 className="w-3.5 h-3.5" /> Edit
                                                     </button>
+                                                    {/* Delete — with confirmation */}
+                                                    {deletingWorkerId === worker.id ? (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-xs text-red-600 font-semibold">Delete?</span>
+                                                            <button
+                                                                onClick={() => handleDeleteWorker(worker.id, worker.name)}
+                                                                disabled={isDeletingWorker}
+                                                                className="text-xs font-bold text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
+                                                            >
+                                                                {isDeletingWorker ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes'}
+                                                            </button>
+                                                            <button onClick={() => setDeletingWorkerId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 px-2 py-1 rounded-md transition-colors">
+                                                                No
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => setDeletingWorkerId(worker.id)}
+                                                            className="text-xs font-semibold text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                            title="Remove worker"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -788,117 +1137,164 @@ export default function HR() {
                     </div>
                 </div>
             ) : activeTab === 'attendance' ? (
-                /* Attendance View */
+                /* Command Center Roster View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                    <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 relative">
                         <div>
-                            <h2 className="font-semibold text-slate-900">Live Attendance Log</h2>
-                            <p className="text-sm text-slate-500 mt-1">Populated automatically via Staff/Client "Fill Duty" links.</p>
+                            <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-[#1AA6A8]" /> Daily Command Matrix
+                            </h2>
+                            <p className="text-sm text-slate-500 mt-1">Manage statuses to drive daily salary & billing. Auto-synced in real-time.</p>
                         </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => navigate('/admin/hr/mark')}
-                                className="px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 transition-all shadow-md flex items-center gap-2"
-                            >
-                                <CheckCircle2 className="w-4 h-4" /> Mark Daily Attendance
-                            </button>
+                        <div className="flex gap-3 items-center">
+                            <input 
+                                type="date" 
+                                max={new Date().toISOString().split('T')[0]}
+                                value={selectedAttendanceDate}
+                                onChange={(e) => setSelectedAttendanceDate(e.target.value)}
+                                className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]"
+                            />
                             <button
                                 onClick={fetchLiveAttendance}
-                                className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+                                className="px-3 py-2 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm"
                             >
                                 <RefreshCw className={`w-4 h-4 ${attendanceLoading ? 'animate-spin' : ''}`} /> Refresh
                             </button>
-                            <button className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
-                                Filter: Today
+                            <button
+                                onClick={handleBulkMarkPresent}
+                                disabled={isSubmitting}
+                                className="px-4 py-2 bg-[#1AA6A8] text-white text-sm font-bold rounded-lg hover:bg-[#1AA6A8] transition-all shadow-md hover:shadow-lg flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <CheckCircle2 className="w-4 h-4" /> Bulk Mark Present
                             </button>
                         </div>
                     </div>
 
                     {attendanceLoading ? (
                         <div className="flex-1 flex flex-col items-center justify-center py-20">
-                            <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
-                            <span className="text-slate-500 font-medium">Fetching live duty logs...</span>
+                            <Loader2 className="w-8 h-8 text-[#1AA6A8] animate-spin mb-4" />
+                            <span className="text-slate-500 font-medium">Fetching roster data...</span>
                         </div>
                     ) : (
-                        <div className="flex flex-col flex-1">
-                            {attendanceLogs.length === 0 && (
-                                <div className="mx-6 mt-6 mb-2 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-white text-blue-500 rounded-full flex items-center justify-center shrink-0 shadow-sm border border-blue-100">
-                                        <Clock className="w-5 h-5" />
+                        <div className="flex flex-col flex-1 relative">
+                            {workers.filter((w: any) => w.status === 'Active').length === 0 && (
+                                <div className="m-6 bg-slate-50 border border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center">
+                                    <div className="w-12 h-12 bg-white text-slate-400 rounded-full flex items-center justify-center shadow-sm border border-slate-100 mb-3">
+                                        <AlertTriangle className="w-6 h-6" />
                                     </div>
-                                    <div>
-                                        <h3 className="text-sm font-bold text-slate-900">Displaying Mock Data</h3>
-                                        <p className="text-xs text-slate-600 mt-0.5">No live check-ins today. Showing demonstration data to preview the Live Attendance system.</p>
-                                    </div>
+                                    <h3 className="text-base font-bold text-slate-900">No Active Workers</h3>
+                                    <p className="text-sm text-slate-500 mt-1 max-w-sm">There are no active workers in your directory to mark attendance for.</p>
                                 </div>
                             )}
-                            <div className="overflow-x-auto flex-1 min-h-[300px]">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="border-b border-slate-200 bg-slate-50/50 text-sm text-slate-500">
-                                        <th className="font-medium py-4 px-6">Staff Member</th>
-                                        <th className="font-medium py-4 px-6">Assigned Client</th>
-                                        <th className="font-medium py-4 px-6">Check-In Time</th>
-                                        <th className="font-medium py-4 px-6">Check-Out Time</th>
-                                        <th className="font-medium py-4 px-6">Duration (Live)</th>
-                                        <th className="font-medium py-4 px-6">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white">
-                                    {(attendanceLogs.length > 0 ? attendanceLogs : MOCK_ATTENDANCE).map((log) => {
-                                        // Calculate rough duration
-                                        const start = new Date(log.check_in_time);
-                                        const end = log.check_out_time ? new Date(log.check_out_time) : new Date();
-                                        const hrs = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60));
-                                        const mins = Math.floor(((end.getTime() - start.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
-                                        const durationStr = `${hrs}h ${mins}m`;
+                            <div className="flex-1 overflow-y-auto bg-white flex flex-col h-[calc(100vh-280px)] border-t border-slate-200">
+                                {/* Minimalist Stats Header */}
+                                {(() => {
+                                    const activeWorkersList = workers.filter((w: any) => w.status === 'Active');
+                                    const total = activeWorkersList.length;
+                                    const present = activeWorkersList.filter(w => ['Present', 'Completed', 'On Duty'].includes(attendanceLogs.find(l => l.worker_id === w.id)?.status || '')).length;
+                                    const absentLeave = activeWorkersList.filter(w => ['Absent', 'Paid Leave', 'Unpaid Leave', 'Half Day', 'Weekly Off'].includes(attendanceLogs.find(l => l.worker_id === w.id)?.status || '')).length;
+                                    const pending = total - present - absentLeave;
+
+                                    return (
+                                        <div className="bg-slate-50/80 backdrop-blur-md border-b border-slate-200 px-6 py-3 flex items-center justify-between text-sm sticky top-0 z-20">
+                                            <div className="flex items-center gap-6 text-slate-600 font-semibold">
+                                                <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-300"></div> Total: {total}</span>
+                                                <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-400"></div> Present: {present}</span>
+                                                <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-rose-400"></div> Leaves/Absent: {absentLeave}</span>
+                                            </div>
+                                            {pending > 0 && (
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-md border border-amber-100">{pending} Pending</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Minimalist Linear-style List */}
+                                <div className="flex flex-col divide-y divide-slate-100 pb-10">
+                                    {workers.filter((w: any) => w.status === 'Active').map((worker: any) => {
+                                        const logForDay = attendanceLogs.find(l => l.worker_id === worker.id);
+                                        const currentStatus = logForDay ? logForDay.status : 'Pending';
 
                                         return (
-                                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                                                            {log.workers?.name?.charAt(0) || '?'}
-                                                        </div>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-semibold text-slate-900">{log.workers?.name || 'Unknown Staff'}</span>
-                                                            <span className="text-xs text-slate-500">{log.workers?.role || 'Worker'}</span>
-                                                        </div>
+                                            <div key={worker.id} className={`flex items-center justify-between px-6 py-4 transition-colors group ${currentStatus === 'Pending' ? 'bg-white hover:bg-indigo-50/30' : 'bg-slate-50/30 hover:bg-slate-50'}`}>
+                                                {/* Meta Info */}
+                                                <div className="flex items-center gap-4 min-w-[300px]">
+                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border shadow-sm ${currentStatus === 'Pending' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-400 border-slate-200'}`}>
+                                                        {worker.name.charAt(0)}
                                                     </div>
-                                                </td>
-                                                <td className="py-4 px-6 text-sm text-slate-700">
-                                                    {log.workers?.assigned_client || 'Unassigned'}
-                                                </td>
-                                                <td className="py-4 px-6 font-medium text-slate-900">
-                                                    {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </td>
-                                                <td className="py-4 px-6 font-medium text-slate-900">
-                                                    {log.check_out_time ? new Date(log.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (
-                                                        <span className="text-slate-400 italic">Ongoing...</span>
+                                                    <div>
+                                                        <div className={`font-semibold ${currentStatus === 'Pending' ? 'text-slate-900' : 'text-slate-600'}`}>{worker.name}</div>
+                                                        <div className="text-xs text-slate-500 mt-0.5 font-medium">{worker.role} • <span className="text-slate-400">{worker.assigned_client || 'No Active Client'}</span></div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Logs */}
+                                                <div className="flex-1 px-4 hidden md:block text-slate-500 justify-center">
+                                                    {logForDay?.check_in_time ? (
+                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white border border-slate-200 px-2 py-1 rounded-md shadow-sm"><Clock className="w-3.5 h-3.5 text-slate-400"/> {new Date(logForDay.check_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                                    ) : <span className="text-slate-300 font-bold">—</span>}
+                                                </div>
+
+                                                {/* Status & Actions */}
+                                                <div className="flex justify-end min-w-[280px]">
+                                                    {currentStatus === 'Pending' ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <button 
+                                                                onClick={() => handleInlineAttendanceMark(worker.id, 'Present')}
+                                                                disabled={inlineMarkingId === worker.id}
+                                                                className="px-4 py-2 bg-slate-100 hover:bg-[#E6F7F7] hover:text-[#1AA6A8] hover:border-[#1AA6A8]/20 border border-transparent text-slate-700 font-bold text-sm rounded-lg transition-all flex items-center gap-1.5"
+                                                            >
+                                                                {inlineMarkingId === worker.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>} Present
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleInlineAttendanceMark(worker.id, 'Absent')}
+                                                                disabled={inlineMarkingId === worker.id}
+                                                                className="px-4 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-transparent text-slate-700 font-bold text-sm rounded-lg transition-all flex items-center gap-1.5"
+                                                            >
+                                                                <X className="w-4 h-4"/> Absent
+                                                            </button>
+                                                            <select 
+                                                                className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg outline-none cursor-pointer shadow-sm transition-all focus:ring-2 focus:ring-[#1AA6A8] appearance-none text-center"
+                                                                onChange={(e) => handleInlineAttendanceMark(worker.id, e.target.value)}
+                                                                value=""
+                                                                disabled={inlineMarkingId === worker.id}
+                                                                title="Other Statuses"
+                                                            >
+                                                                <option value="" disabled>Other...</option>
+                                                                <option value="Half Day">Half Day</option>
+                                                                <option value="Paid Leave">Paid Leave</option>
+                                                                <option value="Unpaid Leave">Unpaid Leave</option>
+                                                                <option value="Weekly Off">Weekly Off</option>
+                                                            </select>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-3">
+                                                            {currentStatus === 'Present' || currentStatus === 'Completed' || currentStatus === 'On Duty' ? (
+                                                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 rounded-md text-sm font-bold shadow-sm"><CheckCircle2 className="w-4 h-4"/> Present</span>
+                                                            ) : currentStatus === 'Absent' ? (
+                                                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-md text-sm font-bold shadow-sm"><X className="w-4 h-4"/> Absent</span>
+                                                            ) : (
+                                                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-sm font-bold shadow-sm"><Clock className="w-4 h-4"/> {currentStatus}</span>
+                                                            )}
+                                                            <button 
+                                                                onClick={() => handleInlineAttendanceMark(worker.id, 'Pending')}
+                                                                disabled={inlineMarkingId === worker.id}
+                                                                className="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-all shadow-sm"
+                                                                title="Undo"
+                                                            >
+                                                                <RefreshCw className="w-4 h-4"/>
+                                                            </button>
+                                                        </div>
                                                     )}
-                                                </td>
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-1.5 text-sm">
-                                                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                                        <span className={!log.check_out_time ? 'font-semibold text-emerald-600' : 'text-slate-700'}>
-                                                            {durationStr}
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-4 px-6">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${log.status === 'Completed' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-100 text-emerald-800'
-                                                        }`}>
-                                                        {log.status === 'On Duty' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>}
-                                                        {log.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
+                                                </div>
+                                            </div>
                                         );
                                     })}
-                                </tbody>
-                            </table>
+                                </div>
+                            </div>
                         </div>
-                    </div>
                     )}
                 </div>
             ) : (
@@ -989,12 +1385,12 @@ export default function HR() {
 
                         {/* Worker Payslips Section */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                            <div className="p-4 border-b border-slate-100 bg-emerald-50/50 flex items-center justify-between">
+                            <div className="p-4 border-b border-slate-100 bg-[#E6F7F7]/50 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <Users className="w-5 h-5 text-emerald-600" />
+                                    <Users className="w-5 h-5 text-[#1AA6A8]" />
                                     <h3 className="font-bold text-slate-900">Worker Monthly Payslips</h3>
                                 </div>
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Payables</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-[#1AA6A8] bg-[#EAFBFB] px-2 py-0.5 rounded-full">Payables</span>
                             </div>
                             <div className="flex-1 overflow-auto divide-y divide-slate-100">
                                 {isLoading ? (
@@ -1004,20 +1400,20 @@ export default function HR() {
                                         <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
                                             <div className="flex justify-between items-center">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm shadow-sm">
+                                                    <div className="w-10 h-10 rounded-xl bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center font-bold text-sm shadow-sm">
                                                         {item.worker.charAt(0)}
                                                     </div>
                                                     <div>
                                                         <div className="flex items-center gap-2">
                                                             <p className="font-bold text-slate-900">{item.worker}</p>
-                                                            {item.status === 'Paid' && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Paid</span>}
+                                                            {item.status === 'Paid' && <span className="text-[9px] font-bold bg-[#EAFBFB] text-[#1AA6A8] px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Paid</span>}
                                                         </div>
                                                         <p className="text-[10px] text-slate-500 font-medium">{item.days_worked} days @ ₹{item.daily_rate}/d • {item.month}</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3">
                                                     <div className="text-right">
-                                                        <p className="text-sm font-bold text-emerald-600">₹{(item.days_worked * item.daily_rate).toFixed(2)}</p>
+                                                        <p className="text-sm font-bold text-[#1AA6A8]">₹{(item.days_worked * item.daily_rate).toFixed(2)}</p>
                                                         <button onClick={() => { setEditingPayroll({ ...item }); setIsEditPayrollModalOpen(true); }} className="text-[10px] font-bold text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity">
                                                            Adjust
                                                         </button>
@@ -1041,7 +1437,7 @@ export default function HR() {
                                                                     toast.success("Demo: Salary marked as paid!");
                                                                 }
                                                             }}
-                                                            className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
+                                                            className="p-2 rounded-lg bg-[#1AA6A8] text-white hover:bg-[#1AA6A8] transition-all shadow-sm active:scale-95"
                                                             title="Mark as Paid"
                                                         >
                                                             <CheckCircle2 className="w-4 h-4" />
@@ -1095,7 +1491,7 @@ export default function HR() {
                                 <button onClick={() => setModalTab('kyc')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'kyc' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}>
                                     <UserCheck className="w-4 h-4" /> KYC Details
                                 </button>
-                                <button onClick={() => setModalTab('vault')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'vault' ? 'bg-emerald-50 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                <button onClick={() => setModalTab('vault')} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${modalTab === 'vault' ? 'bg-[#E6F7F7] text-[#1AA6A8]' : 'text-slate-500 hover:bg-slate-50'}`}>
                                     <Upload className="w-4 h-4" /> Document Vault
                                 </button>
                                 {modalMode === 'edit' && (
@@ -1145,11 +1541,11 @@ export default function HR() {
                                                     value={formData.assigned_client}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
-                                                        setFormData({
-                                                            ...formData,
-                                                            assigned_client: val,
-                                                            status: val ? 'Active' : 'Available'
-                                                        });
+                                                        const prevClient = formData.assigned_client;
+                                                        // If client is changed or removed, reset to Available (new client must re-confirm)
+                                                        // If client is unchanged (same selection), preserve current status
+                                                        const newStatus = (val !== prevClient) ? 'Available' : formData.status;
+                                                        setFormData({ ...formData, assigned_client: val, status: newStatus });
                                                     }}
                                                     className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
                                                 >
@@ -1160,42 +1556,78 @@ export default function HR() {
                                                         </option>
                                                     ))}
                                                 </select>
+                                                {formData.assigned_client && formData.status === 'Available' && (
+                                                    <p className="text-xs text-amber-600 ml-1 mt-1 flex items-center gap-1">
+                                                        <span>⏳</span> Awaiting client confirmation via WhatsApp link
+                                                    </p>
+                                                )}
+                                                {formData.assigned_client && formData.status === 'Active' && (
+                                                    <p className="text-xs text-[#1AA6A8] ml-1 mt-1 flex items-center gap-1">
+                                                        <span>✅</span> Client has confirmed this allocation
+                                                    </p>
+                                                )}
                                             </div>
 
-                                            <div className="grid md:grid-cols-3 gap-6">
+                                            <div className="grid md:grid-cols-2 gap-6">
                                                 <div className="space-y-1.5">
-                                                    <label className="text-sm font-bold text-slate-700 ml-1">Monthly Daily Rate (₹)</label>
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Monthly Daily Rate (₹)
+                                                        <span className="text-xs font-normal text-slate-400 ml-1">(used if ≥ 30 days)</span>
+                                                    </label>
                                                     <input
                                                         type="number"
-                                                        required
                                                         min="0"
                                                         value={formData.monthly_daily_rate}
                                                         onChange={(e) => setFormData({ ...formData, monthly_daily_rate: e.target.value })}
                                                         className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                        placeholder="e.g. 1200"
                                                     />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <label className="text-sm font-bold text-slate-700 ml-1">Deposit Amount (₹)</label>
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Short-Term Daily Rate (₹)
+                                                        <span className="text-xs font-normal text-slate-400 ml-1">(used if &lt; 30 days)</span>
+                                                    </label>
                                                     <input
                                                         type="number"
-                                                        required
+                                                        min="0"
+                                                        value={formData.short_term_daily_rate}
+                                                        onChange={(e) => setFormData({ ...formData, short_term_daily_rate: e.target.value })}
+                                                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                        placeholder="e.g. 1500"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Deposit Received (₹)</label>
+                                                    <input
+                                                        type="number"
                                                         min="0"
                                                         value={formData.deposit_received}
                                                         onChange={(e) => setFormData({ ...formData, deposit_received: e.target.value })}
                                                         className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
+                                                        placeholder="e.g. 15000"
                                                     />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <label className="text-sm font-bold text-slate-700 ml-1">Work Status</label>
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">Work Status
+                                                        {formData.status === 'Active' && !formData.assigned_client && (
+                                                            <span className="ml-2 text-xs text-amber-500 font-normal">(assign a client first)</span>
+                                                        )}
+                                                    </label>
                                                     <select
                                                         value={formData.status}
                                                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                                                         className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
                                                     >
-                                                        <option value="Available">Available</option>
-                                                        <option value="Active">Active</option>
+                                                        <option value="Available">Available — Awaiting Assignment / Confirmation</option>
+                                                        <option value="Active">Active — Confirmed & On Duty</option>
                                                         <option value="On Leave">On Leave</option>
+                                                        <option value="Terminated">Terminated</option>
                                                     </select>
+                                                    {formData.status === 'Active' && formData.assigned_client && (
+                                                        <p className="text-[11px] text-slate-500 ml-1">Saving as Active will auto-confirm the CRM lead.</p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -1207,28 +1639,38 @@ export default function HR() {
                                                 <div className="space-y-1.5">
                                                     <label className="text-sm font-bold text-slate-700 ml-1 flex items-center gap-2">
                                                         <UserCheck className="w-4 h-4 text-indigo-500" /> Aadhaar Card Number
+                                                        <span className="text-xs font-normal text-slate-400">(optional)</span>
                                                     </label>
                                                     <input
                                                         type="text"
-                                                        required
                                                         maxLength={12}
                                                         value={formData.aadhaar_number}
                                                         onChange={(e) => setFormData({ ...formData, aadhaar_number: e.target.value.replace(/\D/g, '') })}
-                                                        className="w-full px-4 py-3 rounded-2xl border border-indigo-100 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 text-sm transition-all bg-white"
+                                                        className={`w-full px-4 py-3 rounded-2xl border outline-none focus:ring-4 text-sm transition-all bg-white ${
+                                                            formData.aadhaar_number.length > 0 && formData.aadhaar_number.length < 12
+                                                                ? 'border-amber-300 focus:ring-amber-500/10 focus:border-amber-500'
+                                                                : 'border-indigo-100 focus:ring-indigo-500/10 focus:border-indigo-500'
+                                                        }`}
                                                         placeholder="12 Digit Aadhaar"
                                                     />
+                                                    {formData.aadhaar_number.length > 0 && formData.aadhaar_number.length < 12 && (
+                                                        <p className="text-xs text-amber-600 ml-1">{formData.aadhaar_number.length}/12 digits entered</p>
+                                                    )}
+                                                    {formData.aadhaar_number.length === 12 && (
+                                                        <p className="text-xs text-[#1AA6A8] ml-1">✓ Valid Aadhaar format</p>
+                                                    )}
                                                 </div>
                                                 <div className="space-y-1.5">
                                                     <label className="text-sm font-bold text-slate-700 ml-1 flex items-center gap-2">
-                                                        <Phone className="w-4 h-4 text-emerald-500" /> WhatsApp Number
+                                                        <Phone className="w-4 h-4 text-[#1AA6A8]" /> WhatsApp Number
+                                                        <span className="text-xs font-normal text-slate-400">(optional)</span>
                                                     </label>
                                                     <input
                                                         type="tel"
-                                                        required
                                                         value={formData.phone}
                                                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                                        className="w-full px-4 py-3 rounded-2xl border border-emerald-100 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 text-sm transition-all bg-white"
-                                                        placeholder="+91..."
+                                                        className="w-full px-4 py-3 rounded-2xl border border-[#1AA6A8]/20 outline-none focus:ring-4 focus:ring-[#1AA6A8]/10 focus:border-[#1AA6A8] text-sm transition-all bg-white"
+                                                        placeholder="+91 98765 43210"
                                                     />
                                                 </div>
                                             </div>
@@ -1258,7 +1700,7 @@ export default function HR() {
 
                                     {modalTab === 'vault' && (
                                         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
-                                            <div className="bg-emerald-50/50 rounded-3xl border-2 border-dashed border-emerald-200 p-8 flex flex-col items-center justify-center text-center group cursor-pointer relative overflow-hidden transition-all hover:bg-emerald-50 hover:border-emerald-400">
+                                            <div className="bg-[#E6F7F7]/50 rounded-3xl border-2 border-dashed border-[#1AA6A8]/20 p-8 flex flex-col items-center justify-center text-center group cursor-pointer relative overflow-hidden transition-all hover:bg-[#E6F7F7] hover:border-[#1AA6A8]">
                                                 <input
                                                     type="file"
                                                     multiple
@@ -1271,14 +1713,14 @@ export default function HR() {
                                                     }}
                                                 />
                                                 <div className="w-16 h-16 bg-white shadow-xl rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform rotate-3 group-hover:rotate-0">
-                                                    <Upload className="w-8 h-8 text-emerald-600" />
+                                                    <Upload className="w-8 h-8 text-[#1AA6A8]" />
                                                 </div>
-                                                <h3 className="text-lg font-bold text-emerald-900 mb-1">Worker Document Vault</h3>
-                                                <p className="text-sm text-emerald-600 max-w-sm mb-4">Click or drag Aadhaar, Nurse Certifications, or Police Verifications to store them securely.</p>
+                                                <h3 className="text-lg font-bold text-[#0E7C7E] mb-1">Worker Document Vault</h3>
+                                                <p className="text-sm text-[#1AA6A8] max-w-sm mb-4">Click or drag Aadhaar, Nurse Certifications, or Police Verifications to store them securely.</p>
                                                 <div className="flex gap-2">
-                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-emerald-700 uppercase tracking-widest border border-emerald-100 shadow-sm">PDF</span>
-                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-emerald-700 uppercase tracking-widest border border-emerald-100 shadow-sm">DOCX</span>
-                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-emerald-700 uppercase tracking-widest border border-emerald-100 shadow-sm">IMAGE</span>
+                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-[#1AA6A8] uppercase tracking-widest border border-[#1AA6A8]/20 shadow-sm">PDF</span>
+                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-[#1AA6A8] uppercase tracking-widest border border-[#1AA6A8]/20 shadow-sm">DOCX</span>
+                                                    <span className="px-3 py-1 bg-white/80 rounded-lg text-[10px] font-bold text-[#1AA6A8] uppercase tracking-widest border border-[#1AA6A8]/20 shadow-sm">IMAGE</span>
                                                 </div>
                                             </div>
                                             
@@ -1287,8 +1729,8 @@ export default function HR() {
                                                     {formData.documents.map((file, idx) => (
                                                         <div key={idx} className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all group/file">
                                                             <div className="flex items-center gap-3 overflow-hidden">
-                                                                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 group-hover/file:bg-emerald-50 transition-colors">
-                                                                    <FileText className="w-5 h-5 text-emerald-600" />
+                                                                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 group-hover/file:bg-[#E6F7F7] transition-colors">
+                                                                    <FileText className="w-5 h-5 text-[#1AA6A8]" />
                                                                 </div>
                                                                 <div className="overflow-hidden">
                                                                     <p className="text-xs font-bold text-slate-900 truncate">{file.name}</p>
@@ -1319,9 +1761,9 @@ export default function HR() {
                                                     <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Rating</p>
                                                     <p className="text-3xl font-black text-amber-600">⭐{workers.find(w => w.id === editingWorkerId)?.stats?.rating || '5.0'}</p>
                                                 </div>
-                                                <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 text-center shadow-sm">
-                                                    <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Present</p>
-                                                    <p className="text-3xl font-black text-emerald-600">{workers.find(w => w.id === editingWorkerId)?.stats?.presentDays || 0}d</p>
+                                                <div className="bg-[#E6F7F7] p-6 rounded-3xl border border-[#1AA6A8]/20 text-center shadow-sm">
+                                                    <p className="text-xs font-bold text-[#1AA6A8] uppercase tracking-widest mb-1">Present</p>
+                                                    <p className="text-3xl font-black text-[#1AA6A8]">{workers.find(w => w.id === editingWorkerId)?.stats?.presentDays || 0}d</p>
                                                 </div>
                                                 <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100 text-center shadow-sm">
                                                     <p className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-1">Absent</p>
@@ -1368,7 +1810,7 @@ export default function HR() {
                                                                     <td className="px-6 py-4 text-slate-500 font-medium">{p.days_worked} Days @ ₹{p.daily_rate}</td>
                                                                     <td className="px-6 py-4 text-right font-black text-indigo-600">₹{(p.days_worked * p.daily_rate).toLocaleString()}</td>
                                                                     <td className="px-6 py-4 text-center">
-                                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${p.status === 'Paid' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200' : 'bg-amber-100 text-amber-600 border border-amber-200'}`}>
+                                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${p.status === 'Paid' ? 'bg-[#EAFBFB] text-[#1AA6A8] border border-[#1AA6A8]/20' : 'bg-amber-100 text-amber-600 border border-amber-200'}`}>
                                                                             {p.status}
                                                                         </span>
                                                                     </td>
@@ -1479,10 +1921,10 @@ export default function HR() {
                 isAgentModalOpen && agentTargetWorker && (
                     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
                         <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
-                            <div className="p-5 border-b border-slate-100 bg-emerald-500/10 flex justify-between items-center">
+                            <div className="p-5 border-b border-slate-100 bg-[#1AA6A8]/10 flex justify-between items-center">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                                        <Bot className="w-5 h-5 text-emerald-600" />
+                                    <div className="w-10 h-10 bg-[#EAFBFB] rounded-full flex items-center justify-center">
+                                        <Bot className="w-5 h-5 text-[#1AA6A8]" />
                                     </div>
                                     <div>
                                         <h2 className="text-lg font-bold text-slate-900">AI WhatsApp Agent</h2>
@@ -1503,7 +1945,7 @@ export default function HR() {
                                             <button
                                                 key={lang}
                                                 onClick={() => setAgentDraftLang(lang as any)}
-                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-[#1AA6A8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                                             >
                                                 {lang}
                                             </button>
@@ -1518,12 +1960,12 @@ export default function HR() {
                                         <textarea
                                             value={agentDraftText}
                                             onChange={(e) => setAgentDraftText(e.target.value)}
-                                            className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed"
+                                            className="w-full h-32 px-4 py-3 rounded-xl border border-[#1AA6A8]/20 outline-none focus:ring-2 focus:ring-[#1AA6A8] focus:border-transparent text-sm bg-[#E6F7F7] text-[#0E7C7E] resize-none font-medium leading-relaxed"
                                         />
                                         <div className="absolute bottom-3 right-3 flex gap-1">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
-                                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
+                                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-75"></span>
+                                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-150"></span>
                                         </div>
                                     </div>
                                     <p className="text-xs text-slate-500 mt-2 bg-slate-50 p-2 rounded border border-slate-100 italic">
@@ -1594,10 +2036,10 @@ export default function HR() {
                                         )}
                                         {Number(invoiceExtras.discount) > 0 && (
                                             <tr>
-                                                <td className="py-3 font-medium text-emerald-600">Discount Applied</td>
+                                                <td className="py-3 font-medium text-[#1AA6A8]">Discount Applied</td>
                                                 <td className="py-3 text-center">-</td>
                                                 <td className="py-3 text-right">-</td>
-                                                <td className="py-3 text-right font-bold text-emerald-600">- ₹{Number(invoiceExtras.discount).toFixed(2)}</td>
+                                                <td className="py-3 text-right font-bold text-[#1AA6A8]">- ₹{Number(invoiceExtras.discount).toFixed(2)}</td>
                                             </tr>
                                         )}
                                     </tbody>
@@ -1635,6 +2077,82 @@ export default function HR() {
                                 Download Custom PDF
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {isManualAttendanceModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-primary" /> Mark Manual Attendance
+                            </h2>
+                            <button onClick={() => setIsManualAttendanceModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleManualAttendanceSubmit} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Select Worker</label>
+                                <select
+                                    value={manualAttendanceData?.worker_id || ''}
+                                    onChange={e => setManualAttendanceData({...manualAttendanceData, worker_id: e.target.value})}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                    required
+                                >
+                                    <option value="">-- Choose Worker --</option>
+                                    {Array.isArray(workers) && workers.filter((w: any) => w && w.status === 'Active').map((w: any) => (
+                                        <option key={w?.id || `fallback-${Math.random()}`} value={w?.id || ''}>
+                                            {w?.name || 'Unknown'} ({w?.assigned_client || 'No Client'})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Check-In Time</label>
+                                <input
+                                    type="datetime-local"
+                                    value={manualAttendanceData?.check_in_time || ''}
+                                    onChange={e => setManualAttendanceData({...manualAttendanceData, check_in_time: e.target.value})}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                                <select
+                                    value={manualAttendanceData?.status || 'Completed'}
+                                    onChange={e => setManualAttendanceData({...manualAttendanceData, status: e.target.value})}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                >
+                                    <option value="Completed">Completed (Past Shift)</option>
+                                    <option value="On Duty">On Duty (Live Check-in)</option>
+                                </select>
+                            </div>
+                            {manualAttendanceData?.status === 'Completed' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Hours Worked</label>
+                                    <input
+                                        type="number"
+                                        value={manualAttendanceData?.hours_worked || ''}
+                                        onChange={e => setManualAttendanceData({...manualAttendanceData, hours_worked: e.target.value})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                        min="1"
+                                        max="24"
+                                        required
+                                    />
+                                </div>
+                            )}
+                            <div className="pt-4 flex gap-3">
+                                <button type="button" onClick={() => setIsManualAttendanceModalOpen(false)} className="flex-1 py-2 rounded-lg font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                                    Cancel
+                                </button>
+                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2 rounded-lg font-medium bg-primary text-white hover:bg-primary/90 transition-colors">
+                                    {isSubmitting ? 'Saving...' : 'Save Record'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

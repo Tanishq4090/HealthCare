@@ -436,13 +436,25 @@ export default function CRM() {
     const fetchVoiceData = async () => {
         setIsLoadingVoice(true);
         try {
-            // Fetch calls from our new Edge Function to bypass RLS
-            const { data: edgeResponse, error: callsError } = await supabase.functions.invoke('get-elevenlabs-calls', {
-                body: { limit: 30 }
+            // Fetch calls natively from Edge Function to bypass SDK wrapper issues
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/get-elevenlabs-calls`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY
+                },
+                body: JSON.stringify({ limit: 30 })
             });
 
-            if (callsError) throw callsError;
-            
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Edge Function responded with HTTP ${res.status}: ${errText}`);
+            }
+
+            const edgeResponse = await res.json();
             const callsData = edgeResponse?.data || [];
 
             // Process and format calls
@@ -798,14 +810,15 @@ export default function CRM() {
                 })
             });
 
-            const resData = await response.json().catch(() => ({ error: response.statusText }));
+            const textRes = await response.text().catch(() => '');
+            let resData: any = {};
+            try { resData = textRes ? JSON.parse(textRes) : {}; } catch(e) {}
+            
             if (!response.ok) {
                 let errMsg = response.statusText;
-                let errCode = '';
-
+                
                 if (resData.error && typeof resData.error === 'object') {
-                    errMsg = resData.error.message || resData.error.error_user_title || JSON.stringify(resData.error);
-                    errCode = resData.error.code ? `(Code ${resData.error.code})` : '';
+                    errMsg = resData.error.message || resData.error.error_user_title || "Unknown API Error";
                 } else if (typeof resData.error === 'string') {
                     errMsg = resData.error;
                 } else if (resData.message) {
@@ -814,8 +827,7 @@ export default function CRM() {
                     errMsg = resData.details.message;
                 }
 
-                const finalCode = resData.details?.code ? `(Code ${resData.details.code})` : errCode;
-                throw new Error(`${errMsg} ${finalCode}`.trim());
+                throw new Error(errMsg.trim());
             }
 
             // Post-dispatch pipeline advancement
@@ -971,7 +983,7 @@ export default function CRM() {
             }
         } catch (err: any) {
             console.error('Failed to delete lead:', err);
-            toast.error(`Failed to delete from database: ${err.message}`);
+            toast.error(`Database blocked deletion. Restoring UI...`);
             fetchLeads(); // Re-fetch to restore
         }
     };
@@ -1251,7 +1263,7 @@ export default function CRM() {
                                                     <p className="text-xs font-bold text-slate-900 leading-tight">{log.title}</p>
                                                     <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{log.desc}</p>
                                                     <p className="text-[9px] text-slate-400 mt-2 uppercase font-bold tracking-tighter flex items-center gap-1.5">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-[#1AA6A8] shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
                                                         {log.time}
                                                     </p>
                                                 </div>
@@ -1294,11 +1306,11 @@ export default function CRM() {
                 <div className="flex flex-col flex-1 h-full min-h-0">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8]"></span>
                             Live Sync Active
                         </div>
                         <div className="flex items-center gap-3">
-                            <button onClick={handleAddManualLead} className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-bold rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2 shadow-sm">
+                            <button onClick={handleAddManualLead} className="px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-2 shadow-sm">
                                 <Plus className="w-4 h-4" /> Add Lead
                             </button>
                             <button onClick={handleExportLeadsToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
@@ -1444,7 +1456,7 @@ export default function CRM() {
                                                                                         </div>
                                                                                     ) : isDelivered ? (
                                                                                         <span title="WhatsApp Delivered">
-                                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" />
                                                                                         </span>
                                                                                     ) : (
                                                                                         <span title={log.status}>
@@ -1502,8 +1514,8 @@ export default function CRM() {
                                                     </div>
 
                                                     {editingLeadValueId === item.id ? (
-                                                        <div className="flex-1 flex items-center bg-emerald-50 rounded border border-emerald-200 overflow-hidden" onClick={e => e.stopPropagation()}>
-                                                            <span className="text-emerald-700 text-xs font-semibold pl-1.5 pr-0.5">₹</span>
+                                                        <div className="flex-1 flex items-center bg-[#E6F7F7] rounded border border-[#1AA6A8]/20 overflow-hidden" onClick={e => e.stopPropagation()}>
+                                                            <span className="text-[#1AA6A8] text-xs font-semibold pl-1.5 pr-0.5">₹</span>
                                                             <input
                                                                 type="text"
                                                                 value={editingLeadValueAmount}
@@ -1514,12 +1526,12 @@ export default function CRM() {
                                                                 }}
                                                                 onBlur={() => handleUpdateLeadValue(item.id)}
                                                                 autoFocus
-                                                                className="w-full bg-transparent text-xs font-semibold text-emerald-700 outline-none py-0.5 leading-none"
+                                                                className="w-full bg-transparent text-xs font-semibold text-[#1AA6A8] outline-none py-0.5 leading-none"
                                                                 placeholder="Amount"
                                                             />
                                                         </div>
                                                     ) : (
-                                                        <div className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-sm cursor-text hover:bg-emerald-100 transition-colors" title="Double click to edit value">
+                                                        <div className="text-xs font-medium text-[#1AA6A8] bg-[#E6F7F7] px-2 py-0.5 rounded-sm cursor-text hover:bg-[#EAFBFB] transition-colors" title="Double click to edit value">
                                                             {item.value}
                                                         </div>
                                                     )}
@@ -1555,7 +1567,7 @@ export default function CRM() {
                                                         {/* AI Chat Viewer Button (General Action) */}
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); fetchWhatsappChat(item); }}
-                                                            className="w-full bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 text-slate-700 hover:text-emerald-700 text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            className="w-full bg-slate-50 hover:bg-[#E6F7F7] border border-slate-200 hover:border-[#1AA6A8]/20 text-slate-700 hover:text-[#1AA6A8] text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                         >
                                                             <MessageCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                                             View AI Chat History
@@ -1564,7 +1576,7 @@ export default function CRM() {
                                                         {item.pipeline_stage === 'New Inquiry' && (
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'inquiry'); }}
-                                                                className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-100 text-emerald-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                                className="w-full bg-[#E6F7F7] hover:bg-[#1AA6A8] hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
                                                             >
                                                                 <Bot className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                                                 Send Greeting Message
@@ -1596,7 +1608,7 @@ export default function CRM() {
                                                                         await handleMoveLead(item.id, 'Form Submitted');
                                                                         toast.success("Consent marked as Agreed! Lead moved to Form Submitted.");
                                                                     }}
-                                                                    className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-100 text-emerald-800 text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                                                    className="w-full bg-[#E6F7F7] hover:bg-[#1AA6A8] hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
                                                                 >
                                                                     <CheckCircle2 className="w-3 h-3" />
                                                                     Mark Consent Agreed
@@ -1631,7 +1643,7 @@ export default function CRM() {
                                                                     await handleMoveLead(item.id, 'Active Client');
                                                                     toast.success(`${item.name} is now an Active Client! 🎉`);
                                                                 }}
-                                                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                                                className="w-full bg-[#1AA6A8] hover:bg-[#1AA6A8] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
                                                             >
                                                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                                                 Confirm Deposit Received
@@ -1654,7 +1666,7 @@ export default function CRM() {
                                                                     convertToClient(item.id, item.name);
                                                                     toast.success(`${item.name} migrated to Client Master.`);
                                                                 }}
-                                                                className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
+                                                                className="w-full bg-gradient-to-r from-[#1AA6A8] to-[#0E7C7E] hover:from-[#1AA6A8] hover:to-[#0E7C7E] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
                                                             >
                                                                 <Users className="w-3.5 h-3.5" />
                                                                 Convert to Client Master
@@ -1810,7 +1822,7 @@ export default function CRM() {
                                             <div className="mt-3 pt-3 border-t border-slate-100/80">
                                                 <VoicePlayer src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${call.id}`} />
                                                 <div className="flex items-center gap-3 mt-3">
-                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 transition-colors bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm w-full justify-center">
+                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm w-full justify-center">
                                                         <FileText className="w-4 h-4" /> View Full Transcript
                                                     </button>
                                                 </div>
@@ -1822,7 +1834,7 @@ export default function CRM() {
                                         <div>
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="flex items-center gap-1.5">
-                                                    <Bot className="w-4 h-4 text-emerald-500" />
+                                                    <Bot className="w-4 h-4 text-[#1AA6A8]" />
                                                     <span className="text-sm font-semibold text-slate-900">AI Summary & Intent: <span className="font-normal text-slate-600 bg-slate-100 px-2 py-0.5 rounded ml-1">{call.intent}</span></span>
                                                 </div>
                                                 {(() => {
@@ -1830,8 +1842,10 @@ export default function CRM() {
                                                         if (call.lead_id && l.id === call.lead_id) return true;
                                                         return false;
                                                     });
-                                                    return isAlreadyInPipeline ? (
-                                                        <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                                                    const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
+
+                                                    return isProcessed ? (
+                                                        <span className="flex items-center gap-1 text-xs font-bold text-[#1AA6A8] bg-[#E6F7F7] px-2 py-1 rounded" title={isAlreadyInPipeline ? "Found existing Lead with this phone number." : ""}>
                                                             <CheckCircle2 className="w-3.5 h-3.5" /> ADDED TO CRM
                                                         </span>
                                                     ) : null;
@@ -1848,17 +1862,16 @@ export default function CRM() {
                                             const isProcessed = isAlreadyInPipeline;
 
                                             return (!isProcessed && (call.capturedName || (call.summary && call.summary !== 'No summary available.' && call.summary !== 'Call completed.'))) ? (
-                                                <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
-                                                    <div>
-                                                        <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
-                                                        <div className="flex items-center gap-3">
-                                                            <p className="text-sm text-slate-900"><span className="font-semibold">{call.capturedName}</span> • Est. Value: <span className="text-emerald-600 font-medium">₹{call.capturedValue}/mo</span></p>
-                                                            {call.capturedWhatsapp && (
-                                                                <span className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100/50 px-2 py-0.5 rounded-full">
-                                                                    <MessageCircle className="w-3 h-3" /> WhatsApp: {call.capturedWhatsapp}
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                            <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
+                                                <div>
+                                                    <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
+                                                    <div className="flex items-center gap-3">
+                                                        <p className="text-sm text-slate-900"><span className="font-semibold">{call.capturedName}</span> • Est. Value: <span className="text-[#1AA6A8] font-medium">₹{call.capturedValue}/mo</span></p>
+                                                        {call.capturedWhatsapp && (
+                                                            <span className="flex items-center gap-1 text-xs font-medium text-[#1AA6A8] bg-[#EAFBFB]/50 px-2 py-0.5 rounded-full">
+                                                                <MessageCircle className="w-3 h-3" /> WhatsApp: {call.capturedWhatsapp}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <button
                                                         onClick={() => captureCallAsLead(call.id)}
@@ -1928,15 +1941,15 @@ export default function CRM() {
                             </div>
 
 
-                            <div className={`p-4 rounded-lg border transition-colors ${workflows.drip ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'}`}>
+                            <div className={`p-4 rounded-lg border transition-colors ${workflows.drip ? 'border-emerald-300 bg-[#E6F7F7]' : 'border-slate-200'}`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                        <Send className={`w-5 h-5 ${workflows.drip ? 'text-emerald-600' : 'text-slate-400'}`} />
-                                        <h3 className={`font-semibold ${workflows.drip ? 'text-emerald-700' : 'text-slate-600'}`}>No-Response Drip Campaign</h3>
+                                        <Send className={`w-5 h-5 ${workflows.drip ? 'text-[#1AA6A8]' : 'text-slate-400'}`} />
+                                        <h3 className={`font-semibold ${workflows.drip ? 'text-[#1AA6A8]' : 'text-slate-600'}`}>No-Response Drip Campaign</h3>
                                     </div>
                                     <button
                                         onClick={() => toggleWorkflow('drip')}
-                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.drip ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.drip ? 'bg-[#1AA6A8]' : 'bg-slate-200'}`}
                                     >
                                         <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.drip ? 'right-0.5' : 'left-0.5'}`}></div>
                                     </button>
@@ -1975,8 +1988,8 @@ export default function CRM() {
                                         </div>
                                         <p className="text-sm text-slate-600 mb-2">{log.desc}</p>
                                         <div className="flex items-center gap-1.5">
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                                            <span className="text-xs font-medium text-emerald-600 uppercase tracking-wide">Executed</span>
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" />
+                                            <span className="text-xs font-medium text-[#1AA6A8] uppercase tracking-wide">Executed</span>
                                         </div>
                                     </div>
                                 </div>
@@ -2034,8 +2047,8 @@ export default function CRM() {
                                                     <h4 className="font-bold text-slate-900 truncate">{worker.name}</h4>
                                                     <p className="text-xs text-slate-500 truncate">{worker.role}</p>
                                                 </div>
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1AA6A8] bg-[#E6F7F7] px-2 py-0.5 rounded-full shrink-0">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-[#1AA6A8] animate-pulse"></span>
                                                     Available
                                                 </span>
                                             </div>
@@ -2057,7 +2070,7 @@ export default function CRM() {
                                                         const lead = leads.find(l => l.id === staffPickerTargetLead.id);
                                                         if (lead) sendWorkerProfileWhatsApp(lead, worker);
                                                     }}
-                                                    className="p-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-600 hover:text-white transition-all"
+                                                    className="p-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 rounded-lg hover:bg-[#1AA6A8] hover:text-white transition-all"
                                                     title="Share Profile via WhatsApp"
                                                 >
                                                     <Send className="w-4 h-4" />
@@ -2076,10 +2089,10 @@ export default function CRM() {
             {isAgentModalOpen && agentTargetLead && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
                     <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
-                        <div className="p-5 border-b border-slate-100 bg-emerald-500/10 flex justify-between items-center">
+                        <div className="p-5 border-b border-slate-100 bg-[#1AA6A8]/10 flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                                    <Bot className="w-5 h-5 text-emerald-600" />
+                                <div className="w-10 h-10 bg-[#EAFBFB] rounded-full flex items-center justify-center">
+                                    <Bot className="w-5 h-5 text-[#1AA6A8]" />
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-bold text-slate-900">AI WhatsApp Agent</h2>
@@ -2104,7 +2117,7 @@ export default function CRM() {
                                         <button
                                             key={lang}
                                             onClick={() => setAgentDraftLang(lang as any)}
-                                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-[#1AA6A8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                                         >
                                             {lang}
                                         </button>
@@ -2118,46 +2131,46 @@ export default function CRM() {
                                     </label>
                                     <button
                                         onClick={() => setIsEditingTemplate(!isEditingTemplate)}
-                                        className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                                        className="text-xs font-semibold text-[#1AA6A8] hover:text-[#1AA6A8] transition-colors"
                                     >
                                         {isEditingTemplate ? 'Back to Draft View' : '⚙️ Edit Default Template'}
                                     </button>
                                 </div>
                                 <div className="relative">
                                     {agentTargetAction === 'quotation' && !isEditingTemplate ? (
-                                        <div className="space-y-3 bg-white p-4 rounded-xl border border-emerald-200 shadow-sm relative z-10 w-full mb-6">
+                                        <div className="space-y-3 bg-white p-4 rounded-xl border border-[#1AA6A8]/20 shadow-sm relative z-10 w-full mb-6">
                                             <div>
                                                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Service Name</label>
-                                                <input type="text" value={quotationVars.v1} onChange={e => setQuotationVars({...quotationVars, v1: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. Registered Nurse" />
+                                                <input type="text" value={quotationVars.v1} onChange={e => setQuotationVars({...quotationVars, v1: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. Registered Nurse" />
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Hours of Service</label>
-                                                    <input type="text" value={quotationVars.v2} onChange={e => setQuotationVars({...quotationVars, v2: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. 12 Hours" />
+                                                    <input type="text" value={quotationVars.v2} onChange={e => setQuotationVars({...quotationVars, v2: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. 12 Hours" />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Complete Month</label>
-                                                    <input type="text" value={quotationVars.v3} onChange={e => setQuotationVars({...quotationVars, v3: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. ₹ 45,000" />
+                                                    <input type="text" value={quotationVars.v3} onChange={e => setQuotationVars({...quotationVars, v3: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 45,000" />
                                                 </div>
                                             </div>
                                             <div>
                                                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Incomplete Month</label>
-                                                <input type="text" value={quotationVars.v4} onChange={e => setQuotationVars({...quotationVars, v4: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" placeholder="e.g. ₹ 1,500/day" />
+                                                <input type="text" value={quotationVars.v4} onChange={e => setQuotationVars({...quotationVars, v4: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 1,500/day" />
                                             </div>
                                         </div>
                                     ) : (
                                         <textarea
                                             value={isEditingTemplate ? templateDraftText : agentDraftText}
                                             onChange={(e) => isEditingTemplate ? setTemplateDraftText(e.target.value) : setAgentDraftText(e.target.value)}
-                                            className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed mb-6"
+                                            className="w-full h-32 px-4 py-3 rounded-xl border border-[#1AA6A8]/20 outline-none focus:ring-2 focus:ring-[#1AA6A8] focus:border-transparent text-sm bg-[#E6F7F7] text-[#0E7C7E] resize-none font-medium leading-relaxed mb-6"
                                         />
                                     )}
                                     
                                     {(!isEditingTemplate && agentTargetAction !== 'quotation') && (
                                         <div className="absolute bottom-3 right-3 flex gap-1">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
-                                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
+                                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-75"></span>
+                                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-150"></span>
                                         </div>
                                     )}
                                 </div>
@@ -2165,7 +2178,7 @@ export default function CRM() {
                                 {isEditingTemplate ? (
                                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5 font-medium">Use <code className="px-1 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">{"{{name}}"}</code> and <code className="px-1 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">{"{{link}}"}</code> as dynamic variables.</p>
                                 ) : (
-                                    <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Human conformation ensures quality outbound interactions.</p>
+                                    <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" /> Human conformation ensures quality outbound interactions.</p>
                                 )}
                             </div>
                         </div>
@@ -2174,11 +2187,11 @@ export default function CRM() {
                                 Cancel
                             </button>
                             {isEditingTemplate ? (
-                                <button onClick={handleSaveTemplate} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                                <button onClick={handleSaveTemplate} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1AA6A8] hover:bg-[#1AA6A8] transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                                     Save as Default
                                 </button>
                             ) : (
-                                <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                                <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-[#1AA6A8] to-[#0E7C7E] hover:from-[#1AA6A8] hover:to-[#0E7C7E] transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                                     <Send className="w-4 h-4" /> Confirm & Dispatch
                                 </button>
                             )}
@@ -2276,7 +2289,7 @@ export default function CRM() {
                 <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
                     <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/80 sticky top-0 z-10">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-600">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#EAFBFB] text-[#1AA6A8]">
                                 <MessageCircle className="w-5 h-5" />
                             </div>
                             <div>
@@ -2292,7 +2305,7 @@ export default function CRM() {
                     <div className="p-6 flex-1 overflow-y-auto space-y-4 bg-[#efeae2]">
                         {isFetchingChat ? (
                             <div className="flex flex-col items-center justify-center py-10">
-                                <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
+                                <Loader2 className="w-8 h-8 text-[#1AA6A8] animate-spin mb-3" />
                                 <p className="text-slate-600 font-medium">Loading chat history...</p>
                             </div>
                         ) : whatsappChat.length > 0 ? (

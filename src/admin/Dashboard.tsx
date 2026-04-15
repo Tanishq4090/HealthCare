@@ -20,7 +20,7 @@ export default function Dashboard() {
                 // Fetch Leads and Workers concurrently
                 const [{ data: leads }, { data: workers }] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at'),
-                    supabase.from('workers').select('id, status, monthly_daily_rate, created_at')
+                    supabase.from('workers').select('id, status, monthly_daily_rate')
                 ]);
                 
                 const activeLeads = leads?.filter(l => l.pipeline_stage !== 'Lost' && l.pipeline_stage !== 'Active Client') || [];

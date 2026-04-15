@@ -216,7 +216,7 @@ export default function ContactPage() {
                       </p>
                     </div>
 
-                    <a href="tel:+919016116564" className="flex items-center gap-4 hover:text-brand-blue transition-colors group">
+                    <a href="tel:+917971542924" className="flex items-center gap-4 hover:text-brand-blue transition-colors group">
                       <Phone className="w-5 h-5 text-gray-400 group-hover:text-brand-blue transition-colors flex-shrink-0" />
                       <span className="font-medium">+91 9016 116 564</span>
                     </a>
@@ -273,7 +273,7 @@ export default function ContactPage() {
                     <motion.a 
                       whileHover={{ y: -3, scale: 1.1 }} 
                       transition={{ duration: 0.2 }} 
-                      href="https://api.whatsapp.com/send/?phone=919016116564&text&type=phone_number&app_absent=0" 
+                      href="https://api.whatsapp.com/send/?phone=917971542924&text&type=phone_number&app_absent=0" 
                       target="_blank" 
                       rel="noopener noreferrer" 
                       className="w-10 h-10 rounded-full border border-gray-200 dark:border-slate-800 flex items-center justify-center transition-all hover:border-[#25D366]/30 hover:bg-[#25D366]/5"
