@@ -2204,15 +2204,15 @@ export default function CRM() {
                                 </div>
                             ) : (
                                 <div className="grid sm:grid-cols-2 gap-3">
-                                    {availableWorkers.map(worker => (
-                                        <div key={worker.id} className="p-4 border-2 border-slate-200 hover:border-purple-400 rounded-xl transition-all cursor-pointer group hover:shadow-md bg-white">
+                                    {availableWorkers.map((worker, index) => (
+                                        <div key={worker.id || index} className="p-4 border-2 border-slate-200 hover:border-purple-400 rounded-xl transition-all cursor-pointer group hover:shadow-md bg-white">
                                             <div className="flex items-start gap-3 mb-3">
                                                 <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
-                                                    {worker.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                                                    {(worker.name || 'W').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <h4 className="font-bold text-slate-900 truncate">{worker.name}</h4>
-                                                    <p className="text-xs text-slate-500 truncate">{worker.role}</p>
+                                                    <h4 className="font-bold text-slate-900 truncate">{worker.name || 'Unknown Member'}</h4>
+                                                    <p className="text-xs text-slate-500 truncate">{worker.role || 'Worker'}</p>
                                                 </div>
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1AA6A8] bg-[#E6F7F7] px-2 py-0.5 rounded-full shrink-0">
                                                     <span className="w-1.5 h-1.5 rounded-full bg-[#1AA6A8] animate-pulse"></span>
@@ -2230,11 +2230,12 @@ export default function CRM() {
                                                     className="flex-1 py-2 bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 text-xs font-bold rounded-lg border border-purple-200 transition-all group-hover:border-purple-400 flex items-center justify-center gap-1.5"
                                                 >
                                                     <CheckCircle2 className="w-3.5 h-3.5" />
-                                                    Assign to {staffPickerTargetLead.name.split(' ')[0]}
+                                                    Assign to {(staffPickerTargetLead?.name || 'Lead').split(' ')[0]}
                                                 </button>
                                                 <button
-                                                    onClick={() => {
-                                                        const lead = leads.find(l => l.id === staffPickerTargetLead.id);
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const lead = leads.find(l => l.id === staffPickerTargetLead?.id);
                                                         if (lead) sendWorkerProfileWhatsApp(lead, worker);
                                                     }}
                                                     className="p-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 rounded-lg hover:bg-[#1AA6A8] hover:text-white transition-all"
