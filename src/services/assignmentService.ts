@@ -124,6 +124,21 @@ export async function assignWorkerToClient(
   notes?: string
 ): Promise<AssignmentResult> {
 
+  // ── Step 0: Ensure client exists in clients table (Convert from crm_leads if needed)
+  const { data: existingClient } = await supabase.from('clients').select('id').eq('id', clientUuid).maybeSingle();
+  if (!existingClient) {
+    const { data: lead } = await supabase.from('crm_leads').select('*').eq('id', clientUuid).maybeSingle();
+    if (lead) {
+      await supabase.from('clients').insert({
+        id: lead.id,
+        client_name: lead.name,
+        phone_number: lead.whatsapp_number || lead.phone,
+        email: lead.email,
+        created_at: new Date().toISOString()
+      });
+    }
+  }
+
   // ── Step 1: Create assignment record ──────────────────
   const { data: assignment, error: assignError } = await supabase
     .from('worker_assignments')
