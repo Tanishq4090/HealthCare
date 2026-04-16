@@ -1769,18 +1769,17 @@ export default function CRM() {
                                                             <button
                                                                 onClick={async (e) => {
                                                                     e.stopPropagation();
-                                                                    const firstName = item.name.split(' ')[0] || 'there';
-                                                                    const message = `Great news ${firstName}! 🙏 We have received your deposit amount. You are officially an active client of 99 Care now! Our team will coordinate the start date with you shortly. We're honored to serve you! ✨`;
+                                                                    const toastId = toast.loading("Confirming deposit and notifying client...");
                                                                     
-                                                                    // Move lead
-                                                                    await handleMoveLead(item.id, 'Active Client');
-                                                                    
-                                                                    // Send automated confirmation
                                                                     try {
+                                                                        const firstName = item.name.split(' ')[0] || 'there';
+                                                                        const message = `Great news ${firstName}! 🙏 We have received your deposit amount. You are officially an active client of 99 Care now! Our team will coordinate the start date with you shortly. We're honored to serve you! ✨`;
+                                                                        
                                                                         const phoneDigits = (item.whatsapp_number || item.phone || '').replace(/\D/g, '');
                                                                         const finalPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
                                                                         
-                                                                        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                                                                        // 1. Send automated confirmation FIRST
+                                                                        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                                                                             method: 'POST',
                                                                             headers: {
                                                                                 'Content-Type': 'application/json',
@@ -1794,11 +1793,20 @@ export default function CRM() {
                                                                                 useTemplate: false
                                                                             })
                                                                         });
+
+                                                                        if (!response.ok) {
+                                                                            console.warn("Automated message status:", response.status);
+                                                                        }
+
+                                                                        // 2. Move lead AFTER successful (or attempted) dispatch
+                                                                        await handleMoveLead(item.id, 'Active Client');
+                                                                        toast.success(`${item.name} is now an Active Client! Message sent. 🎉`, { id: toastId });
                                                                     } catch (err) {
                                                                         console.error("Failed to send automated deposit confirmation:", err);
+                                                                        // Still move the lead even if WhatsApp fails
+                                                                        await handleMoveLead(item.id, 'Active Client');
+                                                                        toast.error("Deposit confirmed, but could not send WhatsApp notification.", { id: toastId });
                                                                     }
-
-                                                                    toast.success(`${item.name} is now an Active Client! 🎉`);
                                                                 }}
                                                                 className="w-full bg-[#1AA6A8] hover:bg-[#1AA6A8] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
                                                             >
