@@ -232,6 +232,7 @@ export default function CRM() {
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
     const [agentTargetLead, setAgentTargetLead] = useState<any>(null);
     const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing'>('inquiry');
+    const [assignmentResult, setAssignmentResult] = useState<any>(null);
 
     // Staff Picker State
     const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
@@ -301,9 +302,9 @@ export default function CRM() {
             English: "Hi {{name}}, just one final step — please complete the consent form below and we'll get your service started:\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform"
         },
         staff: {
-            Hinglish: "Good news {{name}} ji! 🎉 Aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai!\n\n👤 Unka profile aur joining date confirm karne ke liye yahan dekhen:\nhttps://99care.in/staff/{{link}}\n\nKoi concern ho toh hume batayein!",
-            Hindi: "Namaste {{name}} ji, aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai. Profile dekhne ke liye:\nhttps://99care.in/staff/{{link}}",
-            English: "Great news {{name}}! We have assigned {{workerName}} ({{workerRole}}) to you. Please review their profile and confirm the joining date here:\nhttps://99care.in/staff/{{link}}"
+            Hinglish: "Good news {{name}} ji! 🎉 Aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai!\n\n👤 Unki ID Card aur profile verify karne ke liye yahan dekhen:\n{{link}}\n\nYe link 30 din tak valid hai. Koi concern ho toh hume batayein!",
+            Hindi: "Namaste {{name}} ji, aapke liye {{workerName}} ({{workerRole}}) ko assign kiya gaya hai.\n\nID Card dekhne ke liye:\n{{link}}\n\nYe link 30 din tak valid hai.",
+            English: "Great news {{name}}! We have assigned {{workerName}} ({{workerRole}}) to you.\n\n🔗 View their verified ID Card: {{link}}\n\nPlease verify their identity upon arrival. This link is valid for 30 days."
         },
         deposit: {
             Hinglish: "Namaste {{name}} ji! 🙏 Aapka deposit invoice ready hai.\n\n💰 Amount aur payment details yahan dekhein:\nhttps://99care.in/invoice/{{link}}\n\nPayment complete karne ke baad service start ho jayegi!",
@@ -411,13 +412,18 @@ export default function CRM() {
     });
     const [callStatus, setCallStatus] = useState<'idle' | 'loading' | 'active'>('idle');
 
-    const sendWorkerProfileWhatsApp = (lead: any, worker: any) => {
-        const baseUrl = window.location.origin;
-        const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}`;
-        const text = `99Care CRM: Namaste ${lead.name}! Humne aapke liye staff allocate kar diya hai.\n\nName: ${worker.name}\nRole: ${worker.role}\nCharge: ₹${worker.monthly_daily_rate}/day\n\nFull profile check karke confirm karein: ${confirmLink}\n\nDhanyawad! ✅`;
-        const phone = lead.phone?.replace(/\D/g, '') || '917575041313';
-        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
-        toast.success(`Worker profile shared with ${lead.name}!`);
+    const sendWorkerProfileWhatsApp = async (lead: any, worker: any) => {
+        try {
+            // Create assignment + ID card link
+            const result = await assignWorkerToClient(worker.id, lead.id, undefined, true);
+            const text = `99Care: Namaste ${lead.name}! Aapke liye ${worker.name || worker.full_name} (${worker.role || worker.job_title}) ko assign kiya gaya hai.\n\n🔗 Unki verified ID Card dekhein: ${result.shareableUrl}\n\nYe link 30 din tak valid hai. Dhanyawad! ✅`;
+            let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '') || '917575041313';
+            if (phone.length === 10) phone = `91${phone}`;
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+            toast.success(`ID card link shared with ${lead.name}!`);
+        } catch (err: any) {
+            toast.error(`Failed to create assignment: ${err.message}`);
+        }
     };
 
 
@@ -683,13 +689,27 @@ export default function CRM() {
     };
 
     // AI WhatsApp Agent Logic
-    const generateWhatsappDraft = (leadName: string, action: string, lang: string, worker?: any) => {
-        const tpl = whatsappTemplates[action]?.[lang] || '';
+    const generateWhatsappDraft = (
+        leadName: string, 
+        action: string, 
+        lang: string, 
+        worker?: any,
+        shareableUrl?: string
+    ) => {
+        let tpl = whatsappTemplates[action]?.[lang] || '';
+        const link = shareableUrl || `${window.location.origin}/id-card/${Math.random().toString(36).substr(2, 6)}`;
+        
+        // Strip out hardcoded legacy domain prefixes if they exist in the template
+        // e.g. "https://99care.in/staff/{{link}}" -> "{{link}}"
+        if (tpl.includes('https://99care.in/staff/')) {
+            tpl = tpl.replace(/https:\/\/99care\.in\/staff\//g, '');
+        }
+
         return tpl
             .replace(/\{\{name\}\}/g, leadName)
-            .replace(/\{\{link\}\}/g, Math.random().toString(36).substr(2, 6))
-            .replace(/\{\{workerName\}\}/g, worker?.name || 'your assigned staff')
-            .replace(/\{\{workerRole\}\}/g, worker?.role || 'Healthcare Worker');
+            .replace(/\{\{link\}\}/g, link)
+            .replace(/\{\{workerName\}\}/g, worker?.name || worker?.full_name || 'your assigned staff')
+            .replace(/\{\{workerRole\}\}/g, worker?.role || worker?.job_title || 'Healthcare Worker');
     };
 
     const fetchWorkers = async () => {
@@ -725,16 +745,52 @@ export default function CRM() {
         setIsStaffPickerOpen(true);
     };
 
-    const confirmWorkerSelection = (worker: any) => {
+    const confirmWorkerSelection = async (worker: any) => {
         setSelectedWorker(worker);
         setIsStaffPickerOpen(false);
-        // Open WhatsApp agent modal with worker pre-filled
-        setAgentTargetLead(staffPickerTargetLead);
-        setAgentTargetAction('staff');
-        setIsEditingTemplate(false);
-        const draft = generateWhatsappDraft(staffPickerTargetLead.name, 'staff', agentDraftLang, worker);
-        setAgentDraftText(draft);
-        setIsAgentModalOpen(true);
+
+        // Show loading state while assignment is created
+        const toastId = toast.loading(`Creating assignment for ${worker.name || worker.full_name}...`);
+
+        try {
+            // Create the assignment + ID card link FIRST
+            const result = await assignWorkerToClient(
+                worker.id, 
+                staffPickerTargetLead.id,
+                undefined,
+                true // skipWhatsApp — CRM dispatch will handle it
+            );
+
+            // Store the result so handleDispatchMessage can use it later
+            setAssignmentResult(result);
+
+            // Now open the WhatsApp modal with the REAL shareable URL
+            setAgentTargetLead(staffPickerTargetLead);
+            setAgentTargetAction('staff');
+            setIsEditingTemplate(false);
+
+            // Generate draft with real link injected
+            const draft = generateWhatsappDraft(
+                staffPickerTargetLead.name, 
+                'staff', 
+                agentDraftLang, 
+                worker,
+                result.shareableUrl  // pass the real URL
+            );
+            setAgentDraftText(draft);
+            setIsAgentModalOpen(true);
+
+            toast.success(
+                `${worker.name || worker.full_name} assigned! Review the message below.`, 
+                { id: toastId, duration: 3000 }
+            );
+        } catch (err: any) {
+            console.error('Assignment creation failed:', err);
+            toast.error(
+                `Failed to create assignment: ${err.message}`, 
+                { id: toastId }
+            );
+        }
     };
 
     const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing') => {
@@ -751,11 +807,17 @@ export default function CRM() {
 
     useEffect(() => {
         if (agentTargetLead && !isEditingTemplate) {
-            setAgentDraftText(generateWhatsappDraft(agentTargetLead.name, agentTargetAction, agentDraftLang, selectedWorker));
+            setAgentDraftText(generateWhatsappDraft(
+                agentTargetLead.name, 
+                agentTargetAction, 
+                agentDraftLang, 
+                selectedWorker,
+                assignmentResult?.shareableUrl // pass real URL if available
+            ));
         } else if (isEditingTemplate) {
             setTemplateDraftText(whatsappTemplates[agentTargetAction]?.[agentDraftLang] || '');
         }
-    }, [agentDraftLang, agentTargetAction, agentTargetLead, whatsappTemplates, isEditingTemplate, selectedWorker]);
+    }, [agentDraftLang, agentTargetAction, agentTargetLead, whatsappTemplates, isEditingTemplate, selectedWorker, assignmentResult]);
 
     const handleSaveTemplate = () => {
         const updated = {
@@ -853,18 +915,15 @@ export default function CRM() {
                 else if (agentTargetAction === 'staff' && (selectedWorker || agentTargetLead.assigned_staff)) {
                     await handleMoveLead(agentTargetLead.id, 'Staff Assigned');
                     
-                    if (selectedWorker) {
-                        try {
-                            const result = await assignWorkerToClient(selectedWorker.id, agentTargetLead.id);
-                            if (result.whatsappSent) {
-                                toast.success(`${selectedWorker.name || selectedWorker.full_name} assigned and ID card sent to client! ✅`, { id: toastId, duration: 6000 });
-                            } else {
-                                toast.warning(`${selectedWorker.name || selectedWorker.full_name} assigned, but WhatsApp delivery failed: ${result.whatsappError}`, { id: toastId, duration: 6000 });
-                            }
-                        } catch (e: any) {
-                            console.error('Finalizing assignment failed:', e);
-                            toast.error(`Assignment completed but ID card generation failed: ${e.message}`, { id: toastId });
-                        }
+                    if (selectedWorker && assignmentResult) {
+                        // Assignment was already created in confirmWorkerSelection
+                        // The WhatsApp message (with real ID card link) was just dispatched above
+                        toast.success(
+                            `✅ ${selectedWorker.name || selectedWorker.full_name} assigned to ${agentTargetLead.name}! ID card link sent via WhatsApp.`, 
+                            { id: toastId, duration: 6000 }
+                        );
+                        // Clean up
+                        setAssignmentResult(null);
                     } else {
                         toast.success(`Staff assignment updated locally!`, { id: toastId, duration: 4000 });
                     }
