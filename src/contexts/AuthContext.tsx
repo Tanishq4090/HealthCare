@@ -59,19 +59,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     });
                 }
             } else {
-                const legacyToken = localStorage.getItem(LOCAL_STORAGE_KEY);
-                if (legacyToken === 'admin-token') {
-                    setUser({
-                        id: 'admin',
-                        username: 'admin',
-                        name: 'System Admin',
-                        role: 'admin',
-                        accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
-                        avatar: ''
-                    });
-                } else {
-                    setUser(null);
-                }
+                setUser(null);
             }
             setLoading(false);
         };
