@@ -89,6 +89,7 @@ export default function CRM() {
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
     const [isSimulatingInquiry, setIsSimulatingInquiry] = useState(false);
 
     const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
@@ -134,6 +135,7 @@ export default function CRM() {
                 console.log("[fetchAutomationSettings] row missing, initializing...");
                 await supabase.from('automation_settings').upsert({ id: 'global', greeting_enabled: true, drip_enabled: false }, { onConflict: 'id' });
             }
+            setIsSettingsLoaded(true);
         };
 
         fetchLeads();
@@ -332,24 +334,17 @@ export default function CRM() {
     const PROTECTED_STAGES = ['New Lead', 'Active Client', 'Closed Won', 'Lost'];
 
     // Initialize pipelineStages from localStorage or defaults
-    const [pipelineStages, setPipelineStages] = useState<string[]>(() => {
-        const saved = localStorage.getItem('crmPipelineStages');
-        if (saved) {
-            try { return JSON.parse(saved); } catch (e) { }
-        }
-        return ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'];
-    });
+    // Initialize pipelineStages - prioritize clean split defaults
+    const [pipelineStages, setPipelineStages] = useState<string[]>(['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending']);
 
-    const [clientStages, setClientStages] = useState<string[]>(() => {
-        const saved = localStorage.getItem('crmClientStages');
-        if (saved) {
-            try { return JSON.parse(saved); } catch (e) { }
-        }
-        return ['Active Client', 'Monthly Billing', 'Closed Won'];
-    });
+    const [clientStages, setClientStages] = useState<string[]>(['Active Client', 'Monthly Billing', 'Closed Won']);
 
     // Helper to sync to cloud only when manually changed
     const syncStagesToCloud = async (pStages: string[], cStages: string[]) => {
+        if (!isSettingsLoaded) {
+            console.log("[syncStagesToCloud] blocked: settings not yet loaded from cloud.");
+            return;
+        }
         try {
             await supabase.from('automation_settings').upsert({ 
                 id: 'global', 
