@@ -87,3 +87,12 @@ html {
 ::-webkit-scrollbar-thumb:hover {
   background: #0e7c7e;
 }
+
+/* Hide scrollbar for mobile tab containers */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

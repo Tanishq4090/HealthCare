@@ -27,9 +27,9 @@ export default function DutyTracker() {
         if (!workerId) return;
 
         try {
-            // 1. Fetch Worker Details
+            // 1. Fetch Employee Details (previously Worker)
             const { data: workerData, error: workerErr } = await supabase
-                .from('workers')
+                .from('employees')
                 .select('*')
                 .eq('id', workerId)
                 .single();
@@ -172,10 +172,10 @@ export default function DutyTracker() {
                 {/* Header Profile */}
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 text-center">
                     <div className="w-16 h-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white shadow-md">
-                        <span className="text-2xl font-bold">{worker.name.charAt(0)}</span>
+                        <span className="text-2xl font-bold">{(worker.full_name || '?').charAt(0)}</span>
                     </div>
-                    <h1 className="text-2xl font-bold text-slate-900">{worker.name}</h1>
-                    <p className="text-slate-500 font-medium">{worker.role}</p>
+                    <h1 className="text-2xl font-bold text-slate-900">{worker.full_name}</h1>
+                    <p className="text-slate-500 font-medium">{worker.job_title}</p>
 
                     {worker.assigned_client && (
                         <div className="mt-4 flex items-center justify-center gap-2 text-sm bg-slate-50 py-2 px-4 rounded-full border border-slate-100">
@@ -217,20 +217,20 @@ export default function DutyTracker() {
                         ) : (
                             <button
                                 onClick={handleStartDuty}
-                                disabled={actionLoading || worker.status !== 'Active'}
-                                className={`w-full h-24 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-lg group ${worker.status !== 'Active'
+                                disabled={actionLoading || worker.status?.toLowerCase() === 'inactive'}
+                                className={`w-full h-24 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-lg group ${worker.status?.toLowerCase() === 'inactive'
                                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                                         : 'bg-emerald-500 hover:bg-emerald-600 text-white hover:shadow-xl shadow-emerald-500/30'
                                     }`}
                             >
                                 {actionLoading ? <Loader2 className="w-8 h-8 animate-spin" /> : (
                                     <>
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform ${worker.status !== 'Active' ? 'bg-slate-300' : 'bg-white/20 group-hover:scale-110'}`}>
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform ${worker.status?.toLowerCase() === 'inactive' ? 'bg-slate-300' : 'bg-white/20 group-hover:scale-110'}`}>
                                             <Play className="w-6 h-6 fill-current ml-1" />
                                         </div>
                                         <div className="text-left">
                                             <span className="text-2xl font-bold block">Start Duty</span>
-                                            {worker.status !== 'Active' && <span className="text-xs">Awaiting client confirmation</span>}
+                                            {worker.status?.toLowerCase() === 'inactive' && <span className="text-xs">Account inactive</span>}
                                         </div>
                                     </>
                                 )}

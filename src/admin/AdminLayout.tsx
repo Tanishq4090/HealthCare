@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
 
@@ -9,14 +9,15 @@ export default function AdminLayout() {
     const navigate = useNavigate();
     const { user, logout, hasAccess } = useAuth();
     const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     // Navigation items linked to their required module (null means always visible)
     const navigation = [
-        { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
-        { name: 'AI CRM', href: '/admin/crm', icon: Users, requiredModule: 'crm' as AccessModule },
-        { name: 'Clients', href: '/admin/clients', icon: Users, requiredModule: 'clients' as AccessModule },
-        { name: 'AI HR', href: '/admin/hr', icon: UserCog, requiredModule: 'hr' as AccessModule },
-        { name: 'Finance', href: '/admin/billing', icon: Landmark, requiredModule: 'finance' as AccessModule },
+        { name: 'Dashboard',          href: '/admin',                    icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
+        { name: 'AI CRM',             href: '/admin/crm',                icon: Users,           requiredModule: 'crm' as AccessModule },
+        { name: 'Clients',            href: '/admin/clients',            icon: Users,           requiredModule: 'clients' as AccessModule },
+        { name: 'AI HR',              href: '/admin/hr',                 icon: UserCog,         requiredModule: 'hr' as AccessModule },
+        { name: 'Finance',            href: '/admin/billing',            icon: Landmark,        requiredModule: 'finance' as AccessModule },
     ];
 
     const filteredNavigation = navigation.filter(item => {
@@ -42,12 +43,17 @@ export default function AdminLayout() {
             {/* Sidebar */}
             <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden lg:flex">
                 {/* Logo */}
-                <div className="h-16 flex items-center px-6 border-b border-slate-100">
-                    <Link to="/admin" className="flex items-center gap-2" title="Dashboard">
-                        <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                            <span className="text-white font-bold text-lg leading-none">H</span>
+                <div className="h-20 flex items-center px-6 border-b border-slate-100">
+                    <Link to="/admin" className="flex items-center gap-3" title="Dashboard">
+                        <img 
+                            src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+                            alt="99Care Logo" 
+                            className="w-10 h-10 object-contain"
+                        />
+                        <div className="flex flex-col">
+                            <span className="font-bold text-xl text-[#1aa6a8] font-['Plus_Jakarta_Sans'] leading-tight">99Care</span>
+                            <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase leading-tight">Operations OS</span>
                         </div>
-                        <span className="font-bold text-xl text-primary font-['Plus_Jakarta_Sans']">HealthFirst OS</span>
                     </Link>
                 </div>
 
@@ -109,10 +115,89 @@ export default function AdminLayout() {
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 {/* Top Header */}
                 <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8">
-                    {/* Mobile menu button (placeholder) */}
-                    <div className="lg:hidden">
-                        <span className="font-bold text-primary font-['Plus_Jakarta_Sans']">HF OS</span>
+                    {/* Mobile menu button */}
+                    <div className="lg:hidden flex items-center gap-3">
+                        <button 
+                            onClick={() => setIsMobileMenuOpen(true)}
+                            className="p-2 -ml-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                        >
+                            <Menu className="w-6 h-6" />
+                        </button>
+                        <span className="font-bold text-[#1aa6a8] font-['Plus_Jakarta_Sans']">99Care OS</span>
                     </div>
+
+                    {/* Mobile Drawer Overlay */}
+                    {isMobileMenuOpen && (
+                        <div className="fixed inset-0 z-[100] lg:hidden">
+                            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
+                            <div className="fixed inset-y-0 left-0 w-[280px] bg-white shadow-2xl flex flex-col animate-in slide-in-from-left duration-300">
+                                <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <img 
+                                            src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+                                            alt="99Care Logo" 
+                                            className="w-10 h-10 object-contain"
+                                        />
+                                        <span className="font-bold text-xl text-[#1aa6a8] font-['Plus_Jakarta_Sans']">99Care</span>
+                                    </div>
+                                    <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <nav className="flex-1 p-4 space-y-1">
+                                    {filteredNavigation.map((item) => {
+                                        const isActive = location.pathname === item.href;
+                                        return (
+                                            <Link
+                                                key={item.name}
+                                                to={item.href}
+                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center gap-3 px-3 py-3 rounded-xl font-semibold transition-all ${isActive
+                                                    ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
+                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                    }`}
+                                            >
+                                                <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
+                                                {item.name}
+                                            </Link>
+                                        );
+                                    })}
+                                    {user?.role === 'admin' && (
+                                        <Link
+                                            to="/admin/settings"
+                                            onClick={() => setIsMobileMenuOpen(false)}
+                                            className={`flex items-center gap-3 px-3 py-3 rounded-xl font-semibold transition-all ${location.pathname === '/admin/settings'
+                                                    ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
+                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                }`}
+                                        >
+                                            <Settings className={`w-5 h-5 ${location.pathname === '/admin/settings' ? 'text-primary' : 'text-slate-400'}`} />
+                                            Access Control
+                                        </Link>
+                                    )}
+                                    <hr className="my-4 border-slate-100" />
+                                    <Link 
+                                        to="/" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        onClick={() => setIsMobileMenuOpen(false)}
+                                        className="flex items-center gap-3 px-3 py-3 rounded-xl font-semibold text-primary hover:bg-primary/5 transition-all"
+                                    >
+                                        <div className="w-5 h-5 flex items-center justify-center">
+                                            <Landmark className="w-5 h-5" />
+                                        </div>
+                                        View Public Site
+                                    </Link>
+                                </nav>
+                                <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                                    <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 px-3 py-3 rounded-xl bg-white border border-slate-200 text-red-600 font-bold shadow-sm hover:bg-red-50 transition-all">
+                                        <LogOut className="w-5 h-5" />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Global Search */}
                     <div className="hidden sm:flex flex-1 max-w-lg mx-auto lg:mx-0 relative">
@@ -144,7 +229,7 @@ export default function AdminLayout() {
                                     <div className="max-h-[300px] overflow-y-auto divide-y divide-slate-50">
                                         <div className="p-4 hover:bg-slate-50 transition-colors cursor-pointer bg-primary/5">
                                             <p className="text-sm font-semibold text-slate-900">System Update</p>
-                                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">HealthFirst OS has been updated to v2.1 with new CRM features.</p>
+                                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">99Care OS has been updated to v2.1 with new CRM features.</p>
                                             <p className="text-[10px] text-slate-400 mt-2 font-medium">Just now</p>
                                         </div>
                                         <div className="p-4 hover:bg-slate-50 transition-colors cursor-pointer bg-primary/5">
