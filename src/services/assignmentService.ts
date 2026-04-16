@@ -46,7 +46,7 @@ function generateToken(): string {
 }
 
 /** Constructs the public-facing ID card shareable URL. */
-function buildShareableUrl(token: string): string {
+export function buildShareableUrl(token: string): string {
   const base =
     typeof window !== 'undefined'
       ? window.location.origin
@@ -121,7 +121,8 @@ export async function sendIDCardLinkToClient(
 export async function assignWorkerToClient(
   employeeUuid: string,
   clientUuid: string,
-  notes?: string
+  notes?: string,
+  skipWhatsApp: boolean = false
 ): Promise<AssignmentResult> {
 
   // ── Step 0: Ensure client exists in clients table (Convert from crm_leads if needed)
@@ -218,58 +219,63 @@ export async function assignWorkerToClient(
   let whatsappSent = false;
   let whatsappError: string | undefined;
 
-  try {
-    // Try regular clients table first
-    const { data: client } = await supabase
-      .from('clients')
-      .select('phone_number, client_name')
-      .eq('id', clientUuid)
-      .single();
-
-    let targetPhone = client?.phone_number;
-    let targetName = client?.client_name;
-
-    // Fallback to crm_leads if not found in clients
-    if (!targetPhone) {
-      const { data: lead } = await supabase
-        .from('crm_leads')
-        .select('whatsapp_number, phone, name')
+  if (!skipWhatsApp) {
+    try {
+      // Try regular clients table first
+      const { data: client } = await supabase
+        .from('clients')
+        .select('phone_number, client_name')
         .eq('id', clientUuid)
         .single();
-      
-      if (lead) {
-        targetPhone = lead.whatsapp_number || lead.phone;
-        targetName = lead.name;
+
+      let targetPhone = client?.phone_number;
+      let targetName = client?.client_name;
+
+      // Fallback to crm_leads if not found in clients
+      if (!targetPhone) {
+        const { data: lead } = await supabase
+          .from('crm_leads')
+          .select('whatsapp_number, phone, name')
+          .eq('id', clientUuid)
+          .single();
+        
+        if (lead) {
+          targetPhone = lead.whatsapp_number || lead.phone;
+          targetName = lead.name;
+        }
       }
-    }
 
-    const { data: employee } = await supabase
-      .from('employees')
-      .select('full_name, job_title')
-      .eq('id', employeeUuid)
-      .single();
+      const { data: employee } = await supabase
+        .from('employees')
+        .select('full_name, job_title')
+        .eq('id', employeeUuid)
+        .single();
 
-    if (targetPhone && employee) {
-      // Standardize phone format for WhatsApp (ensure it has country code if missing)
-      let phoneDigits = targetPhone.replace(/\D/g, '');
-      if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+      if (targetPhone && employee) {
+        // Standardize phone format for WhatsApp (ensure it has country code if missing)
+        let phoneDigits = targetPhone.replace(/\D/g, '');
+        if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
 
-      const sendError = await sendIDCardLinkToClient(
-        phoneDigits,
-        employee.full_name,
-        employee.job_title,
-        shareableUrl
-      );
-      if (sendError) {
-        whatsappError = sendError;
+        const sendError = await sendIDCardLinkToClient(
+          phoneDigits,
+          employee.full_name,
+          employee.job_title,
+          shareableUrl
+        );
+        if (sendError) {
+          whatsappError = sendError;
+        } else {
+          whatsappSent = true;
+        }
       } else {
-        whatsappSent = true;
+        whatsappError = 'Target contact number not on file — WhatsApp skipped.';
       }
-    } else {
-      whatsappError = 'Target contact number not on file — WhatsApp skipped.';
+    } catch (err: unknown) {
+      whatsappError = err instanceof Error ? err.message : String(err);
     }
-  } catch (err: unknown) {
-    whatsappError = err instanceof Error ? err.message : String(err);
+  } else {
+    // CRM dispatch handles WhatsApp — skip to avoid double message
+    whatsappError = 'Skipped: CRM dispatch handles WhatsApp delivery';
   }
 
   return {
