@@ -999,12 +999,13 @@ export default function CRM() {
         if (leadId.length < 10) return;
 
         try {
-            const { error, data } = await supabase.functions.invoke('delete-crm-lead', {
-                body: { lead_id: leadId }
-            });
+            const { error } = await supabase
+                .from('crm_leads')
+                .delete()
+                .eq('id', leadId);
 
-            if (error || data?.error) {
-                throw new Error((error?.message || data?.error) || "Delete blocked");
+            if (error) {
+                throw new Error(error.message || "Delete blocked");
             }
         } catch (err: any) {
             console.error('Failed to delete lead:', err);
