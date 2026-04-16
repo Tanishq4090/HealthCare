@@ -241,7 +241,7 @@ export default function AccessControl() {
                                 <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${u.role === 'admin' ? 'bg-indigo-500' : 'bg-slate-400'}`}>
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${u.role === 'admin' ? 'bg-primary' : 'bg-slate-400'}`}>
                                                 {u.avatar}
                                             </div>
                                             <div>
@@ -255,7 +255,7 @@ export default function AccessControl() {
                                     </td>
                                     <td className="px-6 py-4">
                                         {u.role === 'admin' ? (
-                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary border border-primary/20">
                                                 * Full System Access
                                             </span>
                                         ) : (

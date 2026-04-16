@@ -17,14 +17,14 @@ export default function Dashboard() {
         const fetchDashboardData = async () => {
             setIsLoading(true);
             try {
-                // Fetch Leads and Workers concurrently
-                const [{ data: leads }, { data: workers }] = await Promise.all([
+                // Fetch Leads and Employees concurrently
+                const [{ data: leads }, { data: employees }] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at'),
-                    supabase.from('workers').select('id, status, monthly_daily_rate')
+                    supabase.from('employees').select('id, status, monthly_daily_rate')
                 ]);
                 
                 const activeLeads = leads?.filter(l => l.pipeline_stage !== 'Lost' && l.pipeline_stage !== 'Active Client') || [];
-                const activeWorkersList = workers?.filter(w => w.status === 'Active') || [];
+                const activeWorkersList = employees?.filter(w => w.status === 'assigned' || w.status === 'Active') || [];
                 
                 let mrr = 0;
                 activeWorkersList.forEach(w => {
@@ -65,9 +65,9 @@ export default function Dashboard() {
     }
 
     const statCards = [
-        { label: 'Active Leads', value: stats.activeLeads.value, trend: stats.activeLeads.trend, icon: <TrendingUp className="w-5 h-5 text-blue-500"/>, bg: 'bg-blue-50' },
+        { label: 'Active Leads', value: stats.activeLeads.value, trend: stats.activeLeads.trend, icon: <TrendingUp className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'Active Deployments', value: stats.activeWorkers.value, trend: stats.activeWorkers.trend, icon: <Users className="w-5 h-5 text-emerald-500"/>, bg: 'bg-emerald-50' },
-        { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-indigo-500"/>, bg: 'bg-indigo-50' },
+        { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'AI Voice Calls', value: stats.aiVoiceCalls.value, trend: stats.aiVoiceCalls.trend, icon: <Phone className="w-5 h-5 text-amber-500"/>, bg: 'bg-amber-50' },
     ];
 
@@ -100,7 +100,7 @@ export default function Dashboard() {
                 ))}
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-6 h-[400px]">
+            <div className="grid lg:grid-cols-3 gap-6 lg:h-[400px]">
                 {/* Revenue Chart */}
                 <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
                     <div className="mb-4">
@@ -112,8 +112,8 @@ export default function Dashboard() {
                             <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4}/>
-                                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                                    <stop offset="5%" stopColor="#1aa6a8" stopOpacity={0.4}/>
+                                    <stop offset="95%" stopColor="#1aa6a8" stopOpacity={0}/>
                                     </linearGradient>
                                 </defs>
                                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
@@ -122,7 +122,7 @@ export default function Dashboard() {
                                     formatter={(value: number) => [`₹${value.toLocaleString()}`, 'MRR']} 
                                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }} 
                                 />
-                                <Area type="monotone" dataKey="revenue" stroke="#4f46e5" strokeWidth={4} fillOpacity={1} fill="url(#colorRevenue)" />
+                                <Area type="monotone" dataKey="revenue" stroke="#1aa6a8" strokeWidth={4} fillOpacity={1} fill="url(#colorRevenue)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
@@ -136,8 +136,8 @@ export default function Dashboard() {
                     </div>
                     <div className="p-5 flex-1 overflow-auto space-y-4">
                         <div className="flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
-                                <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                                <CheckCircle2 className="w-4 h-4 text-primary" />
                             </div>
                             <div>
                                 <p className="text-sm text-slate-900"><span className="font-bold">Lead Captured</span> from AI Voice inbound flow.</p>

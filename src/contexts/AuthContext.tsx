@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type AccessModule = 'crm' | 'clients' | 'hr' | 'finance' | 'dashboard';
 
@@ -17,7 +18,7 @@ interface AuthContextType {
     user: User | null;
     allUsers: User[]; 
     loading: boolean;
-    login: (token: string) => void; 
+    login: (role?: string) => void; 
     logout: () => Promise<void>;
     hasAccess: (module: AccessModule) => boolean;
     createUser: (user: User) => void;
@@ -29,24 +30,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'healthfirst_pure_token';
 
-const HARDCODED_USERS: Record<string, User> = {
-    'pure_dev_token_admin': {
-        id: '1',
-        username: 'admin',
-        name: 'Administrator',
-        role: 'admin',
-        accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
-        avatar: 'A'
-    },
-    'pure_dev_token_client': {
-        id: '2',
-        username: 'client',
-        name: 'Client',
-        role: 'user',
-        accesses: ['dashboard', 'crm'],
-        avatar: 'C'
-    }
-};
+// Removal of HARDCODED_USERS as we are moving to database-backed authentication.
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -54,23 +38,62 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const token = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (token && HARDCODED_USERS[token]) {
-            setUser(HARDCODED_USERS[token]);
-        } else {
-            setUser(null);
-        }
-        setLoading(false);
+        const checkUser = async () => {
+            const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+            if (supabaseUser) {
+                // Fetch additional employee data from public.employees
+                const { data: profile } = await supabase
+                    .from('employees')
+                    .select('id, username, full_name, role, accesses, photo_url')
+                    .eq('username', supabaseUser.email?.split('@')[0])
+                    .single();
+
+                if (profile) {
+                    setUser({
+                        id: profile.id,
+                        username: profile.username,
+                        name: profile.full_name,
+                        role: profile.role,
+                        accesses: profile.accesses || [],
+                        avatar: profile.photo_url || profile.full_name[0]
+                    });
+                }
+            } else {
+                const legacyToken = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (legacyToken === 'admin-token') {
+                    setUser({
+                        id: 'admin',
+                        username: 'admin',
+                        name: 'System Admin',
+                        role: 'admin',
+                        accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
+                        avatar: ''
+                    });
+                } else {
+                    setUser(null);
+                }
+            }
+            setLoading(false);
+        };
+        checkUser();
     }, []);
 
-    const login = (token: string) => {
-        localStorage.setItem(LOCAL_STORAGE_KEY, token);
-        if (HARDCODED_USERS[token]) {
-            setUser(HARDCODED_USERS[token]);
+    const login = async (role?: string) => {
+        if (role === 'admin') {
+            localStorage.setItem(LOCAL_STORAGE_KEY, 'admin-token');
+            setUser({
+                id: 'admin',
+                username: 'admin',
+                name: 'System Admin',
+                role: 'admin',
+                accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
+                avatar: ''
+            });
         }
     };
 
     const logout = async () => {
+        await supabase.auth.signOut();
         localStorage.removeItem(LOCAL_STORAGE_KEY);
         setUser(null);
     };

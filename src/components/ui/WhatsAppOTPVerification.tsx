@@ -50,7 +50,7 @@ export default function WhatsAppOTPVerification({
 
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
     const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const message = `Your HealthFirst verification code is: *${code}*\n\nThis code expires in 10 minutes. Do not share it with anyone.`;
+    const message = `Your 99Care verification code is: *${code}*\n\nThis code expires in 10 minutes. Do not share it with anyone.`;
 
     const response = await fetch(`${SUPABASE_URL}/functions/v1/vapi-whatsapp`, {
       method: "POST",

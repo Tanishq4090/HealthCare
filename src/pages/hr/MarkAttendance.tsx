@@ -11,16 +11,16 @@ const ATTENDANCE_STATUSES = [
   { id: 'present', label: 'Present', color: 'text-emerald-600 bg-emerald-50', icon: CheckCircle },
   { id: 'absent', label: 'Absent', color: 'text-rose-600 bg-rose-50', icon: XCircle },
   { id: 'half_day', label: 'Half Day', color: 'text-amber-600 bg-amber-50', icon: Clock },
-  { id: 'paid_leave', label: 'Paid Leave', color: 'text-blue-600 bg-blue-50', icon: AlertCircle },
+  { id: 'paid_leave', label: 'Paid Leave', color: 'text-primary bg-primary/10', icon: AlertCircle },
   { id: 'unpaid_leave', label: 'Unpaid Leave', color: 'text-slate-600 bg-slate-50', icon: AlertCircle },
-  { id: 'holiday', label: 'Holiday', color: 'text-indigo-600 bg-indigo-50', icon: Filter },
+  { id: 'holiday', label: 'Holiday', color: 'text-primary bg-primary/10', icon: Filter },
   { id: 'weekly_off', label: 'Weekly Off', color: 'text-violet-600 bg-violet-50', icon: Calendar },
 ];
 
 interface Worker {
   id: string;
-  name: string;
-  role: string;
+  full_name: string;
+  job_title: string;
   status: string;
   assigned_client?: string;
   monthly_daily_rate?: number;
@@ -85,8 +85,12 @@ export default function MarkAttendance() {
   const fetchWorkers = async () => {
     setIsLoading(true);
     try {
-      // Fetch Active Workers
-      const { data: workerData, error: workerError } = await supabase.from('workers').select('*').neq('status', 'Inactive').order('name');
+      // Fetch Active Employees (previously Workers)
+      const { data: workerData, error: workerError } = await supabase
+        .from('employees')
+        .select('*')
+        .neq('status', 'inactive')
+        .order('full_name');
       if (workerError) throw workerError;
 
       // Fetch Attendance for selected date
@@ -260,15 +264,15 @@ export default function MarkAttendance() {
   };
 
   const filteredWorkers = workers.filter(w => 
-    w.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    w.role.toLowerCase().includes(searchTerm.toLowerCase())
+    (w.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (w.job_title || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleOpenModal = (worker: Worker) => {
     setSelectedWorker(worker);
     setModalFormData({
-      name: worker.name,
-      role: worker.role,
+      full_name: worker.full_name,
+      job_title: worker.job_title,
       assigned_client: worker.assigned_client || '',
       monthly_daily_rate: worker.monthly_daily_rate?.toString() || '',
       short_term_daily_rate: worker.short_term_daily_rate?.toString() || '',
@@ -289,8 +293,8 @@ export default function MarkAttendance() {
 
     try {
       const payload = {
-        name: modalFormData.name,
-        role: modalFormData.role,
+        full_name: modalFormData.full_name,
+        job_title: modalFormData.job_title,
         assigned_client: modalFormData.assigned_client || null,
         monthly_daily_rate: parseFloat(modalFormData.monthly_daily_rate) || 0,
         short_term_daily_rate: parseFloat(modalFormData.short_term_daily_rate) || 0,
@@ -302,7 +306,7 @@ export default function MarkAttendance() {
         dob: modalFormData.dob || null
       };
 
-      const { error } = await supabase.from('workers').update(payload).eq('id', selectedWorker.id);
+      const { error } = await supabase.from('employees').update(payload).eq('id', selectedWorker.id);
       if (error) throw error;
 
       toast.success('Worker details updated successfully');
@@ -366,7 +370,7 @@ export default function MarkAttendance() {
             disabled={Object.keys(draftChanges).length === 0 || bulkSaveMutation.isPending}
             className={`px-6 py-2 text-white text-sm font-bold rounded-lg transition-all shadow-lg active:scale-95 flex items-center gap-2 ${
                 Object.keys(draftChanges).length > 0 
-                ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20 animate-pulse' 
+                ? 'bg-primary hover:bg-primary/90 shadow-primary/20 animate-pulse' 
                 : 'bg-slate-700 text-slate-500 cursor-not-allowed'
             }`}
           >
@@ -426,11 +430,11 @@ export default function MarkAttendance() {
                     <td className="py-5 px-6">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center font-bold text-primary group-hover:scale-110 transition-transform">
-                          {worker.name.charAt(0)}
+                          {(worker.full_name || worker.name || '?').charAt(0)}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-900 text-lg leading-tight">{worker.name}</p>
-                          <p className="text-sm text-slate-500 mt-0.5">{worker.role}</p>
+                          <p className="font-bold text-slate-900 text-lg leading-tight">{worker.full_name}</p>
+                          <p className="text-sm text-slate-500 mt-0.5">{worker.job_title}</p>
                         </div>
                       </div>
                     </td>
@@ -559,21 +563,21 @@ export default function MarkAttendance() {
                       <input
                         type="text"
                         required
-                        value={modalFormData.name}
-                        onChange={(e) => setModalFormData({ ...modalFormData, name: e.target.value })}
+                        value={modalFormData.full_name}
+                        onChange={(e) => setModalFormData({ ...modalFormData, full_name: e.target.value })}
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm font-medium bg-slate-50/30"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Role / Specialization</label>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Job Title / Specialization</label>
                     <div className="relative">
                       <BadgeCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
                         type="text"
                         required
-                        value={modalFormData.role}
-                        onChange={(e) => setModalFormData({ ...modalFormData, role: e.target.value })}
+                        value={modalFormData.job_title}
+                        onChange={(e) => setModalFormData({ ...modalFormData, job_title: e.target.value })}
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm font-medium bg-slate-50/30"
                       />
                     </div>
@@ -635,7 +639,7 @@ export default function MarkAttendance() {
                     </div>
                     <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-center hover:bg-white/20 transition-colors">
                       <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Hours</p>
-                      <p className="text-base font-bold text-blue-400">{selectedWorker?.stats?.totalHours || 0}h</p>
+                      <p className="text-base font-bold text-primary">{selectedWorker?.stats?.totalHours || 0}h</p>
                     </div>
                   </div>
                 </div>

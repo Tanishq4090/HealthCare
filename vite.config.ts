@@ -15,9 +15,9 @@ export default defineConfig(({ mode }) => {
   const pwaManifest =
     appMode === 'os'
       ? {
-          name: 'HealthFirst OS — Private Portal',
-          short_name: 'HealthFirst OS',
-          description: 'Private client operations portal',
+          name: '99Care OS — Private Portal',
+          short_name: '99Care OS',
+          description: 'Private client operations portal for 99Care',
           theme_color: themeColor,
           background_color: '#ffffff',
           display: 'standalone',
@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
             { src: '/99care-favicon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' },
           ],
           shortcuts: [
-            { name: 'Open Dashboard', url: '/admin', description: 'Go to HealthFirst OS dashboard' },
+            { name: 'Open Dashboard', url: '/admin', description: 'Go to 99Care OS dashboard' },
           ],
         }
       : {

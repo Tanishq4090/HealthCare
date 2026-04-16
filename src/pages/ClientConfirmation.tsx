@@ -18,16 +18,16 @@ export default function ClientConfirmation() {
         const fetchWorker = async () => {
             try {
                 const { data, error } = await supabase
-                    .from('workers')
+                    .from('employees')
                     .select('*')
                     .eq('id', id)
                     .single();
 
                 if (error) throw error;
-                if (!data) throw new Error("Worker profile not found.");
+                if (!data) throw new Error("Staff profile not found.");
 
                 setWorker(data);
-                setIsConfirmed(data.status === 'Active');
+                setIsConfirmed(data.status === 'assigned' || data.status === 'Active');
             } catch (err: any) {
                 console.error("Error fetching worker:", err);
                 setError(err.message || 'Failed to load staff profile.');
@@ -44,10 +44,10 @@ export default function ClientConfirmation() {
         setConfirming(true);
 
         try {
-            // 1. Mark worker as Active
+            // 1. Mark employee as assigned (Active)
             const { error } = await supabase
-                .from('workers')
-                .update({ status: 'Active' })
+                .from('employees')
+                .update({ status: 'assigned' })
                 .eq('id', worker.id);
 
             if (error) throw error;
@@ -131,8 +131,8 @@ export default function ClientConfirmation() {
                         </div>
 
                         <div className="text-center mb-8">
-                            <h2 className="text-2xl font-bold text-slate-900">{worker.name}</h2>
-                            <p className="text-primary font-medium text-lg mt-1">{worker.role}</p>
+                            <h2 className="text-2xl font-bold text-slate-900">{worker.full_name}</h2>
+                            <p className="text-primary font-medium text-lg mt-1">{worker.job_title}</p>
                             <span className="inline-block mt-3 px-3 py-1 bg-primary/10 text-primary text-sm font-semibold rounded-full border border-primary/15">
                                 Assigned to: {worker.assigned_client || 'Your Facility'}
                             </span>
@@ -163,7 +163,7 @@ export default function ClientConfirmation() {
                                         <CheckCircle2 className="w-6 h-6" />
                                     </div>
                                     <h3 className="text-emerald-800 font-bold text-lg mb-1">Staff Member Confirmed!</h3>
-                                    <p className="text-emerald-600 text-sm">Thank you. {worker.name} is now officially assigned and active. They will receive their joining links shortly.</p>
+                                    <p className="text-emerald-600 text-sm">Thank you. {worker.full_name} is now officially assigned and active. They will receive their joining links shortly.</p>
                                 </div>
                             ) : (
                                 <div>

@@ -27,7 +27,7 @@ export default function Clients() {
     };
 
     const handleRequestReview = async (client: any) => {
-        const message = `Hi ${client.contact}, thank you for choosing HealthFirst. We would love to hear about your experience! Please leave us a review here: [Google Local Link]`;
+        const message = `Hi ${client.contact}, thank you for choosing 99Care. We would love to hear about your experience! Please leave us a review here: [Google Local Link]`;
         console.log('Sending message:', message); // Use message
         
         toast.promise(
@@ -47,9 +47,9 @@ export default function Clients() {
             // 1. Update Client (Simulated for now, would need SQL column 'service_rating')
             // const { error } = await supabase.from('clients').update({ service_rating: editingClient.service_rating }).eq('name', editingClient.name);
 
-            // 2. Sync with Workers (As requested: Worker gets rating from Client's company service review)
+            // 2. Sync with Employees (As requested: Employee gets rating from Client's company service review)
             const { error: workerError } = await supabase
-                .from('workers')
+                .from('employees')
                 .update({ rating: editingClient.service_rating })
                 .eq('assigned_client', editingClient.name);
 
@@ -69,16 +69,16 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // Fetch all workers to derive clients
-            const { data: workerData, error: workerError } = await supabase
-                .from('workers')
-                .select('id, name, assigned_client, status');
+            // Fetch all employees to derive clients
+            const { data: employeeData, error: empError } = await supabase
+                .from('employees')
+                .select('id, full_name, assigned_client, status');
             
-            if (workerError) throw workerError;
+            if (empError) throw empError;
 
-            // Group workers by client
+            // Group employees by client
             const clientMap: Record<string, any> = {};
-            (workerData || []).forEach(w => {
+            (employeeData || []).forEach(w => {
                 if (!w.assigned_client) return;
                 
                 if (!clientMap[w.assigned_client]) {
@@ -95,14 +95,14 @@ export default function Clients() {
                 }
                 
                 clientMap[w.assigned_client].workerCount++;
-                if (w.status === 'Active') {
+                if (w.status === 'assigned' || w.status === 'Active') {
                     clientMap[w.assigned_client].activeWorkerCount++;
                 }
             });
 
             setClients(Object.values(clientMap));
         } catch (error) {
-            console.error('Error fetching clients:', error);
+            console.error('Error fetching client data:', error);
             toast.error('Failed to load dynamic client data');
         }
     };
@@ -233,7 +233,7 @@ export default function Clients() {
                                     <Star className="w-3.5 h-3.5 fill-current" />
                                     <Star className="w-3.5 h-3.5 fill-current" />
                                 </div>
-                                <p className="text-sm text-slate-700 line-clamp-2">"Excellent staff provided by HealthFirst. Very professional tracking."</p>
+                                <p className="text-sm text-slate-700 line-clamp-2">"Excellent staff provided by 99Care. Very professional tracking."</p>
                                 <p className="text-xs text-slate-400 mt-2">- Apex Medical Corp</p>
                             </div>
                         </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Lock, User as UserIcon } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
+import { supabase } from './lib/supabase';
 
 export default function Login() {
     const { user, login } = useAuth();
@@ -31,17 +32,30 @@ export default function Login() {
         setIsLoading(true);
 
         try {
-            // Pure Username Auth System Request (Zero Supabase API dependency)
+            // Virtual Email strategy: map username to staff internal domain
             const cleanUser = username.toLowerCase().trim();
-            if (cleanUser === 'admin' && password === 'password123') {
-                login('pure_dev_token_admin');
-                navigate('/admin', { replace: true });
-            } else if (cleanUser === 'client' && password === 'password123') {
-                login('pure_dev_token_client');
-                navigate('/admin', { replace: true });
-            } else {
-                setError('Invalid username or password.');
+            const virtualEmail = `${cleanUser}@staff.healthcare`;
+
+            const { error } = await supabase.auth.signInWithPassword({
+                email: virtualEmail,
+                password: password,
+            });
+
+            if (error) {
+                // Check if it's the legacy dev credentials for quick fallback
+                if (cleanUser === 'admin' && password === 'password123') {
+                     await login('admin');
+                     navigate('/admin', { replace: true });
+                     return;
+                } else {
+                    setError('Invalid username or password.');
+                }
+                return;
             }
+
+            // Success redirect is handled by useEffect in Login.tsx
+            navigate('/admin', { replace: true });
+
         } catch (err: any) {
             setError(err.message || 'Authentication failed.');
         } finally {
@@ -61,11 +75,15 @@ export default function Login() {
             <div className="w-full max-w-sm login-card">
                 {/* Logo & Header */}
                 <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-primary/20">
-                        <span className="text-white font-bold text-3xl leading-none">99</span>
+                    <div className="w-20 h-20 bg-white shadow-xl shadow-slate-200/50 rounded-3xl flex items-center justify-center mx-auto mb-6 p-3 ring-1 ring-slate-100">
+                        <img 
+                            src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+                            alt="99Care Logo" 
+                            className="w-full h-full object-contain"
+                        />
                     </div>
-                    <h1 className="text-3xl font-bold text-slate-900 mb-2 tracking-tight">Welcome to 99 Care</h1>
-                    <p className="text-slate-500">Sign in to your dashboard to continue</p>
+                    <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">99Care OS</h1>
+                    <p className="text-slate-500 font-medium">Healthcare Operations Management</p>
                 </div>
 
                 {/* Login Box */}
@@ -87,7 +105,7 @@ export default function Login() {
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
                                     placeholder="Enter your username"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                 />
                             </div>
                         </div>
@@ -101,7 +119,7 @@ export default function Login() {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder="Enter your password"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                 />
                             </div>
                         </div>
@@ -123,7 +141,7 @@ export default function Login() {
                 </div>
 
                 <div className="text-center mt-8 text-xs text-slate-400">
-                    <p>Secured by HealthFirst OS Authentication</p>
+                    <p>Secured by 99Care OS Authentication</p>
                 </div>
             </div>
         </div>

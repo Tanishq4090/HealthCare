@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
+import { assignWorkerToClient } from '../services/assignmentService';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -413,7 +414,7 @@ export default function CRM() {
     const sendWorkerProfileWhatsApp = (lead: any, worker: any) => {
         const baseUrl = window.location.origin;
         const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}`;
-        const text = `HealthFirst CRM: Namaste ${lead.name}! Humne aapke liye staff allocate kar diya hai.\n\nName: ${worker.name}\nRole: ${worker.role}\nCharge: ₹${worker.monthly_daily_rate}/day\n\nFull profile check karke confirm karein: ${confirmLink}\n\nDhanyawad! ✅`;
+        const text = `99Care CRM: Namaste ${lead.name}! Humne aapke liye staff allocate kar diya hai.\n\nName: ${worker.name}\nRole: ${worker.role}\nCharge: ₹${worker.monthly_daily_rate}/day\n\nFull profile check karke confirm karein: ${confirmLink}\n\nDhanyawad! ✅`;
         const phone = lead.phone?.replace(/\D/g, '') || '917575041313';
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
         toast.success(`Worker profile shared with ${lead.name}!`);
@@ -694,23 +695,23 @@ export default function CRM() {
     const fetchWorkers = async () => {
         setIsLoadingWorkers(true);
         try {
-            // Check both potential column names 'status' or 'availability'
-            const { data, error } = await supabase.from('workers').select('*');
+            const { data, error } = await supabase.from('employees').select('*');
             
             if (error) throw error;
 
             if (data && data.length > 0) {
                 // Filter in JS to be safe against schema variations
                 const available = data.filter(w => 
-                    (w.status && w.status.toLowerCase() === 'available') || 
-                    (w.availability && w.availability.toLowerCase() === 'available')
+                    (w.status && w.status.toLowerCase() === 'available')
                 );
-                setAvailableWorkers(available.length > 0 ? available : MOCK_WORKERS.filter(w => w.status === 'Available'));
+                // Map unified fields to legacy UI expectations
+                const mapped = available.map(w => ({ ...w, name: w.full_name || w.name, role: w.job_title || w.role }));
+                setAvailableWorkers(mapped.length > 0 ? mapped : MOCK_WORKERS.filter(w => w.status === 'Available'));
             } else {
                 setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
             }
         } catch (err) {
-            console.warn("Failed to fetch workers from DB, using mock data:", err);
+            console.warn("Failed to fetch employees from DB, using mock data:", err);
             setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
         } finally {
             setIsLoadingWorkers(false);
@@ -851,18 +852,23 @@ export default function CRM() {
                 // If staff assignment -> move to Staff Assigned
                 else if (agentTargetAction === 'staff' && (selectedWorker || agentTargetLead.assigned_staff)) {
                     await handleMoveLead(agentTargetLead.id, 'Staff Assigned');
+                    
                     if (selectedWorker) {
                         try {
-                            await supabase.from('workers')
-                                .update({ assigned_client: agentTargetLead.name, status: 'Active' })
-                                .eq('id', selectedWorker.id);
-                        } catch (e) {
-                            console.warn('Could not update worker in DB (may be mock):', e);
+                            const result = await assignWorkerToClient(selectedWorker.id, agentTargetLead.id);
+                            if (result.whatsappSent) {
+                                toast.success(`${selectedWorker.name || selectedWorker.full_name} assigned and ID card sent to client! ✅`, { id: toastId, duration: 6000 });
+                            } else {
+                                toast.warning(`${selectedWorker.name || selectedWorker.full_name} assigned, but WhatsApp delivery failed: ${result.whatsappError}`, { id: toastId, duration: 6000 });
+                            }
+                        } catch (e: any) {
+                            console.error('Finalizing assignment failed:', e);
+                            toast.error(`Assignment completed but ID card generation failed: ${e.message}`, { id: toastId });
                         }
+                    } else {
+                        toast.success(`Staff assignment updated locally!`, { id: toastId, duration: 4000 });
                     }
-                    const workerName = selectedWorker?.name || agentTargetLead.assigned_staff || 'Staff';
                     setSelectedWorker(null);
-                    toast.success(`${workerName} assigned! Moved ${agentTargetLead.name} to Staff Assigned.`, { id: toastId, duration: 6000 });
                 }
                 // If Consent Form -> move to Form Submitted (or keep in Quotation Sent but user asked for automation)
                 else if (agentTargetAction === 'consent') {
@@ -1339,7 +1345,7 @@ export default function CRM() {
                         </button>
                         
                         {isNotificationsOpen && (
-                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="absolute right-0 sm:right-0 -right-4 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
                                     <h3 className="font-bold text-slate-900 text-sm">AI Agent Activity</h3>
                                     <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">LIVE</span>
@@ -1371,30 +1377,30 @@ export default function CRM() {
                     </div>
 
                     {/* Module Tabs */}
-                    <div className="flex items-center p-1.5 bg-slate-200/50 rounded-2xl shrink-0 border border-slate-200 shadow-inner">
+                    <div className="flex items-center p-1 sm:p-1.5 bg-slate-200/50 rounded-xl sm:rounded-2xl shrink-0 border border-slate-200 shadow-inner overflow-x-auto hide-scrollbar">
                         <button
                             onClick={() => setActiveTab('pipeline')}
-                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            Sales Pipeline
+                            Pipeline
                         </button>
                         <button
                             onClick={() => setActiveTab('clients')}
-                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            Client Master
+                            Clients
                         </button>
                         <button
                             onClick={() => setActiveTab('automations')}
-                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'automations' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'automations' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            AI Automations
+                            AI Auto
                         </button>
                         <button
                             onClick={() => setActiveTab('voice')}
-                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === 'voice' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'voice' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            Voice AI Calls
+                            Voice AI
                         </button>
                     </div>
                 </div>
@@ -1402,17 +1408,17 @@ export default function CRM() {
 
             {(activeTab === 'pipeline' || activeTab === 'clients') && (
                 <div className="flex flex-col flex-1 h-full min-h-0">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500 font-medium">
                             <span className="w-2 h-2 rounded-full bg-[#1AA6A8]"></span>
-                            Live Sync Active - {activeTab === 'pipeline' ? 'Sales Pipeline' : 'Client Master'}
+                            Live Sync Active
                         </div>
-                        <div className="flex items-center gap-3">
-                            <button onClick={handleAddManualLead} className="px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-2 shadow-sm">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            <button onClick={handleAddManualLead} className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm">
                                 <Plus className="w-4 h-4" /> Add Lead
                             </button>
-                            <button onClick={handleExportLeadsToCSV} className="px-4 py-2 bg-white text-slate-700 border border-slate-200 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
-                                Export {activeTab === 'pipeline' ? 'Pipeline' : 'Clients'} to CSV
+                            <button onClick={handleExportLeadsToCSV} className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex">
+                                Export CSV
                             </button>
                         </div>
                     </div>
@@ -1426,7 +1432,7 @@ export default function CRM() {
                     ) : (
                         <>
                             {columns.map((col, idx) => (
-                                <div key={idx} className="w-[320px] shrink-0 flex flex-col bg-slate-50 rounded-xl border border-slate-200">
+                                <div key={idx} className="w-[280px] sm:w-[320px] shrink-0 flex flex-col bg-slate-50 rounded-xl border border-slate-200">
                                     <div className="p-4 border-b border-slate-200 bg-white rounded-t-xl relative group/header">
                                         {/* Stage Header w/ Edit toggle */}
                                         <div className="flex items-center justify-between">
@@ -2384,22 +2390,22 @@ export default function CRM() {
                     
                     <div className="p-6 flex-1 overflow-y-auto space-y-6 bg-slate-50/30">
                         {/* Call Summary Block */}
-                        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
-                            <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <div className="bg-primary/5 border border-primary/10 rounded-xl p-4">
+                            <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <Bot className="w-4 h-4" /> AI Summary
                             </h3>
                             <p className="text-sm font-medium text-slate-700 leading-relaxed italic">
                                 "{selectedCall.summary || 'Summary unavailable.'}"
                             </p>
                             {selectedCall.intent && (
-                                <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-100 text-xs font-bold text-blue-700 shadow-sm">
+                                <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-primary/10 text-xs font-bold text-primary shadow-sm">
                                     Intent: {selectedCall.intent}
                                 </div>
                             )}
                             
                             {/* Modal Audio Player */}
-                            <div className="mt-4 pt-4 border-t border-blue-100">
-                                <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-3">Call Recording</p>
+                            <div className="mt-4 pt-4 border-t border-primary/10">
+                                <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-3">Call Recording</p>
                                 <VoicePlayer src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${selectedCall.id}`} />
                             </div>
                         </div>

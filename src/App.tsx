@@ -27,8 +27,12 @@ import ContactPage from './pages/public/ContactPage';
 import AppointmentPage from './pages/public/AppointmentPage';
 import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
 import NotFoundPage from './pages/NotFoundPage';
+import PublicIDCard from './pages/public/PublicIDCard';
 import { APP_MODE } from './config/appMode';
 import { useEffect } from 'react';
+
+// Lazy-loaded heavy admin modules (code-split for faster initial load)
+// Lazy-loaded heavy admin modules (code-split for faster initial load)
 
 import './App.css';
 
@@ -41,7 +45,7 @@ function AppMeta() {
 
     document.title =
       mode === 'os'
-        ? 'HealthFirst OS — Private Client Portal'
+        ? '99Care OS — Private Portal'
         : '99 Care — Home Healthcare Services in Surat';
 
     const existing = document.querySelector('meta[name="robots"]');
@@ -83,6 +87,7 @@ function AppContent() {
             <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
+          <Route path="/id-card/:token" element={<PublicIDCard />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>
@@ -93,19 +98,16 @@ function AppContent() {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route element={<Layout />}>
+            <Route path="/" element={<HomePage />} />
+          </Route>
           <Route path="/login" element={<Login />} />
           <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
           <Route path="/duty/:id" element={<DutyTracker />} />
+          <Route path="/id-card/:token" element={<PublicIDCard />} />
 
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute>
-                <AdminLayout />
-              </ProtectedRoute>
-            }
-          >
+          <Route path="/id-card/:token" element={<PublicIDCard />} />
+          <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="crm" element={<ProtectedRoute requiredModule="crm"><CRM /></ProtectedRoute>} />
             <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
@@ -114,6 +116,8 @@ function AppContent() {
             <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
+          {/* Default fallback for root path in OS mode to support public site viewing */}
+          <Route element={<Layout />}><Route path="/" element={<HomePage />} /></Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </AnimatePresence>
@@ -140,6 +144,7 @@ function AppContent() {
         <Route path="/login" element={<Login />} />
         <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
         <Route path="/duty/:id" element={<DutyTracker />} />
+        <Route path="/id-card/:token" element={<PublicIDCard />} />
 
         <Route
           path="/admin"
