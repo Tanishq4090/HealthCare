@@ -1269,7 +1269,11 @@ export default function CRM() {
         items: leads.filter(l => l.pipeline_stage === stage).map(l => {
             const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
             return {
-                id: l.id, name: l.name, source: l.source, time: new Date(l.created_at).toLocaleDateString(), valueAmount: l.estimated_value_monthly, value: "₹" + l.estimated_value_monthly + "/mo", status: l.status, pipeline_stage: l.pipeline_stage, phone: l.phone, whatsapp_number: l.whatsapp_number, priority: l.priority || 'medium',
+                ...l,
+                time: new Date(l.created_at).toLocaleDateString(),
+                valueAmount: l.estimated_value_monthly,
+                value: "₹" + l.estimated_value_monthly + "/mo",
+                priority: l.priority || 'medium',
                 isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false
             };
         })
