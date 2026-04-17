@@ -688,55 +688,22 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const { data: leadsData, error } = await supabase
-                .from('crm_leads')
-                .select('*')
-                .order('created_at', { ascending: false });
+            // Use the RPC to fetch leads with their assigned workers in a single go.
+            // This is foolproof because it runs server-side and bypasses RLS blocks.
+            const { data, error } = await supabase.rpc('get_crm_leads_with_workers');
             if (error) throw error;
 
-            let enrichedLeads = leadsData || [];
-            try {
-                // Enrich with resolved worker — 3 strategies in priority order
-                const [assignmentsRes, employeesRes] = await Promise.all([
-                    supabase
-                        .from('worker_assignments')
-                        .select('client_id, employee_id')
-                        .eq('assignment_status', 'active'),
-                    supabase
-                        .from('employees')
-                        .select('id, full_name, job_title, assigned_client')
-                        .not('assigned_client', 'is', null),
-                ]);
-
-                const assignments = assignmentsRes.data || [];
-                const employees  = employeesRes.data  || [];
-
-                const empById        = new Map(employees.map(e => [e.id, { name: e.full_name, role: e.job_title }]));
-                const assignByUUID   = new Map(assignments.map(a => [a.client_id, empById.get(a.employee_id)]));
-                const assignByName   = new Map(employees.map(e => [
-                    (e.assigned_client as string).toLowerCase().trim(),
-                    { name: e.full_name, role: e.job_title }
-                ]));
-
-                enrichedLeads = enrichedLeads.map((lead: any) => {
-                    // Strategy 1: denormalized column on lead (fastest, zero RLS risk)
-                    const fromCol  = lead.assigned_worker_name
-                        ? { name: lead.assigned_worker_name, role: lead.assigned_worker_role }
-                        : null;
-                    // Strategy 2: UUID join via worker_assignments
-                    const fromUUID = assignByUUID.get(lead.id) || null;
-                    // Strategy 3: name match via employees.assigned_client
-                    const fromName = lead.name
-                        ? (assignByName.get(lead.name.toLowerCase().trim()) || null)
-                        : null;
-
-                    return { ...lead, _resolvedWorker: fromCol || fromUUID || fromName };
-                });
-            } catch (e) { console.error('Worker enrichment error:', e); }
+            // Map RPC result back to the expected lead structure
+            // full_lead_data contains all the original crm_leads columns
+            const enrichedLeads = (data || []).map((row: any) => ({
+                ...row.full_lead_data,
+                assigned_worker_name: row.assigned_worker_name,
+                assigned_worker_role: row.assigned_worker_role
+            }));
 
             setLeads(enrichedLeads);
         } catch (err: any) {
-            console.error('Error fetching leads:', err);
+            console.error('Error fetching leads via RPC:', err);
         } finally {
             setIsLoading(false);
         }
@@ -1739,10 +1706,8 @@ export default function CRM() {
                                                                 {/* Assigned Worker Badge OR Warning */}
                                                                 {(() => {
                                                                     const typedItem = item as any;
-                                                                    // Check all resolution paths
-                                                                    const worker = typedItem._resolvedWorker as { name: string; role: string } | null | undefined;
-                                                                    const workerName = (typedItem.assigned_worker_name as string | null) || worker?.name || null;
-                                                                    const workerRole = (typedItem.assigned_worker_role as string | null) || worker?.role || null;
+                                                                    const workerName = typedItem.assigned_worker_name as string | null;
+                                                                    const workerRole = typedItem.assigned_worker_role as string | null;
 
                                                                     const triggerStages = ['staff assigned', 'deposit pending'];
                                                                     const isTargetStage = triggerStages.some(s => typedItem.pipeline_stage?.toLowerCase() === s) || clientStages.includes(typedItem.pipeline_stage);
