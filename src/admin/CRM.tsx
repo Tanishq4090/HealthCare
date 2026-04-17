@@ -1059,15 +1059,17 @@ export default function CRM() {
     }, []);
 
     const handleMoveLead = async (id: string, newStage: string) => {
-        // Move instantly on frontend for immediate feedback
-        setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
-        toast.info(`Lead moved to ${newStage}`);
+        // If this is a hardcoded mock lead (ID length < 10), move and return
+        if (id.length < 10) {
+            setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
+            toast.info(`Mock lead moved to ${newStage}`);
+            return;
+        }
 
-        // If this is a hardcoded mock lead (ID length < 10), there's no need to update Supabase
-        if (id.length < 10) return;
+        const toastId = toast.loading(`Moving lead to "${newStage}"...`);
 
         try {
-            // Rule 2: Automatic staff release if moved to pre-assignment stages
+            // Rule: Automatic staff release if moved to pre-assignment stages
             const preAssignmentStages = ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted'];
             if (preAssignmentStages.includes(newStage)) {
                 try {
@@ -1083,13 +1085,17 @@ export default function CRM() {
                 .eq('id', id);
 
             if (error) throw error;
-            // Background refresh to ensure consistency
+            
+            // Sync UI only after database confirms
+            setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
+            toast.success(`Pipeline state updated successfully!`, { id: toastId });
+            
+            // Background refresh to ensure full consistency (assigned worker names, etc)
             fetchLeads();
         } catch (error: any) {
             console.error("Error updating lead stage:", error);
-            toast.error(`Failed to move lead: ${error.message}`);
-            // Revert on error
-            fetchLeads();
+            toast.error(`Persistence Error: ${error.message}. Change reverted.`, { id: toastId });
+            fetchLeads(); // Force re-fetch to restore correct state
         }
     };
 
@@ -1097,29 +1103,40 @@ export default function CRM() {
         if (!window.confirm(`Are you sure you want to delete "${leadName}"? This action cannot be undone.`)) return;
 
         // Remove from UI immediately
-        setLeads(prev => prev.filter(l => l.id !== leadId));
-        toast.success(`Lead "${leadName}" deleted.`);
+        // If mock lead (short ID), skip Supabase and just update state
+        if (leadId.length < 10) {
+            setLeads(prev => prev.filter(l => l.id !== leadId));
+            toast.success(`Lead "${leadName}" removed from view.`);
+            return;
+        }
 
-        // If mock lead (short ID), skip Supabase
-        if (leadId.length < 10) return;
+        const toastId = toast.loading(`Performing deep deletion for "${leadName}"...`);
 
         try {
             console.log(`[CRM] Invoking robust deep-delete RPC for lead: ${leadId}`);
             
             // Call the database function to handle all cascading deletions and status updates
-            const { error: rpcError } = await supabase.rpc('delete_crm_lead_robust', { 
+            const { data, error: rpcError } = await supabase.rpc('delete_crm_lead_robust', { 
                 target_lead_id: leadId 
             });
 
+            // The RPC v3.0 returns a JSON object with 'success' and 'error' keys
             if (rpcError) {
                 throw new Error(rpcError.message || "Server-side deletion failed");
             }
+
+            if (data && data.success === false) {
+                throw new Error(data.error || "Deep deletion was blocked by the database.");
+            }
             
-            console.log(`[CRM] Lead ${leadId} deleted permanently via RPC.`);
+            // ONLY remove from state if the DB confirmed success
+            setLeads(prev => prev.filter(l => l.id !== leadId));
+            toast.success(`Lead "${leadName}" deleted permanently.`, { id: toastId });
+            console.log(`[CRM] Lead ${leadId} deleted permanently via RPC.`, data);
         } catch (err: any) {
             console.error('Failed to delete lead:', err);
-            toast.error(`Database Error: ${err.message}. Restoring record to view...`, { duration: 5000 });
-            fetchLeads(); // Re-fetch to restore UI state
+            toast.error(`Deletion Failed: ${err.message}`, { id: toastId, duration: 6000 });
+            // No need to fetchLeads() here because we didn't remove it from state optimistically anymore
         }
     };
 
@@ -1319,18 +1336,25 @@ export default function CRM() {
     };
 
     const handleUpdatePriority = async (leadId: string, newPriority: string) => {
-        // Optimistic
-        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: newPriority } : l));
-        if (leadId.length >= 10) {
-            try {
-                const { error } = await supabase.from('crm_leads').update({ priority: newPriority }).eq('id', leadId);
-                if (error) throw error;
-                toast.success('Priority updated');
-            } catch (err: any) {
-                console.error("Error updating priority", err);
-                toast.error("Failed to update priority");
-                fetchLeads(); // revert
-            }
+        // If mock lead, handle locally and return
+        if (leadId.length < 10) {
+            setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: newPriority } : l));
+            toast.success('Mock priority updated');
+            return;
+        }
+
+        const toastId = toast.loading('Updating priority...');
+        try {
+            const { error } = await supabase.from('crm_leads').update({ priority: newPriority }).eq('id', leadId);
+            if (error) throw error;
+            
+            // Sync UI only after database confirms
+            setLeads(prev => prev.map(l => l.id === leadId ? { ...l, priority: newPriority } : l));
+            toast.success('Priority updated permanently', { id: toastId });
+        } catch (err: any) {
+            console.error("Persistence error (priority):", err);
+            toast.error(`Fail to persist priority: ${err.message}`, { id: toastId });
+            fetchLeads(); // revert
         }
     };
 
