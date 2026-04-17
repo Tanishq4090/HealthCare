@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
   ChevronDown, Building2, Shield, Trash2, RotateCcw,
-  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle,
+  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2,
 } from 'lucide-react';
 
 // shadcn/ui
@@ -871,6 +871,134 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
   );
 }
 
+// ── Edit Employee Rates Dialog ───────────────────────────
+
+function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
+  employee: Employee | null;
+  open: boolean;
+  onClose: () => void;
+  onSaved: (emp: Employee) => void;
+}) {
+  const [form, setForm] = useState({
+    preferred_payment_type: 'monthly' as 'monthly' | 'hourly' | 'short_term',
+    monthly_daily_rate: 0,
+    hourly_rate: 0,
+    short_term_daily_rate: 0,
+    job_title: '',
+    phone: '',
+    address: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (employee) {
+      setForm({
+        preferred_payment_type: employee.preferred_payment_type ?? 'monthly',
+        monthly_daily_rate: employee.monthly_daily_rate ?? 0,
+        hourly_rate: employee.hourly_rate ?? 0,
+        short_term_daily_rate: employee.short_term_daily_rate ?? 0,
+        job_title: employee.job_title ?? '',
+        phone: employee.phone ?? '',
+        address: employee.address ?? '',
+      });
+    }
+  }, [employee]);
+
+  if (!employee) return null;
+
+  const handleSave = async () => {
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .update({
+          preferred_payment_type: form.preferred_payment_type,
+          monthly_daily_rate: form.monthly_daily_rate,
+          hourly_rate: form.hourly_rate,
+          short_term_daily_rate: form.short_term_daily_rate,
+          job_title: form.job_title,
+          phone: form.phone || null,
+          address: form.address || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', employee.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      toast.success('Employee updated successfully!');
+      onSaved(data as Employee);
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Update failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Edit2 className="w-4 h-4 text-primary" /> Edit Employee
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Job Title</label>
+            <Input className="mt-1" value={form.job_title} onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Phone</label>
+            <Input className="mt-1" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Address</label>
+            <Input className="mt-1" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment Scheme</label>
+            <select
+              className="w-full mt-1 flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+              value={form.preferred_payment_type}
+              onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
+            >
+              <option value="monthly">Monthly Base</option>
+              <option value="hourly">Hourly Billing</option>
+              <option value="short_term">Per Service / Short Term</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Monthly (₹)</label>
+              <Input type="number" className="mt-1" value={form.monthly_daily_rate}
+                onChange={e => setForm(f => ({ ...f, monthly_daily_rate: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hourly (₹)</label>
+              <Input type="number" className="mt-1" value={form.hourly_rate}
+                onChange={e => setForm(f => ({ ...f, hourly_rate: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Per Service (₹)</label>
+              <Input type="number" className="mt-1" value={form.short_term_daily_rate}
+                onChange={e => setForm(f => ({ ...f, short_term_daily_rate: Number(e.target.value) }))} />
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="mt-4 gap-2">
+          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button className="bg-primary hover:bg-primary/90 text-white gap-2" onClick={handleSave} disabled={isSubmitting}>
+            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Available Workers Tab ─────────────────────────────────
 
 function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
@@ -878,6 +1006,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
   onPreview: (emp: Employee) => void;
   onViewDetails: (emp: Employee) => void;
 }) {
+  const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -964,12 +1093,15 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
                       <ChevronDown className="w-4 h-4" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuContent align="end" className="w-44">
                     <DropdownMenuItem onClick={() => onViewDetails(emp)} className="gap-2 text-xs">
                       <Shield className="w-3.5 h-3.5" /> Full Profile
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onPreview(emp)} className="gap-2 text-xs">
                       <FileText className="w-3.5 h-3.5" /> Preview ID Card
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setEditEmployee(emp)} className="gap-2 text-xs text-primary focus:text-primary">
+                      <Edit2 className="w-3.5 h-3.5" /> Edit Employee
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleDelete(emp)} className="gap-2 text-xs text-red-500 focus:text-red-600">
                       <Trash2 className="w-3.5 h-3.5" /> Delete Member
@@ -1016,6 +1148,15 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
         </div>
       )}
     </div>
+    <EditEmployeeDialog
+      employee={editEmployee}
+      open={!!editEmployee}
+      onClose={() => setEditEmployee(null)}
+      onSaved={(updated) => {
+        setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+        setEditEmployee(null);
+      }}
+    />
   );
 }
 

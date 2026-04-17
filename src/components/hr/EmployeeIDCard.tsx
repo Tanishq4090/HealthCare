@@ -1,5 +1,4 @@
 import { User } from 'lucide-react';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -40,19 +39,22 @@ export function EmployeeIDCard({
       {/* ── Card ───────────────────────────────────────── */}
       <div
         id="employee-id-card"
-        className="
-          relative overflow-hidden
-          w-[350px] h-[220px]
-          rounded-2xl shadow-2xl
-          bg-white
-          ring-1 ring-slate-200
-          select-none
-        "
-        style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          width: 350,
+          height: 220,
+          borderRadius: 16,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+          backgroundColor: '#ffffff',
+          outline: '1px solid #e2e8f0',
+          fontFamily: 'Inter, system-ui, sans-serif',
+          flexShrink: 0,
+        }}
       >
 
         {/* ── Decorative background dots ─────────────── */}
-        <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.03, pointerEvents: 'none' }}>
           <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
             <pattern id="dots" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
               <circle cx="2" cy="2" r="1.5" fill="#1aa6a8" />
@@ -62,67 +64,95 @@ export function EmployeeIDCard({
         </div>
 
         {/* ── Gradient header bar ────────────────────── */}
-        <div className="absolute top-0 left-0 right-0 h-[64px] bg-gradient-to-r from-[#1aa6a8] to-[#34c7c9] flex items-center px-4 gap-2.5 z-10">
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 64,
+          background: 'linear-gradient(to right, #1aa6a8, #34c7c9)',
+          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 10, zIndex: 10,
+        }}>
           {/* Brand icon */}
-          <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center shrink-0 p-1.5">
-            <img 
-              src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
-              alt="99Care" 
-              className="w-full h-full object-contain brightness-0 invert" 
+          <div style={{
+            width: 40, height: 40, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 6,
+          }}>
+            <img
+              src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg"
+              alt="99Care"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
             />
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-bold text-[15px] leading-none tracking-tight">99Care</p>
-            <p className="text-teal-50 text-[9px] mt-0.5 tracking-widest uppercase leading-none font-medium">Employee Identification</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ color: '#fff', fontWeight: 700, fontSize: 15, lineHeight: 1, letterSpacing: '-0.5px', margin: 0 }}>99Care</p>
+            <p style={{ color: 'rgba(240,253,253,0.85)', fontSize: 9, marginTop: 3, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 500, margin: '3px 0 0' }}>Employee Identification</p>
           </div>
           {/* ID chip */}
-          <div className="bg-white/20 rounded-md px-2 py-0.5">
-            <span className="text-white font-mono text-[10px] font-bold tracking-wider">{employeeId}</span>
+          <div style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 6, padding: '2px 8px' }}>
+            <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em' }}>{employeeId}</span>
           </div>
         </div>
 
         {/* ── Card body ──────────────────────────────── */}
-        <div className="absolute top-[64px] left-0 right-0 bottom-[36px] flex items-center px-5 gap-4 z-10">
+        <div style={{
+          position: 'absolute', top: 64, left: 0, right: 0, bottom: 36,
+          display: 'flex', alignItems: 'center', padding: '0 20px', gap: 16, zIndex: 10,
+        }}>
 
-          {/* Photo */}
-          <div className="shrink-0" style={{ width: 80, height: 80 }}>
-            <Avatar className="w-full h-full ring-4 ring-teal-50 ring-offset-2 shadow-md">
-              {photoUrl ? (
-                <AvatarImage src={photoUrl} alt={employeeName} className="object-cover" />
-              ) : null}
-              <AvatarFallback className="bg-gradient-to-br from-[#1aa6a8] to-[#063b3c] text-white text-2xl font-bold">
-                {photoUrl ? null : (
-                  employeeName ? getInitials(employeeName) : <User className="w-8 h-8" />
+          {/* ── Photo / Avatar ──────────────────────── */}
+          <div style={{
+            width: 76, height: 76, borderRadius: '50%', flexShrink: 0, overflow: 'hidden',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15), 0 0 0 3px #f0fdfa, 0 0 0 5px rgba(26,166,168,0.2)',
+          }}>
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt={employeeName}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+            ) : (
+              <div style={{
+                width: '100%', height: '100%',
+                background: 'linear-gradient(135deg, #1aa6a8, #063b3c)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {employeeName ? (
+                  <span style={{ color: '#fff', fontSize: 22, fontWeight: 700, lineHeight: 1 }}>
+                    {getInitials(employeeName)}
+                  </span>
+                ) : (
+                  <User size={28} color="#fff" />
                 )}
-              </AvatarFallback>
-            </Avatar>
+              </div>
+            )}
           </div>
 
           {/* Employee info */}
-          <div className="flex-1 min-w-0">
-            <h2 className="text-slate-800 font-bold text-[16px] leading-tight truncate">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ color: '#1e293b', fontWeight: 700, fontSize: 16, lineHeight: 1.2, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {employeeName}
             </h2>
-            <p className="text-[#1aa6a8] font-semibold text-[11px] mt-0.5 uppercase tracking-wider truncate">
+            <p style={{ color: '#1aa6a8', fontWeight: 600, fontSize: 11, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.08em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {jobTitle}
             </p>
 
             {/* Divider */}
-            <div className="my-2 h-px bg-gradient-to-r from-teal-100 to-transparent" />
+            <div style={{ marginTop: 8, marginBottom: 8, height: 1, background: 'linear-gradient(to right, #ccfbf1, transparent)' }} />
 
-            {/* ID row */}
-            <div className="flex flex-col gap-1.5 mt-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400 text-[9px] uppercase tracking-widest font-semibold">ID</span>
-                <span className="font-mono text-slate-700 font-bold text-[13px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 tracking-wider">
+            {/* ID + Aadhaar rows */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#94a3b8', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600 }}>ID</span>
+                <span style={{
+                  fontFamily: 'monospace', color: '#334155', fontWeight: 700, fontSize: 13,
+                  backgroundColor: '#f8fafc', padding: '2px 8px', borderRadius: 4,
+                  border: '1px solid #e2e8f0', letterSpacing: '0.08em',
+                }}>
                   {employeeId}
                 </span>
               </div>
-              
+
               {aadhaarNumber && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400 text-[9px] uppercase tracking-widest font-semibold">Aadhaar</span>
-                  <span className="font-mono text-slate-600 font-bold text-[11px] tracking-wider">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600 }}>Aadhaar</span>
+                  <span style={{ fontFamily: 'monospace', color: '#475569', fontWeight: 700, fontSize: 11, letterSpacing: '0.08em' }}>
                     {aadhaarNumber.replace(/(\d{4})(?=\d)/g, '$1 ')}
                   </span>
                 </div>
@@ -130,39 +160,46 @@ export function EmployeeIDCard({
             </div>
 
             {/* Barcode-style decoration */}
-            <div className="flex items-end gap-[2px] mt-2 h-4">
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, marginTop: 8, height: 16 }}>
               {[3,5,2,7,4,6,3,8,5,2,6,4,7,3,5,2,6,8,4,3,7,5,2,6].map((h, i) => (
-                <div
-                  key={i}
-                  className="bg-teal-100 rounded-[1px]"
-                  style={{ width: '2px', height: `${h * 1.5}px` }}
-                />
+                <div key={i} style={{ width: 2, height: `${h * 1.5}px`, backgroundColor: '#ccfbf1', borderRadius: 1 }} />
               ))}
             </div>
           </div>
         </div>
 
         {/* ── Bottom stripe ──────────────────────────── */}
-        <div className="absolute bottom-0 left-0 right-0 h-[36px] bg-gradient-to-r from-[#063b3c] via-[#0b4f50] to-[#1aa6a8] flex items-center justify-between px-4 z-10">
-          <p className="text-teal-50 text-[9px] font-medium tracking-widest uppercase">
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, height: 36,
+          background: 'linear-gradient(to right, #063b3c, #0b4f50, #1aa6a8)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', zIndex: 10,
+        }}>
+          <p style={{ color: 'rgba(240,253,253,0.7)', fontSize: 9, fontWeight: 500, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>
             Authorized Personnel Only
           </p>
-          <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-emerald-300 text-[9px] font-bold uppercase tracking-wider">Active</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#34d399', animation: 'pulse 2s infinite' }} />
+            <span style={{ color: '#6ee7b7', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Active</span>
           </div>
         </div>
 
         {/* ── PREVIEW watermark (admin only) ─────────── */}
         {variant === 'preview' && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 rotate-[-20deg]">
-            <span className="text-teal-900/5 text-[40px] font-black tracking-[0.4em] uppercase select-none">
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none', zIndex: 20, transform: 'rotate(-20deg)',
+          }}>
+            <span style={{ color: 'rgba(15,118,110,0.04)', fontSize: 40, fontWeight: 900, letterSpacing: '0.4em', textTransform: 'uppercase', userSelect: 'none' }}>
               99CARE
             </span>
           </div>
         )}
 
-        <div className="absolute top-0 right-0 w-0 h-0 border-l-[30px] border-l-transparent border-t-[30px] border-t-white/20 z-10" />
+        {/* Corner trim */}
+        <div style={{
+          position: 'absolute', top: 0, right: 0, width: 0, height: 0, zIndex: 10,
+          borderLeft: '30px solid transparent', borderTop: '30px solid rgba(255,255,255,0.2)',
+        }} />
       </div>
     </div>
   );
