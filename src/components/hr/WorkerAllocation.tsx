@@ -1042,6 +1042,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
   );
 
   return (
+    <>
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
@@ -1157,6 +1158,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
         setEditEmployee(null);
       }}
     />
+    </>
   );
 }
 
