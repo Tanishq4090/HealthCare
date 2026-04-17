@@ -72,13 +72,14 @@ function getInitials(name: string) {
 
 function statusBadge(status: EmployeeStatus) {
   const map: Record<EmployeeStatus, { label: string; className: string }> = {
-    available: { label: 'Available', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-    assigned:  { label: 'Assigned',  className: 'bg-primary/10 text-primary border-primary/20' },
-    inactive:  { label: 'Inactive',  className: 'bg-slate-100 text-slate-500 border-slate-200' },
+    available: { label: 'Available', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-sm shadow-emerald-500/5' },
+    assigned:  { label: 'Assigned',  className: 'bg-blue-50 text-blue-600 border-blue-100 shadow-sm shadow-blue-500/5' },
+    inactive:  { label: 'Inactive',  className: 'bg-slate-50 text-slate-500 border-slate-200 shadow-sm shadow-slate-500/5' },
   };
   const { label, className } = map[status] ?? map.inactive;
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${className}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${status === 'available' ? 'bg-emerald-400' : status === 'assigned' ? 'bg-blue-400' : 'bg-slate-400'}`} />
       {label}
     </span>
   );
@@ -966,9 +967,14 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
     try {
       const { data, error } = await supabase
         .from('worker_assignments')
-        .select(`*, employees(*), clients(id, client_name, phone_number)`)
+        .select(`
+          *,
+          employee:employees(*),
+          client:clients(id, client_name, phone_number)
+        `)
         .eq('assignment_status', 'active')
         .order('assigned_at', { ascending: false });
+
       if (error) throw error;
 
       // Fetch id_card_links for each assignment
@@ -979,15 +985,26 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
             .select('token, is_active')
             .eq('assignment_id', a.id)
             .eq('is_active', true)
-            .single();
+            .maybeSingle();
+
           const token = link?.token ?? null;
           const shareableUrl = token ? `${window.location.origin}/id-card/${token}` : null;
-          return { ...a, shareableUrl, token };
+          return {
+            ...a,
+            employee: a.employee, // supabase alias handles this
+            client: a.client,
+            shareableUrl,
+            token
+          };
         })
       );
       setAssignments(enriched);
-    } catch { toast.error('Failed to load assignments.'); }
-    finally { setIsLoading(false); }
+    } catch (err: any) {
+      console.error('Assignments load error:', err);
+      toast.error('Failed to load active deployments.');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -1182,92 +1199,138 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input className="pl-9" placeholder="Search employees..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <div className="relative w-full sm:w-80 group">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-primary transition-colors" />
+          <Input 
+            className="pl-10 h-11 bg-white border-slate-200 rounded-xl focus:ring-primary/20 focus:border-primary/30 transition-all shadow-sm" 
+            placeholder="Search name, role, or ID..." 
+            value={search} 
+            onChange={e => setSearch(e.target.value)} 
+          />
         </div>
-        <div className="flex gap-2">
-          {(['all', 'available', 'assigned', 'inactive'] as const).map(s => (
-            <button key={s}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors capitalize
-                ${statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-white text-slate-500 border-slate-200 hover:border-primary/40'}`}
-              onClick={() => setStatusFilter(s)}>
-              {s === 'all' ? 'All' : s}
-            </button>
-          ))}
+
+        <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+          <div className="flex p-1 bg-slate-100/80 backdrop-blur-md rounded-xl border border-slate-200/50">
+            {(['all', 'available', 'assigned', 'inactive'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-4 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all duration-300 whitespace-nowrap
+                  ${statusFilter === s 
+                    ? 'bg-white text-primary shadow-sm shadow-slate-200 translate-z-0 scale-[1.02]' 
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'}`}
+              >
+                {s === 'all' ? 'All' : s}
+              </button>
+            ))}
+          </div>
+          <Button 
+             variant="outline" 
+             size="icon" 
+             onClick={load} 
+             className="h-9 w-9 border-slate-200 rounded-xl bg-white hover:bg-slate-50 transition-colors shadow-sm shrink-0"
+             title="Refresh Directory"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
-        <Button variant="outline" size="icon" onClick={load} title="Refresh"><RefreshCw className="w-4 h-4" /></Button>
       </div>
 
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-slate-100/80 rounded-[2rem] overflow-hidden shadow-sm shadow-slate-200/50">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {['Photo', 'Name', 'Employee ID', 'Job Title', 'Department', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                {['Worker info', 'Assignment Details', 'Status', 'Quick Actions'].map(h => (
+                   <th key={h} className={`px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap ${h === 'Quick Actions' ? 'text-right' : ''}`}>
+                    {h}
+                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-50/80">
               {isLoading
-                ? Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={7} />)
+                ? Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={4} />)
                 : filtered.length === 0
                   ? (
-                    <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">
-                      <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p>No employees found</p>
-                    </td></tr>
+                    <tr>
+                      <td colSpan={4} className="px-6 py-24 text-center text-slate-400">
+                        <div className="w-16 h-16 rounded-full bg-slate-50 mx-auto mb-4 flex items-center justify-center opacity-40">
+                          <Users className="w-8 h-8 text-slate-300" />
+                        </div>
+                        <p className="font-bold text-slate-300 uppercase tracking-widest text-xs">No employees found in directory</p>
+                      </td>
+                    </tr>
                   )
                   : filtered.map(emp => (
-                    <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors cursor-pointer group" onClick={() => onViewDetails(emp)}>
-                      <td className="px-4 py-3">
-                        <Avatar className="w-9 h-9 group-hover:ring-2 group-hover:ring-primary/20 transition-all">
-                          {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} />}
-                          <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary text-white text-xs font-bold">
-                            {getInitials(emp.full_name)}
-                          </AvatarFallback>
-                        </Avatar>
+                    <tr key={emp.id} className="hover:bg-slate-50/50 transition-all group/row cursor-pointer" onClick={() => onViewDetails(emp)}>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="relative">
+                            <Avatar className="w-11 h-11 ring-2 ring-slate-100 group-hover/row:ring-primary/20 transition-all duration-300 shadow-sm">
+                              {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
+                              <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary text-white text-xs font-bold">
+                                {getInitials(emp.full_name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm transition-transform duration-300 group-hover/row:scale-110
+                              ${emp.status === 'available' ? 'bg-emerald-400' : emp.status === 'assigned' ? 'bg-blue-400' : 'bg-slate-300'}`} 
+                            />
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors text-base tracking-tight">{emp.full_name}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
+                                {emp.employee_id}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{emp.job_title}</span>
+                            </div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{emp.full_name}</td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20">
-                          {emp.employee_id}
-                        </span>
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-3 h-3 text-slate-400" />
+                            <span className="text-xs font-semibold text-slate-600 truncate max-w-[150px]">{emp.department || 'General Care'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3 h-3 text-slate-300" />
+                            <span className="text-[10px] font-medium text-slate-400 italic">Joined {new Date(emp.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{emp.job_title}</td>
-                      <td className="px-4 py-3 text-slate-500">{emp.department ?? '—'}</td>
-                      <td className="px-4 py-3">{statusBadge(emp.status)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-                            onClick={e => { e.stopPropagation(); onPreview(emp); }}>
-                            <ExternalLink className="w-3 h-3 mr-1" /> ID Card
-                          </Button>
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-primary hover:bg-primary/5"
-                            onClick={e => { e.stopPropagation(); onViewDetails(emp); }}>
-                            <Shield className="w-3 h-3 mr-1" /> Profile
-                          </Button>
-                          <DropdownMenu>
+                      <td className="px-6 py-5">
+                        {statusBadge(emp.status)}
+                      </td>
+                      <td className="px-6 py-5" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2">
+                           <Button size="sm" variant="ghost" className="h-8 px-3 text-[10px] font-black uppercase tracking-wider bg-slate-50 text-slate-600 hover:bg-primary/5 hover:text-primary rounded-xl transition-all border border-slate-100"
+                            onClick={() => onPreview(emp)}>
+                            <ExternalLink className="w-3 h-3 mr-1.5" /> ID Card
+                           </Button>
+                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                              <Button size="sm" variant="ghost" className="h-8 w-8 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-100 transition-colors"
                                 disabled={updatingId === emp.id}>
                                 {updatingId === emp.id
                                   ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : <><span>Status</span><ChevronDown className="w-3 h-3 ml-1" /></>}
+                                  : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="text-sm">
+                            <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-2xl shadow-xl border-slate-100/60 backdrop-blur-lg bg-white/95">
+                               <p className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Update status</p>
                               {(['available', 'assigned', 'inactive'] as EmployeeStatus[]).map(s => (
                                 <DropdownMenuItem key={s} onClick={() => handleStatusChange(emp, s)}
-                                  className={emp.status === s ? 'font-semibold text-primary' : ''}>
+                                  className={`rounded-xl px-3 py-2 mb-0.5 last:mb-0 transition-colors cursor-pointer
+                                    ${emp.status === s ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600 hover:bg-slate-50'}`}>
                                   {s.charAt(0).toUpperCase() + s.slice(1)}
+                                  {emp.status === s && <Check className="w-3.5 h-3.5 ml-auto" />}
                                 </DropdownMenuItem>
                               ))}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                           </DropdownMenu>
                         </div>
                       </td>
                     </tr>
@@ -1275,8 +1338,13 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2.5 border-t border-slate-50 text-xs text-slate-400">
-          Showing {filtered.length} of {employees.length} employees
+        <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Directory Summary
+           </p>
+           <p className="text-xs font-bold text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-100 shadow-sm">
+             {filtered.length} Staff Members <span className="text-slate-300 mx-1">|</span> {statusFilter === 'all' ? 'All Records' : statusFilter.toUpperCase()}
+           </p>
         </div>
       </div>
     </div>
@@ -1327,74 +1395,19 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-slate-500">
-          <Trash2 className="w-4 h-4" />
-          <span className="text-sm font-medium">Recycle Bin ({employees.length})</span>
+        <div className="flex items-center gap-2">
+           <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center">
+            <Trash2 className="w-4 h-4 text-red-500" />
+           </div>
+           <p className="text-sm font-bold text-slate-800 tracking-tight uppercase">
+              RECYCLE BIN <span className="text-slate-400 ml-1">({employees.length})</span>
+           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} className="gap-2">
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh Bin
+        <Button variant="outline" size="sm" onClick={load} className="gap-2 h-9 rounded-xl border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors shadow-sm">
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh Bin
         </Button>
       </div>
 
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>
-                {['Staff Member', 'Role', 'Status', 'Deleted At', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {isLoading ? (
-                Array.from({ length: 3 }).map((_, i) => <TableRowSkeleton key={i} cols={5} />)
-              ) : employees.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
-                    <Trash2 className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                    <p>Recycle bin is empty</p>
-                  </td>
-                </tr>
-              ) : (
-                employees.map(emp => (
-                  <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-3 min-w-[200px]">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="w-8 h-8 opacity-60 grayscale-[50%]">
-                          {emp.photo_url && <AvatarImage src={emp.photo_url} />}
-                          <AvatarFallback>{getInitials(emp.full_name)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-slate-800">{emp.full_name}</p>
-                          <p className="text-[10px] text-slate-400 font-mono">{emp.employee_id}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{emp.job_title}</td>
-                    <td className="px-4 py-3 opacity-60">{statusBadge(emp.status)}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">
-                      {(emp as any).deleted_at ? new Date((emp as any).deleted_at).toLocaleDateString() : 'Unknown'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-3 text-xs gap-1.5 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
-                          onClick={() => handleRestore(emp)}
-                          disabled={actingId === emp.id}
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" /> Restore
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 px-3 text-xs gap-1.5 text-red-400 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handlePermanentDelete(emp)}
-                          disabled={actingId === emp.id}
-                        >
-                          <X className="w-3.5 h-3.5" /> Permanent Delete
                         </Button>
                       </div>
                     </td>
@@ -1483,18 +1496,18 @@ export default function WorkerAllocation({ isEmbedded = false }: WorkerAllocatio
       {/* Tabs */}
       <Tabs defaultValue="available" className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <TabsList className="bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
-            <TabsTrigger value="available" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4">
-              <Users className="w-4 h-4" /> Available Workers
+          <TabsList className="bg-slate-100/80 backdrop-blur-md border border-slate-200/50 p-1.5 rounded-2xl shadow-sm">
+            <TabsTrigger value="available" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
+              <Users className="w-3.5 h-3.5" /> Available Workers
             </TabsTrigger>
-            <TabsTrigger value="assignments" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4">
-              <Briefcase className="w-4 h-4" /> Active Assignments
+            <TabsTrigger value="assignments" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
+              <Briefcase className="w-3.5 h-3.5" /> Deployments
             </TabsTrigger>
-            <TabsTrigger value="all" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4">
-              <Shield className="w-4 h-4" /> All Employees
+            <TabsTrigger value="all" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
+              <Shield className="w-3.5 h-3.5" /> Directory
             </TabsTrigger>
-            <TabsTrigger value="deleted" className="gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white rounded-lg px-4">
-              <Trash2 className="w-4 h-4" /> Recycle Bin
+            <TabsTrigger value="deleted" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-red-500 data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
+              <Trash2 className="w-3.5 h-3.5" /> Trash
             </TabsTrigger>
           </TabsList>
 
