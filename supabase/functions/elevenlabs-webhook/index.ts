@@ -145,7 +145,63 @@ serve(async (req) => {
           console.error("Error inserting call log:", logError);
       }
 
-      return new Response(JSON.stringify({ success: true, message: 'Call processed and lead captured.' }), {
+      // --- 5. DISPATCH AUTOMATED WHATSAPP GREETING (GIFT) ---
+      // We trigger this only if we have a valid phone number
+      const purePhone = extractedPhone.replace(/\D/g, '');
+      if (purePhone && purePhone.length >= 10) {
+          console.log(`[Webhook] Triggering greeting for ${purePhone}`);
+          
+          // Determine Service & Shift if not explicitly collected
+          let finalService = extractedService !== 'Inquiry' ? extractedService : 'Home Healthcare';
+          let finalShift = 'General';
+          
+          if (finalService === 'Home Healthcare') {
+              const text = formattedTranscript.toLowerCase();
+              if (text.includes('baby') || text.includes('child') || text.includes('baccha')) finalService = 'Baby Care';
+              else if (text.includes('old') || text.includes('parent') || text.includes('elderly')) finalService = 'Old Age Care';
+              else if (text.includes('nurse') || text.includes('nursing') || text.includes('injection')) finalService = 'Nursing Care';
+          }
+
+          if (formattedTranscript.toLowerCase().includes('24') || formattedTranscript.toLowerCase().includes('stay')) {
+              finalShift = '24-Hour';
+          } else if (formattedTranscript.toLowerCase().includes('10')) {
+              finalShift = '10-Hour';
+          }
+
+          try {
+              // Get first name from extractedName
+              const firstName = extractedName.split(' ')[0] || 'Customer';
+
+              const { data: outData, error: outError } = await supabaseClient.functions.invoke('meta-whatsapp-outbound', {
+                  body: {
+                      phone: purePhone,
+                      useTemplate: true,
+                      templateName: "post_call_intake",
+                      templateParams: [
+                          firstName,
+                          finalService,
+                          finalShift
+                      ]
+                  }
+              });
+
+              if (outError) {
+                  console.error(`[Webhook] Outbound Greeting error:`, outError);
+              } else {
+                  console.log(`[Webhook] Greeting dispatched:`, outData);
+                  // Log message sent in CRM history
+                  await supabaseClient.from('whatsapp_messages').insert([{ 
+                      phone: purePhone, 
+                      role: 'assistant', 
+                      content: `[Automated Greeting] Sent service details confirmation for ${finalService} (${finalShift} shift).` 
+                  }]);
+              }
+          } catch (invokeErr) {
+              console.error("[Webhook] Failed to invoke meta-whatsapp-outbound:", invokeErr.message);
+          }
+      }
+
+      return new Response(JSON.stringify({ success: true, message: 'Call processed and greeting triggered.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
