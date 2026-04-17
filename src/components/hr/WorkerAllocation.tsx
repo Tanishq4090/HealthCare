@@ -1199,6 +1199,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
   });
 
   return (
+    <>
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
         <div className="relative w-full sm:w-80 group">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-primary transition-colors" />
@@ -1347,7 +1348,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
            </p>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1408,12 +1409,76 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
         </Button>
       </div>
 
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+      <div className="bg-white border border-slate-100/80 rounded-[2rem] overflow-hidden shadow-sm shadow-slate-200/50">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
+              <tr>
+                {['Staff Member', 'Job Title', 'Last Status', 'Deleted On', 'Actions'].map(h => (
+                   <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50/80">
+              {isLoading
+                ? Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} cols={5} />)
+                : employees.length === 0
+                  ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-20 text-center text-slate-400">
+                        <div className="w-16 h-16 rounded-full bg-slate-50 mx-auto mb-4 flex items-center justify-center opacity-40">
+                          <Trash2 className="w-8 h-8 text-slate-300" />
+                        </div>
+                        <p className="font-bold text-slate-300 uppercase tracking-widest text-xs">No records in recycle bin</p>
+                      </td>
+                    </tr>
+                  )
+                  : employees.map(emp => (
+                    <tr key={emp.id} className="hover:bg-slate-50/50 transition-all group/row">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3.5">
+                          <Avatar className="w-10 h-10 ring-2 ring-slate-100 transition-all duration-300">
+                            {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
+                            <AvatarFallback className="bg-slate-200 text-slate-500 text-xs font-bold">
+                              {getInitials(emp.full_name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-bold text-slate-700">{emp.full_name}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{emp.employee_id}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 font-medium">{emp.job_title}</td>
+                      <td className="px-6 py-4 opacity-70 scale-90 origin-left">{statusBadge(emp.status)}</td>
+                      <td className="px-6 py-4 text-slate-400 text-xs font-medium italic">
+                        {(emp as any).deleted_at ? new Date((emp as any).deleted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Recently'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-8 px-3 text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-100"
+                            onClick={() => handleRestore(emp)}
+                            disabled={actingId === emp.id}
+                          >
+                            <RotateCcw className="w-3 h-3 mr-1.5" /> Restore
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-8 px-3 text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all"
+                            onClick={() => handlePermanentDelete(emp)}
+                            disabled={actingId === emp.id}
+                          >
+                            <Trash2 className="w-3 h-3 mr-1.5" /> Wipe
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+              }
             </tbody>
           </table>
         </div>
