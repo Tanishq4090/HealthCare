@@ -346,8 +346,9 @@ serve(async (req) => {
             // Check if we already sent this exact scripted reply as the last message
             // To prevent annoying loops if user keeps saying "thanks" or "ok"
             const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
+            // Loop prevention: skip script if we already sent THIS EXACT script in the very last message
             if (lastAssistantMsg?.content === scriptedReply) {
-                console.log(`[Stage Script Skip] Already sent "${leadStage}" script. Letting AI handle.`);
+                console.log(`[Stage Script Skip] Already sent "${leadStage}" script as last message. Letting AI handle.`);
             } else {
                 console.log(`[Stage Script] Stage: "${leadStage}" — sending scripted reply.`);
 
@@ -431,6 +432,7 @@ The lead has already submitted their intake form or is in an ongoing conversatio
 
 RULES (follow strictly):
 - Always refer to the business as "99 Care team".
+- NEVER use the phrase "will be in touch shortly" or "get back to you shortly" — instead, specify that the "99 Care team is preparing your quotation" or "verifying your form."
 - Keep ALL replies to 2-3 lines maximum.
 - Use 1-2 emojis per message. Match the user's language (Hindi/Gujarati/English).
 - NEVER quote prices. NEVER ask for information already collected.
