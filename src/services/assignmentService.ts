@@ -185,10 +185,15 @@ export async function assignWorkerToClient(
     );
   }
 
-  // ── Step 2b: Update CRM Lead stage ──────────────────
+  // ── Step 2b: Update CRM Lead stage + store assigned worker info ──────────────────
+  const { data: empInfo } = await supabase.from('employees').select('full_name, job_title').eq('id', employeeUuid).single();
   await supabase
     .from('crm_leads')
-    .update({ pipeline_stage: 'Staff Assigned' })
+    .update({
+      pipeline_stage:       'Staff Assigned',
+      assigned_worker_name: empInfo?.full_name ?? null,
+      assigned_worker_role: empInfo?.job_title ?? null,
+    })
     .eq('id', clientUuid);
 
   // ── Step 3: Generate token ────────────────────────────
@@ -337,7 +342,7 @@ export async function deactivateIDCardLink(
   // First get the employee_id from the assignment
   const { data: assignment } = await supabase
     .from('worker_assignments')
-    .select('employee_id')
+    .select('employee_id, client_id')
     .eq('id', assignmentId)
     .single();
 
@@ -350,6 +355,14 @@ export async function deactivateIDCardLink(
         updated_at: new Date().toISOString() 
       })
       .eq('id', assignment.employee_id);
+  }
+
+  // Clear the denormalized worker info from the lead record
+  if (assignment?.client_id) {
+    await supabase
+      .from('crm_leads')
+      .update({ assigned_worker_name: null, assigned_worker_role: null })
+      .eq('id', assignment.client_id);
   }
 }
 
