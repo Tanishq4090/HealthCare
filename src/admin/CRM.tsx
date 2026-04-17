@@ -1718,16 +1718,17 @@ export default function CRM() {
 
                                                                 {/* Assigned Worker Badge OR Warning */}
                                                                 {(() => {
-                                                                    const hasAssignedWorker = !!item.assignedWorker;
+                                                                    const typedItem = item as any;
+                                                                    const hasAssignedWorker = !!typedItem.assignedWorker;
                                                                     
                                                                     // Check if it's passed Form Submitted
-                                                                    const isPastInitial = item.pipeline_stage !== 'Form Submitted' && !item.pipeline_stage.includes('Inquiry');
+                                                                    const isPastInitial = typedItem.pipeline_stage !== 'Form Submitted' && !typedItem.pipeline_stage.includes('Inquiry');
                                                                     
                                                                     if (hasAssignedWorker) {
                                                                         return (
                                                                             <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit line-clamp-1">
                                                                                 <Users className="w-3 h-3 shrink-0" />
-                                                                                <span className="truncate">👤 {item.assignedWorker.name} ({item.assignedWorker.role || 'Staff'})</span>
+                                                                                <span className="truncate">👤 {typedItem.assignedWorker.name} ({typedItem.assignedWorker.role || 'Staff'})</span>
                                                                             </div>
                                                                         );
                                                                     } else if (isPastInitial) {
