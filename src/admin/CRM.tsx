@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
-import { assignWorkerToClient } from '../services/assignmentService';
+import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -1067,6 +1067,16 @@ export default function CRM() {
         if (id.length < 10) return;
 
         try {
+            // Rule 2: Automatic staff release if moved to pre-assignment stages
+            const preAssignmentStages = ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted'];
+            if (preAssignmentStages.includes(newStage)) {
+                try {
+                    await releaseWorkerByClientId(id);
+                } catch (err) {
+                    console.error("Auto-release worker failed:", err);
+                }
+            }
+
             const { error } = await supabase
                 .from('crm_leads')
                 .update({ pipeline_stage: newStage })
