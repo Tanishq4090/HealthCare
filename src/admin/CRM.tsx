@@ -1721,14 +1721,9 @@ export default function CRM() {
                                                                     const typedItem = item as any;
                                                                     const hasAssignedWorker = !!typedItem.assignedWorker;
                                                                     
-                                                                    // Check if it's equal to or past 'Staff Assigned' (or in client stages)
-                                                                    const targetIndex = pipelineStages.findIndex(s => s.toLowerCase().includes('staff assigned'));
-                                                                    const activeIndex = pipelineStages.indexOf(typedItem.pipeline_stage);
-                                                                    const isClientStage = clientStages.includes(typedItem.pipeline_stage);
-                                                                    
-                                                                    const isPastInitial = isClientStage || 
-                                                                        (targetIndex !== -1 && activeIndex >= targetIndex) || 
-                                                                        (targetIndex === -1 && activeIndex >= 5);
+                                                                    // Show warning ONLY if the stage is strictly 'Staff Assigned' or 'Deposit Pending' or in client stages
+                                                                    const triggerStages = ['staff assigned', 'deposit pending'];
+                                                                    const isTargetStage = triggerStages.some(s => typedItem.pipeline_stage?.toLowerCase() === s) || clientStages.includes(typedItem.pipeline_stage);
                                                                     
                                                                     if (hasAssignedWorker) {
                                                                         return (
@@ -1737,7 +1732,7 @@ export default function CRM() {
                                                                                 <span className="truncate">👤 {typedItem.assignedWorker.name} ({typedItem.assignedWorker.role || 'Staff'})</span>
                                                                             </div>
                                                                         );
-                                                                    } else if (isPastInitial) {
+                                                                    } else if (isTargetStage) {
                                                                         return (
                                                                             <div className="mt-1.5 flex items-start gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
                                                                                 <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
