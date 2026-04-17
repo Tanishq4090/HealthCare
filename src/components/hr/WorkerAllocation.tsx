@@ -925,15 +925,15 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
               {/* Top Accent Gradient (subtle) */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/40 via-brand-teal/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
               
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4 cursor-pointer" onClick={() => onViewDetails(emp)}>
-                  <Avatar className="w-14 h-14 ring-4 ring-slate-50 group-hover:ring-primary/10 transition-all duration-500">
+              <div className="flex items-start justify-between min-w-0">
+                <div className="flex items-center gap-4 cursor-pointer flex-1 min-w-0 pr-2" onClick={() => onViewDetails(emp)}>
+                  <Avatar className="w-14 h-14 ring-4 ring-slate-50 group-hover:ring-primary/10 transition-all duration-500 shrink-0">
                     {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
                     <AvatarFallback className="bg-gradient-to-br from-primary to-[#063b3c] text-white font-bold text-lg">
                       {getInitials(emp.full_name)}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h3 className="font-bold text-slate-800 text-[15px] truncate group-hover:text-primary transition-colors">{emp.full_name}</h3>
                     <p className="text-xs text-slate-500 font-medium truncate mt-0.5">{emp.job_title}</p>
                     <div className="flex items-center gap-1.5 mt-1">
