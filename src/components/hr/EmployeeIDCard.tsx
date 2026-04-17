@@ -85,14 +85,14 @@ export function EmployeeIDCard({
         <div className="absolute top-[64px] left-0 right-0 bottom-[36px] flex items-center px-5 gap-4 z-10">
 
           {/* Photo */}
-          <div className="shrink-0">
-            <Avatar className="w-[76px] h-[76px] ring-4 ring-teal-50 ring-offset-2 shadow-md">
+          <div className="shrink-0" style={{ width: 80, height: 80 }}>
+            <Avatar className="w-full h-full ring-4 ring-teal-50 ring-offset-2 shadow-md">
               {photoUrl ? (
                 <AvatarImage src={photoUrl} alt={employeeName} className="object-cover" />
               ) : null}
-              <AvatarFallback className="bg-gradient-to-br from-[#1aa6a8] to-[#063b3c] text-white text-xl font-bold">
+              <AvatarFallback className="bg-gradient-to-br from-[#1aa6a8] to-[#063b3c] text-white text-2xl font-bold">
                 {photoUrl ? null : (
-                  employeeName ? getInitials(employeeName) : <User className="w-7 h-7" />
+                  employeeName ? getInitials(employeeName) : <User className="w-8 h-8" />
                 )}
               </AvatarFallback>
             </Avatar>
