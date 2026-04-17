@@ -1721,8 +1721,14 @@ export default function CRM() {
                                                                     const typedItem = item as any;
                                                                     const hasAssignedWorker = !!typedItem.assignedWorker;
                                                                     
-                                                                    // Check if it's passed Form Submitted
-                                                                    const isPastInitial = typedItem.pipeline_stage !== 'Form Submitted' && !typedItem.pipeline_stage.includes('Inquiry');
+                                                                    // Check if it's equal to or past 'Staff Assigned' (or in client stages)
+                                                                    const targetIndex = pipelineStages.findIndex(s => s.toLowerCase().includes('staff assigned'));
+                                                                    const activeIndex = pipelineStages.indexOf(typedItem.pipeline_stage);
+                                                                    const isClientStage = clientStages.includes(typedItem.pipeline_stage);
+                                                                    
+                                                                    const isPastInitial = isClientStage || 
+                                                                        (targetIndex !== -1 && activeIndex >= targetIndex) || 
+                                                                        (targetIndex === -1 && activeIndex >= 5);
                                                                     
                                                                     if (hasAssignedWorker) {
                                                                         return (
