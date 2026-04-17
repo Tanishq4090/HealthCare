@@ -49,7 +49,6 @@ serve(async (req) => {
         let finalWhatsappNumber = '';
 
         // 1. Check Data Collection (if ElevenLabs natively extracted it)
-        const analysis = data.analysis || {};
         if (analysis.data_collection_results && analysis.data_collection_results.whatsapp) {
              finalWhatsappNumber = analysis.data_collection_results.whatsapp.value;
         }
