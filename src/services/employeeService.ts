@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 import type {
   Employee,
   EmployeeStatus,
