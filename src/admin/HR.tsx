@@ -117,7 +117,7 @@ export default function HR() {
             // Fetch from employees table instead of workers
             const { data: employeeData, error: employeeError } = await supabase.from('employees').select('*');
             const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
-            const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage').order('created_at', { ascending: false });
+            const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage, estimated_value_monthly').order('created_at', { ascending: false });
 
             // Fetch Month-to-Date Stats for all employees
             const startOfMonth = new Date();
@@ -418,13 +418,16 @@ export default function HR() {
         setModalMode('edit');
         setModalTab('profile');
         setEditingWorkerId(worker.id);
+        // Auto-suggest deposit from CRM lead if worker has an assigned client
+        const matchedLead = pipelineLeads.find((l: any) => l.name?.toLowerCase().trim() === (worker.assigned_client || '').toLowerCase().trim());
+        const suggestedDeposit = matchedLead?.estimated_value_monthly ? matchedLead.estimated_value_monthly.toString() : (worker.deposit_received?.toString() || '15000');
         const data = {
             name: worker.name,
             role: worker.role,
             assigned_client: worker.assigned_client || '',
             monthly_daily_rate: worker.monthly_daily_rate?.toString() || '',
             short_term_daily_rate: worker.short_term_daily_rate?.toString() || '',
-            deposit_received: worker.deposit_received?.toString() || '15000',
+            deposit_received: suggestedDeposit,
             status: worker.status,
             aadhaar_number: worker.aadhaar_number || '',
             phone: worker.phone || '',
@@ -1358,6 +1361,11 @@ export default function HR() {
                                                         className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
                                                         placeholder="e.g. 15000"
                                                     />
+                                                    {(() => {
+                                                        const lead = pipelineLeads.find((l: any) => l.name?.toLowerCase().trim() === formData.assigned_client.toLowerCase().trim());
+                                                        if (!lead?.estimated_value_monthly) return null;
+                                                        return <p className="text-[11px] text-[#1AA6A8] ml-1 font-medium">💡 CRM value: ₹{lead.estimated_value_monthly.toLocaleString('en-IN')}/mo</p>;
+                                                    })()}
                                                 </div>
                                                 <div className="space-y-1.5">
                                                     <label className="text-sm font-bold text-slate-700 ml-1">Work Status
