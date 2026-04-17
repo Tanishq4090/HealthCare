@@ -146,7 +146,7 @@ function TableRowSkeleton({ cols = 6 }: { cols?: number }) {
 interface AddEmployeeDialogProps {
   open: boolean;
   onClose: () => void;
-  onCreated: (emp: Employee) => void;
+  onCreated: (emp: Employee, autoPreview?: boolean) => void;
 }
 
 function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps) {
