@@ -688,10 +688,33 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
-            if (error) throw error;
+            const { data: leadsData, error: leadsError } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
+            if (leadsError) throw leadsError;
 
-            setLeads(data || []);
+            // Fetch active worker assignments to join the current staff member
+            let enrichedLeads = leadsData || [];
+            try {
+                const { data: assignments } = await supabase
+                    .from('worker_assignments')
+                    .select('client_id, employee_id')
+                    .eq('assignment_status', 'active');
+                
+                const { data: employees } = await supabase
+                    .from('employees')
+                    .select('id, full_name, job_title');
+                
+                if (assignments && employees) {
+                    const empMap = new Map(employees.map(e => [e.id, { name: e.full_name, role: e.job_title }]));
+                    const assignMap = new Map(assignments.map(a => [a.client_id, empMap.get(a.employee_id)]));
+                    
+                    enrichedLeads = enrichedLeads.map((lead: any) => ({
+                        ...lead,
+                        assignedWorker: assignMap.get(lead.id) || null
+                    }));
+                }
+            } catch (e) { console.error('Failed to map assignments', e); }
+
+            setLeads(enrichedLeads);
         } catch (err: any) {
             console.error('Error fetching leads:', err);
         } finally {
@@ -1016,8 +1039,8 @@ export default function CRM() {
     // Fetch leads from Supabase and Subscribe to Realtime Updates
     useEffect(() => {
         fetchLeads();
-        // Also load all workers for Kanban assignment badges
-        supabase.from('employees').select('id, full_name, job_title, assigned_client').then(({ data }) => {
+        // Also load all workers for Staff Picker Modal
+        supabase.from('employees').select('id, full_name, job_title').then(({ data }) => {
             if (data && data.length > 0) setAllWorkers(data.map(w => ({ ...w, name: w.full_name || '', role: w.job_title || '' })));
         });
 
@@ -1693,20 +1716,29 @@ export default function CRM() {
                                                                     </div>
                                                                 )}
 
-                                                                {/* Assigned Worker Badge */}
+                                                                {/* Assigned Worker Badge OR Warning */}
                                                                 {(() => {
-                                                                    const assignedWorker = allWorkers.find(w =>
-                                                                        w.assigned_client &&
-                                                                        item.name &&
-                                                                        w.assigned_client.toLowerCase().trim() === item.name.toLowerCase().trim()
-                                                                    );
-                                                                    if (!assignedWorker) return null;
-                                                                    return (
-                                                                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">
-                                                                            <Users className="w-3 h-3 shrink-0" />
-                                                                            <span>👤 {assignedWorker.name} ({assignedWorker.role || 'Staff'})</span>
-                                                                        </div>
-                                                                    );
+                                                                    const hasAssignedWorker = !!item.assignedWorker;
+                                                                    
+                                                                    // Check if it's passed Form Submitted
+                                                                    const isPastInitial = item.pipeline_stage !== 'Form Submitted' && !item.pipeline_stage.includes('Inquiry');
+                                                                    
+                                                                    if (hasAssignedWorker) {
+                                                                        return (
+                                                                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit line-clamp-1">
+                                                                                <Users className="w-3 h-3 shrink-0" />
+                                                                                <span className="truncate">👤 {item.assignedWorker.name} ({item.assignedWorker.role || 'Staff'})</span>
+                                                                            </div>
+                                                                        );
+                                                                    } else if (isPastInitial) {
+                                                                        return (
+                                                                            <div className="mt-1.5 flex items-start gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+                                                                                <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                                                                                <span className="leading-tight">Warning: Needs Staff Assignment. Send Deposit link & Assign Staff via DB immediately.</span>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    return null;
                                                                 })()}
                                                             </>
                                                         )}
