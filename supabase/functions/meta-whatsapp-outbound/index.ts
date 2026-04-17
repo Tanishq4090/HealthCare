@@ -169,7 +169,7 @@ serve(async (req) => {
               type: "action",
               action: {
                 flow_token: `call_${digits}_${Date.now()}`,
-                flow_action_payload: { screen: "INTAKE_FORM" }
+                flow_action_data: { screen: "INTAKE_FORM" }
               }
             }
           ]
