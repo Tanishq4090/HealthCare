@@ -199,9 +199,16 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
     try {
       const emp = await createEmployee(form);
       toast.success(`Employee created! ID: ${emp.employee_id} ✅`);
-      onCreated(emp);
+      onCreated(emp, true); // Added flag to trigger auto-preview
       onClose();
-      setForm({ full_name: '', job_title: '', department: '' });
+      // Reset form but keep the newly created emp for preview
+      setForm({ 
+        full_name: '', job_title: '', department: '',
+        phone: '', aadhaar_number: '', address: '', dob: '',
+        hourly_rate: 0, monthly_daily_rate: 0, 
+        short_term_daily_rate: 0, deposit_received: 0,
+        username: '', password: '', documents: []
+      });
       setPhotoPreview(null);
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to create employee.');
@@ -287,6 +294,19 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                 <label className="text-sm font-medium text-slate-700">Aadhaar</label>
                 <Input className="mt-1" placeholder="0000 0000 0000" value={form.aadhaar_number ?? ''}
                   onChange={e => setForm(f => ({ ...f, aadhaar_number: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Date of Birth</label>
+                <Input className="mt-1" type="date" value={form.dob ?? ''}
+                  onChange={e => setForm(f => ({ ...f, dob: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Username</label>
+                <Input className="mt-1" placeholder="Required for Login" value={form.username ?? ''}
+                  onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700">Password</label>
@@ -385,9 +405,22 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   }, [open]);
 
   useEffect(() => {
-    supabase.from('clients').select('id, client_name, company_name, phone_number')
-      .ilike('client_name', `%${debouncedSearch}%`).limit(20)
-      .then(({ data }) => setClients(data ?? []));
+    // Search crm_leads instead of clients
+    const validStages = ['Form Submitted', 'Staff Assigned', 'Active Client', 'Deposit Pending', 'Trial in Progress'];
+    supabase.from('crm_leads')
+      .select('id, name, phone, whatsapp_number, pipeline_stage')
+      .in('pipeline_stage', validStages)
+      .ilike('name', `%${debouncedSearch}%`)
+      .limit(20)
+      .then(({ data }) => {
+        const formatted = (data ?? []).map(l => ({
+          id: l.id,
+          client_name: l.name,
+          company_name: l.pipeline_stage, // Use stage as "company" info for clarity
+          phone_number: l.whatsapp_number || l.phone
+        }));
+        setClients(formatted);
+      });
   }, [debouncedSearch]);
 
   const handleCreateClient = async () => {
@@ -519,9 +552,18 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                         className="w-full text-left px-3 py-2.5 hover:bg-primary/5 text-sm text-slate-700 flex items-center gap-2 transition-colors"
                         onClick={() => { setSelectedClient(c); setClientDropdownOpen(false); }}
                       >
-                        <Building2 className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                        <span>{c.client_name}</span>
-                        {c.phone_number && <span className="text-xs text-slate-400 ml-auto">{c.phone_number}</span>}
+                        <div className="flex items-center justify-between gap-2 w-full">
+                           <span className="font-bold flex-1 truncate">{c.client_name}</span>
+                           <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter shrink-0">
+                                {c.company_name}
+                           </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 w-full mt-0.5">
+                          <span className="truncate">{c.phone_number || 'No contact'}</span>
+                          <span className="flex items-center gap-1 group-hover:text-primary transition-colors">
+                            Select <ExternalLink className="w-2.5 h-2.5" />
+                          </span>
+                        </div>
                       </button>
                     ))
                   )}
@@ -590,14 +632,27 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
             <Shield className="w-4 h-4 text-primary" /> ID Card Preview
           </DialogTitle>
         </DialogHeader>
-        <div className="flex justify-center py-4">
-          <EmployeeIDCard
-            employeeName={employee.full_name}
-            employeeId={employee.employee_id}
-            jobTitle={employee.job_title}
-            photoUrl={employee.photo_url}
-            variant="preview"
-          />
+        <div className="flex flex-col items-center py-4 gap-6">
+          <div id="id-card-capture">
+            <EmployeeIDCard
+              employeeName={employee.full_name}
+              employeeId={employee.employee_id}
+              jobTitle={employee.job_title}
+              photoUrl={employee.photo_url}
+              variant="preview"
+            />
+          </div>
+          
+          <div className="w-full flex flex-col gap-2">
+            <p className="text-[10px] text-slate-400 text-center px-4">This ID card is for internal identification. Click download to save a copy for the employee.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 text-xs h-9" onClick={onClose}>Close</Button>
+              <Button className="flex-1 bg-primary hover:bg-primary/90 text-white text-xs h-9 gap-2" 
+                onClick={() => window.print()}>
+                <ExternalLink className="w-3.5 h-3.5" /> Print / Save
+              </Button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -814,60 +869,81 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
           <p className="font-medium">No available workers{search ? ' matching your search' : ''}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {filtered.map(emp => (
-            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200 flex flex-col gap-4">
-              <div className="flex items-center gap-3 cursor-pointer group/header" onClick={() => onViewDetails(emp)}>
-                <Avatar className="w-12 h-12 ring-2 ring-primary/5 group-hover/header:ring-primary/20 transition-all">
-                  {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} />}
-                  <AvatarFallback className="bg-gradient-to-br from-primary to-brand-teal text-white font-bold text-sm">
-                    {getInitials(emp.full_name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-slate-800 text-sm truncate group-hover/header:text-primary transition-colors">{emp.full_name}</p>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDelete(emp); }}
-
-                      className="p-1 text-slate-300 hover:text-red-500 transition-colors"
-                      title="Delete Employee"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+            <div key={emp.id} className="group bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:border-primary/20 transition-all duration-300 flex flex-col gap-5 relative overflow-hidden">
+              {/* Top Accent Gradient (subtle) */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/40 via-brand-teal/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4 cursor-pointer" onClick={() => onViewDetails(emp)}>
+                  <Avatar className="w-14 h-14 ring-4 ring-slate-50 group-hover:ring-primary/10 transition-all duration-500">
+                    {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
+                    <AvatarFallback className="bg-gradient-to-br from-primary to-[#063b3c] text-white font-bold text-lg">
+                      {getInitials(emp.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-800 text-[15px] truncate group-hover:text-primary transition-colors">{emp.full_name}</h3>
+                    <p className="text-xs text-slate-500 font-medium truncate mt-0.5">{emp.job_title}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Available</span>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500 truncate">{emp.job_title}</p>
-                  <p className="font-mono text-[10px] text-primary mt-0.5">{emp.employee_id}</p>
+                </div>
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-all">
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem onClick={() => onViewDetails(emp)} className="gap-2 text-xs">
+                      <Shield className="w-3.5 h-3.5" /> Full Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onPreview(emp)} className="gap-2 text-xs">
+                      <FileText className="w-3.5 h-3.5" /> Preview ID Card
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDelete(emp)} className="gap-2 text-xs text-red-500 focus:text-red-600">
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Member
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="flex flex-col gap-2.5 py-4 border-y border-slate-50/80">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                    <Building2 className="w-3 h-3" /> Dept
+                  </span>
+                  <span className="text-slate-700 font-semibold">{emp.department || 'General'}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                    <Phone className="w-3 h-3" /> Contact
+                  </span>
+                  <span className="text-slate-700 font-semibold">{emp.phone || 'No Phone'}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                    <Calendar className="w-3 h-3" /> joined
+                  </span>
+                  <span className="text-slate-700 font-semibold">{new Date(emp.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
                 </div>
               </div>
-              {emp.department && (
-                <div className="flex flex-col gap-1.5 py-2 border-t border-slate-50">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                    <Building2 className="w-3 h-3" /> {emp.department}
-                  </div>
-                  {emp.phone && (
-                   <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                      <MessageCircle className="w-3 h-3" /> {emp.phone}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              <div className="flex gap-2 mt-auto pt-1">
-                <Button size="sm" variant="outline" className="text-xs flex-1" onClick={() => onPreview(emp)}>ID Card</Button>
-                <Button size="sm" className="text-xs flex-1 bg-primary hover:bg-primary/90 text-white gap-1"
+              <div className="flex gap-2.5 pt-1">
+                <Button variant="outline" size="sm" className="flex-1 h-10 border-slate-200 text-slate-600 hover:border-primary/30 hover:bg-primary/5 hover:text-primary transition-all rounded-xl text-xs font-semibold"
+                  onClick={() => onPreview(emp)}>
+                  ID Card
+                </Button>
+                <Button size="sm" className="flex-1 h-10 bg-primary hover:bg-primary/90 text-white gap-2 rounded-xl text-xs font-bold shadow-lg shadow-primary/10 transition-all active:scale-95"
                   onClick={() => onAssign(emp)}>
-                  <Briefcase className="w-3 h-3" /> Assign
+                  <Briefcase className="w-3.5 h-3.5" /> Assign
                 </Button>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full mt-1 text-[10px] text-primary/60 hover:text-primary h-6 hover:bg-primary/5"
-                onClick={() => onViewDetails(emp)}
-              >
-                View Professional Profile & Documents
-              </Button>
             </div>
           ))}
         </div>
@@ -943,91 +1019,107 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">{assignments.length} active assignment{assignments.length !== 1 ? 's' : ''}</p>
-        <Button variant="outline" size="icon" onClick={load} title="Refresh"><RefreshCw className="w-4 h-4" /></Button>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center">
+            <Briefcase className="w-4 h-4 text-emerald-600" />
+          </div>
+          <p className="text-sm font-bold text-slate-800 tracking-tight">
+            {assignments.length} ACTIVE DEPLOYMENT{assignments.length !== 1 ? 'S' : ''}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={load} className="gap-2 h-9 rounded-xl border-slate-200 text-slate-600">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
       </div>
 
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-slate-100/80 rounded-[2rem] overflow-hidden shadow-sm shadow-slate-200/50">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {['Employee', 'Employee ID', 'Client', 'Assigned', 'ID Card Link', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                {['Staff Member', 'ID No.', 'Client Name', 'Deployment Date', 'Auth Link', 'Deployment Actions'].map(h => (
+                  <th key={h} className="px-5 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-50/80">
               {isLoading
                 ? Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} cols={6} />)
                 : assignments.length === 0
                   ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                        <Briefcase className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                        <p>No active assignments</p>
+                      <td colSpan={6} className="px-4 py-20 text-center text-slate-400">
+                        <div className="w-16 h-16 rounded-full bg-slate-50 mx-auto mb-4 flex items-center justify-center opacity-40">
+                          <Briefcase className="w-8 h-8 text-slate-300" />
+                        </div>
+                        <p className="font-bold text-slate-300 uppercase tracking-widest text-xs">No active deployments found</p>
                       </td>
                     </tr>
                   )
                   : assignments.map(a => (
-                    <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar className="w-8 h-8">
-                            {a.employee.photo_url && <AvatarImage src={a.employee.photo_url} alt={a.employee.full_name} />}
+                    <tr key={a.id} className="hover:bg-slate-50/50 transition-colors group/row">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3.5">
+                          <Avatar className="w-10 h-10 ring-2 ring-slate-100 group-hover/row:ring-primary/20 transition-all duration-300">
+                            {a.employee.photo_url && <AvatarImage src={a.employee.photo_url} alt={a.employee.full_name} className="object-cover" />}
                             <AvatarFallback className="bg-primary text-white text-xs font-bold">
                               {getInitials(a.employee.full_name)}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium text-slate-800">{a.employee.full_name}</p>
-                            <p className="text-[11px] text-slate-400">{a.employee.job_title}</p>
+                            <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors">{a.employee.full_name}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{a.employee.job_title}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs bg-primary/5 text-primary px-2 py-0.5 rounded border border-primary/10">
+                      <td className="px-5 py-4">
+                        <span className="font-mono text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-md border border-slate-200">
                           {a.employee.employee_id}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-slate-700">{a.client?.client_name ?? '—'}</p>
-                        {a.client?.phone_number && (
-                          <p className="text-[11px] text-slate-400">{a.client.phone_number}</p>
-                        )}
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col">
+                          <p className="font-bold text-slate-700">{a.client?.client_name ?? '—'}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                            <span className="text-[10px] font-bold text-emerald-600 uppercase">Confirmed</span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
+                      <td className="px-5 py-4 text-xs font-medium text-slate-500">
                         {new Date(a.assigned_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {a.shareableUrl ? (
-                          <div className="flex items-center gap-1 max-w-[200px]">
-                            <span className="font-mono text-[11px] text-slate-500 truncate">/id-card/{a.token?.slice(0, 8)}...</span>
-                            <CopyButton text={a.shareableUrl} />
-                            <a href={a.shareableUrl} target="_blank" rel="noreferrer"
-                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700">
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
+                          <div className="flex items-center gap-1.5 bg-slate-50 hover:bg-white p-1 rounded-lg border border-transparent hover:border-slate-200 transition-all w-fit">
+                            <span className="font-mono text-[10px] text-slate-500 max-w-[80px] truncate ml-1">...{a.token?.slice(-8)}</span>
+                            <div className="flex items-center gap-0.5 ml-1 pr-1 border-l border-slate-200 pl-1">
+                               <CopyButton text={a.shareableUrl} />
+                               <a href={a.shareableUrl} target="_blank" rel="noreferrer"
+                                className="p-1 rounded text-slate-400 hover:text-primary hover:bg-primary/5 transition-colors">
+                                <ExternalLink className="w-3 h-3" />
+                               </a>
+                            </div>
                           </div>
                         ) : <span className="text-slate-300 text-xs">—</span>}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-600 hover:text-primary hover:bg-primary/5"
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold gap-1.5 rounded-xl border border-emerald-100"
                             onClick={() => onPreview(a.employee)}>
-                            <ExternalLink className="w-3 h-3 mr-1" /> View
+                            <Shield className="w-3 h-3" /> ID Card
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-slate-600 hover:text-primary hover:bg-primary/5"
+                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-primary/5 text-primary hover:bg-primary/10 font-bold gap-1.5 rounded-xl border border-primary/10"
                             onClick={() => handleResend(a)} disabled={resending === a.id}>
                             {resending === a.id
                               ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <MessageCircle className="w-3 h-3 mr-1" />}
-                            {resending === a.id ? '' : 'Resend'}
+                              : <MessageCircle className="w-3 h-3" />}
+                            Resend Link
                           </Button>
                           <Button size="sm" variant="ghost"
-                            className="h-7 px-2 text-xs text-red-400 hover:text-red-600 hover:bg-red-50"
+                            className="h-8 px-3 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-bold rounded-xl"
                             onClick={() => handleComplete(a)} disabled={completing === a.id}>
-                            {completing === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Complete'}
+                            {completing === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Terminate'}
                           </Button>
                         </div>
                       </td>
@@ -1361,9 +1453,12 @@ export default function WorkerAllocation({ isEmbedded = false }: WorkerAllocatio
     seedAlexander();
   }, []);
 
-  const handleEmployeeCreated = (emp: Employee) => {
+  const handleEmployeeCreated = (emp: Employee, autoPreview = false) => {
     setRefreshTrigger(t => t + 1);
     toast.success(`${emp.full_name} added to directory!`);
+    if (autoPreview) {
+      setPreviewEmployee(emp);
+    }
   };
 
   return (
