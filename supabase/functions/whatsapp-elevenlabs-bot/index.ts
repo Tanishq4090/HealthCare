@@ -320,6 +320,9 @@ serve(async (req) => {
         // This guarantees consistent, on-brand messaging at every step of the customer journey.
         // NOTE: We never update the pipeline stage here — the CRM team does that manually.
         const STAGE_SCRIPTS: Record<string, string> = {
+            'In Discussion':
+                `Thank you for your inquiry! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it on this number shortly. Feel free to ask any other questions! 😊✨`,
+
             'Quotation Sent': 
                 `Thank you! 🙏 Our 99 Care team will send you the consent form link on this number shortly. Please keep an eye out for it — we're excited to get started! ✨`,
 
