@@ -141,6 +141,18 @@ export async function assignWorkerToClient(
     }
   }
 
+  // ── Step 0.5: Enforce Single Staff Rule ──────────────────
+  const { data: existingActive } = await supabase
+    .from('worker_assignments')
+    .select('id')
+    .eq('client_id', clientUuid)
+    .eq('assignment_status', 'active')
+    .maybeSingle();
+
+  if (existingActive) {
+    throw new Error('This lead already has a staff member assigned. Please release the current staff before assigning a new one.');
+  }
+
   // ── Step 1: Create assignment record ──────────────────
   const { data: assignment, error: assignError } = await supabase
     .from('worker_assignments')
@@ -418,4 +430,25 @@ export async function getAssignmentWithIDCard(
     idCardLink:   (idCardLink ?? null) as IdCardLink | null,
     shareableUrl,
   };
+}
+
+// ============================================================
+// 5. RELEASE WORKER BY CLIENT ID
+// ============================================================
+
+/**
+ * Finds the active assignment for a given client (lead) and releases the worker.
+ * Automatically called when a lead is moved backward in the pipeline out of the "Staff Assigned" stage.
+ */
+export async function releaseWorkerByClientId(clientId: string): Promise<void> {
+  const { data: assignment } = await supabase
+    .from('worker_assignments')
+    .select('id')
+    .eq('client_id', clientId)
+    .eq('assignment_status', 'active')
+    .maybeSingle();
+
+  if (assignment) {
+    await deactivateIDCardLink(assignment.id, 'cancelled');
+  }
 }
