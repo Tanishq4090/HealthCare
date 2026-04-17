@@ -691,30 +691,42 @@ export default function CRM() {
             const { data: leadsData, error: leadsError } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
             if (leadsError) throw leadsError;
 
-            // Enrich leads with assigned worker info via employees.assigned_client (avoids RLS on worker_assignments)
             let enrichedLeads = leadsData || [];
             try {
-                const { data: assignedWorkers } = await supabase
-                    .from('employees')
-                    .select('full_name, job_title, assigned_client')
-                    .eq('status', 'assigned')
-                    .not('assigned_client', 'is', null);
+                // Run both lookups in parallel for speed
+                const [assignmentsRes, employeesRes] = await Promise.all([
+                    supabase
+                        .from('worker_assignments')
+                        .select('client_id, employee_id')
+                        .eq('assignment_status', 'active'),
+                    supabase
+                        .from('employees')
+                        .select('id, full_name, job_title, assigned_client')
+                        .not('assigned_client', 'is', null),
+                ]);
 
-                if (assignedWorkers && assignedWorkers.length > 0) {
-                    // Build a name→worker map for O(1) lookup
-                    const workerMap = new Map(
-                        assignedWorkers.map(w => [
-                            (w.assigned_client as string).toLowerCase().trim(),
-                            { name: w.full_name, role: w.job_title }
-                        ])
-                    );
-                    enrichedLeads = enrichedLeads.map((lead: any) => ({
-                        ...lead,
-                        assignedWorker: lead.name
-                            ? (workerMap.get(lead.name.toLowerCase().trim()) || null)
-                            : null,
-                    }));
-                }
+                const assignments = assignmentsRes.data || [];
+                const employees  = employeesRes.data  || [];
+
+                // Strategy 1: UUID match via worker_assignments (most accurate)
+                const empById = new Map(employees.map(e => [e.id, { name: e.full_name, role: e.job_title }]));
+                const assignByClientId = new Map(assignments.map(a => [a.client_id, empById.get(a.employee_id)]));
+
+                // Strategy 2: Name match via employees.assigned_client (RLS-safe fallback)
+                const assignByName = new Map(
+                    employees.map(e => [
+                        (e.assigned_client as string).toLowerCase().trim(),
+                        { name: e.full_name, role: e.job_title }
+                    ])
+                );
+
+                enrichedLeads = enrichedLeads.map((lead: any) => ({
+                    ...lead,
+                    // UUID match takes priority; fall back to name match
+                    assignedWorker:
+                        assignByClientId.get(lead.id) ||
+                        (lead.name ? (assignByName.get(lead.name.toLowerCase().trim()) || null) : null),
+                }));
             } catch (e) { console.error('Failed to map worker assignments to leads:', e); }
 
             setLeads(enrichedLeads);
