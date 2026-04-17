@@ -1104,23 +1104,53 @@ export default function CRM() {
         if (leadId.length < 10) return;
 
         try {
-            // Unassign workers automatically
+            console.log(`[CRM] Deep-deleting lead: ${leadId} (${leadName})`);
+            
+            // 1. Unassign workers in legacy table (Compatibility fallback)
             await supabase.from('workers')
                 .update({ assigned_client: null, status: 'Available' })
                 .eq('assigned_client', leadName);
 
+            // 2. Clear employee status in new HR module
+            // First find associated assignments
+            const { data: assignments } = await supabase
+                .from('worker_assignments')
+                .select('id, employee_id')
+                .eq('client_id', leadId);
+
+            if (assignments && assignments.length > 0) {
+                const empIds = assignments.map(a => a.employee_id);
+                // Mark employees as available
+                await supabase.from('employees')
+                    .update({ status: 'available', assigned_client: null })
+                    .in('id', empIds);
+            }
+
+            // 3. Delete from 'clients' table (This will CASCADE to worker_assignments, id_card_links, etc.)
+            const { error: clientError } = await supabase
+                .from('clients')
+                .delete()
+                .eq('id', leadId);
+            
+            if (clientError) {
+                console.warn('[CRM] Client record deletion warning:', clientError.message);
+            }
+
+            // 4. Finally, delete the CRM lead record
             const { error } = await supabase
                 .from('crm_leads')
                 .delete()
                 .eq('id', leadId);
 
             if (error) {
-                throw new Error(error.message || "Delete blocked");
+                throw new Error(error.message || "Deletion blocked by database constraints");
             }
+            
+            console.log(`[CRM] Lead ${leadId} deleted permanently.`);
         } catch (err: any) {
             console.error('Failed to delete lead:', err);
-            toast.error(`Database blocked deletion. Restoring UI...`);
-            fetchLeads(); // Re-fetch to restore
+            toast.error(`Database Error: ${err.message}. Restoring record to view...`, { duration: 5000 });
+            fetchLeads(); // Re-fetch to restore UI state
         }
     };
 
