@@ -791,8 +791,23 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                    <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Monthly Rate</p>
-                    <p className="text-sm font-bold text-slate-900">₹{employee.monthly_daily_rate?.toLocaleString('en-IN') || 0}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">
+                      {employee.preferred_payment_type === 'hourly' 
+                        ? 'Hourly Rate' 
+                        : employee.preferred_payment_type === 'short_term' 
+                          ? 'Per Service Charge' 
+                          : 'Monthly Rate'}
+                    </p>
+                    <p className="text-sm font-bold text-slate-900">
+                      ₹{
+                        (employee.preferred_payment_type === 'hourly' 
+                          ? employee.hourly_rate 
+                          : employee.preferred_payment_type === 'short_term' 
+                            ? employee.short_term_daily_rate 
+                            : employee.monthly_daily_rate
+                        )?.toLocaleString('en-IN') || 0
+                      }
+                    </p>
                   </div>
                   <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Payment Scheme</p>
