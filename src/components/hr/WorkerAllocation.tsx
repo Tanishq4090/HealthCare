@@ -152,10 +152,10 @@ interface AddEmployeeDialogProps {
 
 function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps) {
   const [form, setForm] = useState<CreateEmployeeInput>({ 
-    full_name: '', job_title: '', department: '',
+    full_name: '', job_title: '', 
+    preferred_payment_type: 'monthly', services: [],
     phone: '', aadhaar_number: '', address: '', dob: '',
-    hourly_rate: 0, monthly_daily_rate: 0, 
-    short_term_daily_rate: 0, deposit_received: 0,
+    hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
     username: '', password: '', documents: []
   });
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -204,10 +204,10 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
       onClose();
       // Reset form but keep the newly created emp for preview
       setForm({ 
-        full_name: '', job_title: '', department: '',
+        full_name: '', job_title: '',
+        preferred_payment_type: 'monthly', services: [],
         phone: '', aadhaar_number: '', address: '', dob: '',
-        hourly_rate: 0, monthly_daily_rate: 0, 
-        short_term_daily_rate: 0, deposit_received: 0,
+        hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
         username: '', password: '', documents: []
       });
       setPhotoPreview(null);
@@ -272,9 +272,27 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                 onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} />
             </div>
             <div>
-              <label className="text-sm font-medium text-slate-700">Department</label>
-              <Input className="mt-1" placeholder="e.g. Home Care, ICU Support" value={form.department ?? ''}
-                onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
+              <label className="text-sm font-medium text-slate-700">Services & Skills</label>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {['Nursing', 'Elderly Care', 'Physiotherapy', 'All Services'].map(service => {
+                  const active = form.services?.includes(service);
+                  return (
+                    <button type="button" key={service}
+                      onClick={() => setForm(f => ({
+                        ...f,
+                        services: active 
+                          ? f.services!.filter(s => s !== service)
+                          : service === 'All Services' ? ['All Services'] : [...(f.services?.filter(s=>s !== 'All Services')||[]), service]
+                      }))}
+                      className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all ${
+                        active ? 'bg-primary/10 text-primary border-primary/20' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {service}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -349,15 +367,34 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
 
             <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-100">
                <div>
-                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Monthly Rate</label>
+                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Payment Scheme</label>
+                <select 
+                  className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={form.preferred_payment_type}
+                  onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
+                >
+                  <option value="monthly">Monthly Base</option>
+                  <option value="hourly">Hourly Billing</option>
+                  <option value="short_term">Per Service / Short Term</option>
+                </select>
+              </div>
+               <div>
+                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Default Monthly Rate (₹)</label>
                 <Input type="number" className="mt-1" value={form.monthly_daily_rate}
                   onChange={e => setForm(f => ({ ...f, monthly_daily_rate: Number(e.target.value) }))} />
               </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Deposit</label>
-                <Input type="number" className="mt-1" value={form.deposit_received}
-                  onChange={e => setForm(f => ({ ...f, deposit_received: Number(e.target.value) }))} />
-              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-100">
+               <div>
+                 <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Hourly Rate (₹)</label>
+                 <Input type="number" className="mt-1" value={form.hourly_rate}
+                   onChange={e => setForm(f => ({ ...f, hourly_rate: Number(e.target.value) }))} />
+               </div>
+               <div>
+                 <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Short Term Service Rate (₹)</label>
+                 <Input type="number" className="mt-1" value={form.short_term_daily_rate}
+                   onChange={e => setForm(f => ({ ...f, short_term_daily_rate: Number(e.target.value) }))} />
+               </div>
             </div>
           </div>
 
@@ -389,6 +426,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [notes, setNotes] = useState('');
+  const [depositPaid, setDepositPaid] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ url: string; whatsappSent: boolean; whatsappError?: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -448,7 +486,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
     if (!employee || !selectedClient) { toast.error('Please select a client.'); return; }
     setIsSubmitting(true);
     try {
-      const res = await assignWorkerToClient(employee.id, selectedClient.id, notes);
+      const res = await assignWorkerToClient(employee.id, selectedClient.id, notes, depositPaid);
       setResult({ url: res.shareableUrl, whatsappSent: res.whatsappSent, whatsappError: res.whatsappError });
       onAssigned();
     } catch (err: any) {
@@ -595,15 +633,23 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
             )}
 
             {/* Notes */}
-            <div>
-              <label className="text-sm font-medium text-slate-700">Notes (optional)</label>
-              <textarea
-                rows={2}
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-transparent"
-                placeholder="Any special instructions..."
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Notes (optional)</label>
+                <textarea
+                  rows={2}
+                  className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-transparent"
+                  placeholder="Any special instructions..."
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Deposit Paid (₹)</label>
+                 <Input type="number" className="mt-1 border-slate-200" placeholder="0" value={depositPaid || ''}
+                   onChange={e => setDepositPaid(Number(e.target.value) || 0)} />
+                 <p className="text-[10px] text-slate-400 mt-1">Amount client paid upfront for this assignment.</p>
+              </div>
             </div>
 
             <DialogFooter className="gap-2">
@@ -640,6 +686,7 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
               employeeId={employee.employee_id}
               jobTitle={employee.job_title}
               photoUrl={employee.photo_url}
+              aadhaarNumber={employee.aadhaar_number}
               variant="preview"
             />
           </div>
@@ -1243,7 +1290,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
           <table className="w-full text-sm">
             <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {['Worker info', 'Assignment Details', 'Status', 'Quick Actions'].map(h => (
+                {['Worker info', 'Services & Payment', 'Status', 'Quick Actions'].map(h => (
                    <th key={h} className={`px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap ${h === 'Quick Actions' ? 'text-right' : ''}`}>
                     {h}
                    </th>
@@ -1291,14 +1338,22 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="w-3 h-3 text-slate-400" />
-                            <span className="text-xs font-semibold text-slate-600 truncate max-w-[150px]">{emp.department || 'General Care'}</span>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap max-w-[180px]">
+                            {emp.services && emp.services.length > 0 ? (
+                              emp.services.map(s => (
+                                <span key={s} className="text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shadow-sm border border-slate-200">
+                                  {s}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">No services listed</span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="w-3 h-3 text-slate-300" />
-                            <span className="text-[10px] font-medium text-slate-400 italic">Joined {new Date(emp.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                              {emp.preferred_payment_type === 'hourly' ? 'Hourly' : emp.preferred_payment_type === 'short_term' ? 'Per Service' : 'Monthly Base'}
+                            </span>
                           </div>
                         </div>
                       </td>

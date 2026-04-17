@@ -10,16 +10,16 @@ export interface Employee {
   full_name: string;
   job_title: string;
   photo_url: string | null;
-  department: string | null;
   status: EmployeeStatus;
   phone: string | null;
   aadhaar_number: string | null;
   address: string | null;
   dob: string | null;
+  preferred_payment_type: 'hourly' | 'monthly' | 'short_term';
+  services: string[];
   hourly_rate: number;
   monthly_daily_rate: number;
   short_term_daily_rate: number;
-  deposit_received: number;
   rating: number;
   username: string | null;
   created_at: string;
@@ -40,15 +40,15 @@ export interface CreateEmployeeInput {
   full_name: string;
   job_title: string;
   photo?: File;
-  department?: string;
   phone?: string;
   aadhaar_number?: string;
   address?: string;
   dob?: string;
+  preferred_payment_type?: 'hourly' | 'monthly' | 'short_term';
+  services?: string[];
   hourly_rate?: number;
   monthly_daily_rate?: number;
   short_term_daily_rate?: number;
-  deposit_received?: number;
   username?: string;
   password?: string;
   documents?: File[];
@@ -65,6 +65,7 @@ export interface WorkerAssignment {
   assigned_at: string;
   assignment_status: AssignmentStatus;
   notes: string | null;
+  deposit_paid: number;
 }
 
 // ── ID Card Types ──────────────────────────────────────────
