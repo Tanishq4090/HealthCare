@@ -688,48 +688,14 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const { data: leadsData, error: leadsError } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
-            if (leadsError) throw leadsError;
-
-            let enrichedLeads = leadsData || [];
-            try {
-                // Run both lookups in parallel for speed
-                const [assignmentsRes, employeesRes] = await Promise.all([
-                    supabase
-                        .from('worker_assignments')
-                        .select('client_id, employee_id')
-                        .eq('assignment_status', 'active'),
-                    supabase
-                        .from('employees')
-                        .select('id, full_name, job_title, assigned_client')
-                        .not('assigned_client', 'is', null),
-                ]);
-
-                const assignments = assignmentsRes.data || [];
-                const employees  = employeesRes.data  || [];
-
-                // Strategy 1: UUID match via worker_assignments (most accurate)
-                const empById = new Map(employees.map(e => [e.id, { name: e.full_name, role: e.job_title }]));
-                const assignByClientId = new Map(assignments.map(a => [a.client_id, empById.get(a.employee_id)]));
-
-                // Strategy 2: Name match via employees.assigned_client (RLS-safe fallback)
-                const assignByName = new Map(
-                    employees.map(e => [
-                        (e.assigned_client as string).toLowerCase().trim(),
-                        { name: e.full_name, role: e.job_title }
-                    ])
-                );
-
-                enrichedLeads = enrichedLeads.map((lead: any) => ({
-                    ...lead,
-                    // UUID match takes priority; fall back to name match
-                    assignedWorker:
-                        assignByClientId.get(lead.id) ||
-                        (lead.name ? (assignByName.get(lead.name.toLowerCase().trim()) || null) : null),
-                }));
-            } catch (e) { console.error('Failed to map worker assignments to leads:', e); }
-
-            setLeads(enrichedLeads);
+            // assigned_worker_name and assigned_worker_role are denormalized onto crm_leads
+            // when a worker is assigned via assignWorkerToClient — no joins needed
+            const { data, error } = await supabase
+                .from('crm_leads')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            setLeads(data || []);
         } catch (err: any) {
             console.error('Error fetching leads:', err);
         } finally {
@@ -1734,24 +1700,26 @@ export default function CRM() {
                                                                 {/* Assigned Worker Badge OR Warning */}
                                                                 {(() => {
                                                                     const typedItem = item as any;
-                                                                    const hasAssignedWorker = !!typedItem.assignedWorker;
-                                                                    
-                                                                    // Show warning ONLY if the stage is strictly 'Staff Assigned' or 'Deposit Pending' or in client stages
+                                                                    // Read directly from the denormalized crm_leads columns
+                                                                    const workerName = typedItem.assigned_worker_name as string | null;
+                                                                    const workerRole = typedItem.assigned_worker_role as string | null;
+
+                                                                    // Show warning ONLY if stage is 'Staff Assigned', 'Deposit Pending', or a client stage
                                                                     const triggerStages = ['staff assigned', 'deposit pending'];
                                                                     const isTargetStage = triggerStages.some(s => typedItem.pipeline_stage?.toLowerCase() === s) || clientStages.includes(typedItem.pipeline_stage);
-                                                                    
-                                                                    if (hasAssignedWorker) {
+
+                                                                    if (workerName) {
                                                                         return (
-                                                                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit line-clamp-1">
+                                                                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit">
                                                                                 <Users className="w-3 h-3 shrink-0" />
-                                                                                <span className="truncate">👤 {typedItem.assignedWorker.name} ({typedItem.assignedWorker.role || 'Staff'})</span>
+                                                                                <span className="truncate">👤 {workerName}{workerRole ? ` (${workerRole})` : ''}</span>
                                                                             </div>
                                                                         );
                                                                     } else if (isTargetStage) {
                                                                         return (
                                                                             <div className="mt-1.5 flex items-start gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
                                                                                 <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-                                                                                <span className="leading-tight">Warning: Needs Staff Assignment. Send Deposit link & Assign Staff via DB immediately.</span>
+                                                                                <span className="leading-tight">No staff assigned — assign a worker via HR module.</span>
                                                                             </div>
                                                                         );
                                                                     }
