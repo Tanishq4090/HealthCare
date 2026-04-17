@@ -297,7 +297,7 @@ export default function CRM() {
             English: "Hi {{name}}, your customized quotation from 99 Care is ready!\n\n📋 Service: {{v1}}\n⏰ Hours: {{v2}}\n💰 Full Month: {{v3}}\n💵 Half Month: {{v4}}\n\nFeel free to reach out if you'd like any adjustments."
         },
         consent: {
-            Hinglish: "Hi {{name}} ji! Ek aakhri step baki hai — apna consent form yahan fill karein aur hum service start kar denge! ✅\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform\n\nSirf 2 minute lagenge!",
+            Hinglish: "Hi {{name}} ji! Ek aakhri step baki hai — apna consent form yahan fill karein aur hum service start kar denge! ✅\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform",
             Hindi: "Namaste {{name}} ji, aage badhne ke liye kripya yeh consent form bharein:\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform",
             English: "Hi {{name}}, just one final step — please complete the consent form below and we'll get your service started:\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform"
         },
@@ -893,12 +893,13 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: agentDraftText,
                     leadId: agentTargetLead?.id,
-                    useTemplate: agentTargetAction === 'inquiry' || agentTargetAction === 'quotation',
+                    useTemplate: agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent',
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
-                                  : (agentTargetAction === 'quotation' ? 'quotation_msg' : undefined),
+                                  : (agentTargetAction === 'quotation' ? 'quotation_v2' 
+                                  : (agentTargetAction === 'consent' ? 'consent_form_msg' : undefined)),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
-                                    : (agentTargetAction === 'inquiry' ? [(agentTargetLead?.name || 'there')] : undefined),
+                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : undefined),
                 })
             });
 
