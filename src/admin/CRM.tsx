@@ -1621,7 +1621,7 @@ export default function CRM() {
                                             <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default group relative">
                                                 <div className="flex items-start justify-between mb-2">
                                                     <div
-                                                        className="flex flex-col flex-1"
+                                                        className="flex flex-col flex-1 min-w-0 pr-2"
                                                         onClick={(e) => e.stopPropagation()}
                                                         onDoubleClick={() => {
                                                             setEditingLeadDetailsId(item.id);
@@ -1653,8 +1653,8 @@ export default function CRM() {
                                                             </div>
                                                         ) : (
                                                             <>
-                                                                <div className="flex justify-between items-start">
-                                                                    <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors flex-1" title="Double click to edit">{item.name}</h4>
+                                                                <div className="flex justify-between items-start min-w-0">
+                                                                    <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors flex-1 truncate pr-1" title="Double click to edit">{item.name}</h4>
                                                                     <select 
                                                                         value={item.priority || 'medium'} 
                                                                         onChange={(e) => handleUpdatePriority(item.id, e.target.value)}
@@ -1722,7 +1722,7 @@ export default function CRM() {
 
                                                                     if (workerName) {
                                                                         return (
-                                                                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit">
+                                                                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit max-w-full">
                                                                                 <Users className="w-3 h-3 shrink-0" />
                                                                                 <span className="truncate">👤 {workerName}{workerRole ? ` (${workerRole})` : ''}</span>
                                                                             </div>
