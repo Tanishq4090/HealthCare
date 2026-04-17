@@ -414,6 +414,16 @@ export default function CRM() {
 
     const sendWorkerProfileWhatsApp = async (lead: any, worker: any) => {
         try {
+            // Guard: mock workers have numeric IDs — skip DB and open WhatsApp directly
+            const isRealWorker = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worker.id);
+            if (!isRealWorker) {
+                const text = `99Care: Namaste ${lead.name}! Aapke liye ${worker.name || worker.full_name} (${worker.role || worker.job_title}) ko assign kiya gaya hai. Dhanyawad! ✅`;
+                let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '') || '917575041313';
+                if (phone.length === 10) phone = `91${phone}`;
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+                toast.success(`Message opened for ${lead.name}! (Demo worker — no ID card link)`);
+                return;
+            }
             // Create assignment + ID card link
             const result = await assignWorkerToClient(worker.id, lead.id, undefined, true);
             const text = `99Care: Namaste ${lead.name}! Aapke liye ${worker.name || worker.full_name} (${worker.role || worker.job_title}) ko assign kiya gaya hai.\n\n🔗 Unki verified ID Card dekhein: ${result.shareableUrl}\n\nYe link 30 din tak valid hai. Dhanyawad! ✅`;
@@ -753,6 +763,15 @@ export default function CRM() {
         const toastId = toast.loading(`Creating assignment for ${worker.name || worker.full_name}...`);
 
         try {
+            // Guard: mock workers have numeric IDs (e.g. '3') — not valid UUIDs
+            const isRealWorker = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worker.id);
+            if (!isRealWorker) {
+                toast.error(
+                    `Cannot assign "${worker.name || worker.full_name}" — this is a demo worker. Please add real workers in the HR module first.`,
+                    { id: toastId }
+                );
+                return;
+            }
             // Create the assignment + ID card link FIRST
             const result = await assignWorkerToClient(
                 worker.id, 
