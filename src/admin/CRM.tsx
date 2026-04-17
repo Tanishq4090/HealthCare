@@ -688,47 +688,14 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            // 1. Fetch leads
-            const { data: leadsData, error } = await supabase
+            // Fetch leads directly — assigned_worker_name is stored on the lead row itself
+            const { data, error } = await supabase
                 .from('crm_leads')
                 .select('*')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
-            let enrichedLeads = leadsData || [];
-
-            // 2. Fetch active employee assignments directly (immune to duplicate mappings)
-            try {
-                const { data: employeesData } = await supabase
-                    .from('employees')
-                    .select('full_name, job_title, assigned_client')
-                    .not('assigned_client', 'is', null);
-
-                if (employeesData && employeesData.length > 0) {
-                    const assignByName = new Map(
-                        employeesData.map(e => [
-                            (e.assigned_client as string).toLowerCase().trim(),
-                            { name: e.full_name, role: e.job_title }
-                        ])
-                    );
-
-                    enrichedLeads = enrichedLeads.map((lead: any) => {
-                        const leadNameKey = lead.name ? lead.name.toLowerCase().trim() : '';
-                        const matchedWorker = assignByName.get(leadNameKey);
-
-                        // If the database has it stored denormalized, use that, otherwise use the client-side mapping
-                        return {
-                            ...lead,
-                            _matchedWorkerName: lead.assigned_worker_name || matchedWorker?.name || null,
-                            _matchedWorkerRole: lead.assigned_worker_role || matchedWorker?.role || null
-                        };
-                    });
-                }
-            } catch (err) {
-                console.warn('Failed to merge employee data:', err);
-            }
-
-            setLeads(enrichedLeads);
+            setLeads(data || []);
             
         } catch (err: any) {
             console.error('Error fetching leads:', err);
@@ -1066,11 +1033,12 @@ export default function CRM() {
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'crm_leads' },
                 (payload) => {
-                    const newLead = payload.new;
+                    const newLead = payload.new as any;
+                    // Merge the updated lead directly — preserves assigned_worker_name from DB
                     setLeads(prev => prev.map(lead => lead.id === newLead.id ? { ...lead, ...newLead } : lead));
                     
                     // Trigger a toast notification if the AI moved the lead
-                    const oldLead = payload.old;
+                    const oldLead = payload.old as any;
                     if (oldLead && newLead.pipeline_stage !== oldLead.pipeline_stage) {
                         toast.success(`🤖 AI Agent moved ${newLead.name} to "${newLead.pipeline_stage}"!`);
                     }
@@ -1080,7 +1048,7 @@ export default function CRM() {
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'crm_leads' },
                 (payload) => {
-                    setLeads(prev => [payload.new, ...prev]);
+                    setLeads(prev => [payload.new as any, ...prev]);
                 }
             )
             .subscribe();
@@ -1735,11 +1703,12 @@ export default function CRM() {
                                                                     </div>
                                                                 )}
 
-                                                                {/* Assigned Worker Badge OR Warning */}
+                                                                {/* Assigned Worker Badge */}
                                                                 {(() => {
                                                                     const typedItem = item as any;
-                                                                    const workerName = typedItem._matchedWorkerName || typedItem.assigned_worker_name;
-                                                                    const workerRole = typedItem._matchedWorkerRole || typedItem.assigned_worker_role;
+                                                                    // Read directly from the denormalized column on crm_leads
+                                                                    const workerName = typedItem.assigned_worker_name as string | null;
+                                                                    const workerRole = typedItem.assigned_worker_role as string | null;
 
                                                                     if (workerName) {
                                                                         return (
