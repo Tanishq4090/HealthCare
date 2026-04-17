@@ -688,22 +688,26 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            // Use the RPC to fetch leads with their assigned workers in a single go.
-            // This is foolproof because it runs server-side and bypasses RLS blocks.
+            // Attempt foolproof RPC
             const { data, error } = await supabase.rpc('get_crm_leads_with_workers');
-            if (error) throw error;
+            
+            if (!error && data) {
+                const enrichedLeads = data.map((row: any) => ({
+                    ...row.full_lead_data,
+                    assigned_worker_name: row.assigned_worker_name || row.full_lead_data?.assigned_worker_name,
+                    assigned_worker_role: row.assigned_worker_role || row.full_lead_data?.assigned_worker_role
+                }));
+                setLeads(enrichedLeads);
+                return;
+            }
 
-            // Map RPC result back to the expected lead structure
-            // full_lead_data contains all the original crm_leads columns
-            const enrichedLeads = (data || []).map((row: any) => ({
-                ...row.full_lead_data,
-                assigned_worker_name: row.assigned_worker_name,
-                assigned_worker_role: row.assigned_worker_role
-            }));
-
-            setLeads(enrichedLeads);
+            // Fallback if RPC isn't available
+            console.warn('RPC failed, falling back to direct table read:', error?.message);
+            const { data: fallbackData } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
+            setLeads(fallbackData || []);
+            
         } catch (err: any) {
-            console.error('Error fetching leads via RPC:', err);
+            console.error('Error fetching leads:', err);
         } finally {
             setIsLoading(false);
         }
@@ -1721,10 +1725,13 @@ export default function CRM() {
                                                                         );
                                                                     } else if (isTargetStage) {
                                                                         return (
-                                                                            <div className="mt-1.5 flex items-start gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
-                                                                                <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-                                                                                <span className="leading-tight">No staff assigned — assign a worker via HR module.</span>
-                                                                            </div>
+                                                                            <button 
+                                                                                onClick={(e) => { e.stopPropagation(); openStaffPicker(item); }}
+                                                                                className="mt-1.5 flex items-center justify-start gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md border border-amber-200 transition-colors w-full text-left"
+                                                                            >
+                                                                                <AlertCircle className="w-3 h-3 shrink-0" />
+                                                                                <span className="leading-tight">No staff assigned — Click here to assign instantly.</span>
+                                                                            </button>
                                                                         );
                                                                     }
                                                                     return null;
