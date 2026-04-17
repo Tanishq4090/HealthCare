@@ -412,7 +412,7 @@ serve(async (req) => {
             }
 
             if (leadRecord) {
-                const isFinished = ['In Discussion', 'Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
+                const isFinished = ['Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
                 leadDataContext = `\n\n### CRM LEAD:\n- Name: ${leadRecord.name}\n- Stage: ${leadRecord.pipeline_stage}\n` +
                     (isFinished ? `### This lead is done or form filled. Be extremely brief. Reassure them the team will be in touch, then STOP asking questions.\n` : '');
             }
