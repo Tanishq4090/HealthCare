@@ -688,15 +688,47 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            // Direct table read guarantees ZERO duplicate leads
-            // because we read directly from the primary table.
-            const { data, error } = await supabase
+            // 1. Fetch leads
+            const { data: leadsData, error } = await supabase
                 .from('crm_leads')
                 .select('*')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
-            setLeads(data || []);
+            let enrichedLeads = leadsData || [];
+
+            // 2. Fetch active employee assignments directly (immune to duplicate mappings)
+            try {
+                const { data: employeesData } = await supabase
+                    .from('employees')
+                    .select('full_name, job_title, assigned_client')
+                    .not('assigned_client', 'is', null);
+
+                if (employeesData && employeesData.length > 0) {
+                    const assignByName = new Map(
+                        employeesData.map(e => [
+                            (e.assigned_client as string).toLowerCase().trim(),
+                            { name: e.full_name, role: e.job_title }
+                        ])
+                    );
+
+                    enrichedLeads = enrichedLeads.map((lead: any) => {
+                        const leadNameKey = lead.name ? lead.name.toLowerCase().trim() : '';
+                        const matchedWorker = assignByName.get(leadNameKey);
+
+                        // If the database has it stored denormalized, use that, otherwise use the client-side mapping
+                        return {
+                            ...lead,
+                            _matchedWorkerName: lead.assigned_worker_name || matchedWorker?.name || null,
+                            _matchedWorkerRole: lead.assigned_worker_role || matchedWorker?.role || null
+                        };
+                    });
+                }
+            } catch (err) {
+                console.warn('Failed to merge employee data:', err);
+            }
+
+            setLeads(enrichedLeads);
             
         } catch (err: any) {
             console.error('Error fetching leads:', err);
@@ -1702,11 +1734,8 @@ export default function CRM() {
                                                                 {/* Assigned Worker Badge OR Warning */}
                                                                 {(() => {
                                                                     const typedItem = item as any;
-                                                                    const workerName = typedItem.assigned_worker_name as string | null;
-                                                                    const workerRole = typedItem.assigned_worker_role as string | null;
-
-                                                                    const triggerStages = ['staff assigned', 'deposit pending'];
-                                                                    const isTargetStage = triggerStages.some(s => typedItem.pipeline_stage?.toLowerCase() === s) || clientStages.includes(typedItem.pipeline_stage);
+                                                                    const workerName = typedItem._matchedWorkerName || typedItem.assigned_worker_name;
+                                                                    const workerRole = typedItem._matchedWorkerRole || typedItem.assigned_worker_role;
 
                                                                     if (workerName) {
                                                                         return (
