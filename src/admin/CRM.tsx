@@ -1704,7 +1704,6 @@ export default function CRM() {
                                                                         >
                                                                             <MessageCircle className="w-3.5 h-3.5" />
                                                                         </button>
-                                                                    </div>
 
                                                                         {(() => {
                                                                             const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
