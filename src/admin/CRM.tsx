@@ -292,9 +292,9 @@ export default function CRM() {
             English: "Hi {{name}}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!"
         },
         quotation: {
-            Hinglish: "Namaste {{name}} ji! 🙏 Aapke liye humne ek customized quotation taiyar ki hai.\n\n📋 Service details aur pricing is link pe check karein:\nhttps://99care.in/quote/{{link}}\n\nKoi bhi changes chahiye toh batayein — hum adjust kar sakte hain!",
-            Hindi: "Namaste {{name}} ji, aapki quotation taiyar hai. Kripya is link par details dekhen:\nhttps://99care.in/quote/{{link}}\n\nKoi prashn ho toh humse sampark karein.",
-            English: "Hi {{name}}, your customized quotation from 99 Care is ready! Please review the details here:\nhttps://99care.in/quote/{{link}}\n\nFeel free to reach out if you'd like any adjustments."
+            Hinglish: "Namaste {{name}} ji! 🙏 Aapke liye humne ek customized quotation taiyar ki hai.\n\n📋 Service: {{v1}}\n⏰ Hours: {{v2}}\n💰 Full Month: {{v3}}\n💵 Half Month: {{v4}}\n\nKoi bhi changes chahiye toh batayein — hum adjust kar sakte hain!",
+            Hindi: "Namaste {{name}} ji, aapki quotation taiyar hai.\n\n📋 सेवा: {{v1}}\n⏰ घंटे: {{v2}}\n💰 पूरा महीना: {{v3}}\n💵 आधा महीना: {{v4}}\n\nकोई प्रश्न हो तो हमसे संपर्क करें।",
+            English: "Hi {{name}}, your customized quotation from 99 Care is ready!\n\n📋 Service: {{v1}}\n⏰ Hours: {{v2}}\n💰 Full Month: {{v3}}\n💵 Half Month: {{v4}}\n\nFeel free to reach out if you'd like any adjustments."
         },
         consent: {
             Hinglish: "Hi {{name}} ji! Ek aakhri step baki hai — apna consent form yahan fill karein aur hum service start kar denge! ✅\nhttps://docs.google.com/forms/d/e/1FAIpQLScENgj7ltdWY9O3leGhXVl1U4wExTX1zlHItApNhRkqui3dIg/viewform\n\nSirf 2 minute lagenge!",
@@ -719,7 +719,11 @@ export default function CRM() {
             .replace(/\{\{name\}\}/g, leadName)
             .replace(/\{\{link\}\}/g, link)
             .replace(/\{\{workerName\}\}/g, worker?.name || worker?.full_name || 'your assigned staff')
-            .replace(/\{\{workerRole\}\}/g, worker?.role || worker?.job_title || 'Healthcare Worker');
+            .replace(/\{\{workerRole\}\}/g, worker?.role || worker?.job_title || 'Healthcare Worker')
+            .replace(/\{\{v1\}\}/g, quotationVars.v1 || '[Service]')
+            .replace(/\{\{v2\}\}/g, quotationVars.v2 || '[Hours]')
+            .replace(/\{\{v3\}\}/g, quotationVars.v3 || '[Price]')
+            .replace(/\{\{v4\}\}/g, quotationVars.v4 || '[Price]');
     };
 
     const fetchWorkers = async () => {
