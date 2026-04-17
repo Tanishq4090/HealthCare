@@ -231,7 +231,7 @@ export default function CRM() {
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
     const [agentTargetLead, setAgentTargetLead] = useState<any>(null);
-    const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing'>('inquiry');
+    const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom'>('inquiry');
     const [assignmentResult, setAssignmentResult] = useState<any>(null);
 
     // Staff Picker State
@@ -823,7 +823,7 @@ export default function CRM() {
         }
     };
 
-    const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing') => {
+    const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom') => {
         setAgentTargetLead(lead);
         setAgentTargetAction(action);
         setIsEditingTemplate(false);
@@ -900,9 +900,9 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: agentDraftText,
                     leadId: agentTargetLead?.id,
-                    useTemplate: agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent',
+                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
-                                  : (agentTargetAction === 'quotation' ? 'quotation_msg' 
+                                  : (agentTargetAction === 'quotation' ? 'quotation_v2' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' : undefined)),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
@@ -1697,6 +1697,14 @@ export default function CRM() {
                                                                             <Phone className="w-3 h-3 text-slate-400" />
                                                                             {formatPhoneNumber(item.whatsapp_number || item.phone)}
                                                                         </div>
+                                                                        <button 
+                                                                            onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'custom'); }}
+                                                                            className="p-1 rounded-md hover:bg-emerald-50 text-emerald-600 transition-colors"
+                                                                            title="Send Manual Message"
+                                                                        >
+                                                                            <MessageCircle className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </div>
 
                                                                         {(() => {
                                                                             const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
@@ -2449,6 +2457,22 @@ export default function CRM() {
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+                            
+                            <div className="flex items-center justify-between">
+                                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                    <MessageSquare className="w-4 h-4 text-primary" /> Message Type
+                                </label>
+                                <select 
+                                    value={agentTargetAction}
+                                    onChange={(e) => setAgentTargetAction(e.target.value as any)}
+                                    className="text-xs font-semibold text-slate-700 bg-slate-100 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                                >
+                                    <option value="inquiry">Greeting Message</option>
+                                    <option value="quotation">Quotation Template</option>
+                                    <option value="consent">Consent Form</option>
+                                    <option value="custom">Manual (Plain Text)</option>
+                                </select>
                             </div>
                             <div>
                                 <div className="flex items-center justify-between mb-2">
