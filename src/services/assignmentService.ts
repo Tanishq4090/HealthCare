@@ -158,12 +158,16 @@ export async function assignWorkerToClient(
     );
   }
 
-  // ── Step 2: Update employee status to 'assigned' ──────
+  // ── Step 2: Update employee status and assigned client ──────
+  const { data: lead } = await supabase.from('crm_leads').select('name').eq('id', clientUuid).single();
+  const leadName = lead?.name || 'Assigned Client';
+
   const { error: statusError } = await supabase
     .from('employees')
     .update({
-      status:     'assigned',
-      updated_at: new Date().toISOString(),
+      status:          'assigned',
+      assigned_client: leadName,
+      updated_at:      new Date().toISOString(),
     })
     .eq('id', employeeUuid);
 
@@ -178,6 +182,12 @@ export async function assignWorkerToClient(
       `Failed to update employee status: ${statusError.message}. Assignment rolled back.`
     );
   }
+
+  // ── Step 2b: Update CRM Lead stage ──────────────────
+  await supabase
+    .from('crm_leads')
+    .update({ pipeline_stage: 'Staff Assigned' })
+    .eq('id', clientUuid);
 
   // ── Step 3: Generate token ────────────────────────────
   const token = generateToken();
@@ -332,7 +342,11 @@ export async function deactivateIDCardLink(
   if (assignment?.employee_id) {
     await supabase
       .from('employees')
-      .update({ status: 'available', updated_at: new Date().toISOString() })
+      .update({ 
+        status: 'available', 
+        assigned_client: null, 
+        updated_at: new Date().toISOString() 
+      })
       .eq('id', assignment.employee_id);
   }
 }
