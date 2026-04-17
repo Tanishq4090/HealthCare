@@ -207,6 +207,7 @@ export async function getAvailableEmployees(): Promise<Employee[]> {
       .from('employees')
       .select('*')
       .eq('status', 'available')
+      .is('assigned_client', null)   // double-safety: exclude anyone still linked to a client
       .is('deleted_at', null)
       .order('full_name', { ascending: true });
 
