@@ -426,7 +426,7 @@ export default function CRM() {
                 return;
             }
             // Create assignment + ID card link
-            const result = await assignWorkerToClient(worker.id, lead.id, undefined, true);
+            const result = await assignWorkerToClient(worker.id, lead.id, undefined, 0, true);
             const text = `99Care: Namaste ${lead.name}! Aapke liye ${worker.name || worker.full_name} (${worker.role || worker.job_title}) ko assign kiya gaya hai.\n\n🔗 Unki verified ID Card dekhein: ${result.shareableUrl}\n\nYe link 30 din tak valid hai. Dhanyawad! ✅`;
             let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '') || '917575041313';
             if (phone.length === 10) phone = `91${phone}`;
@@ -782,6 +782,7 @@ export default function CRM() {
                 worker.id, 
                 staffPickerTargetLead.id,
                 undefined,
+                0,   // depositPaid (default to 0 via CRM workflow here)
                 true // skipWhatsApp — CRM dispatch will handle it
             );
 
