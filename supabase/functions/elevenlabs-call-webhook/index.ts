@@ -22,19 +22,20 @@ serve(async (req) => {
         console.log('[ElevenLabs Webhook] Received:', JSON.stringify(payload).slice(0, 300));
 
         // ElevenLabs sends type: "post_call_transcription"
-        if (payload.type !== 'post_call_transcription') {
+        if (payload.type !== 'post_call_transcription' && !payload.call_id) {
             return new Response(JSON.stringify({ ok: true, skipped: true }), { status: 200 });
         }
 
-        const data = payload.data || {};
-        const conversationId = data.conversation_id || '';
-        const agentId = data.agent_id || '';
-        const transcript = data.transcript || [];
-        const metadata = data.metadata || {};
+        // Support both root-level keys (standard) and nested data keys (legacy fallback)
+        const conversationId = payload.call_id || payload.conversation_id || (payload.data?.conversation_id) || '';
+        const agentId = payload.agent_id || (payload.data?.agent_id) || '';
+        const transcript = payload.transcript || (payload.data?.transcript) || [];
+        const metadata = payload.metadata || (payload.data?.metadata) || {};
+        const analysis = payload.analysis || (payload.data?.analysis) || {};
 
         // Extract Caller ID — ElevenLabs stores it in metadata.phone_number
         const callerPhone = metadata.phone_number || metadata.caller_id || '';
-        const callDurationSecs = metadata.call_duration_secs || 0;
+        const callDurationSecs = metadata.call_duration_secs || payload.call_duration_secs || 0;
         const startTime = metadata.start_time_unix_secs
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
             : new Date().toISOString();
