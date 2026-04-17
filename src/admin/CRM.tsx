@@ -1058,6 +1058,11 @@ export default function CRM() {
         if (leadId.length < 10) return;
 
         try {
+            // Unassign workers automatically
+            await supabase.from('workers')
+                .update({ assigned_client: null, status: 'Available' })
+                .eq('assigned_client', leadName);
+
             const { error } = await supabase
                 .from('crm_leads')
                 .delete()
@@ -1849,9 +1854,11 @@ export default function CRM() {
                                                                             },
                                                                             body: JSON.stringify({
                                                                                 phone: finalPhone,
-                                                                                message: message,
+                                                                                message: message, // fallback for local UI logging if needed
                                                                                 leadId: item.id,
-                                                                                useTemplate: false
+                                                                                useTemplate: true,
+                                                                                templateName: 'deposit_invoice_alert',
+                                                                                templateParams: [firstName]
                                                                             })
                                                                         });
 
