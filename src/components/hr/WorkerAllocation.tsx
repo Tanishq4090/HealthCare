@@ -1012,6 +1012,8 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
   const [isLoading, setIsLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
   const [resending, setResending] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState<string | null>(null);
+  const [releasingConfirm, setReleasingConfirm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1082,6 +1084,25 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
       if (err) toast.error(`WhatsApp failed: ${err}`);
       else toast.success('ID card link resent via WhatsApp! 📱');
     } finally { setResending(null); }
+  };
+
+  const handleRelease = async (a: ActiveAssignment) => {
+    setReleasing(a.id);
+    try {
+      // Deactivate ID card link, cancel assignment, revert employee status
+      await deactivateIDCardLink(a.id, 'cancelled');
+      // Also revert CRM lead back to 'Form Submitted' if still in staff/deposit stages
+      await supabase
+        .from('crm_leads')
+        .update({ pipeline_stage: 'Form Submitted' })
+        .eq('id', a.client_id)
+        .in('pipeline_stage', ['Staff Assigned', 'Deposit Pending']);
+      toast.success(`${a.employee.full_name} released — they are now available for new assignments.`);
+      setAssignments(prev => prev.filter(x => x.id !== a.id));
+      setReleasingConfirm(null);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally { setReleasing(null); }
   };
 
   return (
@@ -1172,7 +1193,7 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                         ) : <span className="text-slate-300 text-xs">—</span>}
                       </td>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold gap-1.5 rounded-xl border border-emerald-100"
                             onClick={() => onPreview(a.employee)}>
                             <Shield className="w-3 h-3" /> ID Card
@@ -1184,6 +1205,32 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                               : <MessageCircle className="w-3 h-3" />}
                             Resend Link
                           </Button>
+
+                          {releasingConfirm === a.id ? (
+                            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
+                              <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap">Release this worker?</span>
+                              <button
+                                onClick={() => handleRelease(a)}
+                                disabled={releasing === a.id}
+                                className="text-[10px] font-black text-red-600 hover:text-red-700 ml-1 disabled:opacity-50"
+                              >
+                                {releasing === a.id ? '...' : 'Yes, Release'}
+                              </button>
+                              <button
+                                onClick={() => setReleasingConfirm(null)}
+                                className="text-[10px] font-bold text-slate-400 hover:text-slate-600 ml-1"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <Button size="sm" variant="ghost"
+                              className="h-8 px-3 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50 font-bold rounded-xl border border-amber-100 gap-1.5"
+                              onClick={() => setReleasingConfirm(a.id)}>
+                              <RotateCcw className="w-3 h-3" /> Release
+                            </Button>
+                          )}
+
                           <Button size="sm" variant="ghost"
                             className="h-8 px-3 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-bold rounded-xl"
                             onClick={() => handleComplete(a)} disabled={completing === a.id}>

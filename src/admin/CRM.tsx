@@ -691,28 +691,31 @@ export default function CRM() {
             const { data: leadsData, error: leadsError } = await supabase.from('crm_leads').select('*').order('created_at', { ascending: false });
             if (leadsError) throw leadsError;
 
-            // Fetch active worker assignments to join the current staff member
+            // Enrich leads with assigned worker info via employees.assigned_client (avoids RLS on worker_assignments)
             let enrichedLeads = leadsData || [];
             try {
-                const { data: assignments } = await supabase
-                    .from('worker_assignments')
-                    .select('client_id, employee_id')
-                    .eq('assignment_status', 'active');
-                
-                const { data: employees } = await supabase
+                const { data: assignedWorkers } = await supabase
                     .from('employees')
-                    .select('id, full_name, job_title');
-                
-                if (assignments && employees) {
-                    const empMap = new Map(employees.map(e => [e.id, { name: e.full_name, role: e.job_title }]));
-                    const assignMap = new Map(assignments.map(a => [a.client_id, empMap.get(a.employee_id)]));
-                    
+                    .select('full_name, job_title, assigned_client')
+                    .eq('status', 'assigned')
+                    .not('assigned_client', 'is', null);
+
+                if (assignedWorkers && assignedWorkers.length > 0) {
+                    // Build a name→worker map for O(1) lookup
+                    const workerMap = new Map(
+                        assignedWorkers.map(w => [
+                            (w.assigned_client as string).toLowerCase().trim(),
+                            { name: w.full_name, role: w.job_title }
+                        ])
+                    );
                     enrichedLeads = enrichedLeads.map((lead: any) => ({
                         ...lead,
-                        assignedWorker: assignMap.get(lead.id) || null
+                        assignedWorker: lead.name
+                            ? (workerMap.get(lead.name.toLowerCase().trim()) || null)
+                            : null,
                     }));
                 }
-            } catch (e) { console.error('Failed to map assignments', e); }
+            } catch (e) { console.error('Failed to map worker assignments to leads:', e); }
 
             setLeads(enrichedLeads);
         } catch (err: any) {
