@@ -238,6 +238,7 @@ export default function CRM() {
     const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
     const [staffPickerTargetLead, setStaffPickerTargetLead] = useState<any>(null);
     const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
+    const [allWorkers, setAllWorkers] = useState<any[]>([]); // All employees for Kanban badge
     const [selectedWorker, setSelectedWorker] = useState<any>(null);
     const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('English');
@@ -1014,6 +1015,10 @@ export default function CRM() {
     // Fetch leads from Supabase and Subscribe to Realtime Updates
     useEffect(() => {
         fetchLeads();
+        // Also load all workers for Kanban assignment badges
+        supabase.from('employees').select('id, full_name, job_title, assigned_client').then(({ data }) => {
+            if (data && data.length > 0) setAllWorkers(data.map(w => ({ ...w, name: w.full_name || '', role: w.job_title || '' })));
+        });
 
         // Enable real-time magic for AI Pipeline Automation
         const subscription = supabase
@@ -1686,6 +1691,22 @@ export default function CRM() {
                                                                         <span>Duplicate! 2+ leads share this number. Please delete one to avoid AI issues.</span>
                                                                     </div>
                                                                 )}
+
+                                                                {/* Assigned Worker Badge */}
+                                                                {(() => {
+                                                                    const assignedWorker = allWorkers.find(w =>
+                                                                        w.assigned_client &&
+                                                                        item.name &&
+                                                                        w.assigned_client.toLowerCase().trim() === item.name.toLowerCase().trim()
+                                                                    );
+                                                                    if (!assignedWorker) return null;
+                                                                    return (
+                                                                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">
+                                                                            <Users className="w-3 h-3 shrink-0" />
+                                                                            <span>👤 {assignedWorker.name} ({assignedWorker.role || 'Staff'})</span>
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </>
                                                         )}
                                                     </div>
