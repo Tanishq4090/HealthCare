@@ -215,10 +215,24 @@ serve(async (req) => {
         const isPositiveIntent = positiveIntentWords.some(w => cleanMsg === w || cleanMsg.startsWith(w));
 
         if (isStopWord && !isPositiveIntent) {
-            console.log(`[Acknowledgment Filter] Silent exit for: "${rawBody}" from ${purePhone}`);
+            // Check if we already sent an acknowledgment response in history to avoid repeating ourselves
+            const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
+            const alreadyAcknowledged = lastAssistantMsg && (
+                lastAssistantMsg.content.includes("prepar") || 
+                lastAssistantMsg.content.includes("contact") || 
+                lastAssistantMsg.content.includes("shukriya") ||
+                stopWords.some(sw => lastAssistantMsg.content.toLowerCase().includes(sw))
+            );
+
+            if (alreadyAcknowledged) {
+                console.log(`[Acknowledgment Filter] Already acknowledged recently. Staying silent for: "${rawBody}" from ${purePhone}`);
+            } else {
+                console.log(`[Acknowledgment Filter] First acknowledgment. Preparing brief reply logic if needed, but standardizing on silence for safety.`);
+            }
+
             await supabase.from('whatsapp_logs').update({
                 status: 'success',
-                payload: { type: 'acknowledgment_silent_exit', text: rawBody, original_recipient: fromPhone }
+                payload: { type: 'acknowledgment_silent_exit', text: rawBody, already_acknowledged: !!alreadyAcknowledged, original_recipient: fromPhone }
             }).eq('sid', wamid);
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
