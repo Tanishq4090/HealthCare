@@ -8,6 +8,7 @@ interface EmployeeIDCardProps {
   employeeId: string;
   jobTitle: string;
   photoUrl: string | null;
+  aadhaarNumber?: string | null;
   variant?: 'preview' | 'public';
 }
 
@@ -30,6 +31,7 @@ export function EmployeeIDCard({
   employeeId,
   jobTitle,
   photoUrl,
+  aadhaarNumber,
   variant = 'preview',
 }: EmployeeIDCardProps) {
   return (
@@ -109,11 +111,22 @@ export function EmployeeIDCard({
             <div className="my-2 h-px bg-gradient-to-r from-teal-100 to-transparent" />
 
             {/* ID row */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[9px] uppercase tracking-widest font-semibold">ID</span>
-              <span className="font-mono text-slate-700 font-bold text-[13px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 tracking-wider">
-                {employeeId}
-              </span>
+            <div className="flex flex-col gap-1.5 mt-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 text-[9px] uppercase tracking-widest font-semibold">ID</span>
+                <span className="font-mono text-slate-700 font-bold text-[13px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 tracking-wider">
+                  {employeeId}
+                </span>
+              </div>
+              
+              {aadhaarNumber && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400 text-[9px] uppercase tracking-widest font-semibold">Aadhaar</span>
+                  <span className="font-mono text-slate-600 font-bold text-[11px] tracking-wider">
+                    {aadhaarNumber.replace(/(\d{4})(?=\d)/g, '$1 ')}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Barcode-style decoration */}

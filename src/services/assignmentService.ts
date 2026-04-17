@@ -122,6 +122,7 @@ export async function assignWorkerToClient(
   employeeUuid: string,
   clientUuid: string,
   notes?: string,
+  depositPaid: number = 0,
   skipWhatsApp: boolean = false
 ): Promise<AssignmentResult> {
 
@@ -148,6 +149,7 @@ export async function assignWorkerToClient(
       client_id:         clientUuid,
       assignment_status: 'active',
       notes:             notes?.trim() ?? null,
+      deposit_paid:      depositPaid,
     })
     .select()
     .single();

@@ -13,7 +13,7 @@ import type { Employee } from '../../types/hr';
 type PageState = 'loading' | 'valid' | 'expired' | 'invalid' | 'error';
 
 interface CardData {
-  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url'>;
+  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number'>;
 }
 
 // ── Skeleton ──────────────────────────────────────────────
@@ -119,7 +119,7 @@ export default function PublicIDCard() {
       // 4. Fetch employee details (only safe, non-sensitive fields)
       const { data: employee, error: empError } = await supabase
         .from('employees')
-        .select('full_name, employee_id, job_title, photo_url')
+        .select('full_name, employee_id, job_title, photo_url, aadhaar_number')
         .eq('id', link.employee_id)
         .single();
 
@@ -174,6 +174,7 @@ export default function PublicIDCard() {
               employeeId={cardData.employee.employee_id}
               jobTitle={cardData.employee.job_title}
               photoUrl={cardData.employee.photo_url}
+              aadhaarNumber={cardData.employee.aadhaar_number}
               variant="public"
             />
             
