@@ -795,8 +795,10 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                     <p className="text-sm font-bold text-slate-900">₹{employee.monthly_daily_rate?.toLocaleString('en-IN') || 0}</p>
                   </div>
                   <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Security Deposit</p>
-                    <p className="text-sm font-bold text-slate-900">₹{employee.deposit_received?.toLocaleString('en-IN') || 0}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Payment Scheme</p>
+                    <p className="text-sm border border-primary/20 bg-primary/10 px-2 py-0.5 rounded-full inline-block font-bold text-primary uppercase tracking-widest text-[10px]">
+                      {employee.preferred_payment_type === 'hourly' ? 'Hourly' : employee.preferred_payment_type === 'short_term' ? 'Per Service' : 'Monthly Base'}
+                    </p>
                   </div>
                 </div>
               </section>
@@ -964,9 +966,11 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
               <div className="flex flex-col gap-2.5 py-4 border-y border-slate-50/80">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-400 font-medium flex items-center gap-1.5">
-                    <Building2 className="w-3 h-3" /> Dept
+                    <Building2 className="w-3 h-3" /> Skills
                   </span>
-                  <span className="text-slate-700 font-semibold">{emp.department || 'General'}</span>
+                  <span className="text-slate-700 font-semibold truncate max-w-[120px]">
+                    {emp.services && emp.services.length > 0 ? emp.services[0] + (emp.services.length > 1 ? '...' : '') : 'General'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-400 font-medium flex items-center gap-1.5">
