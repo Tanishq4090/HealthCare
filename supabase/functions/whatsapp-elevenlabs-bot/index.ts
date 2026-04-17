@@ -196,57 +196,51 @@ serve(async (req) => {
             return new Response("Config Error", { status: 500 });
         }
 
-        // --- 6. LOOKUP EXISTING CRM LEAD ---
-        // Use limit(1) + order to avoid maybeSingle() silently returning null when duplicate leads exist
-        const { data: earlyLeads } = await supabase
-            .from('crm_leads')
-            .select('id, pipeline_stage, name')
-            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
-            .order('created_at', { ascending: false })
-            .limit(1);
-        const earlyLead = earlyLeads?.[0] ?? null;
-        console.log(`[CRM] Existing lead: ${earlyLead ? earlyLead.id + ' (' + earlyLead.pipeline_stage + ')' : 'None'}`);
-
-        // --- 7. EARLY EXIT FOR ACKNOWLEDGMENTS & GOODBYES ---
-        // Any short CLOSING remark from a known lead: log it silently, do NOT reply.
-        // IMPORTANT: Positive intent words like 'yes', 'proceed', 'haan' must NEVER be silenced.
-        const positiveIntentWords = ['yes', 'haan', 'ha', 'proceed', 'confirm', 'agree', 'start', 'let\'s go', 'go ahead', 'sahi hai', 'bilkul', 'zaroor', 'done', 'ok', 'okay', 'k'];
+        // --- 7. UNIVERSAL ACKNOWLEDGMENT FILTER ---
+        // Any short CLOSING remark: log it silently, do NOT reply.
+        // This prevents the bot from annoying users who just say 'thanks'.
+        const positiveIntentWords = ['yes', 'proceed', 'confirm', 'agree', 'start', 'let\'s go', 'go ahead', 'sahi hai', 'bilkul', 'zaroor', 'done', 'okay', 'ready', 'accept', 'allow'];
         const stopWords = [
-            // Acknowledgments (NOT positive intent)
-            'noted', 'received', 'got it', 'alright',
-            // Thanks
             'thanks', 'thank you', 'thankyou', 'thank u', 'ty', 'thx', 'shukriya', 'dhanyavad', 'dhanyawaad',
-            // Hindi/Gujarati acks
+            'ok', 'okay', 'k', 'noted', 'received', 'got it', 'alright',
             'hanji', 'ji', 'acha', 'accha', 'theek hai', 'thik hai', 'haan ji',
-            // Goodbyes
             'bye', 'goodbye', 'good bye', 'bye bye', 'alvida', 'tata',
-            // Take care / closing
             'take care', 'you too', 'same to you', 'tc', 'see you', 'see ya', 'ttyl',
             'have a nice day', 'have a good day', 'good night', 'good morning', 'good afternoon', 'good evening'
         ];
         const cleanMsg = rawBody.toLowerCase().trim().replace(/[^\w\s]/g, '').trim();
         
-        // If it's a positive intent word, NEVER silence it — always let it through
+        // If it's pure stopword-only message, we stay silent even for new leads
+        const isStopWord = stopWords.includes(cleanMsg);
         const isPositiveIntent = positiveIntentWords.some(w => cleanMsg === w || cleanMsg.startsWith(w));
 
-        // If the lead exists, message is a closing remark, and NOT a positive intent → silent exit
-        if (earlyLead && !isPositiveIntent && stopWords.includes(cleanMsg)) {
-            console.log(`[Early Exit] Closing remark "${rawBody}" from known lead ${earlyLead.id}. No reply sent.`);
+        if (isStopWord && !isPositiveIntent) {
+            console.log(`[Acknowledgment Filter] Silent exit for: "${rawBody}" from ${purePhone}`);
             await supabase.from('whatsapp_logs').update({
                 status: 'success',
-                payload: { type: 'acknowledgment_end', text: rawBody, original_recipient: fromPhone }
+                payload: { type: 'acknowledgment_silent_exit', text: rawBody, original_recipient: fromPhone }
             }).eq('sid', wamid);
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
-        // --- 8. FETCH CHAT HISTORY ---
+        // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
+        const { data: earlyLeads } = await supabase
+            .from('crm_leads')
+            .select('id, pipeline_stage, name')
+            .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        const earlyLead = earlyLeads?.[0] ?? null;
+        console.log(`[CRM] Lead Lookup: ${earlyLead ? earlyLead.id + ' (' + earlyLead.pipeline_stage + ')' : 'None found for ' + purePhone}`);
+
+        // --- 9. FETCH CHAT HISTORY ---
         const { data: rawHistory } = await supabase
             .from('whatsapp_messages').select('*')
             .ilike('phone', `%${last10}%`)
             .order('created_at', { ascending: false }).limit(10);
         const historyData = rawHistory?.reverse() || [];
 
-        // --- 8. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
+        // --- 10. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
         if (!earlyLead) {
             // Upsert into CRM leads immediately so they show up on Kanban
             await supabase.from('crm_leads').insert([{ 
