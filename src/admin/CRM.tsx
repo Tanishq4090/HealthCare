@@ -902,7 +902,7 @@ export default function CRM() {
                     leadId: agentTargetLead?.id,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
-                                  : (agentTargetAction === 'quotation' ? 'quotation_v2' 
+                                  : (agentTargetAction === 'quotation' ? 'quote_client' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' : undefined)),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 

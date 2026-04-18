@@ -687,6 +687,14 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
               jobTitle={employee.job_title}
               photoUrl={employee.photo_url}
               aadhaarNumber={employee.aadhaar_number}
+              address={employee.address}
+              dob={employee.dob}
+              duty={employee.preferred_payment_type === 'hourly'
+                ? `${employee.hourly_rate ?? '—'} HRS (Day)`
+                : employee.preferred_payment_type === 'monthly'
+                ? 'Monthly'
+                : 'Short Term'}
+              experience={(employee as any).experience ?? null}
               variant="preview"
             />
           </div>
