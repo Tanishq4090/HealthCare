@@ -125,6 +125,7 @@ export async function createEmployee(
         hourly_rate: data.hourly_rate ?? 0,
         monthly_daily_rate: data.monthly_daily_rate ?? 0,
         short_term_daily_rate: data.short_term_daily_rate ?? 0,
+        experience: data.experience?.trim() ?? null,
         username: data.username?.trim() ?? null,
         password_hash: data.password ? data.password : null,
       })

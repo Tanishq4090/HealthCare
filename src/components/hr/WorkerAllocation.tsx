@@ -334,10 +334,17 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               </div>
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Residential Address</label>
-              <Input className="mt-1" placeholder="Full Address" value={form.address ?? ''}
-                onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Residential Address</label>
+                <Input className="mt-1" placeholder="Full Address" value={form.address ?? ''}
+                  onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Experience</label>
+                <Input className="mt-1" placeholder="e.g. 5 Years" value={(form as any).experience ?? ''}
+                  onChange={e => setForm(f => ({ ...f, experience: e.target.value } as any))} />
+              </div>
             </div>
 
             <div>
@@ -694,7 +701,7 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
                 : employee.preferred_payment_type === 'monthly'
                 ? 'Monthly'
                 : 'Short Term'}
-              experience={(employee as any).experience ?? null}
+              experience={employee.experience}
               variant="preview"
             />
           </div>
