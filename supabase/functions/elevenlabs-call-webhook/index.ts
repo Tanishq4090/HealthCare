@@ -33,12 +33,47 @@ serve(async (req) => {
         const metadata = payload.metadata || (payload.data?.metadata) || {};
         const analysis = payload.analysis || (payload.data?.analysis) || {};
 
-        // Extract Caller ID — ElevenLabs stores it in metadata.phone_number
-        const callerPhone = metadata.phone_number || metadata.caller_id || '';
-        const callDurationSecs = metadata.call_duration_secs || payload.call_duration_secs || 0;
-        const startTime = metadata.start_time_unix_secs
+        const startTimeRaw = metadata.start_time_unix_secs
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
             : new Date().toISOString();
+        const startTimeUnix = metadata.start_time_unix_secs || Math.floor(Date.now() / 1000);
+
+        // --- NEW: VOBIZ CDR LOOKUP (Direct Provider Caller ID) ---
+        // If ElevenLabs doesn't send a phone number, we fetch it directly from the Vobiz provider CDRs
+        let vobizCallerPhone = '';
+        const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
+        const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
+
+        if (!metadata.phone_number && VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN) {
+            try {
+                console.log(`[Vobiz] Attempting provider CDR lookup for call at ${startTimeRaw}`);
+                const cdrRes = await fetch(
+                    `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
+                    { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
+                );
+                
+                if (cdrRes.ok) {
+                    const cdrData = await cdrRes.json();
+                    const records = cdrData.data || [];
+                    // Match by timestamp: ElevenLabs start_time vs Vobiz record start_time
+                    // We check a ±60 second window for fuzzy matching
+                    for (const rec of records) {
+                        if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
+                            const vobizTime = new Date(rec.start_time).getTime() / 1000;
+                            const diff = Math.abs(vobizTime - startTimeUnix);
+                            if (diff <= 60) {
+                                vobizCallerPhone = rec.caller_id_number;
+                                console.log(`[Vobiz Match] Found Caller ID "${vobizCallerPhone}" (Diff: ${diff}s)`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (e: any) {
+                console.error('[Vobiz Lookup] Error:', e.message);
+            }
+        }
+        // -------------------------------------------------------------
 
         // Build a clean text transcript
         const transcriptText = transcript
@@ -94,12 +129,11 @@ serve(async (req) => {
             }
         }
 
-        // Fallback to caller ID if completely empty?
-        // Let's only set it if explicitly found, or provide the caller_phone as a potential.
-        // Wait, normally the caller ID *is* the phone number for the Lead record.
-        const effectivePhoneNumber = finalWhatsappNumber || callerPhone;
+        // Fallback to Vobiz Provider ID -> Transcription ID -> Caller ID
+        const effectivePhoneNumber = finalWhatsappNumber || vobizCallerPhone || callerPhone;
+        const startTime = startTimeRaw;
         
-        console.log(`[Webhook] Call from ${callerPhone}, Extracted WA: ${finalWhatsappNumber}, duration: ${callDurationSecs}s, turns: ${transcript.length}`);
+        console.log(`[Webhook] Call from ${callerPhone}, Vobiz: ${vobizCallerPhone}, Extracted WA: ${finalWhatsappNumber}, duration: ${callDurationSecs}s`);
 
         // --- 4. EXTRACT SERVICE & SHIFT FOR GREETING ---
         let detectedService = "Home Healthcare";

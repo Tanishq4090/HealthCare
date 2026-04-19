@@ -91,9 +91,42 @@ serve(async (req) => {
       if (!extractedPhone && metadata?.caller_id) extractedPhone = metadata.caller_id;
       
       const last10 = extractedPhone.replace(/\D/g, '').slice(-10);
-      console.log(`[Webhook] Extracted name=${extractedName}, phone=${extractedPhone}, last10=${last10}`);
-      
       let summary = payload.summary || `Extracted Data: ${JSON.stringify(payload.data_collection_results || {})}`;
+
+      // --- NEW: VOBIZ CDR LOOKUP (Direct Provider Caller ID Fallback) ---
+      let vobizCallerPhone = '';
+      const startTimeUnix = payload.metadata?.start_time_unix_secs || Math.floor(Date.now() / 1000);
+      const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
+      const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
+
+      if (!extractedPhone && VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN) {
+          try {
+              const cdrRes = await fetch(
+                  `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
+                  { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
+              );
+              if (cdrRes.ok) {
+                  const cdrData = await cdrRes.json();
+                  const records = cdrData.data || [];
+                  for (const rec of records) {
+                      if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
+                          const vobizTime = new Date(rec.start_time).getTime() / 1000;
+                          if (Math.abs(vobizTime - startTimeUnix) <= 60) {
+                              vobizCallerPhone = rec.caller_id_number;
+                              extractedPhone = vobizCallerPhone; // Use provider number
+                              console.log(`[Vobiz Match] Found Caller ID via Provider: ${extractedPhone}`);
+                              break;
+                          }
+                      }
+                  }
+              }
+          } catch (e: any) {
+              console.error('[Vobiz Lookup] Error:', e.message);
+          }
+      }
+      // -----------------------------------------------------------------
+
+      console.log(`[Webhook] Extracted name=${extractedName}, phone=${extractedPhone}, last10=${last10}`);
 
       // 3. ROBUST LEAD UPSERT — always create/find a lead using last-10-digit matching
       let leadId = null;
