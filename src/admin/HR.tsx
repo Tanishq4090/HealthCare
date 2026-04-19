@@ -1949,7 +1949,7 @@ export default function HR() {
                                     required
                                 >
                                     <option value="">-- Choose Worker --</option>
-                                    {Array.isArray(workers) && workers.filter((w: any) => w && w.status !== 'inactive').map((w: any) => (
+                                    {Array.isArray(workers) && workers.filter((w: any) => w && (!w.deleted_at)).map((w: any) => (
                                         <option key={w?.id || `fallback-${Math.random()}`} value={w?.id || ''}>
                                             {w?.full_name || w?.name || 'Unknown'} ({w?.preferred_payment_type === 'hourly' ? 'Hourly' : w?.preferred_payment_type === 'short_term' ? 'Fixed' : 'Daily Rate'})
                                         </option>
