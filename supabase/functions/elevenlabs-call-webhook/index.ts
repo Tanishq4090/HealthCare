@@ -37,6 +37,8 @@ serve(async (req) => {
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
             : new Date().toISOString();
         const startTimeUnix = metadata.start_time_unix_secs || Math.floor(Date.now() / 1000);
+        const callerPhone = metadata.phone_number || metadata.caller_id || '';
+        const callDurationSecs = metadata.call_duration_secs || analysis.call_duration || 0;
 
         // --- NEW: VOBIZ CDR LOOKUP (Direct Provider Caller ID) ---
         // If ElevenLabs doesn't send a phone number, we fetch it directly from the Vobiz provider CDRs
