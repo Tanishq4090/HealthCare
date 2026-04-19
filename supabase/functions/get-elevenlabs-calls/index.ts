@@ -99,14 +99,18 @@ serve(async (req) => {
     );
 
     // Fetch which conversation_ids have ALREADY been explicitly added to the CRM pipeline
-    // Only mark a call as 'Processed' if its specific conversation_id has a lead_id in call_transcripts
-    const { data: processedTranscripts } = await supabaseClient
+    // Also fetch the automation_error if it exists
+    const { data: dbTranscripts } = await supabaseClient
         .from('call_transcripts')
-        .select('conversation_id')
-        .not('lead_id', 'is', null);
-    const processedConversationIds = new Set(
-        (processedTranscripts || []).map((t: any) => t.conversation_id).filter(Boolean)
-    );
+        .select('conversation_id, lead_id, automation_error');
+    
+    const dbDataMap: Record<string, { lead_id: string | null, error: string | null }> = {};
+    (dbTranscripts || []).forEach((t: any) => {
+        dbDataMap[t.conversation_id] = { 
+            lead_id: t.lead_id, 
+            error: t.automation_error || null 
+        };
+    });
 
     // Format calls for CRM Dashboard
     const formattedLogs = detailedCalls.filter(Boolean).map((c: any) => {
@@ -244,7 +248,8 @@ serve(async (req) => {
         }
 
         // A call is only 'Processed' if it was EXPLICITLY added to the pipeline via the button
-        const isProcessed = processedConversationIds.has(c.conversation_id);
+        const dbInfo = dbDataMap[c.conversation_id];
+        const isProcessed = dbInfo?.lead_id !== null && dbInfo?.lead_id !== undefined;
 
         return {
            id: c.conversation_id,
@@ -257,7 +262,8 @@ serve(async (req) => {
            phone_number: capturedPhone || null,
            capturedName: capturedName,
            capturedWhatsapp: capturedPhone || null,
-           lead_id: isProcessed ? 'processed' : null
+           lead_id: isProcessed ? 'processed' : null,
+           automation_error: dbInfo?.error || null
         };
     });
 

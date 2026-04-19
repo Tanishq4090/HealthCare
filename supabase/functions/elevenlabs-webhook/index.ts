@@ -188,7 +188,13 @@ serve(async (req) => {
               });
 
               if (outError) {
-                  console.error(`[Webhook] Outbound Greeting error:`, outError);
+                  const errorMsg = `Greeting trigger failed: ${outError.message || 'Unknown error'}`;
+                  console.error(`[Webhook] ${errorMsg}`);
+                  // Update call log with error
+                  await supabaseClient.from('crm_call_logs')
+                    .update({ automation_error: errorMsg })
+                    .eq('call_id', callId);
+                  
                   // Log failure so it shows in CRM audit trail
                   await supabaseClient.from('whatsapp_logs').insert([{
                       sid: `err_${Date.now()}`,
@@ -204,7 +210,11 @@ serve(async (req) => {
                   }]);
               }
           } catch (invokeErr: any) {
-              console.error('[Webhook] Failed to invoke meta-whatsapp-outbound:', invokeErr.message);
+              const errorMsg = `Invocation error: ${invokeErr.message}`;
+              console.error(`[Webhook] ${errorMsg}`);
+              await supabaseClient.from('crm_call_logs')
+                .update({ automation_error: errorMsg })
+                .eq('call_id', callId);
           }
       } else {
           console.warn(`[Webhook] No valid phone number found — skipping greeting. Extracted: "${extractedPhone}"`);
