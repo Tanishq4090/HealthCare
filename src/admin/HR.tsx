@@ -643,13 +643,19 @@ export default function HR() {
                 const worker = workers.find(w => w.id === workerId);
 
                 if (worker) {
-                    // Business Logic: Monthly Rate applied if >= 30 days, else Short Term Rate
-                    const isMonthly = daysWorked >= 30;
-                    const appliedRate = isMonthly
-                        ? (worker.monthly_daily_rate || 0)
-                        : (worker.short_term_daily_rate || 0);
+                    let appliedRate = 0;
+                    let totalCost = 0;
 
-                    const totalCost = daysWorked * appliedRate;
+                    if (worker.preferred_payment_type === 'hourly') {
+                        appliedRate = worker.hourly_rate || 0;
+                        totalCost = daysWorked * 8 * appliedRate; // Assuming 8hr day if calculated by days
+                    } else if (worker.preferred_payment_type === 'short_term') {
+                        appliedRate = worker.short_term_daily_rate || 0;
+                        totalCost = appliedRate; // Fixed Flat Monthly Salary
+                    } else {
+                        appliedRate = worker.monthly_daily_rate || 0;
+                        totalCost = daysWorked * appliedRate; // Standard Daily Rate
+                    }
                     const deposit = worker.deposit_received || 0;
                     const netBalance = totalCost - deposit;
 

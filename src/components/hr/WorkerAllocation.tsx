@@ -393,30 +393,40 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                 <select 
                   className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   value={form.preferred_payment_type}
-                  onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
+                  onChange={e => {
+                    const newType = e.target.value as any;
+                    setForm(f => ({ ...f, preferred_payment_type: newType }));
+                  }}
                 >
-                  <option value="monthly">Monthly Base</option>
-                  <option value="hourly">Hourly Billing</option>
-                  <option value="short_term">Per Service / Short Term</option>
+                  <option value="monthly">Daily Rate</option>
+                  <option value="hourly">Hourly Rate</option>
+                  <option value="short_term">Fixed Monthly Salary</option>
                 </select>
               </div>
                <div>
-                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Default Monthly Rate (₹)</label>
-                <Input type="number" className="mt-1" value={form.monthly_daily_rate}
-                  onChange={e => setForm(f => ({ ...f, monthly_daily_rate: Number(e.target.value) }))} />
+                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">
+                  {form.preferred_payment_type === 'hourly' ? 'Hourly Rate (₹)' : 
+                   form.preferred_payment_type === 'short_term' ? 'Fixed Monthly Rate (₹)' : 
+                   'Daily Rate (₹)'}
+                </label>
+                <Input type="number" className="mt-1" 
+                  value={
+                    form.preferred_payment_type === 'hourly' ? form.hourly_rate :
+                    form.preferred_payment_type === 'short_term' ? form.short_term_daily_rate :
+                    form.monthly_daily_rate
+                  }
+                  onChange={e => {
+                    const val = Number(e.target.value);
+                    if (form.preferred_payment_type === 'hourly') {
+                        setForm(f => ({ ...f, hourly_rate: val }));
+                    } else if (form.preferred_payment_type === 'short_term') {
+                        setForm(f => ({ ...f, short_term_daily_rate: val }));
+                    } else {
+                        setForm(f => ({ ...f, monthly_daily_rate: val }));
+                    }
+                  }} 
+                />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-100">
-               <div>
-                 <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Hourly Rate (₹)</label>
-                 <Input type="number" className="mt-1" value={form.hourly_rate}
-                   onChange={e => setForm(f => ({ ...f, hourly_rate: Number(e.target.value) }))} />
-               </div>
-               <div>
-                 <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Short Term Service Rate (₹)</label>
-                 <Input type="number" className="mt-1" value={form.short_term_daily_rate}
-                   onChange={e => setForm(f => ({ ...f, short_term_daily_rate: Number(e.target.value) }))} />
-               </div>
             </div>
           </div>
 
