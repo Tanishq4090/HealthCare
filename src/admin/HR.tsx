@@ -62,6 +62,8 @@ export default function HR() {
     const [previewInvoiceItem, setPreviewInvoiceItem] = useState<any>(null);
     const [invoiceExtras, setInvoiceExtras] = useState({ discount: 0, additionalCharge: 0, advanceAmount: 0, chargeDesc: 'Extra Services' });
 
+    // Manual Payroll Generator State
+    const [isManualPayrollModalOpen, setIsManualPayrollModalOpen] = useState(false);
     const [manualPayrollData, setManualPayrollData] = useState({
         worker_id: '',
         daysWorked: 0,
@@ -696,7 +698,7 @@ export default function HR() {
                     workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
                     workerDoc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 14, 66);
 
-                    autoTable(workerDoc, {
+                    (workerDoc as any).autoTable({
                         startY: 75,
                         headStyles: { fillColor: [26, 166, 168] },
                         head: [['Description', 'Amount']],
@@ -733,7 +735,7 @@ export default function HR() {
                     clientDoc.text(`Invoice #INV-${Math.floor(Math.random()*10000)}`, 14, 59);
                     clientDoc.text(`Billing Period: ${currentMonth}/${currentYear}`, 14, 66);
 
-                    autoTable(clientDoc, {
+                    (clientDoc as any).autoTable({
                         startY: 75,
                         headStyles: { fillColor: [26, 166, 168] },
                         head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
@@ -849,7 +851,7 @@ export default function HR() {
                 tableBody.push(['Advanced Paid (Worker)', '-', '-', `- ₹${Number(invoiceExtras.advanceAmount).toFixed(2)}`]);
             }
 
-            autoTable(clientDoc, {
+            (clientDoc as any).autoTable({
                 startY: 75,
                 headStyles: { fillColor: [37, 99, 235] },
                 head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
@@ -1293,7 +1295,7 @@ export default function HR() {
                                                <button 
                                                    onClick={() => { 
                                                        setPreviewInvoiceItem(item); 
-                                                       setInvoiceExtras({ discount: 0, additionalCharge: 0, chargeDesc: 'Extra Services' }); 
+                                                       setInvoiceExtras({ discount: 0, additionalCharge: 0, advanceAmount: 0, chargeDesc: 'Extra Services' }); 
                                                        setIsInvoicePreviewModalOpen(true); 
                                                    }} 
                                                    className="absolute inset-0 z-20 bg-primary text-white font-bold text-xs flex items-center justify-center opacity-0 group-hover/invoice:opacity-100 transition-opacity rounded-lg gap-2 cursor-pointer shadow-sm"
