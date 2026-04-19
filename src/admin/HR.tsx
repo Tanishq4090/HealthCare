@@ -913,6 +913,10 @@ export default function HR() {
             const { error: dbError } = await supabase.from('payroll').insert([payrollEntry]);
             if (dbError) throw dbError;
 
+            // Dynamic check for jsPDF to prevent window errors on SSR
+            const { default: jsPDF } = await import('jspdf');
+            await import('jspdf-autotable');
+
             // Generate PDFs for download
             const workerDoc = new jsPDF();
             workerDoc.setFontSize(22);
