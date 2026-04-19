@@ -925,9 +925,19 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
     monthly_daily_rate: 0,
     hourly_rate: 0,
     short_term_daily_rate: 0,
+    shift_hours: 0,
     job_title: '',
     phone: '',
     address: '',
+  } as {
+    preferred_payment_type: 'hourly' | 'monthly' | 'short_term';
+    monthly_daily_rate: number;
+    hourly_rate: number;
+    short_term_daily_rate: number;
+    shift_hours: number;
+    job_title: string;
+    phone: string;
+    address: string;
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -938,6 +948,7 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
         monthly_daily_rate: employee.monthly_daily_rate ?? 0,
         hourly_rate: employee.hourly_rate ?? 0,
         short_term_daily_rate: employee.short_term_daily_rate ?? 0,
+        shift_hours: employee.shift_hours ?? 8,
         job_title: employee.job_title ?? '',
         phone: employee.phone ?? '',
         address: employee.address ?? '',
@@ -957,6 +968,7 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
           monthly_daily_rate: form.monthly_daily_rate,
           hourly_rate: form.hourly_rate,
           short_term_daily_rate: form.short_term_daily_rate,
+          shift_hours: form.shift_hours,
           job_title: form.job_title,
           phone: form.phone || null,
           address: form.address || null,
