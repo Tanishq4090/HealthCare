@@ -310,17 +310,10 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Phone</label>
-                <Input className="mt-1" placeholder="98765 43210" value={form.phone ?? ''}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Username</label>
-                <Input className="mt-1" placeholder="Required for Login" value={form.username ?? ''}
-                  onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
-              </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Phone</label>
+              <Input className="mt-1" placeholder="98765 43210" value={form.phone ?? ''}
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -336,18 +329,6 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Username</label>
-                <Input className="mt-1" placeholder="Required for Login" value={form.username ?? ''}
-                  onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Password</label>
-                <Input className="mt-1" type="password" placeholder="Min 6 chars" value={form.password ?? ''}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
-              </div>
-            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1017,34 +998,62 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Address</label>
             <Input className="mt-1" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment Scheme</label>
-            <select
-              className="w-full mt-1 flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-              value={form.preferred_payment_type}
-              onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
-            >
-              <option value="monthly">Monthly Base</option>
-              <option value="hourly">Hourly Billing</option>
-              <option value="short_term">Per Service / Short Term</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Monthly (₹)</label>
-              <Input type="number" className="mt-1" value={form.monthly_daily_rate}
-                onChange={e => setForm(f => ({ ...f, monthly_daily_rate: Number(e.target.value) }))} />
+          <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-100">
+             <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment Scheme</label>
+              <select
+                className="w-full mt-1 flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                value={form.preferred_payment_type}
+                onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
+              >
+                <option value="monthly">Daily Rate</option>
+                <option value="hourly">Hourly Rate</option>
+                <option value="short_term">Fixed Monthly Salary</option>
+              </select>
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hourly (₹)</label>
-              <Input type="number" className="mt-1" value={form.hourly_rate}
-                onChange={e => setForm(f => ({ ...f, hourly_rate: Number(e.target.value) }))} />
+             <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                {form.preferred_payment_type === 'hourly' ? 'Hourly Rate (₹)' : 
+                 form.preferred_payment_type === 'short_term' ? 'Fixed Monthly Rate (₹)' : 
+                 'Daily Rate (₹)'}
+              </label>
+              <Input type="number" className="mt-1" 
+                value={
+                  form.preferred_payment_type === 'hourly' ? form.hourly_rate :
+                  form.preferred_payment_type === 'short_term' ? form.short_term_daily_rate :
+                  form.monthly_daily_rate
+                }
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  if (form.preferred_payment_type === 'hourly') {
+                      setForm(f => ({ ...f, hourly_rate: val }));
+                  } else if (form.preferred_payment_type === 'short_term') {
+                      setForm(f => ({ ...f, short_term_daily_rate: val }));
+                  } else {
+                      setForm(f => ({ ...f, monthly_daily_rate: val }));
+                  }
+                }} 
+              />
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Per Service (₹)</label>
-              <Input type="number" className="mt-1" value={form.short_term_daily_rate}
-                onChange={e => setForm(f => ({ ...f, short_term_daily_rate: Number(e.target.value) }))} />
-            </div>
+            
+            {form.preferred_payment_type === 'hourly' && (
+              <div className="col-span-2 pt-2 border-t border-slate-100">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Shift Duration (Hours / Day)
+                </label>
+                <select 
+                  className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                  value={form.shift_hours || ''}
+                  onChange={e => setForm(f => ({ ...f, shift_hours: Number(e.target.value) }))}
+                >
+                  <option value="" disabled>Select shift duration...</option>
+                  <option value={8}>8 Hours</option>
+                  <option value={10}>10 Hours</option>
+                  <option value={12}>12 Hours</option>
+                  <option value={24}>24 Hours</option>
+                </select>
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter className="mt-4 gap-2">
