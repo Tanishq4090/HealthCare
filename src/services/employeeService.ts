@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+// crypto.randomUUID() is native in all modern browsers (no import needed)
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import type {
@@ -38,7 +38,7 @@ function getExtension(file: File): string {
  */
 async function uploadEmployeePhoto(photo: File): Promise<string> {
   const ext = getExtension(photo);
-  const filePath = `photos/${uuidv4()}.${ext}`;
+  const filePath = `photos/${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from(STORAGE_BUCKET)
@@ -60,7 +60,7 @@ async function uploadEmployeePhoto(photo: File): Promise<string> {
  */
 async function uploadEmployeeDocument(employeeId: string, doc: File): Promise<string> {
   const ext = getExtension(doc);
-  const filePath = `documents/${employeeId}/${uuidv4()}.${ext}`;
+  const filePath = `documents/${employeeId}/${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from(DOCS_BUCKET)
