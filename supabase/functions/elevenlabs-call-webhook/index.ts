@@ -210,28 +210,39 @@ serve(async (req) => {
             if (purePhone) {
                 console.log(`[Webhook] Triggering greeting via meta-whatsapp-outbound for ${purePhone}`);
                 
-                const { data: outData, error: outError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
-                    body: {
-                        phone: purePhone,
-                        useTemplate: true,
-                        templateName: FLOW_TEMPLATE_NAME,
-                        templateParams: [
-                            detectedName.split(' ')[0],
-                            detectedService,
-                            detectedShift
-                        ]
-                    }
-                });
+                try {
+                    const { data: outData, error: outError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                        body: {
+                            phone: purePhone,
+                            useTemplate: true,
+                            templateName: FLOW_TEMPLATE_NAME,
+                            templateParams: [
+                                detectedName.split(' ')[0],
+                                detectedService,
+                                detectedShift
+                            ]
+                        }
+                    });
 
-                if (outError) {
-                    console.error(`[Webhook] Outbound Function Error:`, outError);
-                } else {
-                    console.log(`[Webhook] Greeting dispatched successfully:`, outData);
-                    await supabase.from('whatsapp_messages').insert([{ 
-                        phone: effectivePhoneNumber, 
-                        role: 'assistant', 
-                        content: `[Automated Greeting] Sent service details confirmation for ${detectedService} (${detectedShift} shift).` 
-                    }]);
+                    if (outError) {
+                        const errorMsg = `Greeting trigger failed: ${outError.message || 'Unknown error'}`;
+                        console.error(`[Webhook] ${errorMsg}`);
+                        // Update both tables if possible, but call_transcripts for sure
+                        await supabase.from('call_transcripts').update({ automation_error: errorMsg }).eq('conversation_id', conversationId);
+                        await supabase.from('crm_call_logs').update({ automation_error: errorMsg }).eq('call_id', conversationId);
+                    } else {
+                        console.log(`[Webhook] Greeting dispatched successfully:`, outData);
+                        await supabase.from('whatsapp_messages').insert([{ 
+                            phone: effectivePhoneNumber, 
+                            role: 'assistant', 
+                            content: `[Automated Greeting] Sent service details confirmation for ${detectedService} (${detectedShift} shift).` 
+                        }]);
+                    }
+                } catch (invokeErr: any) {
+                    const errorMsg = `Invocation error: ${invokeErr.message}`;
+                    console.error(`[Webhook] ${errorMsg}`);
+                    await supabase.from('call_transcripts').update({ automation_error: errorMsg }).eq('conversation_id', conversationId);
+                    await supabase.from('crm_call_logs').update({ automation_error: errorMsg }).eq('call_id', conversationId);
                 }
             }
         }

@@ -518,7 +518,8 @@ export default function CRM() {
                     capturedWhatsapp: call.capturedWhatsapp || call.phone_number || null,
                     status: callStatus,
                     transcript: call.transcript,
-                    lead_id: call.lead_id
+                    lead_id: call.lead_id,
+                    automation_error: call.automation_error
                 };
             });
 
@@ -2174,6 +2175,14 @@ export default function CRM() {
                                                         return false;
                                                     });
                                                     const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
+
+                                                    if (call.automation_error) {
+                                                        return (
+                                                            <span className="flex items-center gap-1.5 px-2 py-1 bg-rose-50 border border-rose-100 text-rose-600 rounded text-[10px] font-bold" title={call.automation_error}>
+                                                                <AlertTriangle className="w-3 h-3" /> AUTOMATION FAILED
+                                                            </span>
+                                                        );
+                                                    }
 
                                                     return isProcessed ? (
                                                         <span className="flex items-center gap-1 text-xs font-bold text-[#1AA6A8] bg-[#E6F7F7] px-2 py-1 rounded" title={isAlreadyInPipeline ? "Found existing Lead with this phone number." : ""}>
