@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus } from 'lucide-react';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
@@ -698,7 +698,7 @@ export default function HR() {
                     workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
                     workerDoc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 14, 66);
 
-                    (workerDoc as any).autoTable({
+                    autoTable(workerDoc, {
                         startY: 75,
                         headStyles: { fillColor: [26, 166, 168] },
                         head: [['Description', 'Amount']],
@@ -735,7 +735,7 @@ export default function HR() {
                     clientDoc.text(`Invoice #INV-${Math.floor(Math.random()*10000)}`, 14, 59);
                     clientDoc.text(`Billing Period: ${currentMonth}/${currentYear}`, 14, 66);
 
-                    (clientDoc as any).autoTable({
+                    autoTable(clientDoc, {
                         startY: 75,
                         headStyles: { fillColor: [26, 166, 168] },
                         head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
@@ -851,7 +851,7 @@ export default function HR() {
                 tableBody.push(['Advanced Paid (Worker)', '-', '-', `- ₹${Number(invoiceExtras.advanceAmount).toFixed(2)}`]);
             }
 
-            (clientDoc as any).autoTable({
+            autoTable(clientDoc, {
                 startY: 75,
                 headStyles: { fillColor: [37, 99, 235] },
                 head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
@@ -940,7 +940,7 @@ export default function HR() {
                 workerDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
                 workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 66);
 
-                (workerDoc as any).autoTable({
+                autoTable(workerDoc, {
                     startY: 75,
                     head: [['Description', 'Value']],
                     body: [
@@ -971,7 +971,7 @@ export default function HR() {
                 clientDoc.text(`Service Provided By: ${worker.name} (${worker.role})`, 14, 52);
                 clientDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
 
-                (clientDoc as any).autoTable({
+                autoTable(clientDoc, {
                     startY: 65,
                     head: [['Service Description', 'Calculation', 'Subtotal']],
                     body: [
@@ -985,7 +985,7 @@ export default function HR() {
                     headStyles: { fillColor: [15, 23, 42] },
                 });
                 
-                (clientDoc as any).autoTable({
+                autoTable(clientDoc, {
                     startY: (clientDoc as any).lastAutoTable.finalY + 10,
                     head: [['Billing Summary', 'Amount']],
                     body: [
