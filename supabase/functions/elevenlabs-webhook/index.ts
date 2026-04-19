@@ -250,7 +250,11 @@ serve(async (req) => {
                 .eq('call_id', callId);
           }
       } else {
-          console.warn(`[Webhook] No valid phone number found — skipping greeting. Extracted: "${extractedPhone}"`);
+          const failMsg = `No valid 10-digit phone number found. Extracted phone was: ${extractedPhone}`;
+          console.error(`[Webhook] Greeting skipped: ${failMsg}`);
+          await supabaseClient.from('crm_call_logs')
+            .update({ automation_error: failMsg })
+            .eq('call_id', callId);
       }
 
       return new Response(JSON.stringify({ success: true, message: 'Call processed and greeting triggered.' }), {

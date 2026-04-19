@@ -278,6 +278,11 @@ serve(async (req) => {
                     await supabase.from('call_transcripts').update({ automation_error: errorMsg }).eq('conversation_id', conversationId);
                     await supabase.from('crm_call_logs').update({ automation_error: errorMsg }).eq('call_id', conversationId);
                 }
+            } else {
+                const failMsg = `No valid 10-digit phone number found. Caller ID was: ${callerPhone}`;
+                console.error(`[Webhook] Greeting skipped: ${failMsg}`);
+                await supabase.from('call_transcripts').update({ automation_error: failMsg }).eq('conversation_id', conversationId);
+                await supabase.from('crm_call_logs').update({ automation_error: failMsg }).eq('call_id', conversationId);
             }
         }
 
