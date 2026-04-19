@@ -100,28 +100,38 @@ serve(async (req) => {
       const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
 
       if (!extractedPhone && VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN) {
-          try {
-              const cdrRes = await fetch(
-                  `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
-                  { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
-              );
-              if (cdrRes.ok) {
-                  const cdrData = await cdrRes.json();
-                  const records = cdrData.data || [];
-                  for (const rec of records) {
-                      if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
-                          const vobizTime = new Date(rec.start_time).getTime() / 1000;
-                          if (Math.abs(vobizTime - startTimeUnix) <= 60) {
-                              vobizCallerPhone = rec.caller_id_number;
-                              extractedPhone = vobizCallerPhone; // Use provider number
-                              console.log(`[Vobiz Match] Found Caller ID via Provider: ${extractedPhone}`);
-                              break;
+          const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+          const TRIES = 4;
+          
+          for (let attempt = 1; attempt <= TRIES; attempt++) {
+              try {
+                  if (attempt > 1) {
+                      console.log(`[Vobiz] Waiting 3 seconds for CDR... (Attempt ${attempt}/${TRIES})`);
+                      await delay(3000);
+                  }
+                  const cdrRes = await fetch(
+                      `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
+                      { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
+                  );
+                  if (cdrRes.ok) {
+                      const cdrData = await cdrRes.json();
+                      const records = cdrData.data || [];
+                      for (const rec of records) {
+                          if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
+                              const vobizTime = new Date(rec.start_time).getTime() / 1000;
+                              if (Math.abs(vobizTime - startTimeUnix) <= 60) {
+                                  vobizCallerPhone = rec.caller_id_number;
+                                  extractedPhone = vobizCallerPhone; // Use provider number
+                                  console.log(`[Vobiz Match] Found Caller ID via Provider: ${extractedPhone} on attempt ${attempt}`);
+                                  break;
+                              }
                           }
                       }
                   }
+              } catch (e: any) {
+                  console.error(`[Vobiz Lookup] Error on attempt ${attempt}: ${e.message}`);
               }
-          } catch (e: any) {
-              console.error('[Vobiz Lookup] Error:', e.message);
+              if (vobizCallerPhone) break;
           }
       }
       // -----------------------------------------------------------------
