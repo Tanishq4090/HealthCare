@@ -60,14 +60,15 @@ export default function HR() {
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
     const [previewInvoiceItem, setPreviewInvoiceItem] = useState<any>(null);
-    const [invoiceExtras, setInvoiceExtras] = useState({ discount: 0, additionalCharge: 0, chargeDesc: 'Extra Services' });
+    const [invoiceExtras, setInvoiceExtras] = useState({ discount: 0, additionalCharge: 0, advanceAmount: 0, chargeDesc: 'Extra Services' });
 
-    // Manual Payroll Generator State
-    const [isManualPayrollModalOpen, setIsManualPayrollModalOpen] = useState(false);
     const [manualPayrollData, setManualPayrollData] = useState({
         worker_id: '',
         daysWorked: 0,
-        shiftHoursOverride: 0
+        shiftHoursOverride: 0,
+        serviceMonth: format(new Date(), 'MMMM yyyy'),
+        advanceAmount: 0,
+        type: 'both' as 'both' | 'invoice' | 'payslip'
     });
 
     // Manual Attendance State
@@ -818,7 +819,7 @@ export default function HR() {
             const daysWorked = item.days_worked;
             const baseCost = daysWorked * appliedRate;
             
-            const totalCost = baseCost + Number(invoiceExtras.additionalCharge) - Number(invoiceExtras.discount);
+            const totalCost = baseCost + Number(invoiceExtras.additionalCharge) - Number(invoiceExtras.discount) - Number(invoiceExtras.advanceAmount);
             
             const clientDoc = new jsPDF();
             clientDoc.setFontSize(22);
@@ -832,7 +833,7 @@ export default function HR() {
             clientDoc.text(`Bill To: ${item.client_name || 'General Client'}`, 14, 45);
             clientDoc.text(`Service For: ${item.worker}`, 14, 52);
             clientDoc.text(`Invoice #INV-${Math.floor(Math.random()*10000)}`, 14, 59);
-            clientDoc.text(`Billing Period: ${currentMonth}/${currentYear}`, 14, 66);
+            clientDoc.text(`Service Month: ${item.service_month || item.month || (currentMonth + '/' + currentYear)}`, 14, 66);
 
             const tableBody: any[] = [
                 [`Manpower Supply`, `₹${appliedRate.toFixed(2)}`, `${daysWorked} days`, `₹${baseCost.toFixed(2)}`]
@@ -843,6 +844,9 @@ export default function HR() {
             }
             if (Number(invoiceExtras.discount) > 0) {
                 tableBody.push(['Discount Applied', '-', '-', `- ₹${Number(invoiceExtras.discount).toFixed(2)}`]);
+            }
+            if (Number(invoiceExtras.advanceAmount) > 0) {
+                tableBody.push(['Advanced Paid (Worker)', '-', '-', `- ₹${Number(invoiceExtras.advanceAmount).toFixed(2)}`]);
             }
 
             autoTable(clientDoc, {
@@ -893,8 +897,10 @@ export default function HR() {
                 totalCost = manualPayrollData.daysWorked * appliedRate; 
             }
 
+            const advance = Number(manualPayrollData.advanceAmount) || 0;
             const deposit = worker.deposit_received || 0;
-            const netBalance = totalCost - deposit;
+            // The net balance is total cost minus deposit (from client) and minus advance (given to worker)
+            const netBalance = totalCost - deposit - advance;
 
             const payrollEntry = {
                 worker: worker.name,
@@ -902,10 +908,13 @@ export default function HR() {
                 days_worked: manualPayrollData.daysWorked,
                 daily_rate: appliedRate,
                 deposit_received: deposit,
+                advance_amount: advance,
                 net_balance: netBalance,
                 status: netBalance > 0 ? 'Pending Payment' : (netBalance < 0 ? 'Refund Due' : 'Settled'),
                 period_start: new Date().toISOString().slice(0, 10),
-                period_end: new Date().toISOString().slice(0, 10)
+                period_end: new Date().toISOString().slice(0, 10),
+                service_month: manualPayrollData.serviceMonth,
+                payroll_type: manualPayrollData.type
             };
 
             const { error: dbError } = await supabase.from('payroll').insert([payrollEntry]);
@@ -914,78 +923,92 @@ export default function HR() {
             // Static jsPDF used instead
 
             // Generate PDFs for download
-            const workerDoc = new jsPDF();
-            workerDoc.setFontSize(22);
-            workerDoc.setTextColor(15, 23, 42); 
-            workerDoc.text("99Care AI", 14, 20);
-            workerDoc.setFontSize(14);
-            workerDoc.setTextColor(100, 116, 139); 
-            workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
-            workerDoc.setFontSize(10);
-            workerDoc.setTextColor(71, 85, 105);
-            workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
-            workerDoc.text(`Role: ${worker.role}`, 14, 52);
-            workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
+            if (manualPayrollData.type === 'both' || manualPayrollData.type === 'payslip') {
+                const workerDoc = new jsPDF();
+                workerDoc.setFontSize(22);
+                workerDoc.setTextColor(15, 23, 42); 
+                workerDoc.text("99Care AI", 14, 20);
+                workerDoc.setFontSize(14);
+                workerDoc.setTextColor(100, 116, 139); 
+                workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
+                workerDoc.setFontSize(10);
+                workerDoc.setTextColor(71, 85, 105);
+                workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
+                workerDoc.text(`Role: ${worker.role}`, 14, 52);
+                workerDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
+                workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 66);
 
-            (workerDoc as any).autoTable({
-                startY: 70,
-                head: [['Description', 'Value']],
-                body: [
-                    ['working days', `${manualPayrollData.daysWorked} days`],
-                    ['Salary per day', `Rs ${appliedRate.toFixed(2)}`],
-                    ['Total Amount :', `Rs ${totalCost.toFixed(2)}`],
-                    ['Advanced IF any :', `Rs ${deposit.toFixed(2)}`],
-                    ['Pay Amount:', `Rs ${netBalance.toFixed(2)}`],
-                ],
-                theme: 'striped',
-                headStyles: { fillColor: [26, 166, 168] },
-            });
-            workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_Manual.pdf`);
+                (workerDoc as any).autoTable({
+                    startY: 75,
+                    head: [['Description', 'Value']],
+                    body: [
+                        ['working days', `${manualPayrollData.daysWorked} days`],
+                        ['Salary per day', `Rs ${appliedRate.toFixed(2)}`],
+                        ['Total Amount :', `Rs ${totalCost.toFixed(2)}`],
+                        ['Security Deposit Adjustment :', `- Rs ${deposit.toFixed(2)}`],
+                        ['Advance Taken :', `- Rs ${advance.toFixed(2)}`],
+                        ['Net Payable Salary:', `Rs ${netBalance.toFixed(2)}`],
+                    ],
+                    theme: 'striped',
+                    headStyles: { fillColor: [26, 166, 168] },
+                });
+                workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
+            }
 
-            const clientDoc = new jsPDF();
-            clientDoc.setFontSize(22);
-            clientDoc.setTextColor(15, 23, 42); 
-            clientDoc.text("99Care AI", 14, 20);
-            clientDoc.setFontSize(14);
-            clientDoc.setTextColor(100, 116, 139); 
-            clientDoc.text("Official Client Invoice (Manual Entry)", 14, 30);
-            clientDoc.setFontSize(10);
-            clientDoc.setTextColor(71, 85, 105);
-            clientDoc.text(`Client Name: ${worker.assigned_client || 'Unassigned'}`, 14, 45);
-            clientDoc.text(`Service Provided By: ${worker.name} (${worker.role})`, 14, 52);
+            if (manualPayrollData.type === 'both' || manualPayrollData.type === 'invoice') {
+                const clientDoc = new jsPDF();
+                clientDoc.setFontSize(22);
+                clientDoc.setTextColor(15, 23, 42); 
+                clientDoc.text("99Care AI", 14, 20);
+                clientDoc.setFontSize(14);
+                clientDoc.setTextColor(100, 116, 139); 
+                clientDoc.text("Official Client Invoice (Manual Entry)", 14, 30);
+                clientDoc.setFontSize(10);
+                clientDoc.setTextColor(71, 85, 105);
+                clientDoc.text(`Client Name: ${worker.assigned_client || 'Unassigned'}`, 14, 45);
+                clientDoc.text(`Service Provided By: ${worker.name} (${worker.role})`, 14, 52);
+                clientDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
 
-            (clientDoc as any).autoTable({
-                startY: 65,
-                head: [['Service Description', 'Calculation', 'Subtotal']],
-                body: [
-                    [
-                        `Professional Services (${manualPayrollData.daysWorked} days)`,
-                        `${manualPayrollData.daysWorked} days @ Rs${appliedRate.toFixed(2)}`,
-                        `Rs ${totalCost.toFixed(2)}`
-                    ]
-                ],
-                theme: 'grid',
-                headStyles: { fillColor: [15, 23, 42] },
-            });
-            
-            (clientDoc as any).autoTable({
-                startY: (clientDoc as any).lastAutoTable.finalY + 10,
-                head: [['Billing Summary', 'Amount']],
-                body: [
-                    ['Gross Service Value', `Rs ${totalCost.toFixed(2)}`],
-                    ['Less: Initial Deposit', `- Rs ${deposit.toFixed(2)}`],
-                    [`Net Payable Amount`, `Rs ${netBalance.toFixed(2)}`]
-                ],
-                theme: 'plain',
-                styles: { fontSize: 11 },
-                columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }
-            });
-            clientDoc.save(`Invoice_${worker.assigned_client?.replace(/\s+/g, '_') || 'Client'}_Manual.pdf`);
+                (clientDoc as any).autoTable({
+                    startY: 65,
+                    head: [['Service Description', 'Calculation', 'Subtotal']],
+                    body: [
+                        [
+                            `Professional Services (${manualPayrollData.daysWorked} days)`,
+                            `${manualPayrollData.daysWorked} days @ Rs${appliedRate.toFixed(2)}`,
+                            `Rs ${totalCost.toFixed(2)}`
+                        ]
+                    ],
+                    theme: 'grid',
+                    headStyles: { fillColor: [15, 23, 42] },
+                });
+                
+                (clientDoc as any).autoTable({
+                    startY: (clientDoc as any).lastAutoTable.finalY + 10,
+                    head: [['Billing Summary', 'Amount']],
+                    body: [
+                        ['Gross Service Value', `Rs ${totalCost.toFixed(2)}`],
+                        ['Less: Initial Deposit', `- Rs ${deposit.toFixed(2)}`],
+                        [`Net Payable Amount`, `Rs ${netBalance.toFixed(2)}`]
+                    ],
+                    theme: 'plain',
+                    styles: { fontSize: 11 },
+                    columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }
+                });
+                clientDoc.save(`Invoice_${worker.assigned_client?.replace(/\s+/g, '_') || 'Client'}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
+            }
 
             toast.success("Manual payslip generated and downloaded successfully");
             fetchData();
             setIsManualPayrollModalOpen(false);
-            setManualPayrollData({ worker_id: '', daysWorked: 0, shiftHoursOverride: 0 });
+            setManualPayrollData({ 
+                worker_id: '', 
+                daysWorked: 0, 
+                shiftHoursOverride: 0, 
+                serviceMonth: format(new Date(), 'MMMM yyyy'),
+                advanceAmount: 0,
+                type: 'both'
+            });
         } catch (error: any) {
             console.error(error);
             toast.error(error.message || "An error occurred");
@@ -1244,7 +1267,7 @@ export default function HR() {
                                 {isLoading ? (
                                      <div className="flex flex-col items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
                                 ) : (
-                                    payrollItems.map((item) => (
+                                    payrollItems.filter(item => item.payroll_type === 'invoice' || item.payroll_type === 'both' || !item.payroll_type).map((item) => (
                                         <div key={`client-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors">
                                             <div className="flex justify-between items-start">
                                                 <div>
@@ -1297,7 +1320,7 @@ export default function HR() {
                                 {isLoading ? (
                                      <div className="flex flex-col items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
                                 ) : (
-                                    payrollItems.map((item) => (
+                                    payrollItems.filter(item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type).map((item) => (
                                         <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
                                             <div className="flex justify-between items-center">
                                                 <div className="flex items-center gap-3">
@@ -1883,7 +1906,7 @@ export default function HR() {
                                 <div className="border-t border-slate-200 pt-4 flex justify-between items-center text-lg">
                                     <span className="font-bold text-slate-600">Final Total Due:</span>
                                     <span className="font-black text-primary tracking-tight">
-                                        ₹{((previewInvoiceItem.days_worked * previewInvoiceItem.daily_rate) + Number(invoiceExtras.additionalCharge) - Number(invoiceExtras.discount)).toFixed(2)}
+                                        ₹{((previewInvoiceItem.days_worked * previewInvoiceItem.daily_rate) + Number(invoiceExtras.additionalCharge) - Number(invoiceExtras.discount) - Number(invoiceExtras.advanceAmount)).toFixed(2)}
                                     </span>
                                 </div>
                             </div>
@@ -1898,9 +1921,13 @@ export default function HR() {
                                     <label className="text-xs font-semibold text-slate-600 ml-1">Charge Description</label>
                                     <input type="text" value={invoiceExtras.chargeDesc} onChange={(e) => setInvoiceExtras({ ...invoiceExtras, chargeDesc: e.target.value })} className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-shadow shadow-sm" placeholder="Platform fee, overtimes..." />
                                 </div>
-                                <div className="space-y-1.5 md:col-span-2 focus-within:relative z-10">
+                                <div className="space-y-1.5 focus-within:relative z-10">
                                     <label className="text-xs font-semibold text-slate-600 ml-1">Discount Amount (₹)</label>
                                     <input type="number" min="0" value={invoiceExtras.discount || ''} onChange={(e) => setInvoiceExtras({ ...invoiceExtras, discount: Number(e.target.value) })} className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-shadow shadow-sm" placeholder="e.g. 1000" />
+                                </div>
+                                <div className="space-y-1.5 focus-within:relative z-10">
+                                    <label className="text-xs font-semibold text-[#1AA6A8] ml-1">Advanced Paid (₹)</label>
+                                    <input type="number" min="0" value={invoiceExtras.advanceAmount || ''} onChange={(e) => setInvoiceExtras({ ...invoiceExtras, advanceAmount: Number(e.target.value) })} className="w-full px-4 py-2.5 bg-white border border-[#1AA6A8]/30 rounded-xl text-sm font-medium focus:ring-2 focus:ring-[#1AA6A8]/20 focus:border-[#1AA6A8] outline-none transition-shadow shadow-sm" placeholder="Advance subtracted from final pay" />
                                 </div>
                             </div>
                         </div>
@@ -1965,6 +1992,48 @@ export default function HR() {
                                     placeholder="e.g. 21.5"
                                     required
                                 />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Service Month</label>
+                                    <input
+                                        type="text"
+                                        value={manualPayrollData.serviceMonth}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, serviceMonth: e.target.value})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white shadow-sm"
+                                        placeholder="e.g. April 2026"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Advance Received (₹)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={manualPayrollData.advanceAmount || ''}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, advanceAmount: parseFloat(e.target.value) || 0})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white shadow-sm"
+                                        placeholder="e.g. 2000"
+                                    />
+                                    <p className="text-[9px] text-slate-400 mt-1 italic">This will be subtracted from worker salary.</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Transaction Type</label>
+                                <select
+                                    value={manualPayrollData.type}
+                                    onChange={e => setManualPayrollData({...manualPayrollData, type: e.target.value as any})}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-primary font-bold bg-slate-50 border-primary/20"
+                                >
+                                    <option value="both">Both (Client Invoice & Worker Payslip)</option>
+                                    <option value="invoice">Only Client Invoice (Receivable)</option>
+                                    <option value="payslip">Only Worker Salary (Payable)</option>
+                                </select>
+                                <p className="text-[10px] text-slate-500 mt-1">
+                                    Determines which list this appears in.
+                                </p>
                             </div>
 
                             {workers.find(w => w.id === manualPayrollData.worker_id)?.preferred_payment_type === 'hourly' && (
