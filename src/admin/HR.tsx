@@ -693,10 +693,10 @@ export default function HR() {
                         headStyles: { fillColor: [26, 166, 168] },
                         head: [['Description', 'Amount']],
                         body: [
-                            [`Total Days Worked`, `${daysWorked} days`],
-                            [`Daily Rate (${isMonthly ? 'Monthly' : 'Short Term'})`, `₹${appliedRate.toFixed(2)}`],
-                            [`Total Baseline Value`, `₹${totalCost.toFixed(2)}`],
-                            [`Minus: Deposit Received`, `- ₹${deposit.toFixed(2)}`],
+                            [`working days`, `${daysWorked} days`],
+                            [`Salary per day`, `₹${appliedRate.toFixed(2)}`],
+                            [`Total Amount :`, `₹${totalCost.toFixed(2)}`],
+                            [`Advanced IF any :`, `- ₹${deposit.toFixed(2)}`],
                         ],
                     });
 
@@ -704,7 +704,7 @@ export default function HR() {
                     workerDoc.setFontSize(14);
                     workerDoc.setTextColor(15, 23, 42);
                     workerDoc.setFont("helvetica", "bold");
-                    workerDoc.text(`Net Balance To Pay: ₹${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
+                    workerDoc.text(`Pay Amount: ₹${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
                     workerDoc.setFontSize(10);
                     workerDoc.setFont("helvetica", "normal");
                     workerDoc.setTextColor(148, 163, 184);

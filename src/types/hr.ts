@@ -22,6 +22,7 @@ export interface Employee {
   short_term_daily_rate: number;
   rating: number;
   experience: string | null;
+  gender: string | null;
   username: string | null;
   created_at: string;
   updated_at: string;
@@ -51,6 +52,7 @@ export interface CreateEmployeeInput {
   monthly_daily_rate?: number;
   short_term_daily_rate?: number;
   experience?: string;
+  gender?: string;
   username?: string;
   password?: string;
   documents?: File[];

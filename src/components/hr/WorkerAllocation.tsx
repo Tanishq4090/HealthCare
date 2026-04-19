@@ -266,10 +266,25 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               <Input className="mt-1" placeholder="e.g. Anita Sharma" value={form.full_name}
                 onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
             </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Job Title <span className="text-red-400">*</span></label>
-              <Input className="mt-1" placeholder="e.g. Registered Nurse" value={form.job_title}
-                onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Job Title <span className="text-red-400">*</span></label>
+                <Input className="mt-1" placeholder="e.g. Registered Nurse" value={form.job_title}
+                  onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Gender</label>
+                <select 
+                  className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={form.gender ?? ''}
+                  onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+                >
+                  <option value="" disabled>Select Gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-700">Services & Skills</label>
@@ -702,6 +717,7 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
                 ? 'Monthly'
                 : 'Short Term'}
               experience={employee.experience}
+              gender={employee.gender}
               variant="preview"
             />
           </div>
