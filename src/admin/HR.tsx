@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
@@ -623,9 +625,7 @@ export default function HR() {
         const testEmail = window.prompt("Resend Sandbox limits testing to your verified email. Enter the email you used to sign up for Resend:");
         if (!testEmail) return;
 
-        // Dynamic check for jsPDF to prevent window errors on SSR
-        const { default: jsPDF } = await import('jspdf');
-        const { default: autoTable } = await import('jspdf-autotable');
+        // Static jsPDF used instead
 
         setIsGenerating(true);
         toast.loading("Analyzing active attendance logs and calculating daily fees...", { id: 'payroll-gen' });
@@ -812,9 +812,7 @@ export default function HR() {
         if (!previewInvoiceItem) return;
         
         try {
-            const { default: jsPDF } = await import('jspdf');
-            const { default: autoTable } = await import('jspdf-autotable');
-            
+            // Static jsPDF used instead
             const item = previewInvoiceItem;
             const appliedRate = item.daily_rate;
             const daysWorked = item.days_worked;
@@ -913,9 +911,7 @@ export default function HR() {
             const { error: dbError } = await supabase.from('payroll').insert([payrollEntry]);
             if (dbError) throw dbError;
 
-            // Dynamic check for jsPDF to prevent window errors on SSR
-            const { default: jsPDF } = await import('jspdf');
-            await import('jspdf-autotable');
+            // Static jsPDF used instead
 
             // Generate PDFs for download
             const workerDoc = new jsPDF();
@@ -1949,9 +1945,9 @@ export default function HR() {
                                     required
                                 >
                                     <option value="">-- Choose Worker --</option>
-                                    {Array.isArray(workers) && workers.filter((w: any) => w && (!w.deleted_at)).map((w: any) => (
-                                        <option key={w?.id || `fallback-${Math.random()}`} value={w?.id || ''}>
-                                            {w?.full_name || w?.name || 'Unknown'} ({w?.preferred_payment_type === 'hourly' ? 'Hourly' : w?.preferred_payment_type === 'short_term' ? 'Fixed' : 'Daily Rate'})
+                                    {Array.isArray(workers) && workers.filter((w: any) => w && !w.deleted_at).map((w: any) => (
+                                        <option key={w.id} value={w.id}>
+                                            {w.full_name || w.name || 'Unknown'} ({w.preferred_payment_type === 'hourly' ? 'Hourly' : w.preferred_payment_type === 'short_term' ? 'Fixed' : 'Daily'})
                                         </option>
                                     ))}
                                 </select>
