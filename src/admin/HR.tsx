@@ -60,6 +60,14 @@ export default function HR() {
     const [previewInvoiceItem, setPreviewInvoiceItem] = useState<any>(null);
     const [invoiceExtras, setInvoiceExtras] = useState({ discount: 0, additionalCharge: 0, chargeDesc: 'Extra Services' });
 
+    // Manual Payroll Generator State
+    const [isManualPayrollModalOpen, setIsManualPayrollModalOpen] = useState(false);
+    const [manualPayrollData, setManualPayrollData] = useState({
+        worker_id: '',
+        daysWorked: 0,
+        shiftHoursOverride: 0
+    });
+
     // Manual Attendance State
     const [isManualAttendanceModalOpen, setIsManualAttendanceModalOpen] = useState(false);
     const [manualAttendanceData, setManualAttendanceData] = useState({
@@ -861,6 +869,131 @@ export default function HR() {
         }
     };
 
+    const handleManualPayrollGenerate = async () => {
+        if (!manualPayrollData.worker_id || manualPayrollData.daysWorked <= 0) {
+            toast.error("Please select a worker and enter valid days worked.");
+            return;
+        }
+
+        setIsGenerating(true);
+        try {
+            const worker = workers.find(w => w.id === manualPayrollData.worker_id);
+            if (!worker) throw new Error("Worker not found");
+
+            let appliedRate = 0;
+            let totalCost = 0;
+
+            if (worker.preferred_payment_type === 'hourly') {
+                appliedRate = worker.hourly_rate || 0;
+                const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
+                totalCost = manualPayrollData.daysWorked * hours * appliedRate;
+            } else if (worker.preferred_payment_type === 'short_term') {
+                appliedRate = worker.short_term_daily_rate || 0;
+                totalCost = appliedRate; // Fixed Flat
+            } else {
+                appliedRate = worker.monthly_daily_rate || 0;
+                totalCost = manualPayrollData.daysWorked * appliedRate; 
+            }
+
+            const deposit = worker.deposit_received || 0;
+            const netBalance = totalCost - deposit;
+
+            const payrollEntry = {
+                worker: worker.name,
+                client_name: worker.assigned_client || 'No Active Client',
+                days_worked: manualPayrollData.daysWorked,
+                daily_rate: appliedRate,
+                deposit_received: deposit,
+                net_balance: netBalance,
+                status: netBalance > 0 ? 'Pending Payment' : (netBalance < 0 ? 'Refund Due' : 'Settled'),
+                period_start: new Date().toISOString().slice(0, 10),
+                period_end: new Date().toISOString().slice(0, 10)
+            };
+
+            const { error: dbError } = await supabase.from('payroll').insert([payrollEntry]);
+            if (dbError) throw dbError;
+
+            // Generate PDFs for download
+            const workerDoc = new jsPDF();
+            workerDoc.setFontSize(22);
+            workerDoc.setTextColor(15, 23, 42); 
+            workerDoc.text("99Care AI", 14, 20);
+            workerDoc.setFontSize(14);
+            workerDoc.setTextColor(100, 116, 139); 
+            workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
+            workerDoc.setFontSize(10);
+            workerDoc.setTextColor(71, 85, 105);
+            workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
+            workerDoc.text(`Role: ${worker.role}`, 14, 52);
+            workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
+
+            (workerDoc as any).autoTable({
+                startY: 70,
+                head: [['Description', 'Value']],
+                body: [
+                    ['working days', `${manualPayrollData.daysWorked} days`],
+                    ['Salary per day', `Rs ${appliedRate.toFixed(2)}`],
+                    ['Total Amount :', `Rs ${totalCost.toFixed(2)}`],
+                    ['Advanced IF any :', `Rs ${deposit.toFixed(2)}`],
+                    ['Pay Amount:', `Rs ${netBalance.toFixed(2)}`],
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [26, 166, 168] },
+            });
+            workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_Manual.pdf`);
+
+            const clientDoc = new jsPDF();
+            clientDoc.setFontSize(22);
+            clientDoc.setTextColor(15, 23, 42); 
+            clientDoc.text("99Care AI", 14, 20);
+            clientDoc.setFontSize(14);
+            clientDoc.setTextColor(100, 116, 139); 
+            clientDoc.text("Official Client Invoice (Manual Entry)", 14, 30);
+            clientDoc.setFontSize(10);
+            clientDoc.setTextColor(71, 85, 105);
+            clientDoc.text(`Client Name: ${worker.assigned_client || 'Unassigned'}`, 14, 45);
+            clientDoc.text(`Service Provided By: ${worker.name} (${worker.role})`, 14, 52);
+
+            (clientDoc as any).autoTable({
+                startY: 65,
+                head: [['Service Description', 'Calculation', 'Subtotal']],
+                body: [
+                    [
+                        `Professional Services (${manualPayrollData.daysWorked} days)`,
+                        `${manualPayrollData.daysWorked} days @ Rs${appliedRate.toFixed(2)}`,
+                        `Rs ${totalCost.toFixed(2)}`
+                    ]
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [15, 23, 42] },
+            });
+            
+            (clientDoc as any).autoTable({
+                startY: (clientDoc as any).lastAutoTable.finalY + 10,
+                head: [['Billing Summary', 'Amount']],
+                body: [
+                    ['Gross Service Value', `Rs ${totalCost.toFixed(2)}`],
+                    ['Less: Initial Deposit', `- Rs ${deposit.toFixed(2)}`],
+                    [`Net Payable Amount`, `Rs ${netBalance.toFixed(2)}`]
+                ],
+                theme: 'plain',
+                styles: { fontSize: 11 },
+                columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }
+            });
+            clientDoc.save(`Invoice_${worker.assigned_client?.replace(/\s+/g, '_') || 'Client'}_Manual.pdf`);
+
+            toast.success("Manual payslip generated and downloaded successfully");
+            fetchData();
+            setIsManualPayrollModalOpen(false);
+            setManualPayrollData({ worker_id: '', daysWorked: 0, shiftHoursOverride: 0 });
+        } catch (error: any) {
+            console.error(error);
+            toast.error(error.message || "An error occurred");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -1067,6 +1200,13 @@ export default function HR() {
                             <p className="text-sm text-slate-500">Automated calculation of client invoices and worker payslips.</p>
                         </div>
                         <div className="flex items-center gap-3">
+                           <button
+                                onClick={() => setIsManualPayrollModalOpen(true)}
+                                className="py-2 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition-all bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:shadow-sm"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Manual Payslip
+                            </button>
                            <button
                                 onClick={handleGeneratePayroll}
                                 disabled={isGenerating}
@@ -1771,6 +1911,86 @@ export default function HR() {
                             <button onClick={handleDownloadSingleInvoice} className="flex-1 px-6 py-3 bg-primary text-white font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-primary/90 hover:shadow-lg hover:-translate-y-0.5 transition-all">
                                 <FileText className="w-5 h-5" />
                                 Download Custom PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isManualPayrollModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-primary" /> Manual Payslip Generator
+                            </h2>
+                            <button onClick={() => setIsManualPayrollModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Select Worker</label>
+                                <select
+                                    value={manualPayrollData.worker_id}
+                                    onChange={e => {
+                                        const w = workers.find(w => w.id === e.target.value);
+                                        setManualPayrollData({
+                                            ...manualPayrollData, 
+                                            worker_id: e.target.value,
+                                            shiftHoursOverride: w?.shift_hours || 8
+                                        });
+                                    }}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                    required
+                                >
+                                    <option value="">-- Choose Worker --</option>
+                                    {Array.isArray(workers) && workers.map((w: any) => (
+                                        <option key={w?.id || `fallback-${Math.random()}`} value={w?.id || ''}>
+                                            {w?.full_name || w?.name || 'Unknown'} ({w?.preferred_payment_type === 'hourly' ? 'Hourly' : w?.preferred_payment_type === 'short_term' ? 'Fixed' : 'Daily Rate'})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Total Days Worked</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    value={manualPayrollData.daysWorked || ''}
+                                    onChange={e => setManualPayrollData({...manualPayrollData, daysWorked: parseFloat(e.target.value) || 0})}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                    placeholder="e.g. 21.5"
+                                    required
+                                />
+                            </div>
+
+                            {workers.find(w => w.id === manualPayrollData.worker_id)?.preferred_payment_type === 'hourly' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Hours Per Day (Override)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="24"
+                                        value={manualPayrollData.shiftHoursOverride || ''}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, shiftHoursOverride: parseInt(e.target.value) || 0})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                        placeholder="e.g. 10"
+                                        required
+                                    />
+                                    <p className="text-[10px] text-slate-500 mt-1">This overrides the worker's default shift length for this specific payslip.</p>
+                                </div>
+                            )}
+
+                        </div>
+                        <div className="p-6 border-t border-slate-100 flex gap-3 bg-slate-50">
+                            <button onClick={() => setIsManualPayrollModalOpen(false)} className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-100 transition-colors">
+                                Cancel
+                            </button>
+                            <button onClick={handleManualPayrollGenerate} disabled={isGenerating || !manualPayrollData.worker_id || manualPayrollData.daysWorked <= 0} className="flex-1 px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                {isGenerating ? 'Generating...' : 'Generate & Download'}
                             </button>
                         </div>
                     </div>
