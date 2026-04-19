@@ -129,11 +129,10 @@ export default function HR() {
 
             let finalWorkers = [];
             if (employeeError) {
-                console.error('Employees DB error (fallback to mock):', employeeError);
-                // toast.error('DB connection issue — showing offline worker data.');
-                finalWorkers = MOCK_WORKERS;
+                console.error('Employees DB error:', employeeError);
+                finalWorkers = [];
             } else if (!employeeData || employeeData.length === 0) {
-                finalWorkers = MOCK_WORKERS;
+                finalWorkers = [];
             } else {
                 finalWorkers = employeeData.map(w => {
                     const wStats = monthStats?.filter(s => s.worker_id === w.id) || [];
@@ -153,28 +152,21 @@ export default function HR() {
             setWorkers(finalWorkers);
 
             if (payrollError || !payrollData || payrollData.length === 0) {
-                setPayrollItems(MOCK_PAYROLL);
+                setPayrollItems([]);
             } else {
                 setPayrollItems(payrollData);
             }
 
-            // Pipeline leads for client dropdown
             if (leadData && leadData.length > 0) {
                 setPipelineLeads(leadData);
             } else {
-                // Fallback mock pipeline clients
-                setPipelineLeads([
-                    { id: 'm1', name: 'Meet Makwana', pipeline_stage: 'Form Submitted' },
-                    { id: 'm2', name: 'John Doe', pipeline_stage: 'Quotation Sent' },
-                    { id: 'm3', name: 'Jane Smith', pipeline_stage: 'Form Submitted' },
-                    { id: 'm4', name: 'Emily Davis', pipeline_stage: 'Active Client' },
-                ]);
+                setPipelineLeads([]);
             }
         } catch (err: any) {
             console.error('fetchData failed:', err);
-            toast.error('Failed to load workforce data. Running in offline mode.');
-            setWorkers(MOCK_WORKERS);
-            setPayrollItems(MOCK_PAYROLL);
+            toast.error('Failed to load workforce data.');
+            setWorkers([]);
+            setPayrollItems([]);
             setPipelineLeads([]);
         } finally {
             setIsLoading(false);
