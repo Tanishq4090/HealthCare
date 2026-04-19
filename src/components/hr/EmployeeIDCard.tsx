@@ -12,6 +12,7 @@ interface EmployeeIDCardProps {
   dob?: string | null;
   duty?: string | null;          // e.g. "10HRS (Day)"
   experience?: string | null;    // e.g. "5 Years"
+  gender?: string | null;
   variant?: 'preview' | 'public';
 }
 
@@ -49,6 +50,7 @@ export function EmployeeIDCard({
   dob,
   duty,
   experience,
+  gender,
   variant = 'preview',
 }: EmployeeIDCardProps) {
 
@@ -204,11 +206,11 @@ export function EmployeeIDCard({
                 </div>
               )}
 
-              {/* Age */}
-              {dob && (
+              {/* Age & Gender */}
+              {(dob || gender) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Age</span>
-                  <span style={{ color: '#334155', fontSize: 11, fontWeight: 600 }}>{age} yrs</span>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Basic</span>
+                  <span style={{ color: '#334155', fontSize: 11, fontWeight: 600 }}>{age} yrs {gender ? ` • ${gender}` : ''}</span>
                 </div>
               )}
 
