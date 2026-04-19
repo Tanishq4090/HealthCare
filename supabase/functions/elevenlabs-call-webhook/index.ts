@@ -166,26 +166,44 @@ serve(async (req) => {
         }
 
         // If we have a caller phone, let's update their CRM lead record
-        if (callerPhone) {
-            const last10Caller = callerPhone.replace(/\D/g, '').slice(-10);
-            
-            // Always update their latest WhatsApp number if we found a new one from transcript
-            if (finalWhatsappNumber && finalWhatsappNumber !== callerPhone) {
-                await supabase
-                    .from('crm_leads')
-                    .update({ whatsapp_number: finalWhatsappNumber })
-                    .or(`whatsapp_number.ilike.%${last10Caller}%,phone.ilike.%${last10Caller}%`);
-            }
+        const phoneForLookup = callerPhone || effectivePhoneNumber;
+        if (phoneForLookup) {
+            const last10Caller = phoneForLookup.replace(/\D/g, '').slice(-10);
 
-            // Update pipeline stage to 'In Discussion' only if they were 'New'
-            await supabase
+            // Robust lookup: find lead by last 10 digits regardless of format
+            const { data: existingLeads } = await supabase
                 .from('crm_leads')
-                .update({ 
-                    last_called_at: startTime,
-                    pipeline_stage: 'In Discussion' 
-                })
-                .or(`whatsapp_number.ilike.%${last10Caller}%,phone.ilike.%${last10Caller}%`)
-                .eq('pipeline_stage', 'New');
+                .select('id, pipeline_stage, name')
+                .or(`phone.ilike.%${last10Caller}%,whatsapp_number.ilike.%${last10Caller}%`)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            const existingLead = existingLeads?.[0] ?? null;
+
+            if (existingLead) {
+                console.log(`[Call Webhook] Found lead: ${existingLead.id} (${existingLead.name})`);
+                // Update call timestamp and stage if still 'New'
+                const updatePayload: any = { last_called_at: startTime };
+                if (existingLead.pipeline_stage === 'New' || existingLead.pipeline_stage === 'New Lead') {
+                    updatePayload.pipeline_stage = 'In Discussion';
+                }
+                await supabase.from('crm_leads').update(updatePayload).eq('id', existingLead.id);
+                // Always update WhatsApp number if transcript extracted a different/new one
+                if (finalWhatsappNumber && finalWhatsappNumber !== callerPhone) {
+                    await supabase.from('crm_leads').update({ whatsapp_number: finalWhatsappNumber }).eq('id', existingLead.id);
+                }
+            } else {
+                // Auto-create a new lead for this caller — never miss a contact
+                console.log(`[Call Webhook] No existing lead. Auto-creating for ${phoneForLookup}`);
+                await supabase.from('crm_leads').insert([{
+                    name: detectedName !== 'Customer' ? detectedName : 'Unknown Caller',
+                    phone: phoneForLookup,
+                    whatsapp_number: effectivePhoneNumber || phoneForLookup,
+                    source: 'AI Phone Call',
+                    pipeline_stage: 'New Inquiry',
+                    status: 'new',
+                    last_called_at: startTime
+                }]);
+            }
 
             // --- 5. DISPATCH AUTOMATED WHATSAPP GREETING (TEMPLATE + FLOW) ---
             const purePhone = effectivePhoneNumber.replace(/\D/g, '');

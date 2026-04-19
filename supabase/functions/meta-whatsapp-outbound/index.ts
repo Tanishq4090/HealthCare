@@ -137,17 +137,19 @@ serve(async (req) => {
       
       const parameters = [];
       if (templateParams && Array.isArray(templateParams)) {
-          for (const param of templateParams) {
+          const safeDefaults = ['there', 'Home Healthcare', 'General'];
+          for (let i = 0; i < templateParams.length; i++) {
+              const val = templateParams[i];
               parameters.push({
                   type: "text",
-                  text: param ? param.trim() : ''
+                  text: (val && val.trim()) ? val.trim() : safeDefaults[i] || '...'
               });
           }
       } else {
           // Fallback to legacy greeting_msg parameter
           parameters.push({
               type: "text",
-              text: leadName ? leadName.trim() : 'Customer'
+              text: leadName ? leadName.trim() : 'there'
           });
       }
 
