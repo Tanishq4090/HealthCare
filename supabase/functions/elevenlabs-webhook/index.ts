@@ -80,50 +80,61 @@ serve(async (req) => {
       // Parse structured data if provided by ElevenLabs Data Collection
       if (payload.data_collection_results && typeof payload.data_collection_results === 'object') {
           const data = payload.data_collection_results;
-          
-          // These keys should match your Data Collection Variable IDs in the ElevenLabs dashboard
           if (data.name?.value) extractedName = data.name.value;
           if (data.phone_number?.value) extractedPhone = data.phone_number.value;
           if (data.whatsapp?.value) extractedPhone = data.whatsapp.value;
           if (data.service_type?.value) extractedService = data.service_type.value;
       }
+
+      // Fallback: try to grab phone from metadata
+      if (!extractedPhone && metadata?.phone_number) extractedPhone = metadata.phone_number;
+      if (!extractedPhone && metadata?.caller_id) extractedPhone = metadata.caller_id;
+      
+      const last10 = extractedPhone.replace(/\D/g, '').slice(-10);
+      console.log(`[Webhook] Extracted name=${extractedName}, phone=${extractedPhone}, last10=${last10}`);
       
       let summary = payload.summary || `Extracted Data: ${JSON.stringify(payload.data_collection_results || {})}`;
 
-      // 3. Insert Lead if meaningful data was captured
+      // 3. ROBUST LEAD UPSERT — always create/find a lead using last-10-digit matching
       let leadId = null;
-      
-      // We only insert if we got at least a phone number or name, otherwise it might be a silent/dropped call
-      if (extractedPhone || extractedName !== 'Unknown Caller') {
-          // Check if lead already exists based on phone
+
+      if (last10.length === 10) {
+          // Robust search: match any format with the same last 10 digits
           const { data: existingLeads } = await supabaseClient
             .from('crm_leads')
-            .select('id')
-            .eq('phone', extractedPhone)
+            .select('id, name, pipeline_stage')
+            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+            .order('created_at', { ascending: false })
             .limit(1);
 
           if (existingLeads && existingLeads.length > 0) {
               leadId = existingLeads[0].id;
-              // Optionally update the existing lead's status/stage if needed
+              console.log(`[Webhook] Found existing lead: ${leadId} (${existingLeads[0].name})`);
+              // Update their call timestamp
+              await supabaseClient.from('crm_leads')
+                .update({ last_called_at: new Date().toISOString() })
+                .eq('id', leadId);
           } else {
-              // Create new lead
+              // Auto-create a new lead from the call
+              console.log(`[Webhook] No lead found. Auto-creating for ${extractedPhone}`);
               const { data: newLead, error: leadError } = await supabaseClient
                 .from('crm_leads')
                 .insert([{
-                  name: extractedName,
-                  phone: extractedPhone,
-                  whatsapp_number: extractedPhone,
+                  name: extractedName !== 'Unknown Caller' ? extractedName : 'Unknown Caller',
+                  phone: extractedPhone || `+91${last10}`,
+                  whatsapp_number: extractedPhone || `+91${last10}`,
                   source: 'AI Phone Call',
                   pipeline_stage: 'New Inquiry',
-                  status: 'Processed'
+                  status: 'new'
                 }])
                 .select('id')
                 .single();
 
               if (!leadError && newLead) {
                   leadId = newLead.id;
+                  console.log(`[Webhook] Auto-created lead: ${leadId}`);
               } else {
-                  console.error("Error creating lead:", leadError);
+                  console.error('[Webhook] Error auto-creating lead:', leadError);
               }
           }
       }
@@ -145,60 +156,58 @@ serve(async (req) => {
           console.error("Error inserting call log:", logError);
       }
 
-      // --- 5. DISPATCH AUTOMATED WHATSAPP GREETING (GIFT) ---
-      // We trigger this only if we have a valid phone number
-      const purePhone = extractedPhone.replace(/\D/g, '');
+      // --- 5. DISPATCH AUTOMATED WHATSAPP GREETING ---
+      const purePhone = extractedPhone.replace(/\D/g, '') || last10;
       if (purePhone && purePhone.length >= 10) {
-          console.log(`[Webhook] Triggering greeting for ${purePhone}`);
+          console.log(`[Webhook] Triggering post-call greeting for ${purePhone}`);
           
-          // Determine Service & Shift if not explicitly collected
-          let finalService = extractedService !== 'Inquiry' ? extractedService : 'Home Healthcare';
+          // Detect Service from transcript if not directly collected
+          let finalService = (extractedService && extractedService !== 'Inquiry') ? extractedService : 'Home Healthcare';
           let finalShift = 'General';
+          const tLow = formattedTranscript.toLowerCase();
           
           if (finalService === 'Home Healthcare') {
-              const text = formattedTranscript.toLowerCase();
-              if (text.includes('baby') || text.includes('child') || text.includes('baccha')) finalService = 'Baby Care';
-              else if (text.includes('old') || text.includes('parent') || text.includes('elderly')) finalService = 'Old Age Care';
-              else if (text.includes('nurse') || text.includes('nursing') || text.includes('injection')) finalService = 'Nursing Care';
+              if (tLow.includes('baby') || tLow.includes('child') || tLow.includes('baccha') || tLow.includes('newborn')) finalService = 'Baby Care';
+              else if (tLow.includes('old') || tLow.includes('parent') || tLow.includes('elderly') || tLow.includes('mother') || tLow.includes('father') || tLow.includes('dadi') || tLow.includes('dada')) finalService = 'Old Age Care';
+              else if (tLow.includes('nurse') || tLow.includes('nursing') || tLow.includes('injection') || tLow.includes('patient')) finalService = 'Nursing Care';
+              else if (tLow.includes('physio') || tLow.includes('therapy') || tLow.includes('rehab')) finalService = 'Physiotherapy';
           }
+          if (tLow.includes('24') || tLow.includes('stay') || tLow.includes('day and night')) finalShift = '24-Hour';
+          else if (tLow.includes('10') || tLow.includes('day shift')) finalShift = '10-Hour';
 
-          if (formattedTranscript.toLowerCase().includes('24') || formattedTranscript.toLowerCase().includes('stay')) {
-              finalShift = '24-Hour';
-          } else if (formattedTranscript.toLowerCase().includes('10')) {
-              finalShift = '10-Hour';
-          }
+          const firstName = (extractedName && extractedName !== 'Unknown Caller') ? extractedName.split(' ')[0] : 'there';
 
           try {
-              // Get first name from extractedName
-              const firstName = extractedName.split(' ')[0] || 'Customer';
-
               const { data: outData, error: outError } = await supabaseClient.functions.invoke('meta-whatsapp-outbound', {
                   body: {
                       phone: purePhone,
                       useTemplate: true,
                       templateName: "post_call_intake",
-                      templateParams: [
-                          firstName,
-                          finalService,
-                          finalShift
-                      ]
+                      templateParams: [firstName, finalService, finalShift]
                   }
               });
 
               if (outError) {
                   console.error(`[Webhook] Outbound Greeting error:`, outError);
+                  // Log failure so it shows in CRM audit trail
+                  await supabaseClient.from('whatsapp_logs').insert([{
+                      sid: `err_${Date.now()}`,
+                      status: 'failed',
+                      payload: { type: 'post_call_greeting_failed', error: outError.message, phone: purePhone }
+                  }]);
               } else {
-                  console.log(`[Webhook] Greeting dispatched:`, outData);
-                  // Log message sent in CRM history
+                  console.log(`[Webhook] Greeting dispatched successfully for ${purePhone}:`, JSON.stringify(outData).slice(0, 200));
                   await supabaseClient.from('whatsapp_messages').insert([{ 
                       phone: purePhone, 
                       role: 'assistant', 
-                      content: `[Automated Greeting] Sent service details confirmation for ${finalService} (${finalShift} shift).` 
+                      content: `[Post-Call Greeting] Sent ${finalService} (${finalShift}) intake form.` 
                   }]);
               }
-          } catch (invokeErr) {
-              console.error("[Webhook] Failed to invoke meta-whatsapp-outbound:", invokeErr.message);
+          } catch (invokeErr: any) {
+              console.error('[Webhook] Failed to invoke meta-whatsapp-outbound:', invokeErr.message);
           }
+      } else {
+          console.warn(`[Webhook] No valid phone number found — skipping greeting. Extracted: "${extractedPhone}"`);
       }
 
       return new Response(JSON.stringify({ success: true, message: 'Call processed and greeting triggered.' }), {
