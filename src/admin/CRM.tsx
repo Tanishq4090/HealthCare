@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, Play, Pause, Volume2 } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
