@@ -40,37 +40,53 @@ serve(async (req) => {
 
         // --- NEW: VOBIZ CDR LOOKUP (Direct Provider Caller ID) ---
         // If ElevenLabs doesn't send a phone number, we fetch it directly from the Vobiz provider CDRs
+        // Vobiz might take a few seconds to generate the CDR after a call ends. 
+        // We poll up to 4 times (every 3 seconds) to ensure we capture the number.
         let vobizCallerPhone = '';
         const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
         const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
 
         if (!metadata.phone_number && VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN) {
-            try {
-                console.log(`[Vobiz] Attempting provider CDR lookup for call at ${startTimeRaw}`);
-                const cdrRes = await fetch(
-                    `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
-                    { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
-                );
-                
-                if (cdrRes.ok) {
-                    const cdrData = await cdrRes.json();
-                    const records = cdrData.data || [];
-                    // Match by timestamp: ElevenLabs start_time vs Vobiz record start_time
-                    // We check a ±60 second window for fuzzy matching
-                    for (const rec of records) {
-                        if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
-                            const vobizTime = new Date(rec.start_time).getTime() / 1000;
-                            const diff = Math.abs(vobizTime - startTimeUnix);
-                            if (diff <= 60) {
-                                vobizCallerPhone = rec.caller_id_number;
-                                console.log(`[Vobiz Match] Found Caller ID "${vobizCallerPhone}" (Diff: ${diff}s)`);
-                                break;
+            const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+            const TRIES = 4;
+            
+            for (let attempt = 1; attempt <= TRIES; attempt++) {
+                try {
+                    if (attempt > 1) {
+                        console.log(`[Vobiz] Waiting 3 seconds for CDR... (Attempt ${attempt}/${TRIES})`);
+                        await delay(3000);
+                    } else {
+                        console.log(`[Vobiz] Attempting provider CDR lookup for call at ${startTimeRaw}`);
+                    }
+
+                    const cdrRes = await fetch(
+                        `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
+                        { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
+                    );
+                    
+                    if (cdrRes.ok) {
+                        const cdrData = await cdrRes.json();
+                        const records = cdrData.data || [];
+                        // Match by timestamp: ElevenLabs start_time vs Vobiz record start_time
+                        // We check a ±60 second window for fuzzy matching
+                        for (const rec of records) {
+                            if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
+                                const vobizTime = new Date(rec.start_time).getTime() / 1000;
+                                const diff = Math.abs(vobizTime - startTimeUnix);
+                                if (diff <= 60) {
+                                    vobizCallerPhone = rec.caller_id_number;
+                                    console.log(`[Vobiz Match] Found Caller ID "${vobizCallerPhone}" (Diff: ${diff}s) on attempt ${attempt}`);
+                                    break;
+                                }
                             }
                         }
                     }
+                } catch (e: any) {
+                    console.error(`[Vobiz Lookup] Error on attempt ${attempt}:`, e.message);
                 }
-            } catch (e: any) {
-                console.error('[Vobiz Lookup] Error:', e.message);
+                
+                // Exit polling loop if we found the number
+                if (vobizCallerPhone) break;
             }
         }
         // -------------------------------------------------------------
