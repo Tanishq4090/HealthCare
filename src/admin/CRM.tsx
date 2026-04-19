@@ -456,6 +456,51 @@ export default function CRM() {
         }
     };
 
+    const handleResendGreeting = async (call: any) => {
+        const phone = call.phone || call.capturedPhone;
+        const purePhone = phone ? phone.replace(/\D/g, '') : '';
+        if (!purePhone || purePhone.length < 10) {
+            toast.error('Cannot resend: No valid phone number linked to this call.');
+            return;
+        }
+
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const loadingToast = toast.loading(`Sending greeting to ${phone}...`);
+
+        try {
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY
+                },
+                body: JSON.stringify({
+                    phone: purePhone,
+                    useTemplate: true,
+                    templateName: "post_call_intake",
+                    templateParams: [
+                        (call.capturedName || 'there').split(' ')[0], 
+                        call.intent || 'Home Healthcare', 
+                        'General'
+                    ]
+                })
+            });
+
+            if (!res.ok) throw new Error('Request failed');
+            const data = await res.json();
+            
+            if (data.error) {
+                toast.error(`Failed: ${data.error}`, { id: loadingToast });
+            } else {
+                toast.success('Greeting sent successfully!', { id: loadingToast });
+            }
+        } catch (err: any) {
+            toast.error(`Error: ${err.message}`, { id: loadingToast });
+        }
+    };
+
     // --- FETCH VOICE DATA (From ElevenLabs webhook via crm_call_logs) ---
     const fetchVoiceData = async () => {
         setIsLoadingVoice(true);
@@ -2153,9 +2198,12 @@ export default function CRM() {
                                             </div>
                                             <div className="mt-3 pt-3 border-t border-slate-100/80">
                                                 <VoicePlayer src={`https://sgyladamwnanudnropwl.supabase.co/functions/v1/get-call-audio?conversation_id=${call.id}`} />
-                                                <div className="flex items-center gap-3 mt-3">
-                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm w-full justify-center">
+                                                <div className="flex items-center gap-2 mt-3">
+                                                    <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm flex-1 justify-center">
                                                         <FileText className="w-4 h-4" /> View Full Transcript
+                                                    </button>
+                                                    <button onClick={() => handleResendGreeting(call)} className="text-sm font-bold text-slate-600 hover:text-slate-800 flex items-center gap-1.5 transition-colors bg-white px-4 py-1.5 rounded-lg border border-slate-200 shadow-sm shrink-0 whitespace-nowrap">
+                                                        <MessageSquare className="w-4 h-4" /> Resend Form
                                                     </button>
                                                 </div>
                                             </div>
