@@ -648,7 +648,8 @@ export default function HR() {
 
                     if (worker.preferred_payment_type === 'hourly') {
                         appliedRate = worker.hourly_rate || 0;
-                        totalCost = daysWorked * 8 * appliedRate; // Assuming 8hr day if calculated by days
+                        const hoursPerDay = worker.shift_hours || 8; // Fallback to 8 only if absent
+                        totalCost = daysWorked * hoursPerDay * appliedRate; 
                     } else if (worker.preferred_payment_type === 'short_term') {
                         appliedRate = worker.short_term_daily_rate || 0;
                         totalCost = appliedRate; // Fixed Flat Monthly Salary

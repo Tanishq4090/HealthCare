@@ -20,6 +20,7 @@ export interface Employee {
   hourly_rate: number;
   monthly_daily_rate: number;
   short_term_daily_rate: number;
+  shift_hours: number | null;
   rating: number;
   experience: string | null;
   gender: string | null;
@@ -51,6 +52,7 @@ export interface CreateEmployeeInput {
   hourly_rate?: number;
   monthly_daily_rate?: number;
   short_term_daily_rate?: number;
+  shift_hours?: number;
   experience?: string;
   gender?: string;
   username?: string;

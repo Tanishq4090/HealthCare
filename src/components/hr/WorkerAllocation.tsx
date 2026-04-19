@@ -427,6 +427,25 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                   }} 
                 />
               </div>
+              
+              {form.preferred_payment_type === 'hourly' && (
+                <div className="col-span-2 pt-2 border-t border-slate-100">
+                  <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">
+                    Shift Duration (Hours / Day) <span className="text-red-400">*</span>
+                  </label>
+                  <select 
+                    className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={form.shift_hours || ''}
+                    onChange={e => setForm(f => ({ ...f, shift_hours: Number(e.target.value) }))}
+                  >
+                    <option value="" disabled>Select shift duration...</option>
+                    <option value={8}>8 Hours</option>
+                    <option value={10}>10 Hours</option>
+                    <option value={12}>12 Hours</option>
+                    <option value={24}>24 Hours</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -722,7 +741,7 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
               address={employee.address}
               dob={employee.dob}
               duty={employee.preferred_payment_type === 'hourly'
-                ? `${employee.hourly_rate ?? '—'} HRS (Day)`
+                ? `${employee.shift_hours ?? '—'} HRS (Day)`
                 : employee.preferred_payment_type === 'monthly'
                 ? 'Monthly'
                 : 'Short Term'}
