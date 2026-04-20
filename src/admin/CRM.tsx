@@ -789,14 +789,14 @@ export default function CRM() {
     const fetchWorkers = async () => {
         setIsLoadingWorkers(true);
         try {
-            const { data, error } = await supabase.from('employees').select('*');
+            const { data, error } = await supabase.from('employees').select('*').is('deleted_at', null);
             
             if (error) throw error;
 
             if (data && data.length > 0) {
                 // Filter in JS to be safe against schema variations
                 const available = data.filter(w => 
-                    (w.status && w.status.toLowerCase() === 'available')
+                    (w.status && w.status.toLowerCase() === 'available') && !w.deleted_at
                 );
                 // Map unified fields to legacy UI expectations
                 const mapped = available.map(w => ({ ...w, name: w.full_name || w.name, role: w.job_title || w.role }));
