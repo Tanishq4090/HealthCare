@@ -494,6 +494,14 @@ export default function CRM() {
             if (data.error) {
                 toast.error(`Failed: ${data.error}`, { id: loadingToast });
             } else {
+                // Clear the error in DB so it shows as "Sent" on next load
+                await supabase.from('call_transcripts').update({ automation_error: null }).eq('conversation_id', call.id);
+                
+                // Update local state immediately
+                setVoiceCalls(prev => prev.map(c => 
+                    c.id === call.id ? { ...c, automation_error: null } : c
+                ));
+
                 toast.success('Greeting sent successfully!', { id: loadingToast });
             }
         } catch (err: any) {
@@ -2202,9 +2210,15 @@ export default function CRM() {
                                                     <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm flex-1 justify-center">
                                                         <FileText className="w-4 h-4" /> View Full Transcript
                                                     </button>
-                                                    <button onClick={() => handleResendGreeting(call)} className="text-sm font-bold text-slate-600 hover:text-slate-800 flex items-center gap-1.5 transition-colors bg-white px-4 py-1.5 rounded-lg border border-slate-200 shadow-sm shrink-0 whitespace-nowrap">
-                                                        <MessageSquare className="w-4 h-4" /> Resend Form
-                                                    </button>
+                                                    {call.automation_error ? (
+                                                        <button onClick={() => handleResendGreeting(call)} className="text-sm font-bold text-slate-600 hover:text-slate-800 flex items-center gap-1.5 transition-colors bg-white px-4 py-1.5 rounded-lg border border-slate-200 shadow-sm shrink-0 whitespace-nowrap">
+                                                            <MessageSquare className="w-4 h-4" /> Resend Form
+                                                        </button>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm shrink-0">
+                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
