@@ -342,6 +342,7 @@ serve(async (req) => {
                         console.log(`[Auto-Recovery] SUCCESS - Greeting sent to ${digits}. Clearing error in DB...`);
                         log.automation_error = null; // Clear for immediate UI update
                         await supabaseClient.from('call_transcripts').update({ automation_error: null }).eq('conversation_id', log.id);
+                        await supabaseClient.from('crm_call_logs').update({ automation_error: null }).eq('call_id', log.id);
                     } else {
                         console.error(`[Auto-Recovery] Meta rejected message:`, metaData);
                     }
