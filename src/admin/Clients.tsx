@@ -98,10 +98,11 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // 1. Fetch real clients from the clients table
+            // 1. Fetch real clients from the clients table, joined with crm_leads to filter by stage
             const { data: clientData, error: clientError } = await supabase
                 .from('clients')
-                .select('*')
+                .select('*, crm_leads!inner(pipeline_stage)')
+                .in('crm_leads.pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won'])
                 .order('created_at', { ascending: false });
             
             if (clientError) throw clientError;
