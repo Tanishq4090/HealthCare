@@ -498,7 +498,7 @@ export default function CRM() {
                 await supabase.from('call_transcripts').update({ automation_error: null }).eq('conversation_id', call.id);
                 
                 // Update local state immediately
-                setVoiceCalls(prev => prev.map(c => 
+                setCalls((prev: any[]) => prev.map((c: any) => 
                     c.id === call.id ? { ...c, automation_error: null } : c
                 ));
 
