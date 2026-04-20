@@ -800,9 +800,9 @@ export default function CRM() {
                 );
                 // Map unified fields to legacy UI expectations
                 const mapped = available.map(w => ({ ...w, name: w.full_name || w.name, role: w.job_title || w.role }));
-                setAvailableWorkers(mapped.length > 0 ? mapped : MOCK_WORKERS.filter(w => w.status === 'Available'));
+                setAvailableWorkers(mapped);
             } else {
-                setAvailableWorkers(MOCK_WORKERS.filter(w => w.status === 'Available'));
+                setAvailableWorkers([]);
             }
         } catch (err) {
             console.warn("Failed to fetch employees from DB, using mock data:", err);
