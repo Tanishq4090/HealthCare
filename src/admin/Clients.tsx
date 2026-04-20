@@ -98,14 +98,28 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // 1. Fetch real clients from the clients table, joined with crm_leads to filter by stage
-            const { data: clientData, error: clientError } = await supabase
-                .from('clients')
-                .select('*, crm_leads!inner(pipeline_stage)')
-                .in('crm_leads.pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won'])
-                .order('created_at', { ascending: false });
-            
-            if (clientError) throw clientError;
+            // 1. Fetch IDs of leads that are in the "Active Client" stages
+            const { data: leads, error: leadsError } = await supabase
+                .from('crm_leads')
+                .select('id')
+                .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']);
+
+            if (leadsError) throw leadsError;
+
+            const clientIds = (leads || []).map(l => l.id);
+
+            // 2. Fetch records from the clients table for these lead IDs
+            let clientData = [];
+            if (clientIds.length > 0) {
+                const { data, error } = await supabase
+                    .from('clients')
+                    .select('*')
+                    .in('id', clientIds)
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                clientData = data || [];
+            }
 
             // 2. Fetch all employees to derive worker counts
             const { data: employeeData, error: empError } = await supabase
