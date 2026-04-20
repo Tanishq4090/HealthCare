@@ -267,6 +267,53 @@ serve(async (req) => {
         };
     });
 
+    // --- LATE BINDING: LATEST CALL AUTO-RECOVERY ---
+    // User requested to automatically send a missed greeting ONLY for the most recent failed call.
+    for (let i = 0; i < formattedLogs.length; i++) {
+        const log = formattedLogs[i];
+        if (log.automation_error && log.phone_number && log.phone_number.trim() !== '' && log.phone_number !== 'Confirmed (No Caller ID)') {
+            const purePhone = log.phone_number.replace(/\D/g, '');
+            if (purePhone && purePhone.length >= 10) {
+                console.log(`[Auto-Recovery] Found delayed Vobiz number ${purePhone} for recent call ${log.id}. Resending greeting...`);
+                try {
+                    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('VITE_SUPABASE_ANON_KEY');
+                    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || Deno.env.get('VITE_SUPABASE_URL');
+                    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+                        const outRes = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            },
+                            body: JSON.stringify({
+                                phone: purePhone,
+                                useTemplate: true,
+                                templateName: "post_call_intake",
+                                templateParams: [
+                                    (log.capturedName || 'there').split(' ')[0],
+                                    log.intent || 'Home Healthcare',
+                                    'General'
+                                ]
+                            })
+                        });
+
+                        if (outRes.ok) {
+                            console.log(`[Auto-Recovery] Greeting sent for ${log.id}. Clearing error...`);
+                            log.automation_error = null; // Clear it for the UI payload immediately
+                            await supabaseClient.from('call_transcripts').update({ automation_error: null }).eq('conversation_id', log.id);
+                            await supabaseClient.from('crm_call_logs').update({ automation_error: null }).eq('call_id', log.id);
+                        }
+                    }
+                } catch (recoveryErr) {
+                    console.error('[Auto-Recovery] Error:', recoveryErr);
+                }
+                
+                // Breaking after the first match to strictly follow "most recent call only" rule
+                break;
+            }
+        }
+    }
+
     return new Response(JSON.stringify({ success: true, data: formattedLogs }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
