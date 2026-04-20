@@ -27,25 +27,54 @@ export default function Clients() {
     };
 
     const handleRequestReview = async (client: any) => {
-        const message = `Hi ${client.contact}, thank you for choosing 99Care. We would love to hear about your experience! Please leave us a review here: [Google Local Link]`;
-        console.log('Sending message:', message); // Use message
+        if (!client.phone) {
+            toast.error("No phone number found for this client. Please update the profile.");
+            return;
+        }
+
+        const toastId = toast.loading(`Sending WhatsApp Review request to ${client.name}...`);
         
-        toast.promise(
-            new Promise(resolve => setTimeout(resolve, 1500)),
-            {
-                loading: `Sending WhatsApp to ${client.name}...`,
-                success: 'Review request sent successfully!',
-                error: 'Failed to send request'
-            }
-        );
+        try {
+            // Standardize phone
+            let phoneDigits = client.phone.replace(/\D/g, '');
+            if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+
+            const firstName = client.name.split(' ')[0] || 'there';
+
+            const { data, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                body: {
+                    phone: phoneDigits,
+                    useTemplate: true,
+                    templateName: 'customer_review_request', // Ensure this exists in Meta Dashboard
+                    templateParams: [firstName]
+                }
+            });
+
+            if (error) throw error;
+            if (data?.success === false) throw new Error(data.error || "Meta API error");
+
+            toast.success('Review request sent successfully! ✅', { id: toastId });
+        } catch (err: any) {
+            console.error('WhatsApp Review fail:', err);
+            toast.error(`WhatsApp failed: ${err.message || 'Check connection'}`, { id: toastId });
+        }
     };
 
     const handleSaveClient = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            // 1. Update Client (Simulated for now, would need SQL column 'service_rating')
-            // const { error } = await supabase.from('clients').update({ service_rating: editingClient.service_rating }).eq('name', editingClient.name);
+            // 1. Update Client (including phone)
+            const { error: clientError } = await supabase
+                .from('clients')
+                .update({ 
+                    client_name: editingClient.name,
+                    phone_number: editingClient.phone,
+                    email: editingClient.email
+                })
+                .eq('id', editingClient.id);
+
+            if (clientError) throw clientError;
 
             // 2. Sync with Employees (As requested: Employee gets rating from Client's company service review)
             const { error: workerError } = await supabase
@@ -57,11 +86,11 @@ export default function Clients() {
 
             setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
             setIsEditModalOpen(false);
-            toast.success(`${editingClient.name} service review updated. Worker ratings synchronized!`);
+            toast.success(`${editingClient.name} updated. Worker ratings synchronized!`);
             fetchClients();
         } catch (err: any) {
             console.error('Error syncing ratings:', err);
-            toast.error('Failed to sync worker ratings');
+            toast.error(`Failed to save: ${err.message}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -69,38 +98,50 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // Fetch all employees to derive clients
+            // 1. Fetch real clients from the clients table
+            const { data: clientData, error: clientError } = await supabase
+                .from('clients')
+                .select('*')
+                .order('created_at', { ascending: false });
+            
+            if (clientError) throw clientError;
+
+            // 2. Fetch all employees to derive worker counts
             const { data: employeeData, error: empError } = await supabase
                 .from('employees')
                 .select('id, full_name, assigned_client, status');
             
             if (empError) throw empError;
 
-            // Group employees by client
-            const clientMap: Record<string, any> = {};
+            // Group employees by client name
+            const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
             (employeeData || []).forEach(w => {
                 if (!w.assigned_client) return;
                 
-                if (!clientMap[w.assigned_client]) {
-                    clientMap[w.assigned_client] = {
-                        id: w.assigned_client,
-                        name: w.assigned_client,
-                        contact: 'Main Admin', // Fallback
-                        email: '-',
-                        status: 'Active',
-                        workerCount: 0,
-                        activeWorkerCount: 0,
-                        lifetimeValue: '₹0'
-                    };
+                if (!workerMap[w.assigned_client]) {
+                    workerMap[w.assigned_client] = { workerCount: 0, activeWorkerCount: 0 };
                 }
                 
-                clientMap[w.assigned_client].workerCount++;
+                workerMap[w.assigned_client].workerCount++;
                 if (w.status === 'assigned' || w.status === 'Active') {
-                    clientMap[w.assigned_client].activeWorkerCount++;
+                    workerMap[w.assigned_client].activeWorkerCount++;
                 }
             });
 
-            setClients(Object.values(clientMap));
+            // 3. Map database clients to UI structure
+            const enrichedClients = (clientData || []).map(c => ({
+                id: c.id,
+                name: c.client_name,
+                phone: c.phone_number,
+                email: c.email || '-',
+                contact: c.client_name, // Default contact to name if null
+                status: 'Active',
+                workerCount: workerMap[c.client_name]?.workerCount || 0,
+                activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
+                lifetimeValue: '₹0'
+            }));
+
+            setClients(enrichedClients);
         } catch (error) {
             console.error('Error fetching client data:', error);
             toast.error('Failed to load dynamic client data');
