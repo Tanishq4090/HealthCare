@@ -1803,6 +1803,14 @@ export default function HR() {
                                         <MessageSquare className="w-4 h-4 text-primary" /> Message Type
                                     </label>
                                     <select 
+                                        value={agentTargetAction === 'custom' ? 'custom' : 'stage'}
+                                        onChange={(e) => {
+                                            if (e.target.value === 'custom') {
+                                                setAgentTargetAction('custom');
+                                            } else {
+                                                setAgentTargetAction('staff');
+                                            }
+                                        }}
                                         className="text-xs font-semibold text-slate-700 bg-slate-100 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
                                     >
                                         <option value="stage">Profile Sharing</option>
