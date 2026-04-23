@@ -118,19 +118,16 @@ export function EmployeeIDCard({
             border: '1px solid rgba(255,255,255,0.2)', 
             borderRadius: 6, 
             width: 100,
-            height: 24,
-            textAlign: 'center',
-            lineHeight: '24px',
-            overflow: 'hidden'
+            padding: '4px 0 3px',
+            textAlign: 'center'
           }}>
             <span style={{ 
               color: '#fff', 
               fontFamily: 'monospace', 
               fontSize: 11, 
               fontWeight: 700, 
-              letterSpacing: '0.08em',
-              display: 'inline-block',
-              verticalAlign: 'top'
+              display: 'block',
+              lineHeight: 1
             }}>{employeeId}</span>
           </div>
         </div>
@@ -181,19 +178,16 @@ export function EmployeeIDCard({
               border: '1px solid #99f6e4',
               borderRadius: 6,
               width: 84,
-              height: 22,
-              textAlign: 'center',
-              lineHeight: '22px',
-              overflow: 'hidden'
+              padding: '4px 0 3px',
+              textAlign: 'center'
             }}>
               <span style={{ 
                 color: '#0f766e', 
                 fontFamily: 'monospace', 
                 fontSize: 10, 
                 fontWeight: 800, 
-                letterSpacing: '0.06em',
-                display: 'inline-block',
-                verticalAlign: 'top'
+                display: 'block',
+                lineHeight: 1
               }}>
                 {employeeId}
               </span>
@@ -227,10 +221,7 @@ export function EmployeeIDCard({
                     backgroundColor: '#f0fdfa', 
                     border: '1px solid #99f6e4', 
                     borderRadius: 4, 
-                    padding: '0 8px', 
-                    height: 20, 
-                    lineHeight: '20px',
-                    letterSpacing: '0.04em', 
+                    padding: '3px 8px 2px', 
                     textAlign: 'center',
                     display: 'inline-block'
                   }}>
