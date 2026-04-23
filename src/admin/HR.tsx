@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus } from 'lucide-react';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
@@ -85,6 +85,7 @@ export default function HR() {
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
     const [agentTargetWorker, setAgentTargetWorker] = useState<any>(null);
+    const [agentTargetAction, setAgentTargetAction] = useState<'staff' | 'custom'>('staff');
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
 
