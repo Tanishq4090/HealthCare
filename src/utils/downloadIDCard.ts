@@ -40,14 +40,19 @@ export async function downloadIDCardAsPDF(elementId: string, employeeId: string)
 
     const { jsPDF } = await import('jspdf');
     // Custom landscape size for standard ID card ratio 85.6mm × 53.98mm
+    const imgData = canvas.toDataURL('image/png');
+    
+    // Maintain aspect ratio instead of aggressively squashing to 53.98mm
+    const pdfWidth = 85.6; 
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
     const pdf = new jsPDF({
-      orientation: 'landscape',
+      orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
       unit: 'mm',
-      format: [85.6, 53.98],
+      format: [pdfWidth, pdfHeight],
     });
 
-    const imgData = canvas.toDataURL('image/png');
-    pdf.addImage(imgData, 'PNG', 0, 0, 85.6, 53.98);
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
     pdf.save(`${employeeId}-id-card.pdf`);
     
     toast.success('PDF downloaded securely.');
