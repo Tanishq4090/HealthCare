@@ -379,6 +379,25 @@ export async function permanentlyDeleteEmployee(id: string): Promise<void> {
 }
 
 /**
+ * Permanently deletes ALL soft-deleted employee records from the database.
+ */
+export async function permanentlyDeleteAllDeletedEmployees(): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('employees')
+      .delete()
+      .not('deleted_at', 'is', null);
+
+    if (error) {
+      throw new Error(`Failed to empty trash: ${error.message}`);
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(message);
+  }
+}
+
+/**
  * Fetches all documents (ID proofs) for a specific employee.
  */
 export async function getEmployeeDocuments(employeeId: string): Promise<any[]> {
