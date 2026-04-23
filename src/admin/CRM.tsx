@@ -506,6 +506,11 @@ export default function CRM() {
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
             toast.success(`✅ Greeting sent to ${firstName}!`);
         } catch (err: any) {
+            // Persist error to DB to prevent infinite auto-retry loops on page refresh
+            await supabase.from('call_transcripts')
+                .update({ automation_error: 'GREETING_ERROR' })
+                .eq('conversation_id', call.id);
+
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'error' }));
             toast.error(`Failed to send greeting: ${err.message}`);
         }
@@ -905,18 +910,40 @@ export default function CRM() {
         }
     }, [agentDraftLang, agentTargetAction, agentTargetLead, whatsappTemplates, isEditingTemplate, selectedWorker, assignmentResult]);
 
-    // Initialize per-call greeting status from DB when calls are loaded
+    // Initialize per-call greeting status from DB and auto-trigger for new logs
     useEffect(() => {
         if (calls.length > 0) {
             const initialStatus: Record<string, 'sending' | 'sent' | 'error'> = {};
+            
+            // Map persistent DB states to local UI states
             calls.forEach((call: any) => {
                 if (call.automation_error === 'GREETING_SENT') {
                     initialStatus[call.id] = 'sent';
+                } else if (call.automation_error === 'GREETING_ERROR') {
+                    initialStatus[call.id] = 'error';
                 }
             });
-            // Preserve any in-flight 'sending' states, only set new ones from DB
-            setCallGreetingStatus(prev => ({ ...initialStatus, ...prev }));
+
+            setCallGreetingStatus(prev => {
+                // Preserve any in-flight 'sending' states from `prev`
+                const newStatus = { ...initialStatus, ...prev };
+                
+                // AUTO-TRIGGER LOGIC: Fire the greeting request automatically for new leads
+                calls.forEach((call: any) => {
+                    const phone = call.capturedWhatsapp || call.phone;
+                    // Only trigger if it has a phone, has no automation logged yet, and isn't already attempting locally
+                    if (phone && !call.automation_error && !newStatus[call.id]) {
+                        // Mark as sending locally immediately to block duplicate dispatches in React's lifecycle
+                        newStatus[call.id] = 'sending';
+                        // Trigger async workflow
+                        handleSendCallGreeting(call);
+                    }
+                });
+
+                return newStatus;
+            });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [calls]);
 
     const handleSaveTemplate = () => {
