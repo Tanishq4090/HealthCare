@@ -2315,6 +2315,7 @@ export default function CRM() {
                                                         )}
                                                     </div>
                                                 </div>
+                                                <div className="flex items-center gap-2">
                                                     {/* Send Greeting Button removed from here — it's now always visible under the transcript button on the left */}
                                                     <button
                                                         onClick={() => captureCallAsLead(call.id)}
