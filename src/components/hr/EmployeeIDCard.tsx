@@ -117,13 +117,21 @@ export function EmployeeIDCard({
             backgroundColor: 'rgba(255,255,255,0.12)', 
             border: '1px solid rgba(255,255,255,0.2)', 
             borderRadius: 6, 
-            padding: '4px 10px',
+            width: 100,
             height: 24,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            textAlign: 'center',
+            lineHeight: '24px',
+            overflow: 'hidden'
           }}>
-            <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', display: 'block', lineHeight: 1 }}>{employeeId}</span>
+            <span style={{ 
+              color: '#fff', 
+              fontFamily: 'monospace', 
+              fontSize: 11, 
+              fontWeight: 700, 
+              letterSpacing: '0.08em',
+              display: 'inline-block',
+              verticalAlign: 'top'
+            }}>{employeeId}</span>
           </div>
         </div>
 
@@ -172,13 +180,21 @@ export function EmployeeIDCard({
               backgroundColor: '#f0fdfa',
               border: '1px solid #99f6e4',
               borderRadius: 6,
-              padding: '0 8px',
+              width: 84,
               height: 22,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              textAlign: 'center',
+              lineHeight: '22px',
+              overflow: 'hidden'
             }}>
-              <span style={{ color: '#0f766e', fontFamily: 'monospace', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', marginTop: 1 }}>
+              <span style={{ 
+                color: '#0f766e', 
+                fontFamily: 'monospace', 
+                fontSize: 10, 
+                fontWeight: 800, 
+                letterSpacing: '0.06em',
+                display: 'inline-block',
+                verticalAlign: 'top'
+              }}>
                 {employeeId}
               </span>
             </div>
@@ -204,8 +220,21 @@ export function EmployeeIDCard({
               {duty && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Duty</span>
-                  <div style={{ color: '#1e293b', fontSize: 11, fontWeight: 700, backgroundColor: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 4, padding: '0 8px', height: 18, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ marginTop: 1 }}>{duty}</span>
+                  <div style={{ 
+                    color: '#1e293b', 
+                    fontSize: 11, 
+                    fontWeight: 700, 
+                    backgroundColor: '#f0fdfa', 
+                    border: '1px solid #99f6e4', 
+                    borderRadius: 4, 
+                    padding: '0 8px', 
+                    height: 20, 
+                    lineHeight: '20px',
+                    letterSpacing: '0.04em', 
+                    textAlign: 'center',
+                    display: 'inline-block'
+                  }}>
+                    {duty}
                   </div>
                 </div>
               )}
