@@ -122,21 +122,19 @@ export function EmployeeIDCard({
             backgroundColor: 'rgba(255,255,255,0.12)', 
             border: '1px solid rgba(255,255,255,0.2)', 
             borderRadius: 6, 
-            width: 100,
-            height: 24,
-            position: 'relative'
+            padding: '3px 10px',
+            minWidth: 80,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}>
             <span style={{ 
               color: '#fff', 
               fontFamily: 'monospace', 
               fontSize: 11, 
               fontWeight: 700, 
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              whiteSpace: 'nowrap',
-              lineHeight: 1
+              letterSpacing: '0.05em',
+              lineHeight: '1.2'
             }}>{employeeId}</span>
           </div>
         </div>
@@ -193,21 +191,18 @@ export function EmployeeIDCard({
               backgroundColor: '#f0fdfa',
               border: '1px solid #99f6e4',
               borderRadius: 6,
-              width: 84,
-              height: 22,
-              position: 'relative'
+              padding: '2px 8px',
+              minWidth: 70,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}>
               <span style={{ 
                 color: '#0f766e', 
                 fontFamily: 'monospace', 
                 fontSize: 10, 
-                fontWeight: 800, 
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                whiteSpace: 'nowrap',
-                lineHeight: 1
+                fontWeight: 800,
+                lineHeight: '1.2'
               }}>
                 {employeeId}
               </span>
@@ -232,8 +227,8 @@ export function EmployeeIDCard({
 
               {/* Duty */}
               {duty && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Duty</span>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 4 }}>Duty</span>
                   <div style={{ 
                     color: '#1e293b', 
                     fontSize: 11, 
@@ -241,45 +236,29 @@ export function EmployeeIDCard({
                     backgroundColor: '#f0fdfa', 
                     border: '1px solid #99f6e4', 
                     borderRadius: 4, 
-                    width: 80,
-                    height: 20, 
-                    position: 'relative'
+                    padding: '2px 8px', 
+                    lineHeight: '1.2'
                   }}>
-                    <span style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      whiteSpace: 'nowrap',
-                      lineHeight: 1
-                    }}>
-                      {duty}
-                    </span>
+                    {duty}
                   </div>
-                </div>
-              )}
-
-              {/* Experience */}
-              {experience && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Exp.</span>
-                  <span style={{ color: '#334155', fontSize: 11, fontWeight: 600 }}>{experience}</span>
                 </div>
               )}
 
               {/* Age & Gender */}
               {(dob || gender) && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Basic</span>
-                  <div style={{ color: '#334155', fontSize: 11, fontWeight: 600 }}>{age !== '—' ? `${age} yrs` : ''}{gender ? (age !== '—' ? ` • ${gender}` : gender) : ''}</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 2 }}>Age</span>
+                  <div style={{ color: '#334155', fontSize: 11, fontWeight: 600, lineHeight: '1.4' }}>
+                    {age !== '—' ? `${age} yrs` : ''}{gender ? (age !== '—' ? ` • ${gender}` : gender) : ''}
+                  </div>
                 </div>
               )}
 
               {/* Address */}
               {address && (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, paddingTop: 1 }}>Address</span>
-                  <div style={{ color: '#475569', fontSize: 10, fontWeight: 500, lineHeight: 1.35 }}>{address}</div>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 2 }}>Address</span>
+                  <div style={{ color: '#475569', fontSize: 10, fontWeight: 500, lineHeight: 1.4, flex: 1 }}>{address}</div>
                 </div>
               )}
 
