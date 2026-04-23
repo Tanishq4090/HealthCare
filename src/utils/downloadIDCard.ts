@@ -5,6 +5,11 @@ export async function downloadIDCardAsPNG(elementId: string, employeeId: string)
     const element = document.getElementById(elementId);
     if (!element) throw new Error('ID card element not found');
 
+    // Wait for web fonts to fully load to prevent vertical text misalignment glitches
+    if ('fonts' in document) {
+      await document.fonts.ready;
+    }
+
     const html2canvas = (await import('html2canvas')).default;
     const canvas = await html2canvas(element, {
       scale: 2, // scale 2x for high resolution
@@ -29,6 +34,11 @@ export async function downloadIDCardAsPDF(elementId: string, employeeId: string)
   try {
     const element = document.getElementById(elementId);
     if (!element) throw new Error('ID card element not found');
+
+    // Wait for web fonts to fully load to prevent vertical text misalignment glitches
+    if ('fonts' in document) {
+      await document.fonts.ready;
+    }
 
     const html2canvas = (await import('html2canvas')).default;
     const canvas = await html2canvas(element, {
