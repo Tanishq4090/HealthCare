@@ -196,6 +196,13 @@ serve(async (req) => {
             return new Response("Config Error", { status: 500 });
         }
 
+        // --- 9. FETCH CHAT HISTORY (needed by stop-word filter below) ---
+        const { data: rawHistory } = await supabase
+            .from('whatsapp_messages').select('*')
+            .ilike('phone', `%${last10}%`)
+            .order('created_at', { ascending: false }).limit(10);
+        const historyData = rawHistory?.reverse() || [];
+
         // --- 7. UNIVERSAL ACKNOWLEDGMENT FILTER ---
         // Any short CLOSING remark: log it silently, do NOT reply.
         // This prevents the bot from annoying users who just say 'thanks'.
@@ -246,13 +253,6 @@ serve(async (req) => {
             .limit(1);
         const earlyLead = earlyLeads?.[0] ?? null;
         console.log(`[CRM] Lead Lookup: ${earlyLead ? earlyLead.id + ' (' + earlyLead.pipeline_stage + ')' : 'None found for ' + purePhone}`);
-
-        // --- 9. FETCH CHAT HISTORY ---
-        const { data: rawHistory } = await supabase
-            .from('whatsapp_messages').select('*')
-            .ilike('phone', `%${last10}%`)
-            .order('created_at', { ascending: false }).limit(10);
-        const historyData = rawHistory?.reverse() || [];
 
         // --- 10. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
         if (!earlyLead) {
