@@ -2528,19 +2528,44 @@ export default function CRM() {
                                         if (e.target.value === 'custom') {
                                             setAgentTargetAction('custom');
                                         } else {
-                                            // Action is set by the button click that opened the modal
+                                            // Derive the correct template action based on the lead's current stage
+                                            const stage = agentTargetLead?.pipeline_stage;
+                                            let restoreAction: any = 'inquiry';
+                                            if (stage === 'In Discussion') restoreAction = 'quotation';
+                                            else if (stage === 'Quotation Sent') restoreAction = 'consent';
+                                            else if (stage === 'Staff Assigned') restoreAction = 'deposit';
+                                            else if (stage === 'Monthly Billing') restoreAction = 'billing';
+                                            
+                                            // Handle special case for staff sharing which might not be stage-based
+                                            if (selectedWorker) restoreAction = 'staff';
+
+                                            setAgentTargetAction(restoreAction);
                                         }
                                     }}
                                     className="text-xs font-semibold text-slate-700 bg-slate-100 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
                                 >
                                     <option value="stage">
-                                        {agentTargetAction === 'inquiry' ? 'Greeting Message' :
-                                         agentTargetAction === 'quotation' ? 'Quotation Template' :
-                                         agentTargetAction === 'consent' ? 'Consent Form' :
-                                         agentTargetAction === 'staff' ? 'Profile Sharing' :
-                                         agentTargetAction === 'deposit' ? 'Deposit Invoice' :
-                                         agentTargetAction === 'billing' ? 'Monthly Bill' : 
-                                         'Automated Template'}
+                                        {(() => {
+                                            // Determine what the "Automated" label should be even if current action is 'custom'
+                                            const stage = agentTargetLead?.pipeline_stage;
+                                            let action = agentTargetAction;
+                                            if (action === 'custom') {
+                                                if (stage === 'In Discussion') action = 'quotation';
+                                                else if (stage === 'Quotation Sent') action = 'consent';
+                                                else if (stage === 'Staff Assigned') action = 'deposit';
+                                                else if (stage === 'Monthly Billing') action = 'billing';
+                                                else action = 'inquiry';
+                                                if (selectedWorker) action = 'staff';
+                                            }
+
+                                            return action === 'inquiry' ? 'Greeting Message' :
+                                                   action === 'quotation' ? 'Quotation Template' :
+                                                   action === 'consent' ? 'Consent Form' :
+                                                   action === 'staff' ? 'Profile Sharing' :
+                                                   action === 'deposit' ? 'Deposit Invoice' :
+                                                   action === 'billing' ? 'Monthly Bill' : 
+                                                   'Automated Template';
+                                        })()}
                                     </option>
                                     <option value="custom">Manual Message</option>
                                 </select>
