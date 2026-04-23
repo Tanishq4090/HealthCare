@@ -39,10 +39,10 @@ export default function Dashboard() {
                 }));
 
                 setStats({
-                    activeLeads: { value: activeLeads.length, trend: '+8%' },
-                    activeWorkers: { value: activeWorkersList.length, trend: '+15%' },
-                    totalMrr: { value: `₹${mrr.toLocaleString()}`, trend: '+22.4%' },
-                    aiVoiceCalls: { value: 48, trend: '+12%' }
+                    activeLeads: { value: activeLeads.length, trend: '+0%' },
+                    activeWorkers: { value: activeWorkersList.length, trend: '+0%' },
+                    totalMrr: { value: `₹${mrr.toLocaleString()}`, trend: '+0%' },
+                    aiVoiceCalls: { value: 0, trend: '0%' }
                 });
                 
                 setRevenueData(generatedRevenue);
@@ -128,39 +128,16 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* AI CRM Summary */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h2 className="font-bold text-slate-900">Recent AI Activity</h2>
                         <span className="text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2 py-1 rounded-md">Live Stream</span>
                     </div>
-                    <div className="p-5 flex-1 overflow-auto space-y-4">
-                        <div className="flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors">
-                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                                <CheckCircle2 className="w-4 h-4 text-primary" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-slate-900"><span className="font-bold">Lead Captured</span> from AI Voice inbound flow.</p>
-                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">15 mins ago</p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors">
-                            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-slate-900"><span className="font-bold">Invoice Dispatched</span> for 18 active workers via Auto-Payroll.</p>
-                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">2 hrs ago</p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors">
-                            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
-                                <CheckCircle2 className="w-4 h-4 text-amber-600" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-slate-900"><span className="font-bold">Follow-up triggered</span> for 4 pending leads.</p>
-                                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">5 hrs ago</p>
-                            </div>
+                    <div className="p-5 flex-1 overflow-auto flex items-center justify-center">
+                        <div className="text-center">
+                            <CheckCircle2 className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                            <p className="text-sm text-slate-500 font-medium">No recent activity.</p>
+                            <p className="text-xs text-slate-400 mt-1">Waiting for new AI events...</p>
                         </div>
                     </div>
                 </div>
