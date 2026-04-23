@@ -31,6 +31,7 @@ import {
   getDeletedEmployees,
   restoreEmployee,
   permanentlyDeleteEmployee,
+  permanentlyDeleteAllDeletedEmployees,
   getEmployeeDocuments,
 } from '../../services/employeeService';
 import {
@@ -1738,6 +1739,22 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
     } finally { setActingId(null); }
   };
 
+  const handleWipeAll = async () => {
+    if (employees.length === 0) return;
+    if (!confirm(`CRITICAL WARNING: Are you sure you want to PERMANENTLY delete ALL ${employees.length} records in the recycle bin? This action is IRREVERSIBLE.`)) return;
+    
+    setIsLoading(true);
+    try {
+      await permanentlyDeleteAllDeletedEmployees();
+      toast.success(`Successfully cleared ${employees.length} records from recycle bin.`);
+      setEmployees([]);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1749,9 +1766,22 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
               RECYCLE BIN <span className="text-slate-400 ml-1">({employees.length})</span>
            </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} className="gap-2 h-9 rounded-xl border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors shadow-sm">
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh Bin
-        </Button>
+        <div className="flex gap-2">
+          {employees.length > 0 && (
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={handleWipeAll} 
+              disabled={isLoading}
+              className="gap-2 h-9 rounded-xl bg-red-600 hover:bg-red-700 transition-all shadow-md shadow-red-500/20 font-bold"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Wipe All Trash
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={load} className="gap-2 h-9 rounded-xl border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors shadow-sm">
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh Bin
+          </Button>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-100/80 rounded-[2rem] overflow-hidden shadow-sm shadow-slate-200/50">
