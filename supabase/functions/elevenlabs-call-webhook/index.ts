@@ -27,11 +27,14 @@ serve(async (req) => {
         }
 
         // Support both root-level keys (standard) and nested data keys (legacy fallback)
-        const conversationId = payload.call_id || payload.conversation_id || (payload.data?.conversation_id) || '';
-        const agentId = payload.agent_id || (payload.data?.agent_id) || '';
-        const transcript = payload.transcript || (payload.data?.transcript) || [];
-        const metadata = payload.metadata || (payload.data?.metadata) || {};
-        const analysis = payload.analysis || (payload.data?.analysis) || {};
+        // ElevenLabs v2 sends fields at root level; the test script / legacy format nests under data{}
+        const dataBlock = payload.data || {};
+        const conversationId = payload.call_id || payload.conversation_id || dataBlock.conversation_id || '';
+        const agentId = payload.agent_id || dataBlock.agent_id || '';
+        const transcript = payload.transcript || dataBlock.transcript || [];
+        const metadata = payload.metadata || dataBlock.metadata || {};
+        const analysis = payload.analysis || dataBlock.analysis || {};
+        console.log(`[Webhook] Parsed fields — conversationId=${conversationId}, agentId=${agentId}, transcriptLen=${transcript.length}`);
 
         const startTimeRaw = metadata.start_time_unix_secs
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
@@ -39,59 +42,6 @@ serve(async (req) => {
         const startTimeUnix = metadata.start_time_unix_secs || Math.floor(Date.now() / 1000);
         const callerPhone = metadata.phone_number || metadata.caller_id || '';
         const callDurationSecs = metadata.call_duration_secs || analysis.call_duration || 0;
-
-        // --- NEW: VOBIZ CDR LOOKUP (Direct Provider Caller ID) ---
-        // If ElevenLabs doesn't send a phone number, we fetch it directly from the Vobiz provider CDRs
-        // Vobiz might take a few seconds to generate the CDR after a call ends. 
-        // We poll up to 4 times (every 3 seconds) to ensure we capture the number.
-        let vobizCallerPhone = '';
-        const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
-        const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
-
-        if (!metadata.phone_number && VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN) {
-            const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-            const TRIES = 4;
-            
-            for (let attempt = 1; attempt <= TRIES; attempt++) {
-                try {
-                    if (attempt > 1) {
-                        console.log(`[Vobiz] Waiting 3 seconds for CDR... (Attempt ${attempt}/${TRIES})`);
-                        await delay(3000);
-                    } else {
-                        console.log(`[Vobiz] Attempting provider CDR lookup for call at ${startTimeRaw}`);
-                    }
-
-                    const cdrRes = await fetch(
-                        `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=30`,
-                        { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
-                    );
-                    
-                    if (cdrRes.ok) {
-                        const cdrData = await cdrRes.json();
-                        const records = cdrData.data || [];
-                        // Match by timestamp: ElevenLabs start_time vs Vobiz record start_time
-                        // We check a ±60 second window for fuzzy matching
-                        for (const rec of records) {
-                            if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
-                                const vobizTime = new Date(rec.start_time).getTime() / 1000;
-                                const diff = Math.abs(vobizTime - startTimeUnix);
-                                if (diff <= 60) {
-                                    vobizCallerPhone = rec.caller_id_number;
-                                    console.log(`[Vobiz Match] Found Caller ID "${vobizCallerPhone}" (Diff: ${diff}s) on attempt ${attempt}`);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                } catch (e: any) {
-                    console.error(`[Vobiz Lookup] Error on attempt ${attempt}:`, e.message);
-                }
-                
-                // Exit polling loop if we found the number
-                if (vobizCallerPhone) break;
-            }
-        }
-        // -------------------------------------------------------------
 
         // Build a clean text transcript
         const transcriptText = transcript
@@ -101,9 +51,11 @@ serve(async (req) => {
         // --- WHATSAPP NUMBER EXTRACTION LOGIC ---
         let finalWhatsappNumber = '';
 
-        // 1. Check Data Collection (if ElevenLabs natively extracted it)
-        if (analysis.data_collection_results && analysis.data_collection_results.whatsapp) {
-             finalWhatsappNumber = analysis.data_collection_results.whatsapp.value;
+        // 1. Check Data Collection (from ElevenLabs AI agent native data collection structure)
+        // This mirrors exactly how the UI grabs the phone number from the API
+        if (analysis.data_collection_results) {
+            const dc = analysis.data_collection_results;
+            finalWhatsappNumber = dc.contact_number?.value || dc.phone_number?.value || dc.whatsapp?.value || '';
         }
 
         // 2. Dynamic wildcard SIP Header parsing
@@ -136,22 +88,24 @@ serve(async (req) => {
 
                 // If agent asks if this is their WhatsApp number natively in English or Hindi
                 if (turn.role === 'agent' && msg.includes('whatsapp')) {
-                    // Check the immediate next reply from the user
                     if (i + 1 < transcript.length && transcript[i+1].role === 'user') {
                         const userReply = transcript[i+1].message?.toLowerCase() || '';
                         if (['yes', 'haan', 'ji', 'yep', 'hanji', 'ha', 'same', 'yup', 'हाँ', 'जी', 'हां'].some(word => userReply.includes(word))) {
-                            finalWhatsappNumber = metadataPhone || "Confirmed (No Caller ID)";
+                            finalWhatsappNumber = metadataPhone || callerPhone || "Confirmed (No Caller ID)";
                         }
                     }
                 }
             }
         }
 
-        // Fallback to Vobiz Provider ID -> Transcription ID -> Caller ID
-        const effectivePhoneNumber = finalWhatsappNumber || vobizCallerPhone || callerPhone;
+        // Fallback chain: Extracted WA → Caller ID
+        let effectivePhoneNumber = finalWhatsappNumber || callerPhone;
+        if (effectivePhoneNumber === "Confirmed (No Caller ID)") {
+            effectivePhoneNumber = ""; // clear invalid text so we don't spam errors
+        }
         const startTime = startTimeRaw;
         
-        console.log(`[Webhook] Call from ${callerPhone}, Vobiz: ${vobizCallerPhone}, Extracted WA: ${finalWhatsappNumber}, duration: ${callDurationSecs}s`);
+        console.log(`[Webhook] Call from callerPhone="${callerPhone}" | extractedWA="${finalWhatsappNumber}" | effective="${effectivePhoneNumber}" | duration=${callDurationSecs}s`);
 
         // --- 4. EXTRACT SERVICE & SHIFT FOR GREETING ---
         let detectedService = "Home Healthcare";

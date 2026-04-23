@@ -314,11 +314,11 @@ serve(async (req) => {
                                     index: "0",
                                     parameters: [
                                         {
-                                            type: "action",
-                                            action: {
+                                            type: "payload",
+                                            payload: JSON.stringify({
                                                 flow_token: `call_${digits}_${Date.now()}`,
                                                 flow_action_data: { screen: "INTAKE_FORM" }
-                                            }
+                                            })
                                         }
                                     ]
                                 }

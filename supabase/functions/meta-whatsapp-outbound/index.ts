@@ -161,6 +161,7 @@ serve(async (req) => {
       ];
 
       // Special handling for Flow templates (like post_call_intake)
+      // Meta's API requires type: "payload" for Flow button parameters
       if (templateName === "post_call_intake") {
         components.push({
           type: "button",
@@ -168,11 +169,11 @@ serve(async (req) => {
           index: "0",
           parameters: [
             {
-              type: "action",
-              action: {
+              type: "payload",
+              payload: JSON.stringify({
                 flow_token: `call_${digits}_${Date.now()}`,
-                flow_action_data: { screen: "INTAKE_FORM" }
-              }
+                screen: "INTAKE_FORM"
+              })
             }
           ]
         });
