@@ -148,7 +148,7 @@ export function EmployeeIDCard({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {employeeName ? (
-                    <span style={{ color: '#fff', fontSize: 24, fontWeight: 700, lineHeight: 1 }}>
+                    <span style={{ color: '#fff', fontSize: 24, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                       {getInitials(employeeName)}
                     </span>
                   ) : (
@@ -163,10 +163,13 @@ export function EmployeeIDCard({
               backgroundColor: '#f0fdfa',
               border: '1px solid #99f6e4',
               borderRadius: 6,
-              padding: '3px 8px',
-              textAlign: 'center',
+              padding: '0 8px',
+              height: 22,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}>
-              <span style={{ color: '#0f766e', fontFamily: 'monospace', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em' }}>
+              <span style={{ color: '#0f766e', fontFamily: 'monospace', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', marginTop: 1 }}>
                 {employeeId}
               </span>
             </div>
@@ -175,10 +178,10 @@ export function EmployeeIDCard({
           {/* ── Info column ──────────────────────────── */}
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Name + Role */}
-            <h2 style={{ color: '#0f172a', fontWeight: 800, fontSize: 15, lineHeight: 1.4, margin: '0 0 2px', wordBreak: 'break-word' }}>
+            <h2 style={{ color: '#0f172a', fontWeight: 800, fontSize: 15, margin: '0 0 2px', wordBreak: 'break-word', minHeight: 20, display: 'flex', alignItems: 'center' }}>
               {employeeName}
             </h2>
-            <p style={{ color: '#1aa6a8', fontWeight: 700, fontSize: 10, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+            <p style={{ color: '#1aa6a8', fontWeight: 700, fontSize: 10, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.1em', minHeight: 14, display: 'flex', alignItems: 'center' }}>
               {jobTitle}
             </p>
 
@@ -192,8 +195,8 @@ export function EmployeeIDCard({
               {duty && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Duty</span>
-                  <div style={{ color: '#1e293b', fontSize: 11, fontWeight: 700, backgroundColor: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 4, padding: '2px 8px', letterSpacing: '0.04em', display: 'inline-block' }}>
-                    {duty}
+                  <div style={{ color: '#1e293b', fontSize: 11, fontWeight: 700, backgroundColor: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 4, padding: '0 8px', height: 18, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ marginTop: 1 }}>{duty}</span>
                   </div>
                 </div>
               )}
