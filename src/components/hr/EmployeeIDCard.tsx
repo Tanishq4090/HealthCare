@@ -122,19 +122,19 @@ export function EmployeeIDCard({
             backgroundColor: 'rgba(255,255,255,0.12)', 
             border: '1px solid rgba(255,255,255,0.2)', 
             borderRadius: 6, 
-            padding: '3px 10px',
-            minWidth: 80,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            width: 100,
+            height: 24,
+            display: 'table'
           }}>
             <span style={{ 
               color: '#fff', 
               fontFamily: 'monospace', 
               fontSize: 11, 
               fontWeight: 700, 
-              letterSpacing: '0.05em',
-              lineHeight: '1.2'
+              display: 'table-cell',
+              verticalAlign: 'middle',
+              textAlign: 'center',
+              lineHeight: 1
             }}>{employeeId}</span>
           </div>
         </div>
@@ -191,18 +191,19 @@ export function EmployeeIDCard({
               backgroundColor: '#f0fdfa',
               border: '1px solid #99f6e4',
               borderRadius: 6,
-              padding: '2px 8px',
-              minWidth: 70,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              width: 84,
+              height: 22,
+              display: 'table'
             }}>
               <span style={{ 
                 color: '#0f766e', 
                 fontFamily: 'monospace', 
                 fontSize: 10, 
                 fontWeight: 800,
-                lineHeight: '1.2'
+                display: 'table-cell',
+                verticalAlign: 'middle',
+                textAlign: 'center',
+                lineHeight: 1
               }}>
                 {employeeId}
               </span>
@@ -236,10 +237,11 @@ export function EmployeeIDCard({
                     backgroundColor: '#f0fdfa', 
                     border: '1px solid #99f6e4', 
                     borderRadius: 4, 
-                    padding: '2px 8px', 
-                    lineHeight: '1.2'
+                    height: 20, 
+                    padding: '0 8px',
+                    display: 'table'
                   }}>
-                    {duty}
+                    <span style={{ display: 'table-cell', verticalAlign: 'middle', lineHeight: 1 }}>{duty}</span>
                   </div>
                 </div>
               )}
