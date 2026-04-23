@@ -99,12 +99,17 @@ export function EmployeeIDCard({
             {/* Brand icon */}
             <div style={{
               width: 36, height: 36, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 8,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 6,
+              position: 'relative', flexShrink: 0,
             }}>
               <img
                 src="/99care-logo.svg"
                 alt="99Care"
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                style={{ 
+                  width: 24, height: 24, 
+                  position: 'absolute', top: '50%', left: '50%', 
+                  transform: 'translate(-50%, -50%)',
+                  objectFit: 'contain' 
+                }}
               />
             </div>
             <div>
@@ -118,15 +123,19 @@ export function EmployeeIDCard({
             border: '1px solid rgba(255,255,255,0.2)', 
             borderRadius: 6, 
             width: 100,
-            padding: '4px 0 3px',
-            textAlign: 'center'
+            height: 24,
+            position: 'relative'
           }}>
             <span style={{ 
               color: '#fff', 
               fontFamily: 'monospace', 
               fontSize: 11, 
               fontWeight: 700, 
-              display: 'block',
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              whiteSpace: 'nowrap',
               lineHeight: 1
             }}>{employeeId}</span>
           </div>
@@ -159,14 +168,21 @@ export function EmployeeIDCard({
                 <div style={{
                   width: '100%', height: '100%',
                   background: 'linear-gradient(135deg, #1aa6a8, #063b3c)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  position: 'relative'
                 }}>
                   {employeeName ? (
-                    <span style={{ color: '#fff', fontSize: 24, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', lineHeight: 0 }}>
+                    <span style={{ 
+                      color: '#fff', fontSize: 24, fontWeight: 700,
+                      position: 'absolute', top: '50%', left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      lineHeight: 1 
+                    }}>
                       {getInitials(employeeName)}
                     </span>
                   ) : (
-                    <User size={28} color="#fff" />
+                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                       <User size={28} color="#fff" />
+                    </div>
                   )}
                 </div>
               )}
@@ -178,15 +194,19 @@ export function EmployeeIDCard({
               border: '1px solid #99f6e4',
               borderRadius: 6,
               width: 84,
-              padding: '4px 0 3px',
-              textAlign: 'center'
+              height: 22,
+              position: 'relative'
             }}>
               <span style={{ 
                 color: '#0f766e', 
                 fontFamily: 'monospace', 
                 fontSize: 10, 
                 fontWeight: 800, 
-                display: 'block',
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                whiteSpace: 'nowrap',
                 lineHeight: 1
               }}>
                 {employeeId}
@@ -221,11 +241,20 @@ export function EmployeeIDCard({
                     backgroundColor: '#f0fdfa', 
                     border: '1px solid #99f6e4', 
                     borderRadius: 4, 
-                    padding: '3px 8px 2px', 
-                    textAlign: 'center',
-                    display: 'inline-block'
+                    width: 80,
+                    height: 20, 
+                    position: 'relative'
                   }}>
-                    {duty}
+                    <span style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      whiteSpace: 'nowrap',
+                      lineHeight: 1
+                    }}>
+                      {duty}
+                    </span>
                   </div>
                 </div>
               )}
