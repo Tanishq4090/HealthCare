@@ -364,13 +364,27 @@ export async function restoreEmployee(id: string): Promise<void> {
  */
 export async function permanentlyDeleteEmployee(id: string): Promise<void> {
   try {
-    // 1. Delete dependent records first to satisfy foreign key constraints
+    // 1. Fetch related assignment IDs for thorough cleanup
+    const { data: assignments } = await supabase
+      .from('worker_assignments')
+      .select('id')
+      .eq('employee_id', id);
+    
+    const assignmentIds = (assignments ?? []).map(a => a.id);
+
+    // 2. Delete ALL dependent records first
+    // Note: We delete id_card_links by both employee_id and assignment_id to be safe
     await supabase.from('id_card_links').delete().eq('employee_id', id);
+    if (assignmentIds.length > 0) {
+      await supabase.from('id_card_links').delete().in('assignment_id', assignmentIds);
+    }
+    
     await supabase.from('worker_assignments').delete().eq('employee_id', id);
     await supabase.from('employee_documents').delete().eq('employee_id', id);
     await supabase.from('attendance').delete().eq('worker_id', id);
+    await supabase.from('leaves').delete().eq('worker_id', id);
 
-    // 2. Finally, delete the employee record
+    // 3. Finally, delete the employee record
     const { error } = await supabase
       .from('employees')
       .delete()
@@ -401,13 +415,26 @@ export async function permanentlyDeleteAllDeletedEmployees(): Promise<void> {
 
     const ids = softDeleted.map(e => e.id);
 
-    // 2. Cascade delete dependencies for all these IDs
+    // 2. Fetch all related assignment IDs
+    const { data: assignments } = await supabase
+      .from('worker_assignments')
+      .select('id')
+      .in('employee_id', ids);
+    
+    const assignmentIds = (assignments ?? []).map(a => a.id);
+
+    // 3. Cascade delete dependencies for all these IDs
     await supabase.from('id_card_links').delete().in('employee_id', ids);
+    if (assignmentIds.length > 0) {
+      await supabase.from('id_card_links').delete().in('assignment_id', assignmentIds);
+    }
+    
     await supabase.from('worker_assignments').delete().in('employee_id', ids);
     await supabase.from('employee_documents').delete().in('employee_id', ids);
     await supabase.from('attendance').delete().in('worker_id', ids);
+    await supabase.from('leaves').delete().in('worker_id', ids);
 
-    // 3. Finally, empty the trash in the employees table
+    // 4. Finally, empty the trash in the employees table
     const { error: deleteError } = await supabase
       .from('employees')
       .delete()
