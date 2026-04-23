@@ -2533,6 +2533,7 @@ export default function CRM() {
                                             let restoreAction: any = 'inquiry';
                                             if (stage === 'In Discussion') restoreAction = 'quotation';
                                             else if (stage === 'Quotation Sent') restoreAction = 'consent';
+                                            else if (stage === 'Form Submitted') restoreAction = 'staff';
                                             else if (stage === 'Staff Assigned') restoreAction = 'deposit';
                                             else if (stage === 'Monthly Billing') restoreAction = 'billing';
                                             
@@ -2552,9 +2553,11 @@ export default function CRM() {
                                             if (action === 'custom') {
                                                 if (stage === 'In Discussion') action = 'quotation';
                                                 else if (stage === 'Quotation Sent') action = 'consent';
+                                                else if (stage === 'Form Submitted') action = 'staff';
                                                 else if (stage === 'Staff Assigned') action = 'deposit';
                                                 else if (stage === 'Monthly Billing') action = 'billing';
                                                 else action = 'inquiry';
+                                                
                                                 if (selectedWorker) action = 'staff';
                                             }
 
