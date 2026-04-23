@@ -267,98 +267,6 @@ serve(async (req) => {
         };
     });
 
-    // --- LATE BINDING: LATEST CALL AUTO-RECOVERY ---
-    // When get-elevenlabs-calls is invoked (dashboard loads), check if the most recent call
-    // failed to send a greeting (automation_error) but NOW has a phone number resolved via Vobiz.
-    // If so, directly call Meta to send the greeting and clear the error.
-    for (let i = 0; i < formattedLogs.length; i++) {
-        const log = formattedLogs[i];
-        const hasError = log.automation_error;
-        const rawPhone = log.phone_number || '';
-        const purePhone = rawPhone.replace(/\D/g, '');
-        const isValidPhone = purePhone.length >= 10;
-
-        if (hasError && isValidPhone) {
-            console.log(`[Auto-Recovery] Most recent failed call ${log.id} now has number ${purePhone}. Sending greeting directly via Meta API...`);
-            try {
-                const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
-                const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
-                const WHATSAPP_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
-
-                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
-                    // Normalize to 91XXXXXXXXXX
-                    const digits = purePhone.length === 10 ? `91${purePhone}` : purePhone;
-                    const firstName = (log.capturedName || 'there').split(' ')[0];
-                    const service = log.intent || 'Home Healthcare';
-
-                    const metaBody: any = {
-                        messaging_product: "whatsapp",
-                        recipient_type: "individual",
-                        to: digits,
-                        type: "template",
-                        template: {
-                            name: "post_call_intake",
-                            language: { code: "en" },
-                            components: [
-                                {
-                                    type: "body",
-                                    parameters: [
-                                        { type: "text", text: firstName },
-                                        { type: "text", text: service },
-                                        { type: "text", text: "General" }
-                                    ]
-                                },
-                                {
-                                    type: "button",
-                                    sub_type: "flow",
-                                    index: "0",
-                                    parameters: [
-                                        {
-                                            type: "payload",
-                                            payload: JSON.stringify({
-                                                flow_token: `call_${digits}_${Date.now()}`,
-                                                flow_action_data: { screen: "INTAKE_FORM" }
-                                            })
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    };
-
-                    const metaRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${META_SYSTEM_TOKEN}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(metaBody)
-                    });
-
-                    const metaData = await metaRes.json();
-                    console.log(`[Auto-Recovery] Meta API response for ${digits}:`, JSON.stringify(metaData));
-
-                    if (metaRes.ok) {
-                        console.log(`[Auto-Recovery] SUCCESS - Greeting sent to ${digits}. Clearing error in DB...`);
-                        log.automation_error = null; // Clear for immediate UI update
-                        await supabaseClient.from('call_transcripts').update({ automation_error: null }).eq('conversation_id', log.id);
-                        await supabaseClient.from('crm_call_logs').update({ automation_error: null }).eq('call_id', log.id);
-                    } else {
-                        console.error(`[Auto-Recovery] Meta rejected message:`, metaData);
-                    }
-                } else {
-                    console.error('[Auto-Recovery] META_SYSTEM_TOKEN or META_PHONE_ID missing from env!');
-                }
-            } catch (recoveryErr: any) {
-                console.error('[Auto-Recovery] Exception:', recoveryErr.message);
-            }
-            
-            // Only process the single most recent failed call
-            break;
-        }
-    }
-
-
     return new Response(JSON.stringify({ success: true, data: formattedLogs }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
@@ -372,3 +280,4 @@ serve(async (req) => {
     });
   }
 });
+
