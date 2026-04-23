@@ -940,6 +940,11 @@ export default function CRM() {
 
             console.log(`[Dispatch] Sending WhatsApp via Twilio API to ${agentTargetLead?.name}: +${phoneDigits}`);
             
+            let finalLogMessage = agentDraftText;
+            if (agentTargetAction === 'quotation') {
+                finalLogMessage = `Quotation\n\nService Details for: ${quotationVars.v1}\n\nAs per your request, here are the details of the service:\n\nPricing Information\n${quotationVars.v2}\nFull Month: ${quotationVars.v3}\nFlexible Days: ${quotationVars.v4}\n\nService Policy\n• 1 day leave: No replacement provided\n• More than 1 day leave: Replacement available (subject to availability)\n\nTrial Policy\nIf the service is discontinued after a 2-day trial, charges will be same as Flexible Days rate.\n\nThis information is shared based on your inquiry. Please let us know if you need any further details.`;
+            }
+
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -952,7 +957,7 @@ export default function CRM() {
                 },
                 body: JSON.stringify({
                     phone: phoneDigits,
-                    message: agentDraftText,
+                    message: finalLogMessage,
                     leadId: agentTargetLead?.id,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
