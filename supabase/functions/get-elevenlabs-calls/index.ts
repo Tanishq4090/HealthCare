@@ -38,7 +38,12 @@ serve(async (req) => {
     
     if (!listRes.ok) throw new Error(`ElevenLabs API List Error: ${listRes.statusText}`);
     const listData = await listRes.json();
-    const topCalls = (listData.conversations || []).slice(0, limit);
+    
+    // WIPE THRESHOLD: Hide all calls before April 23, 2026 11:00 UTC to simulate a fresh wipe
+    const WIPE_THRESHOLD = 1776942000; 
+    const topCalls = (listData.conversations || [])
+        .filter((c: any) => c.start_time_unix_secs > WIPE_THRESHOLD)
+        .slice(0, limit);
 
     // Fetch individual call transcripts & data collection
     const detailedCalls = await Promise.all(topCalls.map(async (c: any) => {
