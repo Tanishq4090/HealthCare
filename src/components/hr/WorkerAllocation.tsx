@@ -1767,17 +1767,15 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
            </p>
         </div>
         <div className="flex gap-2">
-          {employees.length > 0 && (
-            <Button 
-              variant="destructive" 
-              size="sm" 
-              onClick={handleWipeAll} 
-              disabled={isLoading}
-              className="gap-2 h-9 rounded-xl bg-red-600 hover:bg-red-700 transition-all shadow-md shadow-red-500/20 font-bold"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Wipe All Trash
-            </Button>
-          )}
+          <Button 
+            variant="destructive" 
+            size="sm" 
+            onClick={handleWipeAll} 
+            disabled={isLoading || employees.length === 0}
+            className="gap-2 h-9 rounded-xl bg-red-600 hover:bg-red-700 transition-all shadow-md shadow-red-500/20 font-bold disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Wipe All Trash
+          </Button>
           <Button variant="outline" size="sm" onClick={load} className="gap-2 h-9 rounded-xl border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition-colors shadow-sm">
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh Bin
           </Button>
