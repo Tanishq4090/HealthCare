@@ -2231,33 +2231,6 @@ export default function CRM() {
                                                     <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm flex-1 justify-center">
                                                         <FileText className="w-4 h-4" /> View Full Transcript
                                                     </button>
-                                                    {/* Send Greeting Button — always visible if phone exists */}
-                                                    {(() => {
-                                                        const greetStatus = callGreetingStatus[call.id];
-                                                        const dbSent = call.automation_error === 'GREETING_SENT';
-                                                        const phone = call.capturedWhatsapp || call.phone;
-                                                        if (!phone) return null;
-                                                        if (greetStatus === 'sending') return (
-                                                            <button disabled className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shrink-0 cursor-not-allowed">
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
-                                                            </button>
-                                                        );
-                                                        if (greetStatus === 'sent' || dbSent) return (
-                                                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shrink-0">
-                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
-                                                            </div>
-                                                        );
-                                                        if (greetStatus === 'error') return (
-                                                            <button onClick={() => handleSendCallGreeting(call)} className="text-xs font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors">
-                                                                <AlertTriangle className="w-3.5 h-3.5" /> Retry
-                                                            </button>
-                                                        );
-                                                        return (
-                                                            <button onClick={() => handleSendCallGreeting(call)} className="text-xs font-bold text-[#0E7C7E] bg-[#E6F7F7] px-3 py-1.5 rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
-                                                                <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
-                                                            </button>
-                                                        );
-                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
@@ -2303,28 +2276,54 @@ export default function CRM() {
                                             const isProcessed = isAlreadyInPipeline;
 
                                             return (!isProcessed && (call.capturedName || (call.summary && call.summary !== 'No summary available.' && call.summary !== 'Call completed.'))) ? (
-                                            <div className="mt-4 flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
-                                                <div>
-                                                    <p className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">Lead Data Captured</p>
-                                                    <div className="flex items-center gap-3">
-                                                        <p className="text-sm text-slate-900"><span className="font-semibold">{call.capturedName}</span> • Est. Value: <span className="text-[#1AA6A8] font-medium">₹{call.capturedValue}/mo</span></p>
-                                                        {call.capturedWhatsapp && (
-                                                            <span className="flex items-center gap-1 text-xs font-medium text-[#1AA6A8] bg-[#EAFBFB]/50 px-2 py-0.5 rounded-full">
-                                                                <MessageCircle className="w-3 h-3" /> WhatsApp: {call.capturedWhatsapp}
-                                                            </span>
-                                                        )}
+                                                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-primary/20 bg-primary/5 gap-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1 opacity-70">Lead Data Captured</p>
+                                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                                            <p className="text-sm text-slate-900 font-semibold truncate max-w-[200px]">{call.capturedName}</p>
+                                                            <span className="text-sm text-[#1AA6A8] font-medium whitespace-nowrap">Est. ₹{call.capturedValue}/mo</span>
+                                                            {call.capturedWhatsapp && (
+                                                                <span className="flex items-center gap-1.5 text-xs font-bold text-[#1AA6A8] bg-[#EAFBFB] px-2.5 py-1 rounded-lg border border-[#1AA6A8]/10">
+                                                                    <MessageCircle className="w-3.5 h-3.5" /> {call.capturedWhatsapp}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                                        {(() => {
+                                                            const greetStatus = callGreetingStatus[call.id];
+                                                            const dbSent = call.automation_error === 'GREETING_SENT';
+                                                            const phone = call.capturedWhatsapp || call.phone;
+                                                            if (!phone) return null;
+                                                            if (greetStatus === 'sending') return (
+                                                                <button disabled className="px-3 py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 cursor-not-allowed">
+                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
+                                                                </button>
+                                                            );
+                                                            if (greetStatus === 'sent' || dbSent) return (
+                                                                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shrink-0">
+                                                                    <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
+                                                                </div>
+                                                            );
+                                                            if (greetStatus === 'error') return (
+                                                                <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors">
+                                                                    <AlertTriangle className="w-3.5 h-3.5" /> Retry Greeting
+                                                                </button>
+                                                            );
+                                                            return (
+                                                                <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-[#E6F7F7] text-[#0E7C7E] text-xs font-bold rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
+                                                                    <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
+                                                                </button>
+                                                            );
+                                                        })()}
+                                                        <button
+                                                            onClick={() => captureCallAsLead(call.id)}
+                                                            className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" /> Add to Pipeline
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    {/* Send Greeting Button removed from here — it's now always visible under the transcript button on the left */}
-                                                    <button
-                                                        onClick={() => captureCallAsLead(call.id)}
-                                                        className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
-                                                    >
-                                                        <Plus className="w-4 h-4" /> Add to Pipeline
-                                                    </button>
-                                                </div>
-                                            </div>
                                             ) : null;
                                         })()}
                                     </div>
