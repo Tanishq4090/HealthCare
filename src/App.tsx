@@ -98,15 +98,27 @@ function AppContent() {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
+          {/* Public pages — same nav works in OS mode */}
           <Route element={<Layout />}>
             <Route path="/" element={<HomePage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/:slug" element={<ServiceDetailPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/blog/:slug" element={<BlogDetailPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/appointment" element={<AppointmentPage />} />
+            <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
+
+          {/* Shared / utility routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
           <Route path="/duty/:id" element={<DutyTracker />} />
           <Route path="/id-card/:token" element={<PublicIDCard />} />
 
-          <Route path="/id-card/:token" element={<PublicIDCard />} />
+          {/* Admin / CRM routes (protected) */}
           <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="crm" element={<ProtectedRoute requiredModule="crm"><CRM /></ProtectedRoute>} />
@@ -116,9 +128,6 @@ function AppContent() {
             <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
-          {/* Default fallback for root path in OS mode to support public site viewing */}
-          <Route element={<Layout />}><Route path="/" element={<HomePage />} /></Route>
-          <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </AnimatePresence>
     );
