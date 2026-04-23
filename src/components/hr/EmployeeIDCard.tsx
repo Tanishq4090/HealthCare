@@ -246,6 +246,14 @@ export function EmployeeIDCard({
                 </div>
               )}
 
+              {/* Experience */}
+              {experience && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 2 }}>Exp.</span>
+                  <div style={{ color: '#334155', fontSize: 11, fontWeight: 600, lineHeight: '1.4' }}>{experience}</div>
+                </div>
+              )}
+
               {/* Age & Gender */}
               {(dob || gender) && (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
