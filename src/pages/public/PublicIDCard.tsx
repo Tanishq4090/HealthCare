@@ -13,7 +13,7 @@ import type { Employee } from '../../types/hr';
 type PageState = 'loading' | 'valid' | 'expired' | 'invalid' | 'error';
 
 interface CardData {
-  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number'>;
+  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number' | 'address' | 'dob' | 'preferred_payment_type' | 'shift_hours' | 'experience' | 'gender'>;
 }
 
 // ── Skeleton ──────────────────────────────────────────────
@@ -119,7 +119,7 @@ export default function PublicIDCard() {
       // 4. Fetch employee details (only safe, non-sensitive fields)
       const { data: employee, error: empError } = await supabase
         .from('employees')
-        .select('full_name, employee_id, job_title, photo_url, aadhaar_number')
+        .select('full_name, employee_id, job_title, photo_url, aadhaar_number, address, dob, preferred_payment_type, shift_hours, experience, gender')
         .eq('id', link.employee_id)
         .single();
 
@@ -175,6 +175,15 @@ export default function PublicIDCard() {
               jobTitle={cardData.employee.job_title}
               photoUrl={cardData.employee.photo_url}
               aadhaarNumber={cardData.employee.aadhaar_number}
+              address={cardData.employee.address}
+              dob={cardData.employee.dob}
+              duty={cardData.employee.preferred_payment_type === 'hourly'
+                ? `${cardData.employee.shift_hours ?? '—'} HRS (Day)`
+                : cardData.employee.preferred_payment_type === 'monthly'
+                ? 'Monthly'
+                : 'Short Term'}
+              experience={cardData.employee.experience as any}
+              gender={cardData.employee.gender}
               variant="public"
             />
             
