@@ -98,13 +98,13 @@ export function EmployeeIDCard({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* Brand icon */}
             <div style={{
-              width: 36, height: 36, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 8,
+              width: 36, height: 36, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 8,
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 6,
             }}>
               <img
-                src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg"
+                src="/99care-logo.svg"
                 alt="99Care"
-                style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             </div>
             <div>
@@ -113,8 +113,17 @@ export function EmployeeIDCard({
             </div>
           </div>
           {/* ID chip */}
-          <div style={{ backgroundColor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, padding: '4px 10px' }}>
-            <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em' }}>{employeeId}</span>
+          <div style={{ 
+            backgroundColor: 'rgba(255,255,255,0.12)', 
+            border: '1px solid rgba(255,255,255,0.2)', 
+            borderRadius: 6, 
+            padding: '4px 10px',
+            height: 24,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', display: 'block', lineHeight: 1 }}>{employeeId}</span>
           </div>
         </div>
 
@@ -148,7 +157,7 @@ export function EmployeeIDCard({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {employeeName ? (
-                    <span style={{ color: '#fff', fontSize: 24, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                    <span style={{ color: '#fff', fontSize: 24, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', lineHeight: 0 }}>
                       {getInitials(employeeName)}
                     </span>
                   ) : (
