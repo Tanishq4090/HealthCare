@@ -211,51 +211,8 @@ serve(async (req) => {
                 }]);
             }
 
-            // --- 5. DISPATCH AUTOMATED WHATSAPP GREETING (TEMPLATE + FLOW) ---
-            const purePhone = effectivePhoneNumber.replace(/\D/g, '');
-            if (purePhone) {
-                console.log(`[Webhook] Triggering greeting via meta-whatsapp-outbound for ${purePhone}`);
-                
-                try {
-                    const { data: outData, error: outError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
-                        body: {
-                            phone: purePhone,
-                            useTemplate: true,
-                            templateName: FLOW_TEMPLATE_NAME,
-                            templateParams: [
-                                detectedName.split(' ')[0],
-                                detectedService,
-                                detectedShift
-                            ]
-                        }
-                    });
-
-                    if (outError) {
-                        const errorMsg = `Greeting trigger failed: ${outError.message || 'Unknown error'}`;
-                        console.error(`[Webhook] ${errorMsg}`);
-                        // Update both tables if possible, but call_transcripts for sure
-                        await supabase.from('call_transcripts').update({ automation_error: errorMsg }).eq('conversation_id', conversationId);
-                        await supabase.from('crm_call_logs').update({ automation_error: errorMsg }).eq('call_id', conversationId);
-                    } else {
-                        console.log(`[Webhook] Greeting dispatched successfully:`, outData);
-                        await supabase.from('whatsapp_messages').insert([{ 
-                            phone: effectivePhoneNumber, 
-                            role: 'assistant', 
-                            content: `[Automated Greeting] Sent service details confirmation for ${detectedService} (${detectedShift} shift).` 
-                        }]);
-                    }
-                } catch (invokeErr: any) {
-                    const errorMsg = `Invocation error: ${invokeErr.message}`;
-                    console.error(`[Webhook] ${errorMsg}`);
-                    await supabase.from('call_transcripts').update({ automation_error: errorMsg }).eq('conversation_id', conversationId);
-                    await supabase.from('crm_call_logs').update({ automation_error: errorMsg }).eq('call_id', conversationId);
-                }
-            } else {
-                const failMsg = `No valid 10-digit phone number found. Caller ID was: ${callerPhone}`;
-                console.error(`[Webhook] Greeting skipped: ${failMsg}`);
-                await supabase.from('call_transcripts').update({ automation_error: failMsg }).eq('conversation_id', conversationId);
-                await supabase.from('crm_call_logs').update({ automation_error: failMsg }).eq('call_id', conversationId);
-            }
+            // NOTE: Greeting is now sent manually from the CRM Voice tab.
+            // No automatic WhatsApp dispatch happens here.
         }
 
         console.log(`[Webhook] Transcript saved for conversation: ${conversationId}`);
@@ -269,3 +226,4 @@ serve(async (req) => {
         return new Response(JSON.stringify({ ok: false }), { status: 200 }); // Always 200 for ElevenLabs
     }
 });
+

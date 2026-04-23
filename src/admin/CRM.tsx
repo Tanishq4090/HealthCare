@@ -232,6 +232,8 @@ export default function CRM() {
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
     const [agentTargetLead, setAgentTargetLead] = useState<any>(null);
     const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom'>('inquiry');
+    // Per-call greeting dispatch status (keyed by call.id)
+    const [callGreetingStatus, setCallGreetingStatus] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
     const [assignmentResult, setAssignmentResult] = useState<any>(null);
 
     // Staff Picker State
@@ -456,17 +458,26 @@ export default function CRM() {
         }
     };
 
-    const handleResendGreeting = async (call: any) => {
-        const phone = call.phone || call.capturedPhone;
-        const purePhone = phone ? phone.replace(/\D/g, '') : '';
-        if (!purePhone || purePhone.length < 10) {
-            toast.error('Cannot resend: No valid phone number linked to this call.');
+    // Send WhatsApp greeting_msg template manually from call log card
+    const handleSendCallGreeting = async (call: any) => {
+        const rawPhone = call.capturedWhatsapp || call.phone;
+        if (!rawPhone) {
+            toast.error('No WhatsApp number found for this call.');
             return;
         }
 
+        let digits = rawPhone.replace(/\D/g, '');
+        if (digits.length === 10) digits = `91${digits}`;
+        if (digits.length < 11) {
+            toast.error(`Invalid phone number: ${rawPhone}`);
+            return;
+        }
+
+        setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sending' }));
+
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
         const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        const loadingToast = toast.loading(`Sending greeting to ${phone}...`);
+        const firstName = (call.capturedName || 'there').split(' ')[0];
 
         try {
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
@@ -474,38 +485,29 @@ export default function CRM() {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'apikey': SUPABASE_ANON_KEY
+                    'apikey': SUPABASE_ANON_KEY,
                 },
                 body: JSON.stringify({
-                    phone: purePhone,
+                    phone: digits,
                     useTemplate: true,
-                    templateName: "post_call_intake",
-                    templateParams: [
-                        (call.capturedName || 'there').split(' ')[0], 
-                        call.intent || 'Home Healthcare', 
-                        'General'
-                    ]
-                })
+                    templateName: 'greeting_msg',
+                    templateParams: [firstName],
+                }),
             });
 
-            if (!res.ok) throw new Error('Request failed');
             const data = await res.json();
-            
-            if (data.error) {
-                toast.error(`Failed: ${data.error}`, { id: loadingToast });
-            } else {
-                // Clear the error in DB so it shows as "Sent" on next load
-                await supabase.from('call_transcripts').update({ automation_error: null }).eq('conversation_id', call.id);
-                
-                // Update local state immediately
-                setCalls((prev: any[]) => prev.map((c: any) => 
-                    c.id === call.id ? { ...c, automation_error: null } : c
-                ));
+            if (!res.ok || data.error) throw new Error(data.error || data.message || `HTTP ${res.status}`);
 
-                toast.success('Greeting sent successfully!', { id: loadingToast });
-            }
+            // Persist to DB so status survives page refresh
+            await supabase.from('call_transcripts')
+                .update({ automation_error: 'GREETING_SENT' })
+                .eq('conversation_id', call.id);
+
+            setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
+            toast.success(`✅ Greeting sent to ${firstName}!`);
         } catch (err: any) {
-            toast.error(`Error: ${err.message}`, { id: loadingToast });
+            setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'error' }));
+            toast.error(`Failed to send greeting: ${err.message}`);
         }
     };
 
@@ -902,6 +904,20 @@ export default function CRM() {
             setTemplateDraftText(whatsappTemplates[agentTargetAction]?.[agentDraftLang] || '');
         }
     }, [agentDraftLang, agentTargetAction, agentTargetLead, whatsappTemplates, isEditingTemplate, selectedWorker, assignmentResult]);
+
+    // Initialize per-call greeting status from DB when calls are loaded
+    useEffect(() => {
+        if (calls.length > 0) {
+            const initialStatus: Record<string, 'sending' | 'sent' | 'error'> = {};
+            calls.forEach((call: any) => {
+                if (call.automation_error === 'GREETING_SENT') {
+                    initialStatus[call.id] = 'sent';
+                }
+            });
+            // Preserve any in-flight 'sending' states, only set new ones from DB
+            setCallGreetingStatus(prev => ({ ...initialStatus, ...prev }));
+        }
+    }, [calls]);
 
     const handleSaveTemplate = () => {
         const updated = {
@@ -2215,15 +2231,6 @@ export default function CRM() {
                                                     <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm flex-1 justify-center">
                                                         <FileText className="w-4 h-4" /> View Full Transcript
                                                     </button>
-                                                    {call.automation_error ? (
-                                                        <button onClick={() => handleResendGreeting(call)} className="text-sm font-bold text-slate-600 hover:text-slate-800 flex items-center gap-1.5 transition-colors bg-white px-4 py-1.5 rounded-lg border border-slate-200 shadow-sm shrink-0 whitespace-nowrap">
-                                                            <MessageSquare className="w-4 h-4" /> Resend Form
-                                                        </button>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm shrink-0">
-                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -2281,12 +2288,41 @@ export default function CRM() {
                                                         )}
                                                     </div>
                                                 </div>
-                                                <button
-                                                    onClick={() => captureCallAsLead(call.id)}
-                                                    className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
-                                                >
-                                                    <Plus className="w-4 h-4" /> Add to Pipeline
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    {/* Send Greeting Button */}
+                                                    {(() => {
+                                                        const greetStatus = callGreetingStatus[call.id];
+                                                        const dbSent = call.automation_error === 'GREETING_SENT';
+                                                        const phone = call.capturedWhatsapp || call.phone;
+                                                        if (!phone) return null;
+                                                        if (greetStatus === 'sending') return (
+                                                            <button disabled className="px-3 py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 cursor-not-allowed">
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
+                                                            </button>
+                                                        );
+                                                        if (greetStatus === 'sent' || dbSent) return (
+                                                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shrink-0">
+                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
+                                                            </div>
+                                                        );
+                                                        if (greetStatus === 'error') return (
+                                                            <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors">
+                                                                <AlertTriangle className="w-3.5 h-3.5" /> Retry Greeting
+                                                            </button>
+                                                        );
+                                                        return (
+                                                            <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-[#E6F7F7] text-[#0E7C7E] text-xs font-bold rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
+                                                                <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
+                                                            </button>
+                                                        );
+                                                    })()}
+                                                    <button
+                                                        onClick={() => captureCallAsLead(call.id)}
+                                                        className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
+                                                    >
+                                                        <Plus className="w-4 h-4" /> Add to Pipeline
+                                                    </button>
+                                                </div>
                                             </div>
                                             ) : null;
                                         })()}
