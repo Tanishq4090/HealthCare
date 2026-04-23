@@ -2517,36 +2517,32 @@ export default function CRM() {
                             </button>
                         </div>
                         <div className="p-5 space-y-4 flex-1">
-                            <div className="flex items-center justify-between">
-                                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                    <Globe className="w-4 h-4 text-primary" /> Target Language Model
-                                </label>
-                                <div className="flex bg-slate-100 rounded-lg p-1">
-                                    {['English', 'Hindi', 'Hinglish'].map(lang => (
-                                        <button
-                                            key={lang}
-                                            onClick={() => setAgentDraftLang(lang as any)}
-                                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-[#1AA6A8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        >
-                                            {lang}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            
+                            {/* Simplified Message Type Selector */}
                             <div className="flex items-center justify-between">
                                 <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
                                     <MessageSquare className="w-4 h-4 text-primary" /> Message Type
                                 </label>
                                 <select 
-                                    value={agentTargetAction}
-                                    onChange={(e) => setAgentTargetAction(e.target.value as any)}
+                                    value={agentTargetAction === 'custom' ? 'custom' : 'stage'}
+                                    onChange={(e) => {
+                                        if (e.target.value === 'custom') {
+                                            setAgentTargetAction('custom');
+                                        } else {
+                                            // Action is set by the button click that opened the modal
+                                        }
+                                    }}
                                     className="text-xs font-semibold text-slate-700 bg-slate-100 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
                                 >
-                                    <option value="inquiry">Greeting Message</option>
-                                    <option value="quotation">Quotation Template</option>
-                                    <option value="consent">Consent Form</option>
-                                    <option value="custom">Manual (Plain Text)</option>
+                                    <option value="stage">
+                                        {agentTargetAction === 'inquiry' ? 'Greeting Message' :
+                                         agentTargetAction === 'quotation' ? 'Quotation Template' :
+                                         agentTargetAction === 'consent' ? 'Consent Form' :
+                                         agentTargetAction === 'staff' ? 'Profile Sharing' :
+                                         agentTargetAction === 'deposit' ? 'Deposit Invoice' :
+                                         agentTargetAction === 'billing' ? 'Monthly Bill' : 
+                                         'Automated Template'}
+                                    </option>
+                                    <option value="custom">Manual Message</option>
                                 </select>
                             </div>
                             <div>
