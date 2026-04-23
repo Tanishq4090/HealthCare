@@ -224,15 +224,15 @@ export function EmployeeIDCard({
             <div style={{ height: 1, background: 'linear-gradient(to right, #ccfbf1, transparent)', marginBottom: 8 }} />
 
             {/* Detail rows */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
 
               {/* Duty */}
               {duty && (
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 4 }}>Duty</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Duty</span>
                   <div style={{ 
                     color: '#1e293b', 
-                    fontSize: 11, 
+                    fontSize: 10, 
                     fontWeight: 700, 
                     backgroundColor: '#f0fdfa', 
                     border: '1px solid #99f6e4', 
@@ -248,17 +248,17 @@ export function EmployeeIDCard({
 
               {/* Experience */}
               {experience && (
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 2 }}>Exp.</span>
-                  <div style={{ color: '#334155', fontSize: 11, fontWeight: 600, lineHeight: '1.4' }}>{experience}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Exp.</span>
+                  <span style={{ color: '#334155', fontSize: 11, fontWeight: 700 }}>{experience}</span>
                 </div>
               )}
 
               {/* Age & Gender */}
               {(dob || gender) && (
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 2 }}>Age</span>
-                  <div style={{ color: '#334155', fontSize: 11, fontWeight: 600, lineHeight: '1.4' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Age</span>
+                  <div style={{ color: '#334155', fontSize: 11, fontWeight: 700 }}>
                     {age !== '—' ? `${age} yrs` : ''}{gender ? (age !== '—' ? ` • ${gender}` : gender) : ''}
                   </div>
                 </div>
@@ -267,8 +267,8 @@ export function EmployeeIDCard({
               {/* Address */}
               {address && (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 2 }}>Address</span>
-                  <div style={{ color: '#475569', fontSize: 10, fontWeight: 500, lineHeight: 1.4, flex: 1 }}>{address}</div>
+                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0, marginTop: 1 }}>Address</span>
+                  <div style={{ color: '#475569', fontSize: 9, fontWeight: 600, lineHeight: 1.3, flex: 1 }}>{address}</div>
                 </div>
               )}
 
