@@ -360,10 +360,17 @@ export async function restoreEmployee(id: string): Promise<void> {
 }
 
 /**
- * Permanently deletes an employee record from the database.
+ * Permanently deletes an employee record and all its dependencies from the database.
  */
 export async function permanentlyDeleteEmployee(id: string): Promise<void> {
   try {
+    // 1. Delete dependent records first to satisfy foreign key constraints
+    await supabase.from('id_card_links').delete().eq('employee_id', id);
+    await supabase.from('worker_assignments').delete().eq('employee_id', id);
+    await supabase.from('employee_documents').delete().eq('employee_id', id);
+    await supabase.from('attendance').delete().eq('worker_id', id);
+
+    // 2. Finally, delete the employee record
     const { error } = await supabase
       .from('employees')
       .delete()
@@ -379,17 +386,35 @@ export async function permanentlyDeleteEmployee(id: string): Promise<void> {
 }
 
 /**
- * Permanently deletes ALL soft-deleted employee records from the database.
+ * Permanently deletes ALL soft-deleted employee records and their dependencies.
  */
 export async function permanentlyDeleteAllDeletedEmployees(): Promise<void> {
   try {
-    const { error } = await supabase
+    // 1. Fetch the IDs of all soft-deleted employees
+    const { data: softDeleted, error: fetchError } = await supabase
       .from('employees')
-      .delete()
+      .select('id')
       .not('deleted_at', 'is', null);
 
-    if (error) {
-      throw new Error(`Failed to empty trash: ${error.message}`);
+    if (fetchError) throw fetchError;
+    if (!softDeleted || softDeleted.length === 0) return;
+
+    const ids = softDeleted.map(e => e.id);
+
+    // 2. Cascade delete dependencies for all these IDs
+    await supabase.from('id_card_links').delete().in('employee_id', ids);
+    await supabase.from('worker_assignments').delete().in('employee_id', ids);
+    await supabase.from('employee_documents').delete().in('employee_id', ids);
+    await supabase.from('attendance').delete().in('worker_id', ids);
+
+    // 3. Finally, empty the trash in the employees table
+    const { error: deleteError } = await supabase
+      .from('employees')
+      .delete()
+      .in('id', ids);
+
+    if (deleteError) {
+      throw new Error(`Failed to empty trash: ${deleteError.message}`);
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
