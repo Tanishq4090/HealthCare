@@ -2231,6 +2231,33 @@ export default function CRM() {
                                                     <button onClick={() => { setSelectedCall(call); setIsTranscriptModalOpen(true); }} className="text-sm font-bold text-[#1AA6A8] hover:text-[#0E7C7E] flex items-center gap-1.5 transition-colors bg-[#E6F7F7] px-4 py-1.5 rounded-lg border border-[#1AA6A8]/20 shadow-sm flex-1 justify-center">
                                                         <FileText className="w-4 h-4" /> View Full Transcript
                                                     </button>
+                                                    {/* Send Greeting Button — always visible if phone exists */}
+                                                    {(() => {
+                                                        const greetStatus = callGreetingStatus[call.id];
+                                                        const dbSent = call.automation_error === 'GREETING_SENT';
+                                                        const phone = call.capturedWhatsapp || call.phone;
+                                                        if (!phone) return null;
+                                                        if (greetStatus === 'sending') return (
+                                                            <button disabled className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shrink-0 cursor-not-allowed">
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
+                                                            </button>
+                                                        );
+                                                        if (greetStatus === 'sent' || dbSent) return (
+                                                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shrink-0">
+                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
+                                                            </div>
+                                                        );
+                                                        if (greetStatus === 'error') return (
+                                                            <button onClick={() => handleSendCallGreeting(call)} className="text-xs font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors">
+                                                                <AlertTriangle className="w-3.5 h-3.5" /> Retry
+                                                            </button>
+                                                        );
+                                                        return (
+                                                            <button onClick={() => handleSendCallGreeting(call)} className="text-xs font-bold text-[#0E7C7E] bg-[#E6F7F7] px-3 py-1.5 rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
+                                                                <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
+                                                            </button>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
@@ -2288,34 +2315,7 @@ export default function CRM() {
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    {/* Send Greeting Button */}
-                                                    {(() => {
-                                                        const greetStatus = callGreetingStatus[call.id];
-                                                        const dbSent = call.automation_error === 'GREETING_SENT';
-                                                        const phone = call.capturedWhatsapp || call.phone;
-                                                        if (!phone) return null;
-                                                        if (greetStatus === 'sending') return (
-                                                            <button disabled className="px-3 py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 cursor-not-allowed">
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
-                                                            </button>
-                                                        );
-                                                        if (greetStatus === 'sent' || dbSent) return (
-                                                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shrink-0">
-                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
-                                                            </div>
-                                                        );
-                                                        if (greetStatus === 'error') return (
-                                                            <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors">
-                                                                <AlertTriangle className="w-3.5 h-3.5" /> Retry Greeting
-                                                            </button>
-                                                        );
-                                                        return (
-                                                            <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-[#E6F7F7] text-[#0E7C7E] text-xs font-bold rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
-                                                                <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
-                                                            </button>
-                                                        );
-                                                    })()}
+                                                    {/* Send Greeting Button removed from here — it's now always visible under the transcript button on the left */}
                                                     <button
                                                         onClick={() => captureCallAsLead(call.id)}
                                                         className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0"
