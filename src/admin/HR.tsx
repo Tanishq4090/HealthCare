@@ -1797,21 +1797,17 @@ export default function HR() {
                                 </button>
                             </div>
                             <div className="p-5 space-y-4 flex-1">
+                                {/* Simplified Message Type Selector */}
                                 <div className="flex items-center justify-between">
                                     <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                        <Globe className="w-4 h-4 text-primary" /> Target Language
+                                        <MessageSquare className="w-4 h-4 text-primary" /> Message Type
                                     </label>
-                                    <div className="flex bg-slate-100 rounded-lg p-1">
-                                        {['English', 'Hindi', 'Hinglish'].map(lang => (
-                                            <button
-                                                key={lang}
-                                                onClick={() => setAgentDraftLang(lang as any)}
-                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-[#1AA6A8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                            >
-                                                {lang}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    <select 
+                                        className="text-xs font-semibold text-slate-700 bg-slate-100 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                                    >
+                                        <option value="stage">Profile Sharing</option>
+                                        <option value="custom">Manual Message</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
