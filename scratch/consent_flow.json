@@ -1,5 +1,5 @@
 {
-  "version": "6.0",
+  "version": "6.1",
   "routing_model": {
     "CONSENT_SCREEN": []
   },
@@ -18,12 +18,12 @@
           { "type": "TextInput", "name": "age", "label": "Age", "input-type": "number", "required": true },
           { "type": "TextInput", "name": "weight", "label": "Weight (kg)", "input-type": "number", "required": true },
           { "type": "TextInput", "name": "contact_number", "label": "Contact Number", "input-type": "phone", "required": true },
-          { "type": "TextInput", "name": "alternate_contact_number", "label": "Alt. Contact", "required": false },
+          { "type": "TextInput", "name": "alternate_contact_number", "label": "Alt. Contact", "input-type": "phone", "required": true },
           
           { "type": "TextHeading", "text": "Care Requirements" },
           { "type": "TextInput", "name": "address", "label": "Resident Address", "required": true },
           { "type": "TextInput", "name": "reference_by", "label": "Reference By", "required": true },
-          { "type": "TextInput", "name": "service_start_date", "label": "Start Date (DD/MM)", "required": true },
+          { "type": "CalendarPicker", "name": "service_start_date", "label": "Service Start Date", "required": true },
           { "type": "Dropdown", "name": "service_category", "label": "Service Category", "required": true, "data-source": [
               {"id": "Elderly Care", "title": "Elderly Care"},
               {"id": "Baby Care", "title": "Baby Care"},
