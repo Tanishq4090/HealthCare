@@ -1002,13 +1002,14 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
-                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent'),
+                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
                                   : (agentTargetAction === 'quotation' ? 'quote_client' 
-                                  : (agentTargetAction === 'consent' ? 'consent_form' : undefined)),
+                                  : (agentTargetAction === 'consent' ? 'consent_form' 
+                                  : (agentTargetAction === 'deposit' ? 'deposit_request' : undefined))),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
-                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : undefined),
+                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' ? [(agentTargetLead?.name || 'there')] : undefined),
                 })
             });
 
