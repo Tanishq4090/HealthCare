@@ -1891,23 +1891,7 @@ export default function CRM() {
                                                                     </div>
                                                                 )}
 
-                                                                {/* Assigned Worker Badge */}
-                                                                {(() => {
-                                                                    const typedItem = item as any;
-                                                                    // Read directly from the denormalized column on crm_leads
-                                                                    const workerName = typedItem.assigned_worker_name as string | null;
-                                                                    const workerRole = typedItem.assigned_worker_role as string | null;
 
-                                                                    if (workerName) {
-                                                                        return (
-                                                                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200 w-fit max-w-full">
-                                                                                <Users className="w-3 h-3 shrink-0" />
-                                                                                <span className="truncate">👤 {workerName}{workerRole ? ` (${workerRole})` : ''}</span>
-                                                                            </div>
-                                                                        );
-                                                                    }
-                                                                    return null;
-                                                                })()}
                                                             </>
                                                         )}
                                                     </div>
