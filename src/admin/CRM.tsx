@@ -1177,6 +1177,25 @@ export default function CRM() {
         const toastId = toast.loading(`Moving lead to "${newStage}"...`);
 
         try {
+            // ── Guard: Require staff assignment before advancing to staff stages ──────
+            const staffRequiredStages = ['Staff Assigned', 'Deposit Pending', 'Active Client'];
+            if (staffRequiredStages.includes(newStage)) {
+                const { data: activeAssignment } = await supabase
+                    .from('worker_assignments')
+                    .select('id')
+                    .eq('client_id', id)
+                    .eq('assignment_status', 'active')
+                    .maybeSingle();
+
+                if (!activeAssignment) {
+                    toast.error(
+                        `Cannot move to "${newStage}" — please assign a staff member first using the "Assign Staff Member" button.`,
+                        { id: toastId, duration: 5000 }
+                    );
+                    return;
+                }
+            }
+
             // Rule: Automatic staff release if moved to pre-assignment stages
             const preAssignmentStages = ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted'];
             if (preAssignmentStages.includes(newStage)) {
@@ -1186,6 +1205,7 @@ export default function CRM() {
                     console.error("Auto-release worker failed:", err);
                 }
             }
+
 
             const { error } = await supabase
                 .from('crm_leads')
