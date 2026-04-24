@@ -160,9 +160,11 @@ serve(async (req) => {
         }
       ];
 
-      // Special handling for Flow templates (like post_call_intake)
+      // Special handling for Flow templates (like post_call_intake or consent_form)
       // Meta's API requires type: "payload" for Flow button parameters
-      if (templateName === "post_call_intake") {
+      if (templateName === "post_call_intake" || templateName === "consent_form") {
+        const initialScreen = templateName === "consent_form" ? "SCREEN_1" : "INTAKE_FORM";
+        
         components.push({
           type: "button",
           sub_type: "flow",
@@ -171,8 +173,8 @@ serve(async (req) => {
             {
               type: "payload",
               payload: JSON.stringify({
-                flow_token: `call_${digits}_${Date.now()}`,
-                screen: "INTAKE_FORM"
+                flow_token: `flow_${digits}_${Date.now()}`,
+                screen: initialScreen
               })
             }
           ]
