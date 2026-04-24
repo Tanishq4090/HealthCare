@@ -1044,6 +1044,9 @@ export default function CRM() {
                     await handleMoveLead(agentTargetLead.id, 'Quotation Sent');
                     toast.success(`Quotation sent! Moved ${agentTargetLead.name} to Quotation Sent.`, { id: toastId, duration: 4000 });
                 }
+                else if (agentTargetAction === 'consent') {
+                    toast.success(`Consent Form dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
+                }
                 // If staff assignment -> move to Staff Assigned
                 else if (agentTargetAction === 'staff' && (selectedWorker || agentTargetLead.assigned_staff)) {
                     await handleMoveLead(agentTargetLead.id, 'Staff Assigned');

@@ -100,7 +100,7 @@ serve(async (req) => {
 
                 if (existingLead) {
                     // Automatically advance the CRM pipeline
-                    await supabase.from('crm_leads').update({ pipeline_stage: 'Consent Received' }).eq('id', existingLead.id);
+                    await supabase.from('crm_leads').update({ pipeline_stage: 'Form Submitted' }).eq('id', existingLead.id);
                     
                     // Securely store the patient details and terms acceptance
                     await supabase.from('client_consents').insert([{
@@ -117,6 +117,7 @@ serve(async (req) => {
                         service_start_date: formData.service_start_date,
                         service_category: formData.service_category,
                         offered_time: formData.offered_time,
+                        other_details: formData.other_details,
                         terms_accepted: formData.terms_accepted === 'on' || formData.terms_accepted === true
                     }]);
                 } else {
@@ -143,7 +144,7 @@ serve(async (req) => {
                 await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
                 await supabase.from('whatsapp_logs').insert([{
                     sid: wamid, status: 'success',
-                    payload: { type: 'flow_submission_consent', patient_name: formData.patient_name, original_recipient: fromPhone }
+                    payload: { type: 'flow_submission_consent', patient_name: formData.patient_name, other_details: formData.other_details, original_recipient: fromPhone }
                 }]);
                 
                 return new Response('EVENT_RECEIVED', { status: 200 });
