@@ -85,6 +85,72 @@ serve(async (req) => {
                 console.error('[Flow] Failed to parse form response_json:', e);
             }
 
+            // --- CONSENT FORM FLOW BRANCH ---
+            if (formData.flow_type === 'consent_form') {
+                console.log(`[Flow] Processing Consent Form for ${formData.patient_name}`);
+                
+                // Find existing lead to attach to
+                const { data: existingLeads } = await supabase
+                    .from('crm_leads')
+                    .select('id, pipeline_stage')
+                    .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                const existingLead = existingLeads?.[0] ?? null;
+
+                if (existingLead) {
+                    // Automatically advance the CRM pipeline
+                    await supabase.from('crm_leads').update({ pipeline_stage: 'Consent Received' }).eq('id', existingLead.id);
+                    
+                    // Securely store the patient details and terms acceptance
+                    await supabase.from('client_consents').insert([{
+                        lead_id: existingLead.id,
+                        phone: purePhone,
+                        relative_name: formData.relative_name,
+                        patient_name: formData.patient_name,
+                        age: formData.age,
+                        weight: formData.weight,
+                        contact_number: formData.contact_number,
+                        alternate_contact_number: formData.alternate_contact_number,
+                        address: formData.address,
+                        reference_by: formData.reference_by,
+                        service_start_date: formData.service_start_date,
+                        service_category: formData.service_category,
+                        offered_time: formData.offered_time,
+                        terms_accepted: formData.terms_accepted === 'on' || formData.terms_accepted === true
+                    }]);
+                } else {
+                    console.warn(`[Flow] Consent Form received but no CRM Lead found for ${purePhone}! Saving orphans not implemented.`);
+                }
+
+                // Send warm final confirmation back to patient
+                const fname = formData.relative_name ? formData.relative_name.split(' ')[0] : 'there';
+                const confirmMsg = `Thank you ${fname}! 🙏😊\n\nWe have successfully received your Consent form along with the service details for ${formData.patient_name}.\nOur team will now proceed with final deployment arrangements and staff assignment for your requirement! ✨`;
+
+                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            messaging_product: "whatsapp",
+                            to: purePhone,
+                            type: "text",
+                            text: { body: confirmMsg }
+                        })
+                    });
+                }
+                
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
+                await supabase.from('whatsapp_logs').insert([{
+                    sid: wamid, status: 'success',
+                    payload: { type: 'flow_submission_consent', patient_name: formData.patient_name, original_recipient: fromPhone }
+                }]);
+                
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+
+            // --- LEGACY LEAD QUALIFICATION FLOW BRANCH ---
+
             const name = formData.name || contact?.profile?.name || 'Unknown';
             const service = formData.service || 'Unknown';
             const country = formData.country || '';

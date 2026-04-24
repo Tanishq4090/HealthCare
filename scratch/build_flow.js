@@ -1,0 +1,89 @@
+const fs = require('fs');
+
+const flow = {
+  "version": "3.1",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "SCREEN_1": ["SCREEN_2"],
+    "SCREEN_2": ["SCREEN_3"],
+    "SCREEN_3": []
+  },
+  "screens": [
+    {
+      "id": "SCREEN_1",
+      "title": "Patient Details (1/3)",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Basic Information" },
+          { "type": "TextInput", "name": "relative_name", "label": "Relative Name", "required": true },
+          { "type": "TextInput", "name": "patient_name", "label": "Patient Name", "required": true },
+          { "type": "TextInput", "name": "age", "label": "Age", "input-type": "number", "required": true },
+          { "type": "TextInput", "name": "weight", "label": "Weight (kg)", "input-type": "number", "required": true },
+          { "type": "TextInput", "name": "contact_number", "label": "Contact Number", "input-type": "phone", "required": true },
+          { "type": "TextInput", "name": "alternate_contact_number", "label": "Alternate Contact Number", "input-type": "phone", "required": false },
+          { "type": "Footer", "label": "Next", "on-click-action": { "name": "navigate", "payload": { "next": "SCREEN_2" } } }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_2",
+      "title": "Service Details (2/3)",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Care Requirements" },
+          { "type": "TextInput", "name": "address", "label": "Full Residential Address", "required": true },
+          { "type": "TextInput", "name": "reference_by", "label": "Reference By", "required": true },
+          { "type": "DatePicker", "name": "service_start_date", "label": "Approx. Service Start Date", "required": true },
+          { "type": "Dropdown", "name": "service_category", "label": "Service Category", "required": true, "data-source": [
+              {"id": "Elderly Care", "title": "Elderly Care"},
+              {"id": "Baby Care", "title": "Baby Care"},
+              {"id": "Patient Care", "title": "Patient Care"},
+              {"id": "Nursing", "title": "Nursing"},
+              {"id": "Other", "title": "Other"}
+          ]},
+          { "type": "Dropdown", "name": "offered_time", "label": "Offered Time", "required": true, "data-source": [
+              {"id": "12 Hours (Day)", "title": "12 Hours (Day)"},
+              {"id": "12 Hours (Night)", "title": "12 Hours (Night)"},
+              {"id": "24 Hours (Live-in)", "title": "24 Hours (Live-in)"},
+              {"id": "Other", "title": "Other"}
+          ]},
+          { "type": "Footer", "label": "Next", "on-click-action": { "name": "navigate", "payload": { "next": "SCREEN_3" } } }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_3",
+      "title": "Consent & Terms (3/3)",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Declaration" },
+          { "type": "TextBody", "text": "99CARE is for provide skilled based and trained staffs as per requirements. Inception by head nurse and she will confirmed about patients conditions about to provide care taker.\n\nThen after patient's guardian has to confirmed about details and regulation shared from our side. Therefore this form is give consent for the services which you looking for." },
+          { "type": "TextBody", "text": "1. The care taker provided by us will only do all the work as per the information provided by the company.\n2. You are requested to pay us the sum of the payment time as per the agreed time.\n3. This form is mandatory to ensure that all information is maintained.\n4. So that the staff sent by us can give you better work, you should tell us the mistakes made by them respectfully.\n5. If the work is done more than the given time, they will be paid as overtime.\n6. If the staff works 24 hours, please provide them with tea and food.\n7. If the care taker is appointed, the payment date will be calculated as per the day starting from that day." },
+          { "type": "OptIn", "name": "terms_accepted", "label": "I confirm and agree to all terms above, and consent to the service.", "required": true },
+          { "type": "Footer", "label": "Submit Consent Form", "on-click-action": { "name": "complete", "payload": { 
+              "relative_name": "${form.relative_name}",
+              "patient_name": "${form.patient_name}",
+              "age": "${form.age}",
+              "weight": "${form.weight}",
+              "contact_number": "${form.contact_number}",
+              "alternate_contact_number": "${form.alternate_contact_number}",
+              "address": "${form.address}",
+              "reference_by": "${form.reference_by}",
+              "service_start_date": "${form.service_start_date}",
+              "service_category": "${form.service_category}",
+              "offered_time": "${form.offered_time}",
+              "terms_accepted": "${form.terms_accepted}"
+           } } }
+        ]
+      }
+    }
+  ]
+};
+
+fs.writeFileSync('scratch/consent_flow.json', JSON.stringify(flow, null, 2));
