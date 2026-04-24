@@ -17,8 +17,8 @@
           { "type": "TextInput", "name": "patient_name", "label": "Patient Name", "required": true },
           { "type": "TextInput", "name": "age", "label": "Age", "input-type": "number", "required": true },
           { "type": "TextInput", "name": "weight", "label": "Weight (kg)", "input-type": "number", "required": true },
-          { "type": "TextInput", "name": "contact_number", "label": "Contact Number", "input-type": "phone", "required": true },
-          { "type": "TextInput", "name": "alternate_contact_number", "label": "Alt. Contact", "input-type": "phone", "required": true },
+          { "type": "TextInput", "name": "contact_number", "label": "Contact Number (10 digits)", "input-type": "phone", "required": true, "regex-match": "^[0-9]{10}$", "error-message": "Please enter exactly 10 digits" },
+          { "type": "TextInput", "name": "alternate_contact_number", "label": "Alt. Contact", "input-type": "phone", "required": true, "regex-match": "^[0-9]{10}$", "error-message": "Please enter exactly 10 digits" },
           
           { "type": "TextHeading", "text": "Care Requirements" },
           { "type": "TextInput", "name": "address", "label": "Resident Address", "required": true },

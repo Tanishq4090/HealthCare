@@ -173,11 +173,13 @@ serve(async (req) => {
           index: "0",
           parameters: [
             {
-              type: "payload",
-              payload: JSON.stringify({
+              type: "action",
+              action: {
                 flow_token: `flow_${digits}_${Date.now()}`,
-                screen: initialScreen
-              })
+                flow_action_data: {
+                  screen: initialScreen
+                }
+              }
             }
           ]
         });
