@@ -79,11 +79,36 @@ serve(async (req: Request) => {
       },
     });
 
-    const metaResponse = await fetch(metaUrl, {
+    let metaResponse = await fetch(metaUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
       body: templateBody,
     });
+
+    // If template is still pending/not approved, fall back to free-text
+    if (!metaResponse.ok) {
+      console.warn(`[send-id-card-link] Template 'staff_assignment' failed — trying free-text fallback.`);
+      const fallbackBody =
+        `99 Care — Staff Assignment\n\n` +
+        `Namaste! 🙏 A care professional has been assigned to you.\n\n` +
+        `👤 Name: ${employeeName}\n` +
+        `💼 Role: ${jobTitle}\n\n` +
+        `🔗 View Verified ID Card:\n${shareableUrl}\n\n` +
+        `Please verify their identity upon arrival. This link is valid for 30 days.\n` +
+        `— 99 Care Team`;
+
+      metaResponse = await fetch(metaUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'text',
+          text: { preview_url: false, body: fallbackBody },
+        }),
+      });
+    }
 
     const metaData = await metaResponse.json();
 
