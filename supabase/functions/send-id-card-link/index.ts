@@ -55,9 +55,9 @@ serve(async (req: Request) => {
     // Template Name: staff_assignment  |  Category: Utility
     // ─────────────────────────────────────────────────────────────
 
+    // ── Send via WhatsApp Template: staff_assignment ───────────────
     const metaUrl = `https://graph.facebook.com/v21.0/${META_PHONE_NUMBER_ID}/messages`;
 
-    // First try the template approach (requires approved Meta template)
     const templateBody = JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -79,36 +79,11 @@ serve(async (req: Request) => {
       },
     });
 
-    let metaResponse = await fetch(metaUrl, {
+    const metaResponse = await fetch(metaUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
       body: templateBody,
     });
-
-    // If template fails (not yet approved), fall back to a free-text message
-    if (!metaResponse.ok) {
-      console.warn(`[send-id-card-link] Template 'staff_assignment' failed. Falling back to free-text.`);
-      const fallbackBody =
-        `99 Care - Staff Assignment Notification\n\n` +
-        `Namaste! A care professional has been assigned to you.\n\n` +
-        `👤 Name: ${employeeName}\n` +
-        `💼 Role: ${jobTitle}\n\n` +
-        `🔗 Verified ID Card: ${shareableUrl}\n\n` +
-        `Please verify their identity upon arrival. This link is valid for 30 days.\n` +
-        `— 99 Care Team`;
-
-      metaResponse = await fetch(metaUrl, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to,
-          type: 'text',
-          text: { preview_url: true, body: fallbackBody },
-        }),
-      });
-    }
 
     const metaData = await metaResponse.json();
 

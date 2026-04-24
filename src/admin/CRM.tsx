@@ -1002,13 +1002,20 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
-                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit'),
+                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
                                   : (agentTargetAction === 'quotation' ? 'quote_client' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
-                                  : (agentTargetAction === 'deposit' ? 'deposit_request' : undefined))),
+                                  : (agentTargetAction === 'deposit' ? 'deposit_request' 
+                                  : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
+                                    : agentTargetAction === 'staff'
+                                    ? [
+                                        selectedWorker?.full_name || selectedWorker?.name || 'Your Care Professional',
+                                        selectedWorker?.job_title || 'Care Staff',
+                                        assignmentResult?.shareableUrl || ''
+                                      ]
                                     : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' ? [(agentTargetLead?.name || 'there')] : undefined),
                 })
             });
