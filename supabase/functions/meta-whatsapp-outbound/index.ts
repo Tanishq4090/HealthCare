@@ -136,7 +136,7 @@ serve(async (req) => {
       metaBody.type = "template";
       
       const parameters = [];
-      if (templateParams && Array.isArray(templateParams)) {
+      if (templateParams && Array.isArray(templateParams) && templateParams.length > 0) {
           const safeDefaults = ['there', 'Home Healthcare', 'General'];
           for (let i = 0; i < templateParams.length; i++) {
               const val = templateParams[i];
@@ -145,7 +145,7 @@ serve(async (req) => {
                   text: (val && val.trim()) ? val.trim() : safeDefaults[i] || '...'
               });
           }
-      } else {
+      } else if (templateName === "greeting_msg" || !templateName) {
           // Fallback to legacy greeting_msg parameter
           parameters.push({
               type: "text",
@@ -153,12 +153,14 @@ serve(async (req) => {
           });
       }
 
-      const components: any[] = [
-        {
-          type: "body",
-          parameters: parameters
-        }
-      ];
+      const components: any[] = [];
+      
+      if (parameters.length > 0) {
+          components.push({
+            type: "body",
+            parameters: parameters
+          });
+      }
 
       // Special handling for Flow templates (like post_call_intake or consent_form)
       // Meta's API requires type: "payload" for Flow button parameters
