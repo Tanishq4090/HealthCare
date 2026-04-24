@@ -1820,42 +1820,62 @@ export default function CRM() {
                                                                 </div>
                                                                 
                                                                 {(item.whatsapp_number || item.phone) ? (
-                                                                    <div className="flex items-center gap-2 mt-0.5" title="Contact Number (Double click to edit)">
-                                                                        <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
-                                                                            <Phone className="w-3 h-3 text-slate-400" />
-                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone)}
-                                                                        </div>
-                                                                        <button 
-                                                                            onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'custom'); }}
-                                                                            className="p-1 rounded-md hover:bg-emerald-50 text-emerald-600 transition-colors"
-                                                                            title="Send Manual Message"
-                                                                        >
-                                                                            <MessageCircle className="w-3.5 h-3.5" />
-                                                                        </button>
+                                                                    <div className="mt-0.5 flex flex-col gap-1.5">
+                                                                        <div className="flex items-center gap-2" title="Contact Number (Double click to edit)">
+                                                                            <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                                                                                <Phone className="w-3 h-3 text-slate-400" />
+                                                                                {formatPhoneNumber(item.whatsapp_number || item.phone)}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1">
+                                                                                <button 
+                                                                                    onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'custom'); }}
+                                                                                    className="p-1 rounded-md hover:bg-emerald-50 text-emerald-600 transition-colors"
+                                                                                    title="Send Manual Message"
+                                                                                >
+                                                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                                                </button>
 
-                                                                        {(() => {
-                                                                            const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
-                                                                            if (!log) return null;
-                                                                            const isFailed = ['failed', 'undelivered'].includes(log.status);
-                                                                            const isDelivered = ['delivered', 'read'].includes(log.status);
-                                                                            return (
-                                                                                <div className="flex items-center">
-                                                                                    {isFailed ? (
-                                                                                        <div className="group/err relative cursor-help" title={`WhatsApp Failed: ${log.error_message || 'Twilio Error'}`}>
-                                                                                            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                                                                                {(() => {
+                                                                                    const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
+                                                                                    if (!log) return null;
+                                                                                    const isFailed = ['failed', 'undelivered'].includes(log.status);
+                                                                                    const isDelivered = ['delivered', 'read'].includes(log.status);
+                                                                                    return (
+                                                                                        <div className="flex items-center">
+                                                                                            {isFailed ? (
+                                                                                                <div className="group/err relative cursor-help" title={`WhatsApp Failed: ${log.error_message || 'Twilio Error'}`}>
+                                                                                                    <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                                                                                                </div>
+                                                                                            ) : isDelivered ? (
+                                                                                                <span title="WhatsApp Delivered">
+                                                                                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" />
+                                                                                                </span>
+                                                                                            ) : (
+                                                                                                <span title={log.status}>
+                                                                                                    <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />
+                                                                                                </span>
+                                                                                            )}
                                                                                         </div>
-                                                                                    ) : isDelivered ? (
-                                                                                        <span title="WhatsApp Delivered">
-                                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" />
-                                                                                        </span>
-                                                                                    ) : (
-                                                                                        <span title={log.status}>
-                                                                                            <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />
-                                                                                        </span>
-                                                                                    )}
+                                                                                    );
+                                                                                })()}
+                                                                            </div>
+                                                                        </div>
+                                                                        
+                                                                        {/* Assigned Worker Info */}
+                                                                        {item.assigned_worker_name ? (
+                                                                            <div className="flex items-center gap-1.5 py-1 px-2 bg-purple-50 border border-purple-100 rounded-md self-start">
+                                                                                <Users className="w-3 h-3 text-purple-600" />
+                                                                                <div className="flex flex-col">
+                                                                                    <span className="text-[10px] font-bold text-purple-900 leading-none">{item.assigned_worker_name}</span>
+                                                                                    <span className="text-[9px] font-medium text-purple-500 leading-none mt-0.5">{item.assigned_worker_role || 'Staff'}</span>
                                                                                 </div>
-                                                                            );
-                                                                        })()}
+                                                                            </div>
+                                                                        ) : (['Staff Assigned', 'Deposit Pending', 'Active Client'].includes(item.pipeline_stage)) && (
+                                                                            <div className="flex items-center gap-1.5 py-1 px-2 bg-red-50 border border-red-100 rounded-md animate-pulse self-start">
+                                                                                <AlertTriangle className="w-3 h-3 text-red-600" />
+                                                                                <span className="text-[10px] font-bold text-red-700 uppercase tracking-tight">Missing Staff Assignment</span>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 ) : (
                                                                     <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-400 italic" title="No contact info (Double click to add)">
