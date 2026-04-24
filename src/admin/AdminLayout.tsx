@@ -16,8 +16,8 @@ export default function AdminLayout() {
         { name: 'Dashboard',          href: '/admin',                    icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
         { name: 'AI CRM',             href: '/admin/crm',                icon: Users,           requiredModule: 'crm' as AccessModule },
         { name: 'Clients',            href: '/admin/clients',            icon: Users,           requiredModule: 'clients' as AccessModule },
-        { name: 'AI HR',              href: '/admin/hr',                 icon: UserCog,         requiredModule: 'hr' as AccessModule },
-        { name: 'Finance',            href: '/admin/billing',            icon: Landmark,        requiredModule: 'finance' as AccessModule },
+        { name: 'AI HR',              href: '/admin/hr',                 icon: UserCog,         requiredModule: 'hr' as AccessModule, status: 'construction' },
+        { name: 'Finance',            href: '/admin/billing',            icon: Landmark,        requiredModule: 'finance' as AccessModule, status: 'construction' },
     ];
 
     const filteredNavigation = navigation.filter(item => {
@@ -65,13 +65,18 @@ export default function AdminLayout() {
                             <Link
                                 key={item.name}
                                 to={item.href}
-                                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${isActive
+                                className={`flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors ${isActive
                                     ? 'bg-primary/10 text-primary'
                                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                     }`}
                             >
-                                <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
-                                {item.name}
+                                <div className="flex items-center gap-3">
+                                    <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
+                                    {item.name}
+                                </div>
+                                {(item as any).status === 'construction' && (
+                                    <span className="text-[9px] font-bold tracking-wider uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md">Coming Soon</span>
+                                )}
                             </Link>
                         );
                     })}
@@ -152,13 +157,18 @@ export default function AdminLayout() {
                                                 key={item.name}
                                                 to={item.href}
                                                 onClick={() => setIsMobileMenuOpen(false)}
-                                                className={`flex items-center gap-3 px-3 py-3 rounded-xl font-semibold transition-all ${isActive
+                                                className={`flex items-center justify-between px-3 py-3 rounded-xl font-semibold transition-all ${isActive
                                                     ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
                                                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                                     }`}
                                             >
-                                                <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
-                                                {item.name}
+                                                <div className="flex items-center gap-3">
+                                                    <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
+                                                    {item.name}
+                                                </div>
+                                                {(item as any).status === 'construction' && (
+                                                    <span className="text-[9px] font-bold tracking-wider uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md">Coming Soon</span>
+                                                )}
                                             </Link>
                                         );
                                     })}
