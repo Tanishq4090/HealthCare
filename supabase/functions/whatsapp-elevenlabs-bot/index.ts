@@ -425,15 +425,18 @@ serve(async (req) => {
 
         if (scriptedReply) {
             // Check if we already sent this exact scripted reply as the last message
-            // To prevent annoying loops if user keeps saying "thanks" or "ok"
             const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
-            // Loop prevention: skip script if we already sent THIS EXACT script in the very last message
+
+            let replyToSend = scriptedReply;
+
+            // Loop prevention: if we already sent THIS EXACT script, send a short follow-up instead
             if (lastAssistantMsg?.content === scriptedReply) {
-                console.log(`[Stage Script Skip] Already sent "${leadStage}" script as last message. Letting AI handle.`);
+                console.log(`[Stage Script] Already sent "${leadStage}" script. Sending follow-up.`);
+                replyToSend = `We appreciate your patience! 🙏 Our 99 Care team is actively working on your request. If you need immediate help, please call us directly. We're always here for you! 😊`;
             } else {
                 console.log(`[Stage Script] Stage: "${leadStage}" — sending scripted reply.`);
+            }
 
-                // Send to WhatsApp
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 const sendRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
                     method: 'POST',
@@ -442,23 +445,22 @@ serve(async (req) => {
                         messaging_product: "whatsapp",
                         to: purePhone,
                         type: "text",
-                        text: { preview_url: false, body: scriptedReply }
+                        text: { preview_url: false, body: replyToSend }
                     })
                 });
                 if (!sendRes.ok) console.error(`[Stage Script Send Error] ${sendRes.status}: ${await sendRes.text()}`);
                 else console.log(`[Stage Script Send OK] to ${purePhone}`);
             }
 
-            // Log assistant message and update log
-            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: scriptedReply }]);
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: replyToSend }]);
             await supabase.from('whatsapp_logs').update({
                 status: 'success',
-                payload: { type: 'stage_scripted_reply', stage: leadStage, message: scriptedReply, original_recipient: fromPhone }
+                payload: { type: 'stage_scripted_reply', stage: leadStage, message: replyToSend, original_recipient: fromPhone }
             }).eq('sid', wamid);
 
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
-    }
+
 
         // --- 10. RETURNING LEAD: Check for call transcript data ---
         let leadDataContext = "";
