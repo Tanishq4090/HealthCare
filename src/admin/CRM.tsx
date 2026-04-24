@@ -1065,11 +1065,6 @@ export default function CRM() {
                     }
                     setSelectedWorker(null);
                 }
-                // If Consent Form -> move to Form Submitted (or keep in Quotation Sent but user asked for automation)
-                else if (agentTargetAction === 'consent') {
-                    await handleMoveLead(agentTargetLead.id, 'Form Submitted');
-                    toast.success(`Consent Form link dispatched! Moved ${agentTargetLead.name} to Form Submitted.`, { id: toastId, duration: 4000 });
-                }
                 // If Deposit Invoice -> move to Deposit Pending
                 else if (agentTargetAction === 'deposit') {
                     await handleMoveLead(agentTargetLead.id, 'Deposit Pending');
