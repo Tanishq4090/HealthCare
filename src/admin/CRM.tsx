@@ -2647,7 +2647,17 @@ export default function CRM() {
                                     </button>
                                 </div>
                                 <div className="relative">
-                                    {agentTargetAction === 'quotation' && !isEditingTemplate ? (
+                                    {agentTargetAction === 'consent' && !isEditingTemplate ? (
+                                        <div className="w-full h-48 bg-[#EAFBFB] border border-[#1AA6A8]/20 rounded-xl p-6 flex flex-col items-center justify-center text-center shadow-inner">
+                                            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm text-[#1AA6A8]">
+                                                <FileText className="w-6 h-6" />
+                                            </div>
+                                            <h3 className="font-bold text-slate-800 mb-2">WhatsApp Consent Flow</h3>
+                                            <p className="text-sm text-slate-600 leading-relaxed mx-auto max-w-xs">
+                                                This will dispatch the interactive WhatsApp Flow template. {agentTargetLead?.name?.split(' ')[0] || 'They'} will receive a button to open and submit the consent form natively inside WhatsApp.
+                                            </p>
+                                        </div>
+                                    ) : agentTargetAction === 'quotation' && !isEditingTemplate ? (
                                         <div className="space-y-3 bg-white p-4 rounded-xl border border-[#1AA6A8]/20 shadow-sm relative z-10 w-full mb-6">
                                             <div>
                                                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Service Name</label>
