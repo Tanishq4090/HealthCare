@@ -1008,7 +1008,7 @@ export default function CRM() {
                                   : (agentTargetAction === 'consent' ? 'consent_form' : undefined)),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
-                                    : (agentTargetAction === 'inquiry' ? [(agentTargetLead?.name || 'there')] : undefined),
+                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : undefined),
                 })
             });
 
