@@ -17,13 +17,15 @@ export default function Dashboard() {
         const fetchDashboardData = async () => {
             setIsLoading(true);
             try {
-                // Fetch Leads and Employees concurrently
-                const [{ data: leads }, { data: employees }] = await Promise.all([
+                // Fetch Leads, Employees, and Settings concurrently
+                const [{ data: leads }, { data: employees }, { data: settings }] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at'),
-                    supabase.from('employees').select('id, status, monthly_daily_rate')
+                    supabase.from('employees').select('id, status, monthly_daily_rate'),
+                    supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle()
                 ]);
                 
-                const activeLeads = leads?.filter(l => l.pipeline_stage !== 'Lost' && l.pipeline_stage !== 'Active Client') || [];
+                const pipelineStages = settings?.pipeline_stages || ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'];
+                const activeLeads = leads?.filter(l => pipelineStages.includes(l.pipeline_stage)) || [];
                 const activeWorkersList = employees?.filter(w => w.status === 'assigned' || w.status === 'Active') || [];
                 
                 let mrr = 0;
