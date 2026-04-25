@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { Check, Edit3, Save, ShieldAlert, ShieldCheck, Trash2, UserCheck, UserPlus, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import type { User, AccessModule } from '../contexts/AuthContext';
-import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save } from 'lucide-react';
+import type { AccessModule, User } from '../contexts/AuthContext';
+import { AdminPage, IconFrame, SectionHeader, StatusBadge, Surface } from './AdminPrimitives';
+import { cn } from '../lib/utils';
 
 const MODULES: { id: AccessModule; label: string; desc: string }[] = [
     { id: 'dashboard', label: 'Main Dashboard', desc: 'Access to high-level analytics and business overview.' },
@@ -13,27 +15,24 @@ const MODULES: { id: AccessModule; label: string; desc: string }[] = [
 
 export default function AccessControl() {
     const { user, allUsers, createUser, updateUser, deleteUser } = useAuth();
-
-    // UI States
     const [isAdding, setIsAdding] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
-
-    // Form States
     const [formData, setFormData] = useState<Partial<User>>({
         username: '',
         password: '',
         name: '',
-        accesses: []
+        accesses: [],
     });
 
-    // Block non-admins preemptively (though ProtectedRoute also handles this)
     if (user?.role !== 'admin') {
         return (
-            <div className="p-8 flex items-center justify-center flex-col text-slate-500 h-[70vh]">
-                <ShieldAlert className="w-12 h-12 text-slate-300 mb-4" />
-                <h2 className="text-xl font-bold text-slate-700">Restricted Area</h2>
-                <p>Only system administrators can access user management.</p>
-            </div>
+            <AdminPage>
+                <Surface className="mx-auto max-w-xl text-center">
+                    <IconFrame icon={ShieldAlert} tone="rose" className="mx-auto mb-4 h-12 w-12" />
+                    <h2 className="text-xl font-bold text-slate-800">Restricted Area</h2>
+                    <p className="mt-1 text-sm text-slate-500">Only system administrators can access user management.</p>
+                </Surface>
+            </AdminPage>
         );
     }
 
@@ -50,23 +49,23 @@ export default function AccessControl() {
     };
 
     const handleSave = () => {
-        if (!formData.username || !formData.name) return alert("Username and Name are required.");
+        if (!formData.username || !formData.name) return alert('Username and Name are required.');
 
         if (isAdding) {
-            if (!formData.password) return alert("Password is required for new accounts.");
+            if (!formData.password) return alert('Password is required for new accounts.');
 
             const newUser: User = {
-                id: 'usr_' + Date.now(),
+                id: `usr_${Date.now()}`,
                 username: formData.username,
                 password: formData.password,
                 name: formData.name,
-                role: 'user', // Default to standard user, only default admin is 'admin'
+                role: 'user',
                 accesses: formData.accesses || [],
-                avatar: formData.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                avatar: formData.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
             };
             createUser(newUser);
         } else if (editingUserId) {
-            const existingUser = allUsers.find(u => u.id === editingUserId);
+            const existingUser = allUsers.find((candidate) => candidate.id === editingUserId);
             if (!existingUser) return;
 
             const updated: User = {
@@ -74,13 +73,11 @@ export default function AccessControl() {
                 username: formData.username,
                 name: formData.name,
                 accesses: formData.accesses || [],
-                // only update password if they typed a new one, else keep old
-                ...(formData.password ? { password: formData.password } : {})
+                ...(formData.password ? { password: formData.password } : {}),
             };
 
-            // Re-calculate avatar if name changed
             if (existingUser.name !== formData.name) {
-                updated.avatar = formData.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+                updated.avatar = formData.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
             }
 
             updateUser(updated);
@@ -90,183 +87,179 @@ export default function AccessControl() {
     };
 
     const toggleAccess = (moduleId: AccessModule) => {
-        setFormData(prev => {
+        setFormData((prev) => {
             const accesses = prev.accesses || [];
             if (accesses.includes(moduleId)) {
-                return { ...prev, accesses: accesses.filter(id => id !== moduleId) };
-            } else {
-                return { ...prev, accesses: [...accesses, moduleId] };
+                return { ...prev, accesses: accesses.filter((id) => id !== moduleId) };
             }
+            return { ...prev, accesses: [...accesses, moduleId] };
         });
     };
 
     return (
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] flex items-center gap-2">
-                        <UserCheck className="w-6 h-6 text-primary" />
-                        Access Control
-                    </h1>
-                    <p className="text-slate-500 mt-1">Manage staff accounts and their module permissions.</p>
-                </div>
-                {!isAdding && !editingUserId && (
-                    <button
-                        onClick={() => { resetForm(); setIsAdding(true); }}
-                        className="bg-primary hover:bg-primary/90 text-white font-medium px-4 py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 shrink-0 shadow-sm"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        Add New User
-                    </button>
-                )}
-            </div>
-
-            {/* --- FORM REGION --- */}
-            {(isAdding || editingUserId) && (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                        <h3 className="font-bold text-slate-900">
-                            {isAdding ? "Create New Staff Account" : "Edit Account: " + formData.name}
-                        </h3>
-                        <button onClick={resetForm} className="text-slate-400 hover:text-slate-600 p-1">
-                            <X className="w-5 h-5" />
-                        </button>
-                    </div>
-
-                    <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Full Name</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. John Smith"
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Username</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. jsmith"
-                                    value={formData.username}
-                                    onChange={e => setFormData({ ...formData, username: e.target.value })}
-                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                />
-                            </div>
-                            <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                                    Password {editingUserId && <span className="text-slate-400 font-normal">(Leave blank to keep current)</span>}
-                                </label>
-                                <input
-                                    type="password"
-                                    placeholder={editingUserId ? "••••••••" : "Choose a secure password"}
-                                    value={formData.password}
-                                    onChange={e => setFormData({ ...formData, password: e.target.value })}
-                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all max-w-md"
-                                />
-                            </div>
-                        </div>
-
+        <AdminPage>
+            <Surface className="bg-gradient-to-br from-white via-cyan-50/40 to-emerald-50/60">
+                <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex items-center gap-4">
+                        <IconFrame icon={ShieldCheck} tone="cyan" className="h-12 w-12" />
                         <div>
-                            <label className="block text-sm font-bold text-slate-900 mb-3 border-b border-slate-100 pb-2">
-                                Module Access Permissions
-                            </label>
+                            <p className="text-xs font-bold uppercase text-cyan-700">Security workspace</p>
+                            <h2 className="text-2xl font-extrabold text-slate-950">Access Control</h2>
+                            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                                Review team access, role status, and permission coverage across care operations modules.
+                            </p>
+                        </div>
+                    </div>
+                    {!isAdding && !editingUserId && (
+                        <button type="button" onClick={() => { resetForm(); setIsAdding(true); }} className="btn-primary">
+                            <UserPlus className="h-4 w-4" />
+                            Add New User
+                        </button>
+                    )}
+                </div>
+            </Surface>
 
-                            {/* Super Admins don't need module checkboxes, they override it */}
-                            {(editingUserId && allUsers.find(u => u.id === editingUserId)?.role === 'admin') ? (
-                                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3">
-                                    <ShieldAlert className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                                    <div>
-                                        <p className="text-sm font-bold text-emerald-900">Administrator Override</p>
-                                        <p className="text-sm text-emerald-700 mt-0.5">This user is a system administrator and automatically has full access to all modules.</p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {MODULES.map(mod => {
-                                        const isChecked = formData.accesses?.includes(mod.id);
-                                        return (
-                                            <div
-                                                key={mod.id}
-                                                onClick={() => toggleAccess(mod.id)}
-                                                className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3 ${isChecked
-                                                    ? 'border-primary bg-primary/5'
-                                                    : 'border-slate-100 bg-white hover:border-slate-200'
-                                                    }`}
-                                            >
-                                                <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 transition-colors ${isChecked ? 'bg-primary text-white' : 'bg-slate-100 text-transparent border border-slate-200'
-                                                    }`}>
-                                                    <Check className="w-3.5 h-3.5" strokeWidth={3} />
-                                                </div>
-                                                <div>
-                                                    <p className={`text-sm font-bold ${isChecked ? 'text-primary' : 'text-slate-700'}`}>{mod.label}</p>
-                                                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{mod.desc}</p>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+            {(isAdding || editingUserId) && (
+                <Surface>
+                    <SectionHeader
+                        title={isAdding ? 'Create New Staff Account' : `Edit Account: ${formData.name}`}
+                        description="Set account details and module access."
+                        action={
+                            <button type="button" onClick={resetForm} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600">
+                                <X className="h-5 w-5" />
+                            </button>
+                        }
+                    />
+
+                    <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+                        <div>
+                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full Name</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. Demo User"
+                                value={formData.name || ''}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                className="field-control w-full px-4"
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Username</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. demo.user"
+                                value={formData.username || ''}
+                                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                                className="field-control w-full px-4"
+                            />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                                Password {editingUserId && <span className="font-normal text-slate-400">(Leave blank to keep current)</span>}
+                            </label>
+                            <input
+                                type="password"
+                                placeholder={editingUserId ? 'Keep current password' : 'Choose a secure password'}
+                                value={formData.password || ''}
+                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                className="field-control w-full max-w-md px-4"
+                            />
                         </div>
                     </div>
 
-                    <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-                        <button onClick={resetForm} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200/50 transition-colors">
+                    <div className="mt-8">
+                        <label className="mb-3 block border-b border-slate-100 pb-2 text-sm font-bold text-slate-900">
+                            Module Access Permissions
+                        </label>
+
+                        {editingUserId && allUsers.find((candidate) => candidate.id === editingUserId)?.role === 'admin' ? (
+                            <div className="flex items-start gap-3 rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+                                <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                                <div>
+                                    <p className="text-sm font-bold text-emerald-900">Administrator Override</p>
+                                    <p className="mt-0.5 text-sm text-emerald-700">This user is a system administrator and automatically has full access to all modules.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                {MODULES.map((module) => {
+                                    const isChecked = formData.accesses?.includes(module.id);
+                                    return (
+                                        <button
+                                            key={module.id}
+                                            type="button"
+                                            onClick={() => toggleAccess(module.id)}
+                                            className={cn(
+                                                'flex items-start gap-3 rounded-lg border p-4 text-left transition-all',
+                                                isChecked ? 'border-cyan-200 bg-cyan-50/70' : 'border-slate-100 bg-white hover:border-slate-200'
+                                            )}
+                                        >
+                                            <span className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors', isChecked ? 'border-cyan-700 bg-cyan-700 text-white' : 'border-slate-200 bg-slate-100 text-transparent')}>
+                                                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                            </span>
+                                            <span>
+                                                <span className={cn('block text-sm font-bold', isChecked ? 'text-cyan-800' : 'text-slate-700')}>{module.label}</span>
+                                                <span className="mt-0.5 block text-xs leading-5 text-slate-500">{module.desc}</span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5">
+                        <button type="button" onClick={resetForm} className="btn-secondary">
                             Cancel
                         </button>
-                        <button onClick={handleSave} className="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm flex items-center gap-2">
-                            <Save className="w-4 h-4" />
+                        <button type="button" onClick={handleSave} className="btn-primary">
+                            <Save className="h-4 w-4" />
                             Save Account
                         </button>
                     </div>
-                </div>
+                </Surface>
             )}
 
-            {/* --- USER LIST REGION --- */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-bold font-['Plus_Jakarta_Sans'] tracking-wider border-b border-slate-200">
-                            <tr>
-                                <th className="px-6 py-4">User</th>
-                                <th className="px-6 py-4">Username</th>
-                                <th className="px-6 py-4">Access Modules</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
+            <div className="table-shell">
+                <div className="clinical-content overflow-x-auto">
+                    <table className="w-full min-w-[780px] text-left text-sm">
+                        <thead>
+                            <tr className="border-b border-slate-100">
+                                <th className="table-heading px-6 py-4">User</th>
+                                <th className="table-heading px-6 py-4">Username</th>
+                                <th className="table-heading px-6 py-4">Access Modules</th>
+                                <th className="table-heading px-6 py-4 text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {allUsers.map((u) => (
-                                <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
+                        <tbody>
+                            {allUsers.map((account) => (
+                                <tr key={account.id} className="border-b border-slate-100/80 transition-colors hover:bg-cyan-50/40">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${u.role === 'admin' ? 'bg-primary' : 'bg-slate-400'}`}>
-                                                {u.avatar}
+                                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white ${account.role === 'admin' ? 'bg-gradient-to-br from-cyan-600 to-emerald-500' : 'bg-slate-400'}`}>
+                                                {account.avatar}
                                             </div>
                                             <div>
-                                                <div className="font-bold text-slate-900">{u.name}</div>
-                                                <div className="text-xs text-slate-500">{u.role === 'admin' ? 'Administrator' : 'Standard User'}</div>
+                                                <div className="font-bold text-slate-950">{account.name}</div>
+                                                <div className="text-xs text-slate-500">{account.role === 'admin' ? 'Administrator' : 'Standard User'}</div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 font-mono text-slate-600 bg-slate-50/30">
-                                        {u.username}
-                                    </td>
+                                    <td className="bg-slate-50/30 px-6 py-4 font-mono text-slate-600">{account.username}</td>
                                     <td className="px-6 py-4">
-                                        {u.role === 'admin' ? (
-                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                                                * Full System Access
-                                            </span>
+                                        {account.role === 'admin' ? (
+                                            <StatusBadge className="border-cyan-100 bg-cyan-50 text-cyan-700">
+                                                <UserCheck className="h-3.5 w-3.5" />
+                                                Full System Access
+                                            </StatusBadge>
                                         ) : (
                                             <div className="flex flex-wrap gap-2">
-                                                {u.accesses.length === 0 && <span className="text-slate-400 italic">No Access</span>}
-                                                {u.accesses.map(mod => {
-                                                    const dict = MODULES.find(m => m.id === mod);
+                                                {account.accesses.length === 0 && <span className="text-slate-400 italic">No Access</span>}
+                                                {account.accesses.map((moduleId) => {
+                                                    const dict = MODULES.find((module) => module.id === moduleId);
                                                     return (
-                                                        <span key={mod} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                                            {dict?.label || mod}
-                                                        </span>
+                                                        <StatusBadge key={moduleId} className="border-slate-200 bg-slate-50 text-slate-600">
+                                                            {dict?.label || moduleId}
+                                                        </StatusBadge>
                                                     );
                                                 })}
                                             </div>
@@ -274,23 +267,20 @@ export default function AccessControl() {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={() => handleEditClick(u)}
-                                                className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
-                                                title="Edit User"
-                                            >
-                                                <Edit3 className="w-4 h-4" />
+                                            <button type="button" onClick={() => handleEditClick(account)} className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-cyan-50 hover:text-cyan-700" title="Edit User">
+                                                <Edit3 className="h-4 w-4" />
                                             </button>
 
-                                            {u.id !== user?.id && (
+                                            {account.id !== user?.id && (
                                                 <button
+                                                    type="button"
                                                     onClick={() => {
-                                                        if (window.confirm(`Are you sure you want to delete ${u.name}?`)) deleteUser(u.id);
+                                                        if (window.confirm(`Are you sure you want to delete ${account.name}?`)) deleteUser(account.id);
                                                     }}
-                                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
                                                     title="Delete User"
                                                 >
-                                                    <Trash2 className="w-4 h-4" />
+                                                    <Trash2 className="h-4 w-4" />
                                                 </button>
                                             )}
                                         </div>
@@ -301,6 +291,6 @@ export default function AccessControl() {
                     </table>
                 </div>
             </div>
-        </div>
+        </AdminPage>
     );
 }

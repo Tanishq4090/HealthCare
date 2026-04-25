@@ -421,7 +421,11 @@ export default function CRM() {
             const isRealWorker = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worker.id);
             if (!isRealWorker) {
                 const text = `99Care: Namaste ${lead.name}! Aapke liye ${worker.name || worker.full_name} (${worker.role || worker.job_title}) ko assign kiya gaya hai. Dhanyawad! ✅`;
-                let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '') || '917575041313';
+                let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '');
+                if (!phone) {
+                    toast.error(`No valid WhatsApp number for ${lead.name}.`);
+                    return;
+                }
                 if (phone.length === 10) phone = `91${phone}`;
                 window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
                 toast.success(`Message opened for ${lead.name}! (Demo worker — no ID card link)`);
@@ -430,7 +434,11 @@ export default function CRM() {
             // Create assignment + ID card link
             const result = await assignWorkerToClient(worker.id, lead.id, undefined, 0, true);
             const text = `99Care: Namaste ${lead.name}! Aapke liye ${worker.name || worker.full_name} (${worker.role || worker.job_title}) ko assign kiya gaya hai.\n\n🔗 Unki verified ID Card dekhein: ${result.shareableUrl}\n\nYe link 30 din tak valid hai. Dhanyawad! ✅`;
-            let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '') || '917575041313';
+            let phone = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '');
+            if (!phone) {
+                toast.error(`No valid WhatsApp number for ${lead.name}.`);
+                return;
+            }
             if (phone.length === 10) phone = `91${phone}`;
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
             toast.success(`ID card link shared with ${lead.name}!`);
@@ -686,8 +694,13 @@ export default function CRM() {
         for (const lead of newInquiryLeads) {
             try {
                 // Prioritize dedicated WhatsApp number if Vapi captured it, otherwise use regular phone
-                let targetNumber = lead.whatsapp_number || lead.phone || '918000044090';
+                let targetNumber = lead.whatsapp_number || lead.phone || '';
                 const phoneDigits = targetNumber.replace(/\D/g, '');
+                if (!phoneDigits) {
+                    failCount++;
+                    console.warn(`Skipping greeting for ${lead.name}: no valid WhatsApp number.`);
+                    continue;
+                }
 
                 const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                     method: 'POST',
@@ -966,7 +979,7 @@ export default function CRM() {
         const toastId = toast.loading(`Dispatching AI Message to ${agentTargetLead?.name || 'Lead'}...`);
 
         try {
-            let phoneDigits = '918000044090'; // Default to test number
+            let phoneDigits = '';
             if (agentTargetLead) {
                 const targetNumber = agentTargetLead.whatsapp_number || agentTargetLead.phone;
                 console.log(`[Debug] Lead: ${agentTargetLead.name}, Raw Phone: ${agentTargetLead.phone}, Raw WhatsApp: ${agentTargetLead.whatsapp_number}`);
@@ -980,6 +993,8 @@ export default function CRM() {
             } else {
                 toast.error("⚠️ No target lead selected!", { id: toastId });
             }
+
+            if (!phoneDigits) return;
 
             console.log(`[Dispatch] Sending WhatsApp via Twilio API to ${agentTargetLead?.name}: +${phoneDigits}`);
             

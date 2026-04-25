@@ -68,6 +68,8 @@ module.exports = {
       },
       boxShadow: {
         xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        soft: "0 18px 46px rgba(15, 64, 84, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04)",
+        glow: "0 18px 36px rgba(8, 145, 178, 0.18)",
       },
       keyframes: {
         "accordion-down": {

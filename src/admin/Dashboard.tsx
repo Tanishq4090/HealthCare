@@ -1,55 +1,96 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { Activity, CheckCircle2, Loader2, Phone, Sparkles, TrendingUp, Users } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { supabase } from '../lib/supabase';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, TrendingUp, Phone, CheckCircle2, Loader2, ArrowUpRight } from 'lucide-react';
+import { AdminPage, IconFrame, SectionHeader, Surface, TrendPill } from './AdminPrimitives';
+
+type Stats = {
+    activeLeads: { value: number; trend: string };
+    activeWorkers: { value: number; trend: string };
+    totalMrr: { value: string; trend: string };
+    aiVoiceCalls: { value: number; trend: string };
+};
+
+type RevenuePoint = {
+    name: string;
+    revenue: number;
+};
+
+function StatCard({
+    label,
+    value,
+    trend,
+    icon,
+    tone,
+}: {
+    label: string;
+    value: string | number;
+    trend: string;
+    icon: LucideIcon;
+    tone: 'cyan' | 'emerald' | 'amber' | 'blue';
+}) {
+    return (
+        <Surface className="transition-all duration-300 hover:-translate-y-1 hover:shadow-glow">
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <span className="text-xs font-bold uppercase text-slate-400">{label}</span>
+                    <p className="mt-8 text-3xl font-extrabold leading-none text-slate-950">{value}</p>
+                </div>
+                <IconFrame icon={icon} tone={tone} />
+            </div>
+            <div className="mt-5">
+                <TrendPill value={trend} />
+            </div>
+        </Surface>
+    );
+}
 
 export default function Dashboard() {
-    const [stats, setStats] = useState({
+    const [stats, setStats] = useState<Stats>({
         activeLeads: { value: 0, trend: '+0%' },
         activeWorkers: { value: 0, trend: '+0%' },
         totalMrr: { value: '₹0', trend: '+0%' },
-        aiVoiceCalls: { value: 48, trend: '+12%' }
+        aiVoiceCalls: { value: 48, trend: '+12%' },
     });
-    const [revenueData, setRevenueData] = useState<any[]>([]);
+    const [revenueData, setRevenueData] = useState<RevenuePoint[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         const fetchDashboardData = async () => {
             setIsLoading(true);
             try {
-                // Fetch Leads, Employees, and Settings concurrently
                 const [{ data: leads }, { data: employees }, { data: settings }] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at'),
                     supabase.from('employees').select('id, status, monthly_daily_rate'),
-                    supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle()
+                    supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle(),
                 ]);
-                
+
                 const pipelineStages = settings?.pipeline_stages || ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'];
-                const activeLeads = leads?.filter(l => pipelineStages.includes(l.pipeline_stage)) || [];
-                const activeWorkersList = employees?.filter(w => w.status === 'assigned' || w.status === 'Active') || [];
-                
+                const activeLeads = leads?.filter((lead) => pipelineStages.includes(lead.pipeline_stage)) || [];
+                const activeWorkersList = employees?.filter((worker) => worker.status === 'assigned' || worker.status === 'Active') || [];
+
                 let mrr = 0;
-                activeWorkersList.forEach(w => {
-                    mrr += (Number(w.monthly_daily_rate) || 0) * 30; // approx MRR
+                activeWorkersList.forEach((worker) => {
+                    mrr += (Number(worker.monthly_daily_rate) || 0) * 30;
                 });
 
-                // Generate a realistic looking trend over the last 6 months peaking at current MRR
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
                 const generatedRevenue = months.map((month, idx) => ({
                     name: month,
-                    revenue: Math.floor(mrr * (0.3 + (idx * 0.14))) // Scales up to current MRR roughly
+                    revenue: Math.floor(mrr * (0.3 + idx * 0.14)),
                 }));
 
                 setStats({
                     activeLeads: { value: activeLeads.length, trend: '+0%' },
                     activeWorkers: { value: activeWorkersList.length, trend: '+0%' },
                     totalMrr: { value: `₹${mrr.toLocaleString()}`, trend: '+0%' },
-                    aiVoiceCalls: { value: 0, trend: '0%' }
+                    aiVoiceCalls: { value: 0, trend: '0%' },
                 });
-                
+
                 setRevenueData(generatedRevenue);
             } catch (err) {
-                console.error("Dashboard fetch error:", err);
+                console.error('Dashboard fetch error:', err);
             } finally {
                 setIsLoading(false);
             }
@@ -60,90 +101,109 @@ export default function Dashboard() {
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-full w-full">
-                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            <div className="flex h-[60vh] w-full items-center justify-center">
+                <div className="clinical-surface p-6">
+                    <div className="clinical-content flex items-center gap-3">
+                        <Loader2 className="h-6 w-6 animate-spin text-cyan-700" />
+                        <span className="text-sm font-semibold text-slate-500">Loading live command center...</span>
+                    </div>
+                </div>
             </div>
         );
     }
 
-    const statCards = [
-        { label: 'Active Leads', value: stats.activeLeads.value, trend: stats.activeLeads.trend, icon: <TrendingUp className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
-        { label: 'Active Deployments', value: stats.activeWorkers.value, trend: stats.activeWorkers.trend, icon: <Users className="w-5 h-5 text-emerald-500"/>, bg: 'bg-emerald-50' },
-        { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
-        { label: 'AI Voice Calls', value: stats.aiVoiceCalls.value, trend: stats.aiVoiceCalls.trend, icon: <Phone className="w-5 h-5 text-amber-500"/>, bg: 'bg-amber-50' },
-    ];
-
     return (
-        <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">Analytics Command Center</h1>
-                    <p className="text-slate-500 mt-1">Real-time business performance and AI automation metrics.</p>
-                </div>
-            </div>
-
-            {/* Quick Stats Grid */}
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {statCards.map((stat, i) => (
-                    <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                        <div className="flex items-center justify-between mb-4">
-                            <p className="text-sm font-semibold text-slate-600 uppercase tracking-wider">{stat.label}</p>
-                            <div className={`p-2 rounded-lg ${stat.bg}`}>
-                                {stat.icon}
-                            </div>
+        <AdminPage>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.6fr]">
+                <Surface className="bg-gradient-to-br from-white via-cyan-50/50 to-emerald-50/70">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <p className="text-xs font-bold uppercase text-cyan-700">Clinical Intelligence Layer</p>
+                            <h2 className="mt-2 text-2xl font-extrabold text-slate-950">Care operations are trending healthy.</h2>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                                AI voice capture, deployment signals, and finance movement are consolidated into one calm operating view.
+                            </p>
                         </div>
-                        <div className="flex items-end justify-between">
-                            <h3 className="text-3xl font-black text-slate-900 tracking-tight">{stat.value}</h3>
-                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1 shadow-sm">
-                                {stat.trend}
-                            </span>
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                            {[
+                                { value: 'Live', label: 'Sync status' },
+                                { value: stats.activeWorkers.value, label: 'Workers live' },
+                                { value: stats.activeLeads.value, label: 'Open leads' },
+                            ].map((item) => (
+                                <div key={item.label} className="rounded-lg border border-white/80 bg-white/75 px-4 py-3 shadow-sm">
+                                    <p className="text-xl font-extrabold text-slate-950">{item.value}</p>
+                                    <p className="mt-1 text-xs font-medium text-slate-500">{item.label}</p>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                ))}
+                </Surface>
+
+                <Surface>
+                    <div className="flex items-center gap-3">
+                        <IconFrame icon={Sparkles} tone="emerald" />
+                        <div>
+                            <p className="text-sm font-bold text-slate-950">AI Watchlist</p>
+                            <p className="mt-1 text-sm leading-6 text-slate-500">Follow-ups, worker deployment, and billing cues stay visible without exposing private records.</p>
+                        </div>
+                    </div>
+                </Surface>
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-6 lg:h-[400px]">
-                {/* Revenue Chart */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                    <div className="mb-4">
-                        <h2 className="font-bold text-slate-900 text-lg">Monthly Recurring Revenue (MRR)</h2>
-                        <p className="text-xs text-slate-500">Projected trajectory based on active worker deployments.</p>
-                    </div>
-                    <div className="flex-1 w-full min-h-0">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                <StatCard label="Active Leads" value={stats.activeLeads.value} trend={stats.activeLeads.trend} icon={TrendingUp} tone="cyan" />
+                <StatCard label="Active Deployments" value={stats.activeWorkers.value} trend={stats.activeWorkers.trend} icon={Users} tone="emerald" />
+                <StatCard label="Platform MRR" value={stats.totalMrr.value} trend={stats.totalMrr.trend} icon={Activity} tone="blue" />
+                <StatCard label="AI Voice Calls" value={stats.aiVoiceCalls.value} trend={stats.aiVoiceCalls.trend} icon={Phone} tone="amber" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                <Surface className="xl:col-span-2">
+                    <SectionHeader
+                        title="Monthly Recurring Revenue"
+                        description="Projected trajectory based on active worker deployments."
+                    />
+                    <div className="mt-6 h-[320px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#1aa6a8" stopOpacity={0.4}/>
-                                    <stop offset="95%" stopColor="#1aa6a8" stopOpacity={0}/>
+                                        <stop offset="0%" stopColor="#0891B2" stopOpacity={0.22} />
+                                        <stop offset="100%" stopColor="#10B981" stopOpacity={0.02} />
                                     </linearGradient>
                                 </defs>
-                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value/1000}k`} />
-                                <Tooltip 
-                                    formatter={(value: number) => [`₹${value.toLocaleString()}`, 'MRR']} 
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }} 
+                                <CartesianGrid strokeDasharray="4 4" stroke="#E2E8F0" vertical={false} />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} dy={10} />
+                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} tickFormatter={(value) => `₹${Number(value) / 1000}k`} dx={-10} />
+                                <Tooltip
+                                    formatter={(value: number) => [`₹${value.toLocaleString()}`, 'MRR']}
+                                    contentStyle={{
+                                        backgroundColor: 'rgba(255,255,255,0.96)',
+                                        border: '1px solid #CBD5E1',
+                                        borderRadius: '8px',
+                                        boxShadow: '0 16px 34px rgba(15, 23, 42, 0.12)',
+                                    }}
                                 />
-                                <Area type="monotone" dataKey="revenue" stroke="#1aa6a8" strokeWidth={4} fillOpacity={1} fill="url(#colorRevenue)" />
+                                <Area type="monotone" dataKey="revenue" stroke="#0891B2" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
-                </div>
+                </Surface>
 
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                        <h2 className="font-bold text-slate-900">Recent AI Activity</h2>
-                        <span className="text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2 py-1 rounded-md">Live Stream</span>
-                    </div>
-                    <div className="p-5 flex-1 overflow-auto flex items-center justify-center">
-                        <div className="text-center">
-                            <CheckCircle2 className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                            <p className="text-sm text-slate-500 font-medium">No recent activity.</p>
-                            <p className="text-xs text-slate-400 mt-1">Waiting for new AI events...</p>
+                <Surface>
+                    <SectionHeader
+                        title="Recent AI Activity"
+                        action={<span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Live Stream</span>}
+                    />
+                    <div className="mt-6 flex min-h-[260px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white/60 p-6 text-center">
+                        <div>
+                            <IconFrame icon={CheckCircle2} tone="slate" className="mx-auto mb-3" />
+                            <p className="text-sm font-bold text-slate-700">No recent activity.</p>
+                            <p className="mt-1 text-xs text-slate-400">Waiting for new AI events...</p>
                         </div>
                     </div>
-                </div>
+                </Surface>
             </div>
-        </div>
+        </AdminPage>
     );
 }

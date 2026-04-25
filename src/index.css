@@ -68,6 +68,7 @@
     font-family: 'Plus Jakarta Sans', sans-serif;
     font-weight: 400;
     line-height: 1.7;
+    letter-spacing: 0;
   }
 
   /* Restore default cursor */
@@ -83,8 +84,155 @@
     @apply text-foreground;
     font-family: 'Plus Jakarta Sans', sans-serif;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: 0;
   }
+}
+
+@layer components {
+  .clinical-canvas {
+    min-height: 100vh;
+    background:
+      linear-gradient(135deg, rgba(247, 253, 252, 0.96), rgba(241, 248, 252, 0.92) 46%, rgba(252, 255, 253, 0.98)),
+      linear-gradient(rgba(14, 116, 144, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(14, 116, 144, 0.035) 1px, transparent 1px);
+    background-size: auto, 44px 44px, 44px 44px;
+  }
+
+  .clinical-surface {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 18px 46px rgba(15, 64, 84, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04);
+    backdrop-filter: blur(18px);
+  }
+
+  .clinical-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.65), transparent 38%),
+      linear-gradient(180deg, rgba(20, 184, 166, 0.05), transparent 34%);
+  }
+
+  .clinical-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .clinical-header {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 16px 42px rgba(15, 64, 84, 0.1);
+    backdrop-filter: blur(20px);
+  }
+
+  .medical-mark {
+    position: relative;
+  }
+
+  .medical-mark::before,
+  .medical-mark::after {
+    content: "";
+    position: absolute;
+    background: rgba(8, 145, 178, 0.16);
+    border-radius: 999px;
+  }
+
+  .medical-mark::before {
+    width: 58%;
+    height: 2px;
+    left: 21%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .medical-mark::after {
+    width: 2px;
+    height: 58%;
+    left: 50%;
+    top: 21%;
+    transform: translateX(-50%);
+  }
+
+  .field-control {
+    @apply h-11 rounded-lg border border-slate-200 bg-white/90 text-sm text-slate-700 shadow-sm transition-all placeholder:text-slate-400;
+  }
+
+  .field-control:hover {
+    border-color: rgba(8, 145, 178, 0.32);
+  }
+
+  .field-control:focus {
+    border-color: rgba(8, 145, 178, 0.54);
+    box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.1);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all;
+    background: linear-gradient(135deg, #0783a3, #10b981);
+    box-shadow: 0 12px 24px rgba(8, 145, 178, 0.22);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(0.98);
+    transform: translateY(-1px);
+    box-shadow: 0 16px 30px rgba(8, 145, 178, 0.26);
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition-all;
+  }
+
+  .btn-secondary:hover {
+    @apply border-cyan-200 text-slate-800;
+    background: rgba(240, 253, 250, 0.8);
+    transform: translateY(-1px);
+  }
+
+  .segmented-control {
+    @apply flex items-center rounded-lg border border-slate-200 bg-white/80 p-1 shadow-sm;
+  }
+
+  .segmented-item {
+    @apply rounded-md px-3 py-2 text-sm font-semibold text-slate-500 transition-all;
+  }
+
+  .segmented-item-active {
+    @apply bg-cyan-50 text-cyan-800 shadow-sm;
+  }
+
+  .table-shell {
+    @apply clinical-surface overflow-hidden;
+  }
+
+  .table-heading {
+    @apply bg-slate-50/75 text-left text-xs font-bold uppercase text-slate-500;
+    letter-spacing: 0.04em;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.35s ease-out forwards;
 }
 
 

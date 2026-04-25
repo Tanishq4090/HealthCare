@@ -15,16 +15,16 @@ export default function Billing() {
     const [isLoading, setIsLoading] = useState(false);
 
     const [deposits, setDeposits] = useState([
-        { id: 1, client: 'Apex Medical Corp', amount: '₹15,000', status: 'Pending Invoice', date: 'Oct 24, 2026', invoice_no: null },
-        { id: 2, client: 'Wellness Clinic Inc', amount: '₹5,000', status: 'Invoice Sent', date: 'Oct 23, 2026', invoice_no: 'INV-D502' },
-        { id: 3, client: 'Downtown Physio', amount: '₹12,500', status: 'Paid', date: 'Oct 20, 2026', invoice_no: 'INV-D499' }
+        { id: 1, client: 'Demo Care Network', amount: '₹15,000', status: 'Pending Invoice', date: 'Oct 24, 2026', invoice_no: null },
+        { id: 2, client: 'Demo Wellness Clinic', amount: '₹5,000', status: 'Invoice Sent', date: 'Oct 23, 2026', invoice_no: 'INV-D502' },
+        { id: 3, client: 'Demo Rehab Center', amount: '₹12,500', status: 'Paid', date: 'Oct 20, 2026', invoice_no: 'INV-D499' }
     ]);
 
     // Dummy Data for Monthly Bills
     const [monthlyBills, setMonthlyBills] = useState([
-        { id: 1, client: 'Apex Medical Corp', amount: '₹45,000', attendanceVerified: true, status: 'Draft', month: 'October', invoice_no: null },
-        { id: 2, client: 'Downtown Physio', amount: '₹28,500', attendanceVerified: false, status: 'Pending Verification', month: 'October', invoice_no: null },
-        { id: 3, client: 'CareFirst Hospital', amount: '₹62,000', attendanceVerified: true, status: 'Sent', month: 'October', invoice_no: 'INV-M103' },
+        { id: 1, client: 'Demo Care Network', amount: '₹45,000', attendanceVerified: true, status: 'Draft', month: 'October', invoice_no: null },
+        { id: 2, client: 'Demo Rehab Center', amount: '₹28,500', attendanceVerified: false, status: 'Pending Verification', month: 'October', invoice_no: null },
+        { id: 3, client: 'Demo Hospital Group', amount: '₹62,000', attendanceVerified: true, status: 'Sent', month: 'October', invoice_no: 'INV-M103' },
     ]);
 
     // Deposit Collect Modal State
@@ -146,7 +146,7 @@ export default function Billing() {
     const generateWhatsappDraft = (bill: any, lang: string) => {
         if (!bill) return '';
         const link = `https://healthfirst.ai/pay/${bill.invoice_no || Math.floor(Math.random() * 1000) + 100}`;
-        if (lang === 'Hinglish') return `Hello ${bill.client} team, aapka ${bill.month} mahine ka bill generate ho gaya hai. Total amount: ${bill.amount}. Is link par click karke QR code scan karein aur payment complete karein. 📄✅👇\n${link}`;
+        if (lang === 'Hinglish') return `Hello ${bill.client} team, aapka ${bill.month} mahine ka bill generate ho gaya hai. Total amount: ${bill.amount}. Is link par click karke QR code scan karein aur payment complete karein.\n${link}`;
         if (lang === 'Hindi') return `Namaste ${bill.client}, aapka ${bill.month} mahine ka bil jama karne ke liye taiyar hai. Kul rashi: ${bill.amount}. Kripya is link dwara QR code scan karein aur bhugtan karein:\n${link}`;
         return `Hi ${bill.client}, your monthly invoice for ${bill.month} has been auto-generated. Total amount due: ${bill.amount}. Please click the link below to view the bill and scan the QR code to process your payment:\n${link}`;
     };
@@ -166,16 +166,20 @@ export default function Billing() {
 
     const handleDispatchMessage = () => {
         // Launch real WhatsApp Web intent with drafted text
-        let phoneDigits = '917575041313'; // Default to test number
+        let phoneDigits = '';
         if (agentTargetBill?.client_phone) {
             phoneDigits = agentTargetBill.client_phone.replace(/\D/g, ''); // Extract only digits
+        }
+        if (!phoneDigits) {
+            toast.error('No client phone number available for WhatsApp dispatch.');
+            return;
         }
         const waUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(agentDraftText)}`;
         window.open(waUrl, '_blank');
 
         setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent', invoice_no: agentTargetBill.invoice_no } : b));
         setIsAgentModalOpen(false);
-        toast.success(`WhatsApp Invoice intent opened for ${agentTargetBill.client}! 📱✅`);
+        toast.success(`WhatsApp Invoice intent opened for ${agentTargetBill.client}.`);
     };
 
     return (
@@ -228,7 +232,7 @@ export default function Billing() {
                                         </h3>
                                         <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
                                             <span className="font-semibold text-slate-700">{dep.amount}</span>
-                                            <span>•</span>
+                                            <span>-</span>
                                             <span>{dep.date}</span>
                                         </div>
                                     </div>
@@ -562,3 +566,4 @@ export default function Billing() {
         </div>
     );
 }
+

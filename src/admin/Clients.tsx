@@ -1,41 +1,75 @@
-import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState } from 'react';
+import { Building2, Edit2, History as HistoryIcon, Mail, MessageSquare, Phone, Search, Star, Users, Wallet, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import { AdminPage, IconFrame, SectionHeader, StatusBadge, Surface } from './AdminPrimitives';
+
+type ClientRecord = {
+    id: string;
+    name: string;
+    phone?: string;
+    email?: string;
+    contact?: string;
+    status: 'Active' | 'Inactive';
+    workerCount: number;
+    activeWorkerCount: number;
+    lifetimeValue: string;
+    service_rating?: number;
+};
+
+type ClientRow = {
+    id: string;
+    client_name: string;
+    phone_number?: string | null;
+    email?: string | null;
+    service_rating?: number | null;
+};
+
+type EmployeeRow = {
+    assigned_client?: string | null;
+    status?: string | null;
+};
+
+type WhatsAppResponse = {
+    success?: boolean;
+    error?: string;
+};
+
+function getErrorMessage(error: unknown, fallback = 'Check connection') {
+    return error instanceof Error ? error.message : fallback;
+}
 
 export default function Clients() {
     const navigate = useNavigate();
-    const [clients, setClients] = useState<any[]>([]);
-
+    const [clients, setClients] = useState<ClientRecord[]>([]);
+    const [search, setSearch] = useState('');
     const [workflows, setWorkflows] = useState({
         reviewCollection: true,
     });
 
-    // Edit Modal State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingClient, setEditingClient] = useState<any>(null);
+    const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const toggleWorkflow = (key: keyof typeof workflows) => {
-        setWorkflows(prev => ({ ...prev, [key]: !prev[key] }));
+        setWorkflows((prev) => ({ ...prev, [key]: !prev[key] }));
     };
 
-    const openEditModal = (client: any) => {
+    const openEditModal = (client: ClientRecord) => {
         setEditingClient({ ...client });
         setIsEditModalOpen(true);
     };
 
-    const handleRequestReview = async (client: any) => {
+    const handleRequestReview = async (client: ClientRecord) => {
         if (!client.phone) {
-            toast.error("No phone number found for this client. Please update the profile.");
+            toast.error('No phone number found for this client. Please update the profile.');
             return;
         }
 
-        const toastId = toast.loading(`Sending WhatsApp Review request to ${client.name}...`);
-        
+        const toastId = toast.loading(`Sending WhatsApp review request to ${client.name}...`);
+
         try {
-            // Standardize phone
             let phoneDigits = client.phone.replace(/\D/g, '');
             if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
 
@@ -45,60 +79,24 @@ export default function Clients() {
                 body: {
                     phone: phoneDigits,
                     useTemplate: true,
-                    templateName: 'customer_review_request', // Ensure this exists in Meta Dashboard
-                    templateParams: [firstName]
-                }
+                    templateName: 'customer_review_request',
+                    templateParams: [firstName],
+                },
             });
 
             if (error) throw error;
-            if (data?.success === false) throw new Error(data.error || "Meta API error");
+            const response = data as WhatsAppResponse | null;
+            if (response?.success === false) throw new Error(response.error || 'Meta API error');
 
-            toast.success('Review request sent successfully! ✅', { id: toastId });
-        } catch (err: any) {
+            toast.success('Review request sent successfully.', { id: toastId });
+        } catch (err: unknown) {
             console.error('WhatsApp Review fail:', err);
-            toast.error(`WhatsApp failed: ${err.message || 'Check connection'}`, { id: toastId });
-        }
-    };
-
-    const handleSaveClient = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        try {
-            // 1. Update Client (including phone)
-            const { error: clientError } = await supabase
-                .from('clients')
-                .update({ 
-                    client_name: editingClient.name,
-                    phone_number: editingClient.phone,
-                    email: editingClient.email
-                })
-                .eq('id', editingClient.id);
-
-            if (clientError) throw clientError;
-
-            // 2. Sync with Employees (As requested: Employee gets rating from Client's company service review)
-            const { error: workerError } = await supabase
-                .from('employees')
-                .update({ rating: editingClient.service_rating })
-                .eq('assigned_client', editingClient.name);
-
-            if (workerError) throw workerError;
-
-            setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
-            setIsEditModalOpen(false);
-            toast.success(`${editingClient.name} updated. Worker ratings synchronized!`);
-            fetchClients();
-        } catch (err: any) {
-            console.error('Error syncing ratings:', err);
-            toast.error(`Failed to save: ${err.message}`);
-        } finally {
-            setIsSubmitting(false);
+            toast.error(`WhatsApp failed: ${getErrorMessage(err)}`, { id: toastId });
         }
     };
 
     const fetchClients = async () => {
         try {
-            // 1. Fetch IDs of leads that are in the "Active Client" stages
             const { data: leads, error: leadsError } = await supabase
                 .from('crm_leads')
                 .select('id')
@@ -106,54 +104,51 @@ export default function Clients() {
 
             if (leadsError) throw leadsError;
 
-            const clientIds = (leads || []).map(l => l.id);
+            const clientIds = (leads || []).map((lead) => lead.id);
+            let clientData: ClientRow[] = [];
 
-            // 2. Fetch records from the clients table for these lead IDs
-            let clientData = [];
             if (clientIds.length > 0) {
                 const { data, error } = await supabase
                     .from('clients')
                     .select('*')
                     .in('id', clientIds)
                     .order('created_at', { ascending: false });
-                
+
                 if (error) throw error;
-                clientData = data || [];
+                clientData = (data || []) as ClientRow[];
             }
 
-            // 2. Fetch all employees to derive worker counts
             const { data: employeeData, error: empError } = await supabase
                 .from('employees')
                 .select('id, full_name, assigned_client, status');
-            
+
             if (empError) throw empError;
 
-            // Group employees by client name
-            const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
-            (employeeData || []).forEach(w => {
-                if (!w.assigned_client) return;
-                
-                if (!workerMap[w.assigned_client]) {
-                    workerMap[w.assigned_client] = { workerCount: 0, activeWorkerCount: 0 };
+            const workerMap: Record<string, { workerCount: number; activeWorkerCount: number }> = {};
+            ((employeeData || []) as EmployeeRow[]).forEach((worker) => {
+                if (!worker.assigned_client) return;
+
+                if (!workerMap[worker.assigned_client]) {
+                    workerMap[worker.assigned_client] = { workerCount: 0, activeWorkerCount: 0 };
                 }
-                
-                workerMap[w.assigned_client].workerCount++;
-                if (w.status === 'assigned' || w.status === 'Active') {
-                    workerMap[w.assigned_client].activeWorkerCount++;
+
+                workerMap[worker.assigned_client].workerCount++;
+                if (worker.status === 'assigned' || worker.status === 'Active') {
+                    workerMap[worker.assigned_client].activeWorkerCount++;
                 }
             });
 
-            // 3. Map database clients to UI structure
-            const enrichedClients = (clientData || []).map(c => ({
-                id: c.id,
-                name: c.client_name,
-                phone: c.phone_number,
-                email: c.email || '-',
-                contact: c.client_name, // Default contact to name if null
-                status: 'Active',
-                workerCount: workerMap[c.client_name]?.workerCount || 0,
-                activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
-                lifetimeValue: '₹0'
+            const enrichedClients = (clientData || []).map((client) => ({
+                id: client.id,
+                name: client.client_name,
+                phone: client.phone_number || undefined,
+                email: client.email || '-',
+                contact: client.client_name,
+                status: 'Active' as const,
+                workerCount: workerMap[client.client_name]?.workerCount || 0,
+                activeWorkerCount: workerMap[client.client_name]?.activeWorkerCount || 0,
+                lifetimeValue: '₹0',
+                service_rating: client.service_rating || undefined,
             }));
 
             setClients(enrichedClients);
@@ -167,189 +162,250 @@ export default function Clients() {
         fetchClients();
     }, []);
 
+    const filteredClients = clients.filter((client) => {
+        const query = search.toLowerCase();
+        return (
+            client.name.toLowerCase().includes(query) ||
+            (client.email || '').toLowerCase().includes(query) ||
+            (client.phone || '').toLowerCase().includes(query)
+        );
+    });
+
+    const handleSaveClient = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingClient) return;
+        setIsSubmitting(true);
+
+        try {
+            const { error: clientError } = await supabase
+                .from('clients')
+                .update({
+                    client_name: editingClient.name,
+                    phone_number: editingClient.phone,
+                    email: editingClient.email,
+                })
+                .eq('id', editingClient.id);
+
+            if (clientError) throw clientError;
+
+            const { error: workerError } = await supabase
+                .from('employees')
+                .update({ rating: editingClient.service_rating })
+                .eq('assigned_client', editingClient.name);
+
+            if (workerError) throw workerError;
+
+            setClients((prev) => prev.map((client) => (client.id === editingClient.id ? editingClient : client)));
+            setIsEditModalOpen(false);
+            toast.success(`${editingClient.name} updated. Worker ratings synchronized.`);
+            fetchClients();
+        } catch (err: unknown) {
+            console.error('Error syncing ratings:', err);
+            toast.error(`Failed to save: ${getErrorMessage(err, 'Unable to save client')}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     return (
-        <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">Client Master Database</h1>
-                    <p className="text-slate-500 mt-1">Manage permanent clients, lifetime value, and automated review collection.</p>
+        <AdminPage>
+            <Surface className="bg-gradient-to-br from-white via-cyan-50/40 to-emerald-50/60">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                        <p className="text-xs font-bold uppercase text-cyan-700">Client intelligence</p>
+                        <h2 className="mt-1 text-2xl font-extrabold text-slate-950">Care network overview</h2>
+                        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                            Search and manage client accounts with deployment, review, and revenue context.
+                        </p>
+                    </div>
+                    <button type="button" onClick={() => navigate('/admin/billing?tab=history')} className="btn-secondary">
+                        <HistoryIcon className="h-4 w-4 text-cyan-700" />
+                        View Payment History
+                    </button>
                 </div>
-                <button 
-                    onClick={() => navigate('/admin/billing?tab=history')}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
-                >
-                    <HistoryIcon className="w-4 h-4 text-primary" />
-                    View Global Payment history
-                </button>
+            </Surface>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.7fr_0.8fr]">
+                <div className="space-y-4">
+                    <div className="relative w-full lg:max-w-sm">
+                        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search clients..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="field-control w-full pl-10 pr-4"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                        {filteredClients.length === 0 ? (
+                            <Surface className="2xl:col-span-2">
+                                <div className="py-8 text-center">
+                                    <IconFrame icon={Building2} tone="slate" className="mx-auto mb-3" />
+                                    <p className="text-sm font-bold text-slate-700">No clients found.</p>
+                                    <p className="mt-1 text-xs text-slate-400">Client records will appear here after conversion.</p>
+                                </div>
+                            </Surface>
+                        ) : (
+                            filteredClients.map((client) => (
+                                <article key={client.id} className="clinical-surface p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-glow">
+                                    <div className="clinical-content">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-emerald-500 text-sm font-extrabold text-white shadow-glow">
+                                                    {client.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <h3 className="truncate text-base font-extrabold text-slate-950">{client.name}</h3>
+                                                    <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                                                        <Users className="h-3.5 w-3.5 shrink-0" />
+                                                        <span className="truncate">{client.activeWorkerCount} Active / {client.workerCount} Total Workers</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <StatusBadge className="border-emerald-100 bg-emerald-50 text-emerald-700">{client.status}</StatusBadge>
+                                        </div>
+
+                                        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                            <div className="rounded-lg bg-cyan-50/60 p-3">
+                                                <div className="flex items-center gap-1.5 text-xs font-bold uppercase text-cyan-700">
+                                                    <Phone className="h-3.5 w-3.5" />
+                                                    Contact
+                                                </div>
+                                                <p className="mt-2 truncate text-sm font-bold text-slate-700">{client.phone || 'N/A'}</p>
+                                            </div>
+                                            <div className="rounded-lg bg-emerald-50/70 p-3">
+                                                <div className="flex items-center gap-1.5 text-xs font-bold uppercase text-emerald-700">
+                                                    <Wallet className="h-3.5 w-3.5" />
+                                                    Value
+                                                </div>
+                                                <p className="mt-2 text-sm font-bold text-slate-700">{client.lifetimeValue}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-500">
+                                            <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                                            <span className="truncate">{client.email || '-'}</span>
+                                        </div>
+
+                                        <div className="mt-5 flex items-center gap-2 border-t border-slate-100 pt-4">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); handleRequestReview(client); }}
+                                                className="btn-secondary flex-1 px-3 py-2 text-xs"
+                                            >
+                                                <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                                                WhatsApp Review
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
+                                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 shadow-sm transition-all hover:border-cyan-200 hover:text-cyan-700"
+                                                title="Edit Profile"
+                                            >
+                                                <Edit2 className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </article>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                <div className="space-y-5">
+                    <Surface>
+                        <SectionHeader
+                            title="Client Automations"
+                            description="Post-conversion workflows and review collection."
+                            action={<IconFrame icon={Star} tone="amber" className="h-10 w-10" />}
+                        />
+                        <div className="mt-5 rounded-lg border border-amber-100 bg-amber-50/80 p-4">
+                            <div className="mb-2 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Star className="h-5 w-5 text-amber-600" />
+                                    <h3 className="font-bold text-amber-800">Auto-Review Collection</h3>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => toggleWorkflow('reviewCollection')}
+                                    className={`relative h-5 w-10 rounded-full transition-colors ${workflows.reviewCollection ? 'bg-amber-500' : 'bg-slate-200'}`}
+                                >
+                                    <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all ${workflows.reviewCollection ? 'right-0.5' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+                            <p className="text-sm leading-6 text-slate-600">Automatically sends a feedback request after onboarding milestones.</p>
+                        </div>
+                    </Surface>
+
+                    <Surface>
+                        <SectionHeader
+                            title="Recent Reviews"
+                            action={<IconFrame icon={MessageSquare} tone="cyan" className="h-10 w-10" />}
+                        />
+                        <div className="mt-5 rounded-lg border border-slate-100 bg-white/75 p-4 shadow-sm">
+                            <div className="mb-2 flex text-amber-500">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star key={star} className="h-4 w-4 fill-current" />
+                                ))}
+                            </div>
+                            <p className="line-clamp-2 text-sm text-slate-700">"Professional staff coordination and clear tracking throughout the service."</p>
+                            <p className="mt-2 text-xs text-slate-400">- Demo Care Network</p>
+                        </div>
+                    </Surface>
+                </div>
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-6 flex-1">
-                {/* Client List */}
-                <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                        <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input
-                                type="text"
-                                placeholder="Search clients..."
-                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                            />
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-auto p-4 space-y-3">
-                        {clients.map(client => (
-                            <div key={client.id} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
-                                <div className="flex justify-between items-start mb-3">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                            <Building className="w-5 h-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
-                                            <p className="text-sm text-slate-500 flex items-center gap-1">
-                                                <Users className="w-3.5 h-3.5" /> {client.activeWorkerCount} Active / {client.workerCount} Total Workers
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                                        {client.status}
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
-                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col justify-center">
-                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                                            <Phone className="w-3 h-3" /> Contact
-                                        </p>
-                                        <p className="text-sm font-bold text-slate-700 truncate">{client.phone || 'N/A'}</p>
-                                    </div>
-                                    <div className="bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
-                                        <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                                            <Wallet className="w-3 h-3" /> Security Deposit
-                                        </p>
-                                        <p className="text-sm font-bold text-emerald-700">₹15,000</p>
-                                    </div>
-                                    <div className="col-span-2 flex items-center gap-2">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleRequestReview(client); }}
-                                            className="flex-1 px-4 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2 shadow-sm"
-                                        >
-                                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> WhatsApp Review
-                                        </button>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); openEditModal(client); }} 
-                                            className="p-2.5 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
-                                            title="Edit Profile"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Automation Panel */}
-                <div className="flex flex-col gap-6">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                        <div className="p-5 border-b border-slate-100">
-                            <h2 className="font-bold text-slate-900">Client Automations</h2>
-                            <p className="text-sm text-slate-500 mt-1">Post-conversion workflows.</p>
-                        </div>
-                        <div className="p-5 space-y-4">
-                            <div className={`p-4 rounded-lg border transition-colors ${workflows.reviewCollection ? 'border-amber-300 bg-amber-50' : 'border-slate-200'}`}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <Star className={`w-5 h-5 ${workflows.reviewCollection ? 'text-amber-600' : 'text-slate-400'}`} />
-                                        <h3 className={`font-semibold ${workflows.reviewCollection ? 'text-amber-700' : 'text-slate-600'}`}>Auto-Review Collection</h3>
-                                    </div>
-                                    <button
-                                        onClick={() => toggleWorkflow('reviewCollection')}
-                                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.reviewCollection ? 'bg-amber-500' : 'bg-slate-200'}`}
-                                    >
-                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.reviewCollection ? 'right-0.5' : 'left-0.5'}`}></div>
-                                    </button>
-                                </div>
-                                <p className="text-sm text-slate-500">Automatically sends a feedback request to clients 14 days after joining, requesting a review.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
-                        <h3 className="font-semibold text-slate-900 flex items-center gap-2 mb-3">
-                            <MessageSquare className="w-5 h-5 text-slate-500" />
-                            Recent Reviews
-                        </h3>
-                        <div className="space-y-3">
-                            <div className="p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-                                <div className="flex text-amber-500 mb-1">
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                </div>
-                                <p className="text-sm text-slate-700 line-clamp-2">"Excellent staff provided by 99Care. Very professional tracking."</p>
-                                <p className="text-xs text-slate-400 mt-2">- Apex Medical Corp</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Edit Client Modal */}
             {isEditModalOpen && editingClient && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
-                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-100 bg-white/50 flex justify-between items-center">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md">
+                    <div className="w-full max-w-md overflow-hidden rounded-lg border border-white/40 bg-white/95 shadow-2xl backdrop-blur-xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-white/50 p-5">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                    <Building className="w-5 h-5 text-primary" />
-                                </div>
+                                <IconFrame icon={Building2} tone="cyan" className="h-10 w-10" />
                                 <h2 className="text-lg font-bold text-slate-900">Edit Client Details</h2>
                             </div>
-                            <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
-                                <X className="w-5 h-5" />
+                            <button type="button" onClick={() => setIsEditModalOpen(false)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
+                                <X className="h-5 w-5" />
                             </button>
                         </div>
-                        <form onSubmit={handleSaveClient} className="p-5 space-y-4">
+                        <form onSubmit={handleSaveClient} className="space-y-4 p-5">
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Company Name</label>
+                                <label className="mb-1 block text-sm font-semibold text-slate-700">Company Name</label>
                                 <input
                                     type="text"
                                     required
                                     value={editingClient.name}
                                     onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                    className="field-control w-full px-4"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Primary Contact Name</label>
+                                <label className="mb-1 block text-sm font-semibold text-slate-700">Primary Contact Name</label>
                                 <input
                                     type="text"
                                     required
-                                    value={editingClient.contact}
+                                    value={editingClient.contact || editingClient.name}
                                     onChange={(e) => setEditingClient({ ...editingClient, contact: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                    className="field-control w-full px-4"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
+                                    <label className="mb-1 block text-sm font-semibold text-slate-700">Email</label>
                                     <input
                                         type="email"
-                                        required
                                         value={editingClient.email}
                                         onChange={(e) => setEditingClient({ ...editingClient, email: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                        className="field-control w-full px-4"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Status</label>
+                                    <label className="mb-1 block text-sm font-semibold text-slate-700">Status</label>
                                     <select
                                         value={editingClient.status}
-                                        onChange={(e) => setEditingClient({ ...editingClient, status: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                        onChange={(e) => setEditingClient({ ...editingClient, status: e.target.value as ClientRecord['status'] })}
+                                        className="field-control w-full px-4"
                                     >
                                         <option value="Active">Active</option>
                                         <option value="Inactive">Inactive</option>
@@ -357,42 +413,40 @@ export default function Clients() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2 flex justify-between">
+                                <label className="mb-2 flex justify-between text-sm font-semibold text-slate-700">
                                     <span>Service Quality Rating</span>
-                                    <span className="text-primary font-bold">{editingClient.service_rating || 0} Stars</span>
+                                    <span className="font-bold text-cyan-700">{editingClient.service_rating || 0} Stars</span>
                                 </label>
                                 <div className="flex gap-2">
-                                    {[1, 2, 3, 4, 5].map(star => (
+                                    {[1, 2, 3, 4, 5].map((star) => (
                                         <button
                                             key={star}
                                             type="button"
                                             onClick={() => setEditingClient({ ...editingClient, service_rating: star })}
-                                            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                                                (editingClient.service_rating || 0) >= star 
-                                                ? 'bg-amber-100 text-amber-500 border-amber-200' 
-                                                : 'bg-slate-50 text-slate-300 border-slate-100'
-                                            } border hover:scale-110`}
+                                            className={`flex h-10 w-10 items-center justify-center rounded-lg border transition-all hover:scale-105 ${
+                                                (editingClient.service_rating || 0) >= star
+                                                    ? 'border-amber-200 bg-amber-100 text-amber-500'
+                                                    : 'border-slate-100 bg-slate-50 text-slate-300'
+                                            }`}
                                         >
-                                            <Star className={`w-5 h-5 ${(editingClient.service_rating || 0) >= star ? 'fill-current' : ''}`} />
+                                            <Star className={`h-5 w-5 ${(editingClient.service_rating || 0) >= star ? 'fill-current' : ''}`} />
                                         </button>
                                     ))}
                                 </div>
-                                <p className="text-[10px] text-slate-400 mt-2 italic">Note: This rating will automatically apply to all workers currently assigned to this client.</p>
                             </div>
 
-                            <div className="pt-2 flex gap-3">
-                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                            <div className="flex gap-3 pt-2">
+                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="btn-secondary flex-1">
                                     Cancel
                                 </button>
-                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
-                                    {isSubmitting && <Star className="w-4 h-4 animate-spin" />}
-                                    Save & Sync Ratings
+                                <button type="submit" disabled={isSubmitting} className="btn-primary flex-1 disabled:opacity-50">
+                                    Save & Sync
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
-        </div>
+        </AdminPage>
     );
 }
