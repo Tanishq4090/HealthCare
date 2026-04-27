@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, MessageCircle, Phone, ExternalLink, Globe } from 'lucide-react';
+import { X, Send, MessageCircle, Phone, ExternalLink, Globe, ArrowRight } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Message {
