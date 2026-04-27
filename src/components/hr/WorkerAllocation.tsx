@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 // Services & types
+import { services as allAvailableServices } from '@/data/services';
 import {
   createEmployee,
   getAvailableEmployees,
@@ -290,7 +291,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
             <div>
               <label className="text-sm font-medium text-slate-700">Services & Skills</label>
               <div className="mt-1 flex flex-wrap gap-2">
-                {['Nursing', 'Elderly Care', 'Physiotherapy', 'All Services'].map(service => {
+                {[...allAvailableServices.map(s => s.title), 'All Services'].map(service => {
                   const active = form.services?.includes(service);
                   return (
                     <button type="button" key={service}
