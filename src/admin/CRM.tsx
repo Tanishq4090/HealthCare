@@ -2391,12 +2391,18 @@ export default function CRM() {
                                                                 </button>
                                                             );
                                                         })()}
-                                                        <button
-                                                            onClick={() => captureCallAsLead(call.id)}
-                                                            className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
-                                                        >
-                                                            <Plus className="w-3.5 h-3.5" /> Add to Pipeline
-                                                        </button>
+                                                        {call.lead_id || call.status === 'Processed' ? (
+                                                            <div className="flex items-center gap-1.5 text-xs font-bold text-purple-600 bg-purple-50 px-3 py-2 rounded-lg border border-purple-100 shrink-0">
+                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Added to CRM
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => captureCallAsLead(call.id)}
+                                                                className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                                            >
+                                                                <Plus className="w-3.5 h-3.5" /> Add to Pipeline
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ) : null;
