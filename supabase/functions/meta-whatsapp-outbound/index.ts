@@ -200,7 +200,10 @@ serve(async (req) => {
       };
     }
 
-    const metaUrl = `https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`;
+    const metaUrl = `https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`;
+    console.log(`[Outbound] Sending to ${digits} | template=${templateName || 'none'} | useTemplate=${useTemplate}`);
+    console.log(`[Outbound] Meta Body:`, JSON.stringify(metaBody).slice(0, 500));
+    
     const metaResponse = await fetch(metaUrl, {
       method: 'POST',
       headers: {
@@ -211,12 +214,21 @@ serve(async (req) => {
     });
 
     const metaData = await metaResponse.json();
+    console.log(`[Outbound] Meta HTTP ${metaResponse.status} | Response:`, JSON.stringify(metaData).slice(0, 500));
     
-    // Log initial acceptance by Meta for tracking in CRM
-    if (metaResponse.ok && metaData.messages && metaData.messages.length > 0) {
+    // ── Thorough error detection ──────────────────────────────────────────
+    // Meta can return errors in multiple ways:
+    // 1. HTTP 4xx/5xx with { error: { message, code, type } }
+    // 2. HTTP 200 but with { error: {...} } in body (rare but happens)
+    // 3. HTTP 200 but missing 'messages' array (template rejected/paused)
+    const metaError = metaData.error;
+    const hasMessages = metaData.messages && metaData.messages.length > 0;
+    const isActualSuccess = metaResponse.ok && hasMessages && !metaError;
+
+    if (isActualSuccess) {
         const wamid = metaData.messages[0].id;
         
-        // Log to logs table for technical auditing
+        // Log successful acceptance for tracking in CRM
         await supabase.from('whatsapp_logs').insert({
             sid: wamid,
             status: 'accepted_by_meta',
@@ -238,12 +250,44 @@ serve(async (req) => {
                 content: message 
             }]);
         }
-    }
 
-    return new Response(JSON.stringify(metaData), {
-      status: metaResponse.ok ? 200 : 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+        return new Response(JSON.stringify({ success: true, ...metaData }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    } else {
+        // Build a clear error message for the CRM
+        const errorMsg = metaError 
+            ? `Meta API Error ${metaError.code || ''}: ${metaError.message || metaError.error_data?.details || 'Unknown error'}` 
+            : `Meta returned HTTP ${metaResponse.status} without a message ID. Template may be paused or rejected.`;
+        
+        console.error(`[Outbound] DELIVERY FAILED: ${errorMsg}`);
+
+        // Log the failure for auditing
+        await supabase.from('whatsapp_logs').insert({
+            sid: `error_${digits}_${Date.now()}`,
+            status: 'failed',
+            error_code: metaError?.code?.toString() || metaResponse.status.toString(),
+            error_message: errorMsg,
+            payload: { 
+                meta_response: metaData,
+                lead_id: leadId, 
+                original_recipient: digits,
+                templateName,
+                useTemplate
+            }
+        });
+
+        return new Response(JSON.stringify({ 
+            success: false, 
+            error: errorMsg,
+            meta_error_code: metaError?.code,
+            meta_status: metaResponse.status 
+        }), {
+          status: 200, // Return 200 to avoid Supabase edge function errors, but success: false
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    }
 
   } catch (error: any) {
     console.error("Internal Error:", error.message);

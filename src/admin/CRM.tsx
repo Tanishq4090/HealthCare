@@ -496,7 +496,16 @@ export default function CRM() {
             });
 
             const data = await res.json();
-            if (!res.ok || data.error) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+            
+            // The outbound function now returns { success: true/false, error?: string }
+            // It always returns HTTP 200 to avoid Supabase edge function errors,
+            // so we MUST check data.success rather than res.ok
+            if (!res.ok) {
+                throw new Error(`Edge Function error: HTTP ${res.status}`);
+            }
+            if (data.success === false || data.error) {
+                throw new Error(data.error || 'WhatsApp delivery failed — template may be paused or rejected by Meta.');
+            }
 
             // Persist to DB so status survives page refresh
             await supabase.from('call_transcripts')
@@ -506,13 +515,15 @@ export default function CRM() {
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
             toast.success(`✅ Greeting sent to ${firstName}!`);
         } catch (err: any) {
+            console.error('[Greeting Error]', err.message);
+            
             // Persist error to DB to prevent infinite auto-retry loops on page refresh
             await supabase.from('call_transcripts')
-                .update({ automation_error: 'GREETING_ERROR' })
+                .update({ automation_error: `GREETING_ERROR: ${err.message?.slice(0, 200)}` })
                 .eq('conversation_id', call.id);
 
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'error' }));
-            toast.error(`Failed to send greeting: ${err.message}`);
+            toast.error(`❌ Greeting failed: ${err.message}`, { duration: 8000 });
         }
     };
 
@@ -919,7 +930,7 @@ export default function CRM() {
             calls.forEach((call: any) => {
                 if (call.automation_error === 'GREETING_SENT') {
                     initialStatus[call.id] = 'sent';
-                } else if (call.automation_error === 'GREETING_ERROR') {
+                } else if (call.automation_error?.startsWith('GREETING_ERROR')) {
                     initialStatus[call.id] = 'error';
                 }
             });
@@ -2362,11 +2373,18 @@ export default function CRM() {
                                                                     <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
                                                                 </div>
                                                             );
-                                                            if (greetStatus === 'error') return (
-                                                                <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors">
-                                                                    <AlertTriangle className="w-3.5 h-3.5" /> Retry Greeting
-                                                                </button>
-                                                            );
+                                                            if (greetStatus === 'error') {
+                                                                const errorDetail = call.automation_error?.replace('GREETING_ERROR: ', '') || 'Unknown error';
+                                                                return (
+                                                                    <button 
+                                                                        onClick={() => handleSendCallGreeting(call)} 
+                                                                        className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors"
+                                                                        title={`Error: ${errorDetail}`}
+                                                                    >
+                                                                        <AlertTriangle className="w-3.5 h-3.5" /> Retry Greeting
+                                                                    </button>
+                                                                );
+                                                            }
                                                             return (
                                                                 <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-[#E6F7F7] text-[#0E7C7E] text-xs font-bold rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
                                                                     <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
