@@ -2318,7 +2318,7 @@ export default function CRM() {
                                                     });
                                                     const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
 
-                                                    if (call.automation_error) {
+                                                    if (call.automation_error && call.automation_error !== 'GREETING_SENT') {
                                                         return (
                                                             <span className="flex items-center gap-1.5 px-2 py-1 bg-rose-50 border border-rose-100 text-rose-600 rounded text-[10px] font-bold" title={call.automation_error}>
                                                                 <AlertTriangle className="w-3 h-3" /> AUTOMATION FAILED
