@@ -380,6 +380,30 @@ export default function CRM() {
     const [editingLeadName, setEditingLeadName] = useState<string>('');
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
 
+    // Kanban Accordion State
+    const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
+    const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
+
+    // Initialize first 3 stages as open by default
+    useEffect(() => {
+        if (pipelineStages.length > 0 && Object.keys(expandedStages).length === 0) {
+            const initialExpanded: Record<string, boolean> = {};
+            pipelineStages.slice(0, 3).forEach(stage => {
+                initialExpanded[stage] = true;
+            });
+            setExpandedStages(initialExpanded);
+        }
+    }, [pipelineStages]);
+
+    const toggleStage = (stageName: string) => {
+        setExpandedStages(prev => ({ ...prev, [stageName]: !prev[stageName] }));
+    };
+
+    const loadMoreInStage = (stageName: string) => {
+        setStageLimits(prev => ({ ...prev, [stageName]: (prev[stageName] || 4) + 4 }));
+    };
+    const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
+
 
 
     const [workflows, setWorkflows] = useState({
@@ -1700,7 +1724,7 @@ export default function CRM() {
                         </div>
                     </div>
 
-                    <div className="flex-1 flex gap-6 overflow-x-auto pb-4 custom-scrollbar">
+                    <div className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4 pr-2 custom-scrollbar">
                         {isLoading ? (
                         <div className="flex-1 flex items-center justify-center">
                             <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -1708,11 +1732,24 @@ export default function CRM() {
                         </div>
                     ) : (
                         <>
-                            {columns.map((col, idx) => (
-                                <div key={idx} className="w-[280px] sm:w-[320px] shrink-0 flex flex-col bg-slate-50 rounded-xl border border-slate-200">
-                                    <div className="p-4 border-b border-slate-200 bg-white rounded-t-xl relative group/header">
+                            {columns.map((col, idx) => {
+                                const isExpanded = expandedStages[col.title] || false;
+                                const limit = stageLimits[col.title] || 4;
+                                const displayedItems = col.items.slice(0, limit);
+                                const hasMore = col.items.length > limit;
+
+                                return (
+                                <div key={idx} className="flex flex-col bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-200">
+                                    <div 
+                                        className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 ${isExpanded ? 'rounded-t-xl border-b border-slate-200' : 'rounded-xl'}`}
+                                        onClick={() => toggleStage(col.title)}
+                                    >
                                         {/* Stage Header w/ Edit toggle */}
                                         <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                                                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                                                </div>
                                             {editingStageIdx === idx ? (
                                                 <input
                                                     type="text"
@@ -1749,17 +1786,17 @@ export default function CRM() {
                                                 </span>
 
                                                 {/* Header Dropdown Menu (Hover based) */}
-                                                <div className="absolute right-2 top-3 opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden">
+                                                <div className="absolute right-2 top-3 opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden" onClick={e => e.stopPropagation()}>
                                                     <button
                                                         disabled={idx === 0}
-                                                        onClick={() => handleSlideStage(idx, 'left')}
+                                                        onClick={(e) => { e.stopPropagation(); handleSlideStage(idx, 'left'); }}
                                                         className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100" title="Slide Left"
                                                     >
                                                         <ArrowLeft className="w-3.5 h-3.5" />
                                                     </button>
                                                     <button
                                                         disabled={idx === activeStages.length - 1}
-                                                        onClick={() => handleSlideStage(idx, 'right')}
+                                                        onClick={(e) => { e.stopPropagation(); handleSlideStage(idx, 'right'); }}
                                                         className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100" title="Slide Right"
                                                     >
                                                         <ArrowRight className="w-3.5 h-3.5" />
@@ -1767,7 +1804,7 @@ export default function CRM() {
 
                                                     {!PROTECTED_STAGES.includes(col.title) && (
                                                         <button
-                                                            onClick={() => handleDeleteStage(col.title, idx)}
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteStage(col.title, idx); }}
                                                             className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete Stage"
                                                         >
                                                             <Trash2 className="w-3.5 h-3.5" />
@@ -1778,9 +1815,14 @@ export default function CRM() {
                                         </div>
                                     </div>
 
-                                    <div className="p-3 flex-1 overflow-y-auto space-y-3">
-                                        {col.items.map((item) => (
-                                            <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default group relative">
+                                    {isExpanded && (
+                                        <div className="p-4">
+                                            {col.items.length === 0 ? (
+                                                <div className="text-center text-slate-400 text-sm py-6">No leads in this stage</div>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-4">
+                                                    {displayedItems.map((item) => (
+                                                        <div key={item.id} className="w-[300px] shrink-0 bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default group relative">
                                                 <div className="flex items-start justify-between mb-2">
                                                     <div
                                                         className="flex flex-col flex-1 min-w-0 pr-2"
@@ -2150,7 +2192,21 @@ export default function CRM() {
                                                 </div>
                                             </div>
                                         ))}
-                                    </div>
+                                                    {hasMore && (
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
+                                                            className="w-[300px] shrink-0 flex flex-col items-center justify-center gap-3 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[150px]"
+                                                        >
+                                                            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+                                                                <Plus className="w-5 h-5 text-primary" />
+                                                            </div>
+                                                            <span className="font-semibold text-sm">Load More ({col.items.length - limit} left)</span>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                             {/* Add Column Button */}
