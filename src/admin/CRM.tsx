@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2 } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -401,12 +401,7 @@ export default function CRM() {
 
     const loadMoreInStage = (stageName: string) => {
         setStageLimits(prev => ({ ...prev, [stageName]: (prev[stageName] || 4) + 4 }));
-    };
-    const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
-
-
-
-    const [workflows, setWorkflows] = useState({
+    };    const [workflows, setWorkflows] = useState({
         greeting: true,
         drip: false
     });
@@ -1779,6 +1774,7 @@ export default function CRM() {
                                                     {col.title}
                                                 </h3>
                                             )}
+                                            </div>
 
                                             <div className="flex items-center gap-2">
                                                 <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
@@ -2208,7 +2204,8 @@ export default function CRM() {
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                                );
+                            })}
                             {/* Add Column Button */}
                             <div className="w-[320px] shrink-0 flex flex-col bg-transparent rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 transition-colors">
                                 {isAddingStage ? (
