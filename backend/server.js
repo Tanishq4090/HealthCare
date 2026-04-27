@@ -17,6 +17,7 @@ dotenv.config();
 import whatsappRoutes, { setWss } from "./routes/whatsapp.js";
 import attendanceRoutes from "./routes/attendance.js";
 import crmRoutes from "./routes/crm.js";
+import chatRoutes from "./routes/chat.js";
 import { requireAuth } from "./middleware/auth.js";
 
 const app = express();
@@ -84,6 +85,7 @@ app.use(express.json());
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/attendance", requireAuth, attendanceRoutes);
 app.use("/api/crm-config", requireAuth, crmRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", ts: new Date().toISOString() });

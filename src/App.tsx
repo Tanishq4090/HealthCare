@@ -28,6 +28,8 @@ import AppointmentPage from './pages/public/AppointmentPage';
 import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PublicIDCard from './pages/public/PublicIDCard';
+import PrivacyPolicyPage from './pages/public/PrivacyPolicyPage';
+import TermsPage from './pages/public/TermsPage';
 import { APP_MODE } from './config/appMode';
 import { useEffect } from 'react';
 
@@ -85,6 +87,8 @@ function AppContent() {
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/appointment" element={<AppointmentPage />} />
             <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
           <Route path="/id-card/:token" element={<PublicIDCard />} />
@@ -109,6 +113,8 @@ function AppContent() {
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/appointment" element={<AppointmentPage />} />
             <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
 
@@ -147,6 +153,8 @@ function AppContent() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/appointment" element={<AppointmentPage />} />
           <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 

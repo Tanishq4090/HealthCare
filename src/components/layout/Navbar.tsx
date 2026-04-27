@@ -29,10 +29,8 @@ export default function Navbar() {
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     cn(
-      'relative text-sm font-medium transition-colors duration-200 py-2',
-      isActive ? 'text-brand-blue font-semibold' : 'text-gray-600 dark:text-gray-400 hover:text-brand-blue dark:hover:text-brand-blue',
-      // Active underline indicator
-      isActive && 'after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-full after:bg-brand-blue after:rounded-t-md'
+      'block relative text-base font-medium transition-colors duration-200 py-3 px-4 rounded-lg',
+      isActive ? 'text-brand-blue bg-brand-blue/5 font-semibold' : 'text-gray-600 dark:text-gray-400 hover:text-brand-blue hover:bg-gray-50 dark:hover:bg-slate-900',
     );
 
   // Services dropdown panel, passed as JSX to TubelightNavbar
@@ -107,31 +105,33 @@ export default function Navbar() {
                   <Menu className="w-6 h-6" />
                 </button>
               </SheetTrigger>
-              <SheetContent side="right" className="w-[300px] sm:w-[350px] bg-white dark:bg-slate-950 border-gray-100 dark:border-slate-800 pt-16 flex flex-col">
-                <div className="flex flex-col space-y-4">
+              <SheetContent side="right" className="w-[85vw] max-w-[350px] bg-white dark:bg-slate-950 border-l border-gray-100 dark:border-slate-800 pt-20 px-6 pb-8 flex flex-col h-[100dvh] overflow-y-auto">
+                <div className="flex flex-col space-y-1">
                   <NavLink to="/" onClick={() => setIsOpen(false)} className={navLinkClass}>Home</NavLink>
                   <NavLink to="/about" onClick={() => setIsOpen(false)} className={navLinkClass}>About</NavLink>
-                  <NavLink to="/services" onClick={() => setIsOpen(false)} className={navLinkClass}>Services</NavLink>
+                  
+                  <div className="py-3 px-4 text-base font-medium text-gray-800 dark:text-gray-200">Services</div>
                   {/* Subtle indent for mobile services */}
-                  <div className="pl-4 flex flex-col space-y-3 pb-2 border-b border-gray-50 dark:border-slate-800">
+                  <div className="pl-8 flex flex-col space-y-1 pb-4 border-b border-gray-50 dark:border-slate-800 mb-2">
                     {SERVICES.slice(0, 4).map((srv, idx) => (
                        <Link 
                          key={idx} 
                          to={srv.path}
                          onClick={() => setIsOpen(false)}
-                         className="text-sm text-gray-500 hover:text-brand-blue"
+                         className="block py-2.5 text-sm text-gray-500 hover:text-brand-blue transition-colors"
                        >
                          {srv.name}
                        </Link>
                     ))}
-                    <Link to="/services" onClick={() => setIsOpen(false)} className="text-xs text-brand-blue font-medium mt-1">View all services &rarr;</Link>
+                    <Link to="/services" onClick={() => setIsOpen(false)} className="block py-2.5 text-sm text-brand-blue font-semibold mt-1">View all services &rarr;</Link>
                   </div>
+                  
                   <NavLink to="/blog" onClick={() => setIsOpen(false)} className={navLinkClass}>Blog</NavLink>
                   <NavLink to="/contact" onClick={() => setIsOpen(false)} className={navLinkClass}>Contact</NavLink>
                 </div>
                 
-                <div className="pl-4 flex flex-col space-y-3 pb-2 border-b border-gray-50 dark:border-slate-900">
-                  <GradientButton asChild className="w-full">
+                <div className="mt-auto pt-6 flex flex-col space-y-3">
+                  <GradientButton asChild className="w-full shadow-lg shadow-brand-blue/20">
                     <Link 
                       to="/appointment" 
                       onClick={() => setIsOpen(false)}
