@@ -1860,15 +1860,12 @@ export default function CRM() {
                                                                     )}
                                                                     <div className="flex items-center gap-2 mt-1">
                                                                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{item.priority || 'Medium'} Priority</span>
-                                                                        {item.assigned_staff_id && (() => {
-                                                                            const staff = allWorkers.find(w => w.id === item.assigned_staff_id);
-                                                                            return staff ? (
-                                                                                <span className="text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md border border-primary/20 flex items-center gap-1" title={`Assigned to ${staff.name || staff.full_name}`}>
-                                                                                    <Users className="w-3 h-3" />
-                                                                                    <span className="truncate max-w-[80px]">{staff.name || staff.full_name}</span>
-                                                                                </span>
-                                                                            ) : null;
-                                                                        })()}
+                                                                        {item.assigned_worker_name && (
+                                                                            <span className="text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md border border-primary/20 flex items-center gap-1" title={`Assigned to ${item.assigned_worker_name}`}>
+                                                                                <Users className="w-3 h-3" />
+                                                                                <span className="truncate max-w-[80px]">{item.assigned_worker_name}</span>
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </div>
