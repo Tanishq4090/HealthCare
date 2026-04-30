@@ -379,6 +379,7 @@ export default function CRM() {
     const [editingLeadDetailsId, setEditingLeadDetailsId] = useState<string | null>(null);
     const [editingLeadName, setEditingLeadName] = useState<string>('');
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
+    const [selectedLeadForDrawer, setSelectedLeadForDrawer] = useState<any | null>(null);
 
     // Kanban Accordion State
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
@@ -1734,15 +1735,17 @@ export default function CRM() {
                                 const hasMore = col.items.length > limit;
 
                                 return (
-                                <div key={idx} className="flex flex-col bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-200">
+                                <div key={idx} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-300 ${isExpanded ? 'flex-row items-stretch' : 'flex-col'}`}>
                                     <div 
-                                        className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 ${isExpanded ? 'rounded-t-xl border-b border-slate-200' : 'rounded-xl'}`}
+                                        className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'w-[280px] sm:w-[320px] rounded-l-xl border-r border-slate-200' : 'rounded-xl'}`}
                                         onClick={() => toggleStage(col.title)}
                                     >
                                         {/* Stage Header w/ Edit toggle */}
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3">
-                                                <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                                                <div className={`transition-transform duration-200 ${isExpanded ? '-rotate-90' : ''}`}>
+                                                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                                                </div>             <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
                                                     <ChevronDown className="w-5 h-5 text-slate-400" />
                                                 </div>
                                             {editingStageIdx === idx ? (
@@ -1812,382 +1815,60 @@ export default function CRM() {
                                     </div>
 
                                     {isExpanded && (
-                                        <div className="p-4">
+                                        <div className="p-5 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
                                             {col.items.length === 0 ? (
-                                                <div className="text-center text-slate-400 text-sm py-6">No leads in this stage</div>
+                                                <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                             ) : (
-                                                <div className="flex flex-wrap gap-4">
+                                                <div className="flex flex-wrap gap-5 min-w-min">
                                                     {displayedItems.map((item) => (
-                                                        <div key={item.id} className="w-[300px] shrink-0 bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default group relative">
-                                                <div className="flex items-start justify-between mb-2">
-                                                    <div
-                                                        className="flex flex-col flex-1 min-w-0 pr-2"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onDoubleClick={() => {
-                                                            setEditingLeadDetailsId(item.id);
-                                                            setEditingLeadName(item.name);
-                                                            setEditingLeadPhone(item.phone || item.whatsapp_number || '');
-                                                        }}
-                                                    >
-                                                        {editingLeadDetailsId === item.id ? (
-                                                            <div className="space-y-1 pr-2">
-                                                                <input
-                                                                    autoFocus
-                                                                    type="text"
-                                                                    value={editingLeadName}
-                                                                    onChange={e => setEditingLeadName(e.target.value)}
-                                                                    className="w-full text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
-                                                                    placeholder="Lead Name"
-                                                                />
-                                                                <input
-                                                                    type="text"
-                                                                    value={editingLeadPhone}
-                                                                    onChange={e => setEditingLeadPhone(e.target.value)}
-                                                                    onKeyDown={e => {
-                                                                        if (e.key === 'Enter') handleUpdateLeadDetails(item.id);
-                                                                    }}
-                                                                    onBlur={() => handleUpdateLeadDetails(item.id)}
-                                                                    className="w-full text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
-                                                                    placeholder="Phone Number"
-                                                                />
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <div className="flex justify-between items-start min-w-0">
-                                                                    <h4 className="font-bold text-slate-900 group-hover:text-primary transition-colors flex-1 truncate pr-1" title="Double click to edit">{item.name}</h4>
-                                                                    <select 
-                                                                        value={item.priority || 'medium'} 
-                                                                        onChange={(e) => handleUpdatePriority(item.id, e.target.value)}
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        className="bg-transparent border-none text-base cursor-pointer focus:outline-none appearance-none ml-1 p-0 leading-none hover:scale-110 transition-transform shrink-0 outline-none"
-                                                                        title="Lead Priority"
-                                                                    >
-                                                                        <option value="hot">🔥</option>
-                                                                        <option value="medium">☀️</option>
-                                                                        <option value="cold">❄️</option>
-                                                                    </select>
+                                                        <div key={item.id} className="w-[320px] shrink-0 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default flex flex-col gap-5">
+                                                            {/* Header Row: Type and Name */}
+                                                            <div className="flex items-start gap-3">
+                                                                <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-xl" title={item.priority}>
+                                                                    {item.priority === 'hot' ? '🔥' : item.priority === 'cold' ? '❄️' : '☀️'}
                                                                 </div>
-                                                                
-                                                                {(item.whatsapp_number || item.phone) ? (
-                                                                    <div className="mt-0.5 flex flex-col gap-1.5">
-                                                                        <div className="flex items-center gap-2" title="Contact Number (Double click to edit)">
-                                                                            <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
-                                                                                <Phone className="w-3 h-3 text-slate-400" />
-                                                                                {formatPhoneNumber(item.whatsapp_number || item.phone)}
-                                                                            </div>
-                                                                            <div className="flex items-center gap-1">
-                                                                                <button 
-                                                                                    onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'custom'); }}
-                                                                                    className="p-1 rounded-md hover:bg-emerald-50 text-emerald-600 transition-colors"
-                                                                                    title="Send Manual Message"
-                                                                                >
-                                                                                    <MessageCircle className="w-3.5 h-3.5" />
-                                                                                </button>
-
-                                                                                {(() => {
-                                                                                    const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
-                                                                                    if (!log) return null;
-                                                                                    const isFailed = ['failed', 'undelivered'].includes(log.status);
-                                                                                    const isDelivered = ['delivered', 'read'].includes(log.status);
-                                                                                    return (
-                                                                                        <div className="flex items-center">
-                                                                                            {isFailed ? (
-                                                                                                <div className="group/err relative cursor-help" title={`WhatsApp Failed: ${log.error_message || 'Twilio Error'}`}>
-                                                                                                    <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                                                                                                </div>
-                                                                                            ) : isDelivered ? (
-                                                                                                <span title="WhatsApp Delivered">
-                                                                                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" />
-                                                                                                </span>
-                                                                                            ) : (
-                                                                                                <span title={log.status}>
-                                                                                                    <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />
-                                                                                                </span>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    );
-                                                                                })()}
-                                                                            </div>
-                                                                        </div>
-                                                                        
-                                                                        {/* Assigned Worker Info */}
-                                                                        {item.assigned_worker_name ? (
-                                                                            <div className="flex items-center gap-1.5 py-1 px-2 bg-purple-50 border border-purple-100 rounded-md self-start">
-                                                                                <Users className="w-3 h-3 text-purple-600" />
-                                                                                <div className="flex flex-col">
-                                                                                    <span className="text-[10px] font-bold text-purple-900 leading-none">{item.assigned_worker_name}</span>
-                                                                                    <span className="text-[9px] font-medium text-purple-500 leading-none mt-0.5">{item.assigned_worker_role || 'Staff'}</span>
-                                                                                </div>
-                                                                            </div>
-                                                                        ) : (['Staff Assigned', 'Deposit Pending', 'Active Client'].includes(item.pipeline_stage)) && (
-                                                                            <div className="flex items-center gap-1.5 py-1 px-2 bg-red-50 border border-red-100 rounded-md animate-pulse self-start">
-                                                                                <AlertTriangle className="w-3 h-3 text-red-600" />
-                                                                                <span className="text-[10px] font-bold text-red-700 uppercase tracking-tight">Missing Staff Assignment</span>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium text-slate-400 italic" title="No contact info (Double click to add)">
-                                                                        <Phone className="w-3 h-3 text-slate-300" />
-                                                                        Add phone...
-                                                                    </div>
-                                                                )}
-
-                                                                {item.isDuplicate && (
-                                                                    <div className="mt-2 text-[10px] font-semibold text-red-700 bg-red-50 p-1.5 rounded border border-red-200 flex items-start gap-1">
-                                                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                                                                        <span>Duplicate! 2+ leads share this number. Please delete one to avoid AI issues.</span>
-                                                                    </div>
-                                                                )}
-
-
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                    <div onClick={(e) => e.stopPropagation()} className="flex items-center shrink-0">
-                                                        <select
-                                                            value={item.pipeline_stage}
-                                                            onChange={(e) => handleMoveLead(item.id, e.target.value)}
-                                                            className="text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-800 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:bg-slate-200 transition-colors uppercase tracking-tight"
-                                                        >
-                                                            <option disabled className="text-slate-400 font-bold bg-slate-50">-- Pipeline --</option>
-                                                            {pipelineStages.map(stage => (
-                                                                <option key={stage} value={stage}>{stage}</option>
-                                                            ))}
-                                                            <option disabled className="text-slate-400 font-bold bg-slate-50">-- Clients --</option>
-                                                            {clientStages.map(stage => (
-                                                                <option key={stage} value={stage}>{stage}</option>
-                                                            ))}
-                                                        </select>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleDeleteLead(item.id, item.name); }}
-                                                            className="absolute top-2 right-2 p-1.5 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 bg-white/90 backdrop-blur"
-                                                            title="Delete Lead"
-                                                        >
-                                                            <Trash2 className="w-3 h-3" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-center gap-4 mb-3" onDoubleClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditingLeadValueId(item.id);
-                                                    setEditingLeadValueAmount(item.valueAmount.toString());
-                                                }}>
-                                                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                                                        {item.source === 'Web Chat' && <MessageSquare className="w-3.5 h-3.5" />}
-                                                        {item.source === 'Email' && <Mail className="w-3.5 h-3.5" />}
-                                                        {item.source === 'Contact Form' && <FileText className="w-3.5 h-3.5" />}
-                                                        {item.source === 'Appointment Form' && <Calendar className="w-3.5 h-3.5" />}
-                                                        {item.source === 'Meeting' && <Phone className="w-3.5 h-3.5" />}
-                                                        {item.source === 'AI Phone Call' && <Mic className="w-3.5 h-3.5" />}
-                                                        {item.source === 'Referral' && <Users className="w-3.5 h-3.5" />}
-                                                        {!['Web Chat', 'Email', 'Contact Form', 'Appointment Form', 'Meeting', 'AI Phone Call', 'Referral'].includes(item.source) && <span className="w-3.5 h-3.5" />}
-                                                        {item.source}
-                                                    </div>
-
-                                                    {editingLeadValueId === item.id ? (
-                                                        <div className="flex-1 flex items-center bg-[#E6F7F7] rounded border border-[#1AA6A8]/20 overflow-hidden" onClick={e => e.stopPropagation()}>
-                                                            <span className="text-[#1AA6A8] text-xs font-semibold pl-1.5 pr-0.5">₹</span>
-                                                            <input
-                                                                type="text"
-                                                                value={editingLeadValueAmount}
-                                                                onChange={e => setEditingLeadValueAmount(e.target.value)}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') handleUpdateLeadValue(item.id);
-                                                                    if (e.key === 'Escape') setEditingLeadValueId(null);
-                                                                }}
-                                                                onBlur={() => handleUpdateLeadValue(item.id)}
-                                                                autoFocus
-                                                                className="w-full bg-transparent text-xs font-semibold text-[#1AA6A8] outline-none py-0.5 leading-none"
-                                                                placeholder="Amount"
-                                                            />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-xs font-medium text-[#1AA6A8] bg-[#E6F7F7] px-2 py-0.5 rounded-sm cursor-text hover:bg-[#EAFBFB] transition-colors" title="Double click to edit value">
-                                                            {item.value}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div className="pt-3 flex flex-col gap-2 border-t border-slate-100">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-1.5 cursor-help" title="Current AI Status">
-                                                            <Bot className="w-3.5 h-3.5 text-primary" />
-                                                            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">{item.status}</span>
-                                                        </div>
-                                                        <span className="text-xs text-slate-400">{item.time}</span>
-                                                    </div>
-
-                                                    {/* Futuristic Progress Tracker */}
-                                                    <div className="mt-3 relative pt-1">
-                                                        <div className="flex items-center justify-between mb-1">
-                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Process Flow</span>
-                                                        </div>
-                                                        <div className="flex gap-1 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                            {[...pipelineStages, ...clientStages].map((stage, i) => {
-                                                                const allStages = [...pipelineStages, ...clientStages];
-                                                                const currentIdx = allStages.indexOf(item.pipeline_stage);
-                                                                const isPast = i <= currentIdx;
-                                                                return (
-                                                                    <div key={stage} className={`flex-1 transition-all duration-500 ${isPast ? (i === allStages.length - 1 ? 'bg-emerald-400' : 'bg-primary') : 'bg-slate-200'}`} title={stage}></div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Client Process Flow Actions */}
-                                                    <div className="mt-4 flex flex-col gap-2">
-                                                        {/* AI Chat Viewer Button (General Action) */}
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); fetchWhatsappChat(item); }}
-                                                            className="w-full bg-slate-50 hover:bg-[#E6F7F7] border border-slate-200 hover:border-[#1AA6A8]/20 text-slate-700 hover:text-[#1AA6A8] text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                        >
-                                                            <MessageCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                                                            View AI Chat History
-                                                        </button>
-
-                                                        {item.pipeline_stage === 'New Inquiry' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'inquiry'); }}
-                                                                className="w-full bg-[#E6F7F7] hover:bg-[#1AA6A8] hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                            >
-                                                                <Bot className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                                                                Send Greeting Message
-                                                            </button>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'In Discussion' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'quotation'); }}
-                                                                className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                            >
-                                                                <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                Send Quotation
-                                                            </button>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'Quotation Sent' && (
-                                                            <div className="flex flex-col gap-2">
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'consent'); }}
-                                                                    className="w-full bg-primary/10 hover:bg-primary hover:text-primary-foreground border border-primary/15 text-primary text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                                >
-                                                                    <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                    Send Consent Form Link
-                                                                </button>
-                                                                <button
-                                                                    onClick={async (e) => { 
-                                                                        e.stopPropagation(); 
-                                                                        await handleMoveLead(item.id, 'Form Submitted');
-                                                                        toast.success("Consent marked as Agreed! Lead moved to Form Submitted.");
-                                                                    }}
-                                                                    className="w-full bg-[#E6F7F7] hover:bg-[#1AA6A8] hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] text-xs font-bold py-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
-                                                                >
-                                                                    <CheckCircle2 className="w-3 h-3" />
-                                                                    Mark Consent Agreed
-                                                                </button>
+                                                                <div className="flex flex-col min-w-0 pt-0.5">
+                                                                    <h4 className="text-xl font-extrabold text-slate-900 truncate leading-tight" title={item.name}>{item.name}</h4>
+                                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">{item.priority || 'Medium'} Priority</span>
+                                                                </div>
                                                             </div>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'Form Submitted' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openStaffPicker(item); }}
-                                                                className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
+                                                            
+                                                            {/* Phone & Status Row */}
+                                                            <div className="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                                <div className="flex items-center gap-2.5 text-[15px] font-bold text-slate-700">
+                                                                    <Phone className="w-4 h-4 text-primary" />
+                                                                    {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No Phone'}
+                                                                </div>
+                                                                {/* Status Icon */}
+                                                                {(() => {
+                                                                    const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
+                                                                    if (!log) return null;
+                                                                    const isFailed = ['failed', 'undelivered'].includes(log.status);
+                                                                    const isDelivered = ['delivered', 'read'].includes(log.status);
+                                                                    return (
+                                                                        <div className="flex items-center shrink-0">
+                                                                            {isFailed ? (
+                                                                                <span title={`WhatsApp Failed: ${log.error_message}`}><AlertCircle className="w-5 h-5 text-red-500" /></span>
+                                                                            ) : isDelivered ? (
+                                                                                <span title="WhatsApp Delivered"><CheckCircle2 className="w-5 h-5 text-[#1AA6A8]" /></span>
+                                                                            ) : (
+                                                                                <span title={log.status}><Loader2 className="w-5 h-5 text-slate-400 animate-spin" /></span>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                            
+                                                            {/* View Details Button */}
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); setSelectedLeadForDrawer(item); }}
+                                                                className="mt-auto w-full py-3 bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-700 hover:text-primary hover:border-primary/30 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm group"
                                                             >
-                                                                <Users className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                                                                Assign Staff Member
+                                                                View Details
+                                                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                                             </button>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'Staff Assigned' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'deposit'); }}
-                                                                className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                            >
-                                                                <FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                Send Deposit Invoice
-                                                            </button>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'Deposit Pending' && (
-                                                            <button
-                                                                onClick={async (e) => {
-                                                                    e.stopPropagation();
-                                                                    const toastId = toast.loading("Confirming deposit and notifying client...");
-                                                                    
-                                                                    try {
-                                                                        const firstName = item.name.split(' ')[0] || 'there';
-                                                                        const message = `Great news ${firstName}! 🙏 We have received your deposit amount. You are officially an active client of 99 Care now! Our team will coordinate the start date with you shortly. We're honored to serve you! ✨`;
-                                                                        
-                                                                        const phoneDigits = (item.whatsapp_number || item.phone || '').replace(/\D/g, '');
-                                                                        const finalPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
-                                                                        
-                                                                        // 1. Send automated confirmation FIRST
-                                                                        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
-                                                                            method: 'POST',
-                                                                            headers: {
-                                                                                'Content-Type': 'application/json',
-                                                                                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                                                                                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                                                                            },
-                                                                            body: JSON.stringify({
-                                                                                phone: finalPhone,
-                                                                                message: message, // fallback for local UI logging if needed
-                                                                                leadId: item.id,
-                                                                                useTemplate: true,
-                                                                                templateName: 'deposit_invoice_alert',
-                                                                                templateParams: [firstName]
-                                                                            })
-                                                                        });
-
-                                                                        if (!response.ok) {
-                                                                            console.warn("Automated message status:", response.status);
-                                                                        }
-
-                                                                        // 2. Move lead AFTER successful (or attempted) dispatch
-                                                                        await handleMoveLead(item.id, 'Active Client');
-                                                                        toast.success(`${item.name} is now an Active Client! Message sent. 🎉`, { id: toastId });
-                                                                    } catch (err) {
-                                                                        console.error("Failed to send automated deposit confirmation:", err);
-                                                                        // Still move the lead even if WhatsApp fails
-                                                                        await handleMoveLead(item.id, 'Active Client');
-                                                                        toast.error("Deposit confirmed, but could not send WhatsApp notification.", { id: toastId });
-                                                                    }
-                                                                }}
-                                                                className="w-full bg-[#1AA6A8] hover:bg-[#1AA6A8] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"
-                                                            >
-                                                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                                                Confirm Deposit Received
-                                                            </button>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'Active Client' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openAgentModal(item, 'billing'); }}
-                                                                className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"
-                                                            >
-                                                                <Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                Send Monthly Bill
-                                                            </button>
-                                                        )}
-
-                                                        {item.pipeline_stage === 'Monthly Billing' && (
-                                                            <button
-                                                                onClick={() => {
-                                                                    convertToClient(item.id, item.name);
-                                                                    toast.success(`${item.name} migrated to Client Master.`);
-                                                                }}
-                                                                className="w-full bg-gradient-to-r from-[#1AA6A8] to-[#0E7C7E] hover:from-[#1AA6A8] hover:to-[#0E7C7E] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
-                                                            >
-                                                                <Users className="w-3.5 h-3.5" />
-                                                                Convert to Client Master
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                        </div>
+                                                    ))}
                                                     {hasMore && (
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
@@ -2971,6 +2652,221 @@ export default function CRM() {
                                 <p className="text-sm text-slate-500">The AI hasn't conversed with this lead yet.</p>
                             </div>
                         )}
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Lead Details Slide-out Drawer */}
+        {selectedLeadForDrawer && (
+            <div className="fixed inset-0 z-[100] flex justify-end">
+                {/* Backdrop */}
+                <div 
+                    className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity" 
+                    onClick={() => setSelectedLeadForDrawer(null)}
+                />
+                
+                {/* Drawer Panel */}
+                <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+                    <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900">{selectedLeadForDrawer.name}</h2>
+                            <p className="text-sm font-medium text-slate-500 mt-0.5">{formatPhoneNumber(selectedLeadForDrawer.whatsapp_number || selectedLeadForDrawer.phone)}</p>
+                        </div>
+                        <button 
+                            onClick={() => setSelectedLeadForDrawer(null)}
+                            className="p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6">
+                        
+                        {/* Pipeline Stage Management */}
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pipeline Stage</label>
+                            <select
+                                value={selectedLeadForDrawer.pipeline_stage}
+                                onChange={async (e) => {
+                                    await handleMoveLead(selectedLeadForDrawer.id, e.target.value);
+                                    setSelectedLeadForDrawer((prev: any) => prev ? {...prev, pipeline_stage: e.target.value} : null);
+                                }}
+                                className="w-full text-sm font-bold bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
+                            >
+                                <option disabled className="text-slate-400 font-bold bg-slate-50">-- Pipeline --</option>
+                                {pipelineStages.map(stage => (
+                                    <option key={stage} value={stage}>{stage}</option>
+                                ))}
+                                <option disabled className="text-slate-400 font-bold bg-slate-50">-- Clients --</option>
+                                {clientStages.map(stage => (
+                                    <option key={stage} value={stage}>{stage}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Value and Source */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lead Value</span>
+                                {editingLeadValueId === selectedLeadForDrawer.id ? (
+                                    <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden w-full max-w-[120px]">
+                                        <span className="text-primary text-sm font-semibold pl-2">₹</span>
+                                        <input
+                                            type="text"
+                                            value={editingLeadValueAmount}
+                                            onChange={e => setEditingLeadValueAmount(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    handleUpdateLeadValue(selectedLeadForDrawer.id);
+                                                    setSelectedLeadForDrawer((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
+                                                }
+                                                if (e.key === 'Escape') setEditingLeadValueId(null);
+                                            }}
+                                            onBlur={() => {
+                                                handleUpdateLeadValue(selectedLeadForDrawer.id);
+                                                setSelectedLeadForDrawer((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
+                                            }}
+                                            autoFocus
+                                            className="w-full bg-transparent text-sm font-semibold text-primary outline-none py-1 px-1"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div 
+                                        className="text-lg font-bold text-primary cursor-pointer hover:scale-105 transition-transform" 
+                                        title="Click to edit value"
+                                        onClick={() => {
+                                            setEditingLeadValueId(selectedLeadForDrawer.id);
+                                            setEditingLeadValueAmount(selectedLeadForDrawer.valueAmount?.toString() || '0');
+                                        }}
+                                    >
+                                        {selectedLeadForDrawer.value}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</span>
+                                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                                    {selectedLeadForDrawer.source}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* AI & Process Actions */}
+                        <div className="border-t border-slate-100 pt-5 mt-2">
+                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Actions & Processing</h3>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => { fetchWhatsappChat(selectedLeadForDrawer); setSelectedLeadForDrawer(null); }}
+                                    className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                >
+                                    <MessageCircle className="w-4 h-4 group-hover:scale-110 transition-transform text-primary" />
+                                    View AI Chat History
+                                </button>
+                                
+                                {selectedLeadForDrawer.pipeline_stage === 'New Inquiry' && (
+                                    <button
+                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'inquiry'); setSelectedLeadForDrawer(null); }}
+                                        className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                        Send Greeting Message
+                                    </button>
+                                )}
+
+                                {selectedLeadForDrawer.pipeline_stage === 'In Discussion' && (
+                                    <button
+                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'quotation'); setSelectedLeadForDrawer(null); }}
+                                        className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                        Send Quotation
+                                    </button>
+                                )}
+
+                                {selectedLeadForDrawer.pipeline_stage === 'Quotation Sent' && (
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            onClick={() => { openAgentModal(selectedLeadForDrawer, 'consent'); setSelectedLeadForDrawer(null); }}
+                                            className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                        >
+                                            <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                            Send Consent Form Link
+                                        </button>
+                                        <button
+                                            onClick={async () => { 
+                                                await handleMoveLead(selectedLeadForDrawer.id, 'Form Submitted');
+                                                toast.success("Consent marked as Agreed! Lead moved to Form Submitted.");
+                                                setSelectedLeadForDrawer(null);
+                                            }}
+                                            className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2"
+                                        >
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            Mark Consent Agreed
+                                        </button>
+                                    </div>
+                                )}
+
+                                {selectedLeadForDrawer.pipeline_stage === 'Form Submitted' && (
+                                    <button
+                                        onClick={() => { openStaffPicker(selectedLeadForDrawer); setSelectedLeadForDrawer(null); }}
+                                        className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <Users className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                        Assign Staff Member
+                                    </button>
+                                )}
+
+                                {selectedLeadForDrawer.pipeline_stage === 'Staff Assigned' && (
+                                    <button
+                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'deposit'); setSelectedLeadForDrawer(null); }}
+                                        className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                        Send Deposit Invoice
+                                    </button>
+                                )}
+
+                                {selectedLeadForDrawer.pipeline_stage === 'Active Client' && (
+                                    <button
+                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'billing'); setSelectedLeadForDrawer(null); }}
+                                        className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                        Send Monthly Bill
+                                    </button>
+                                )}
+
+                                {selectedLeadForDrawer.pipeline_stage === 'Monthly Billing' && (
+                                    <button
+                                        onClick={() => {
+                                            convertToClient(selectedLeadForDrawer.id, selectedLeadForDrawer.name);
+                                            toast.success(`${selectedLeadForDrawer.name} migrated to Client Master.`);
+                                            setSelectedLeadForDrawer(null);
+                                        }}
+                                        className="w-full bg-gradient-to-r from-primary to-[#0E7C7E] text-white font-bold py-2.5 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                                    >
+                                        <Users className="w-4 h-4" />
+                                        Convert to Client Master
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                    </div>
+                    
+                    {/* Drawer Footer Actions */}
+                    <div className="p-5 border-t border-slate-100 bg-slate-50/50 mt-auto">
+                        <button
+                            onClick={() => { 
+                                handleDeleteLead(selectedLeadForDrawer.id, selectedLeadForDrawer.name);
+                                setSelectedLeadForDrawer(null);
+                            }}
+                            className="w-full bg-red-50 hover:bg-red-500 hover:text-white border border-red-100 text-red-600 font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            Delete Lead Permanently
+                        </button>
                     </div>
                 </div>
             </div>
