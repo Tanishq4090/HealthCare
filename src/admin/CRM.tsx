@@ -379,7 +379,7 @@ export default function CRM() {
     const [editingLeadDetailsId, setEditingLeadDetailsId] = useState<string | null>(null);
     const [editingLeadName, setEditingLeadName] = useState<string>('');
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
-    const [selectedLeadForDrawer, setSelectedLeadForDrawer] = useState<any | null>(null);
+    const [expandedCardIds, setExpandedCardIds] = useState<Record<string, boolean>>({});
 
     // Kanban Accordion State
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
@@ -1743,9 +1743,7 @@ export default function CRM() {
                                         {/* Stage Header w/ Edit toggle */}
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3">
-                                                <div className={`transition-transform duration-200 ${isExpanded ? '-rotate-90' : ''}`}>
-                                                    <ChevronDown className="w-5 h-5 text-slate-400" />
-                                                </div>             <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                                                <div className={`transition-transform duration-200 ${isExpanded ? '-rotate-90' : 'rotate-0'}`}>
                                                     <ChevronDown className="w-5 h-5 text-slate-400" />
                                                 </div>
                                             {editingStageIdx === idx ? (
@@ -1821,23 +1819,75 @@ export default function CRM() {
                                             ) : (
                                                 <div className="flex flex-wrap gap-5 min-w-min">
                                                     {displayedItems.map((item) => (
-                                                        <div key={item.id} className="w-[320px] shrink-0 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default flex flex-col gap-5">
+                                                        <div key={item.id} className="w-[320px] shrink-0 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default flex flex-col gap-4">
                                                             {/* Header Row: Type and Name */}
                                                             <div className="flex items-start gap-3">
-                                                                <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-xl" title={item.priority}>
-                                                                    {item.priority === 'hot' ? '🔥' : item.priority === 'cold' ? '❄️' : '☀️'}
+                                                                <div className="relative group/priority w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-xl" title="Change Priority">
+                                                                    <select 
+                                                                        value={item.priority || 'medium'} 
+                                                                        onChange={(e) => handleUpdatePriority(item.id, e.target.value)}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                                                    >
+                                                                        <option value="hot">🔥 Hot</option>
+                                                                        <option value="medium">☀️ Medium</option>
+                                                                        <option value="cold">❄️ Cold</option>
+                                                                    </select>
+                                                                    <span className="pointer-events-none group-hover/priority:scale-110 transition-transform">
+                                                                        {item.priority === 'hot' ? '🔥' : item.priority === 'cold' ? '❄️' : '☀️'}
+                                                                    </span>
                                                                 </div>
-                                                                <div className="flex flex-col min-w-0 pt-0.5">
-                                                                    <h4 className="text-xl font-extrabold text-slate-900 truncate leading-tight" title={item.name}>{item.name}</h4>
+                                                                <div className="flex flex-col min-w-0 pt-0.5 flex-1" 
+                                                                    onDoubleClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEditingLeadDetailsId(item.id);
+                                                                        setEditingLeadName(item.name);
+                                                                        setEditingLeadPhone(item.whatsapp_number || item.phone || '');
+                                                                    }}
+                                                                >
+                                                                    {editingLeadDetailsId === item.id ? (
+                                                                        <input
+                                                                            autoFocus
+                                                                            type="text"
+                                                                            value={editingLeadName}
+                                                                            onChange={e => setEditingLeadName(e.target.value)}
+                                                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); }}
+                                                                            className="w-full text-xl font-extrabold text-slate-900 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary leading-tight"
+                                                                            placeholder="Lead Name"
+                                                                        />
+                                                                    ) : (
+                                                                        <h4 className="text-xl font-extrabold text-slate-900 truncate leading-tight cursor-text hover:text-primary transition-colors" title="Double click to edit">{item.name}</h4>
+                                                                    )}
                                                                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">{item.priority || 'Medium'} Priority</span>
                                                                 </div>
                                                             </div>
                                                             
                                                             {/* Phone & Status Row */}
-                                                            <div className="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                                <div className="flex items-center gap-2.5 text-[15px] font-bold text-slate-700">
-                                                                    <Phone className="w-4 h-4 text-primary" />
-                                                                    {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No Phone'}
+                                                            <div className="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100"
+                                                                onDoubleClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditingLeadDetailsId(item.id);
+                                                                    setEditingLeadName(item.name);
+                                                                    setEditingLeadPhone(item.whatsapp_number || item.phone || '');
+                                                                }}
+                                                            >
+                                                                <div className="flex items-center gap-2 text-[15px] font-bold text-slate-700 flex-1 min-w-0 pr-2">
+                                                                    <Phone className="w-4 h-4 text-primary shrink-0" />
+                                                                    {editingLeadDetailsId === item.id ? (
+                                                                        <input
+                                                                            type="text"
+                                                                            value={editingLeadPhone}
+                                                                            onChange={e => setEditingLeadPhone(e.target.value)}
+                                                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); }}
+                                                                            onBlur={() => handleUpdateLeadDetails(item.id)}
+                                                                            className="w-full text-[13px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
+                                                                            placeholder="Phone Number"
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="truncate cursor-text hover:text-primary transition-colors" title="Double click to edit">
+                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No Phone'}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                                 {/* Status Icon */}
                                                                 {(() => {
@@ -1858,14 +1908,88 @@ export default function CRM() {
                                                                     );
                                                                 })()}
                                                             </div>
+
+                                                            {/* EXPANDABLE DETAILS */}
+                                                            {expandedCardIds[item.id] && (
+                                                                <div className="flex flex-col gap-4 border-t border-slate-100 pt-3 animate-in fade-in duration-200">
+                                                                    {/* Pipeline Stage Management */}
+                                                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pipeline Stage</label>
+                                                                        <select
+                                                                            value={item.pipeline_stage}
+                                                                            onChange={async (e) => await handleMoveLead(item.id, e.target.value)}
+                                                                            className="w-full text-xs font-bold bg-white border border-slate-200 text-slate-800 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
+                                                                        >
+                                                                            <option disabled className="text-slate-400 font-bold bg-slate-50">-- Pipeline --</option>
+                                                                            {pipelineStages.map(stage => <option key={stage} value={stage}>{stage}</option>)}
+                                                                            <option disabled className="text-slate-400 font-bold bg-slate-50">-- Clients --</option>
+                                                                            {clientStages.map(stage => <option key={stage} value={stage}>{stage}</option>)}
+                                                                        </select>
+                                                                    </div>
+
+                                                                    {/* Value and Source */}
+                                                                    <div className="grid grid-cols-2 gap-3">
+                                                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
+                                                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Value</span>
+                                                                            {editingLeadValueId === item.id ? (
+                                                                                <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden w-full max-w-[100px]">
+                                                                                    <span className="text-primary text-xs font-semibold pl-1.5">₹</span>
+                                                                                    <input type="text" value={editingLeadValueAmount} onChange={e => setEditingLeadValueAmount(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateLeadValue(item.id); if (e.key === 'Escape') setEditingLeadValueId(null); }} onBlur={() => handleUpdateLeadValue(item.id)} autoFocus className="w-full bg-transparent text-xs font-semibold text-primary outline-none py-1 px-1" />
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="text-sm font-bold text-primary cursor-pointer hover:scale-105 transition-transform" onClick={() => { setEditingLeadValueId(item.id); setEditingLeadValueAmount(item.valueAmount?.toString() || '0'); }}>{item.value}</div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col justify-center items-center text-center">
+                                                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</span>
+                                                                            <div className="flex items-center gap-1 text-[11px] font-bold text-slate-700 leading-tight">{item.source}</div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Actions */}
+                                                                    <div className="flex flex-col gap-2">
+                                                                        <button onClick={() => fetchWhatsappChat(item)} className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group">
+                                                                            <MessageCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform text-primary" /> View AI Chat History
+                                                                        </button>
+                                                                        {item.pipeline_stage === 'New Inquiry' && (
+                                                                            <button onClick={() => openAgentModal(item, 'inquiry')} className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"><Bot className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" /> Send Greeting Message</button>
+                                                                        )}
+                                                                        {item.pipeline_stage === 'In Discussion' && (
+                                                                            <button onClick={() => openAgentModal(item, 'quotation')} className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"><Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" /> Send Quotation</button>
+                                                                        )}
+                                                                        {item.pipeline_stage === 'Quotation Sent' && (
+                                                                            <div className="flex flex-col gap-2">
+                                                                                <button onClick={() => openAgentModal(item, 'consent')} className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"><FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" /> Send Consent Form Link</button>
+                                                                                <button onClick={async () => { await handleMoveLead(item.id, 'Form Submitted'); toast.success("Consent marked as Agreed!"); }} className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Mark Consent Agreed</button>
+                                                                            </div>
+                                                                        )}
+                                                                        {item.pipeline_stage === 'Form Submitted' && (
+                                                                            <button onClick={() => openStaffPicker(item)} className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"><Users className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" /> Assign Staff Member</button>
+                                                                        )}
+                                                                        {item.pipeline_stage === 'Staff Assigned' && (
+                                                                            <button onClick={() => openAgentModal(item, 'deposit')} className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"><FileText className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" /> Send Deposit Invoice</button>
+                                                                        )}
+                                                                        {item.pipeline_stage === 'Active Client' && (
+                                                                            <button onClick={() => openAgentModal(item, 'billing')} className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 group"><Send className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" /> Send Monthly Bill</button>
+                                                                        )}
+                                                                        {item.pipeline_stage === 'Monthly Billing' && (
+                                                                            <button onClick={() => { convertToClient(item.id, item.name); toast.success(`${item.name} migrated to Client Master.`); }} className="w-full bg-gradient-to-r from-primary to-[#0E7C7E] text-white text-xs font-bold py-2 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"><Users className="w-3.5 h-3.5" /> Convert to Client Master</button>
+                                                                        )}
+                                                                        <button onClick={() => handleDeleteLead(item.id, item.name)} className="w-full mt-2 text-[11px] font-bold text-slate-400 hover:text-red-500 py-1.5 flex items-center justify-center gap-1 rounded-md hover:bg-red-50 transition-colors"><Trash2 className="w-3 h-3" /> Delete Lead</button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                             
-                                                            {/* View Details Button */}
+                                                            {/* View Details Toggle Button */}
                                                             <button 
-                                                                onClick={(e) => { e.stopPropagation(); setSelectedLeadForDrawer(item); }}
-                                                                className="mt-auto w-full py-3 bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-700 hover:text-primary hover:border-primary/30 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm group"
+                                                                onClick={(e) => { e.stopPropagation(); setExpandedCardIds(prev => ({...prev, [item.id]: !prev[item.id]})); }}
+                                                                className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-primary hover:border-primary/30 text-[13px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 group shadow-sm"
                                                             >
-                                                                View Details
-                                                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                                {expandedCardIds[item.id] ? (
+                                                                    <>Hide Details <ChevronDown className="w-4 h-4 rotate-180 transition-transform" /></>
+                                                                ) : (
+                                                                    <>View Details <ChevronDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" /></>
+                                                                )}
                                                             </button>
                                                         </div>
                                                     ))}
@@ -2657,220 +2781,7 @@ export default function CRM() {
             </div>
         )}
 
-        {/* Lead Details Slide-out Drawer */}
-        {selectedLeadForDrawer && (
-            <div className="fixed inset-0 z-[100] flex justify-end">
-                {/* Backdrop */}
-                <div 
-                    className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity" 
-                    onClick={() => setSelectedLeadForDrawer(null)}
-                />
-                
-                {/* Drawer Panel */}
-                <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-                    <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
-                        <div>
-                            <h2 className="text-xl font-bold text-slate-900">{selectedLeadForDrawer.name}</h2>
-                            <p className="text-sm font-medium text-slate-500 mt-0.5">{formatPhoneNumber(selectedLeadForDrawer.whatsapp_number || selectedLeadForDrawer.phone)}</p>
-                        </div>
-                        <button 
-                            onClick={() => setSelectedLeadForDrawer(null)}
-                            className="p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
 
-                    <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6">
-                        
-                        {/* Pipeline Stage Management */}
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pipeline Stage</label>
-                            <select
-                                value={selectedLeadForDrawer.pipeline_stage}
-                                onChange={async (e) => {
-                                    await handleMoveLead(selectedLeadForDrawer.id, e.target.value);
-                                    setSelectedLeadForDrawer((prev: any) => prev ? {...prev, pipeline_stage: e.target.value} : null);
-                                }}
-                                className="w-full text-sm font-bold bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
-                            >
-                                <option disabled className="text-slate-400 font-bold bg-slate-50">-- Pipeline --</option>
-                                {pipelineStages.map(stage => (
-                                    <option key={stage} value={stage}>{stage}</option>
-                                ))}
-                                <option disabled className="text-slate-400 font-bold bg-slate-50">-- Clients --</option>
-                                {clientStages.map(stage => (
-                                    <option key={stage} value={stage}>{stage}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Value and Source */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lead Value</span>
-                                {editingLeadValueId === selectedLeadForDrawer.id ? (
-                                    <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden w-full max-w-[120px]">
-                                        <span className="text-primary text-sm font-semibold pl-2">₹</span>
-                                        <input
-                                            type="text"
-                                            value={editingLeadValueAmount}
-                                            onChange={e => setEditingLeadValueAmount(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    handleUpdateLeadValue(selectedLeadForDrawer.id);
-                                                    setSelectedLeadForDrawer((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
-                                                }
-                                                if (e.key === 'Escape') setEditingLeadValueId(null);
-                                            }}
-                                            onBlur={() => {
-                                                handleUpdateLeadValue(selectedLeadForDrawer.id);
-                                                setSelectedLeadForDrawer((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
-                                            }}
-                                            autoFocus
-                                            className="w-full bg-transparent text-sm font-semibold text-primary outline-none py-1 px-1"
-                                        />
-                                    </div>
-                                ) : (
-                                    <div 
-                                        className="text-lg font-bold text-primary cursor-pointer hover:scale-105 transition-transform" 
-                                        title="Click to edit value"
-                                        onClick={() => {
-                                            setEditingLeadValueId(selectedLeadForDrawer.id);
-                                            setEditingLeadValueAmount(selectedLeadForDrawer.valueAmount?.toString() || '0');
-                                        }}
-                                    >
-                                        {selectedLeadForDrawer.value}
-                                    </div>
-                                )}
-                            </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</span>
-                                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-                                    {selectedLeadForDrawer.source}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* AI & Process Actions */}
-                        <div className="border-t border-slate-100 pt-5 mt-2">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Actions & Processing</h3>
-                            <div className="flex flex-col gap-3">
-                                <button
-                                    onClick={() => { fetchWhatsappChat(selectedLeadForDrawer); setSelectedLeadForDrawer(null); }}
-                                    className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <MessageCircle className="w-4 h-4 group-hover:scale-110 transition-transform text-primary" />
-                                    View AI Chat History
-                                </button>
-                                
-                                {selectedLeadForDrawer.pipeline_stage === 'New Inquiry' && (
-                                    <button
-                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'inquiry'); setSelectedLeadForDrawer(null); }}
-                                        className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                        Send Greeting Message
-                                    </button>
-                                )}
-
-                                {selectedLeadForDrawer.pipeline_stage === 'In Discussion' && (
-                                    <button
-                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'quotation'); setSelectedLeadForDrawer(null); }}
-                                        className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                        Send Quotation
-                                    </button>
-                                )}
-
-                                {selectedLeadForDrawer.pipeline_stage === 'Quotation Sent' && (
-                                    <div className="flex flex-col gap-2">
-                                        <button
-                                            onClick={() => { openAgentModal(selectedLeadForDrawer, 'consent'); setSelectedLeadForDrawer(null); }}
-                                            className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                        >
-                                            <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                            Send Consent Form Link
-                                        </button>
-                                        <button
-                                            onClick={async () => { 
-                                                await handleMoveLead(selectedLeadForDrawer.id, 'Form Submitted');
-                                                toast.success("Consent marked as Agreed! Lead moved to Form Submitted.");
-                                                setSelectedLeadForDrawer(null);
-                                            }}
-                                            className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2"
-                                        >
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            Mark Consent Agreed
-                                        </button>
-                                    </div>
-                                )}
-
-                                {selectedLeadForDrawer.pipeline_stage === 'Form Submitted' && (
-                                    <button
-                                        onClick={() => { openStaffPicker(selectedLeadForDrawer); setSelectedLeadForDrawer(null); }}
-                                        className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <Users className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                        Assign Staff Member
-                                    </button>
-                                )}
-
-                                {selectedLeadForDrawer.pipeline_stage === 'Staff Assigned' && (
-                                    <button
-                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'deposit'); setSelectedLeadForDrawer(null); }}
-                                        className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                        Send Deposit Invoice
-                                    </button>
-                                )}
-
-                                {selectedLeadForDrawer.pipeline_stage === 'Active Client' && (
-                                    <button
-                                        onClick={() => { openAgentModal(selectedLeadForDrawer, 'billing'); setSelectedLeadForDrawer(null); }}
-                                        className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                        Send Monthly Bill
-                                    </button>
-                                )}
-
-                                {selectedLeadForDrawer.pipeline_stage === 'Monthly Billing' && (
-                                    <button
-                                        onClick={() => {
-                                            convertToClient(selectedLeadForDrawer.id, selectedLeadForDrawer.name);
-                                            toast.success(`${selectedLeadForDrawer.name} migrated to Client Master.`);
-                                            setSelectedLeadForDrawer(null);
-                                        }}
-                                        className="w-full bg-gradient-to-r from-primary to-[#0E7C7E] text-white font-bold py-2.5 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                                    >
-                                        <Users className="w-4 h-4" />
-                                        Convert to Client Master
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                    </div>
-                    
-                    {/* Drawer Footer Actions */}
-                    <div className="p-5 border-t border-slate-100 bg-slate-50/50 mt-auto">
-                        <button
-                            onClick={() => { 
-                                handleDeleteLead(selectedLeadForDrawer.id, selectedLeadForDrawer.name);
-                                setSelectedLeadForDrawer(null);
-                            }}
-                            className="w-full bg-red-50 hover:bg-red-500 hover:text-white border border-red-100 text-red-600 font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            Delete Lead Permanently
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
         </div>
     );
 }
