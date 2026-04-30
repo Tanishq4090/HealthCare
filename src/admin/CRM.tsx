@@ -1777,7 +1777,7 @@ export default function CRM() {
                                             </div>
 
                                             <div className="flex items-center gap-2">
-                                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${col.count > 0 ? 'bg-[#1AA6A8]/10 text-[#1AA6A8] border border-[#1AA6A8]/20' : 'bg-slate-100 text-slate-500'}`}>
+                                                <span className={`min-w-[2rem] h-8 px-2 rounded-full flex items-center justify-center text-sm font-extrabold transition-all shadow-sm ${col.count > 0 ? 'bg-gradient-to-br from-[#1AA6A8] to-[#0E7C7E] text-white ring-2 ring-[#1AA6A8]/30 scale-105' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
                                                     {col.count}
                                                 </span>
 
