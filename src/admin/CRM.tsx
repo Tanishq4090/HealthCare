@@ -1777,7 +1777,7 @@ export default function CRM() {
                                             </div>
 
                                             <div className="flex items-center gap-2">
-                                                <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
+                                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${col.count > 0 ? 'bg-[#1AA6A8]/10 text-[#1AA6A8] border border-[#1AA6A8]/20' : 'bg-slate-100 text-slate-500'}`}>
                                                     {col.count}
                                                 </span>
 
