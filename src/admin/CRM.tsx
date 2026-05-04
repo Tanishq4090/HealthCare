@@ -1761,7 +1761,7 @@ export default function CRM() {
                                                 />
                                             ) : (
                                                 <h3
-                                                    className="font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate pr-2 w-[180px]"
+                                                    className="font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate pr-2 w-[150px]"
                                                     onDoubleClick={() => {
                                                         if (!PROTECTED_STAGES.includes(col.title)) {
                                                             setEditingStageIdx(idx);
@@ -1775,15 +1775,14 @@ export default function CRM() {
                                                     {col.title}
                                                 </h3>
                                             )}
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
                                                 <span className={`min-w-[2rem] h-8 px-2 rounded-full flex items-center justify-center text-sm font-extrabold transition-all shadow-sm ${col.count > 0 ? 'bg-gradient-to-br from-[#1AA6A8] to-[#0E7C7E] text-white ring-2 ring-[#1AA6A8]/30 scale-105' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
                                                     {col.count}
                                                 </span>
+                                            </div>
 
+                                            <div className="flex items-center gap-2">
                                                 {/* Header Dropdown Menu (Hover based) */}
-                                                <div className="absolute right-2 top-3 opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden" onClick={e => e.stopPropagation()}>
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden" onClick={e => e.stopPropagation()}>
                                                     <button
                                                         disabled={idx === 0}
                                                         onClick={(e) => { e.stopPropagation(); handleSlideStage(idx, 'left'); }}
@@ -2733,6 +2732,21 @@ export default function CRM() {
 
                 <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
                     
+                    {/* Assigned Staff Info */}
+                    {selectedInspectorLead.assigned_worker_name && (
+                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
+                                    <Users className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Assigned Staff</p>
+                                    <p className="text-sm font-bold text-slate-900">{selectedInspectorLead.assigned_worker_name}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Pipeline Stage Management */}
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pipeline Stage</label>
