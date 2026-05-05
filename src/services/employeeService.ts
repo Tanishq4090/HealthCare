@@ -128,8 +128,9 @@ export async function createEmployee(
         shift_hours: data.shift_hours ?? null,
         experience: data.experience?.trim() ?? null,
         gender: data.gender?.trim() ?? null,
-        username: data.username?.trim() || null, // empty string → null to avoid unique constraint violation
-        password_hash: data.password ? data.password : null,
+        // Note: username intentionally omitted — no username field in form,
+        // and sending any value (even null) can trigger DB-level auto-fill
+        // that causes unique constraint violations.
       })
       .select()
       .single();

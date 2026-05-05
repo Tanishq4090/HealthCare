@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
   ChevronDown, Building2, Shield, Trash2, RotateCcw,
-  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2,
+  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle,
 } from 'lucide-react';
 
 // shadcn/ui
@@ -1501,6 +1501,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | 'all'>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmStatusChange, setConfirmStatusChange] = useState<{ emp: Employee, newStatus: EmployeeStatus } | null>(null);
   const debouncedSearch = useDebounce(search);
 
   const load = useCallback(async () => {
@@ -1520,6 +1521,11 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
   useEffect(() => { load(); }, [load, refreshTrigger]);
 
   const handleStatusChange = async (emp: Employee, newStatus: EmployeeStatus) => {
+    if (emp.status === 'assigned' && newStatus === 'available') {
+      setConfirmStatusChange({ emp, newStatus });
+      return;
+    }
+
     setUpdatingId(emp.id);
     try {
       const updated = await updateEmployeeStatus(emp.id, newStatus);
@@ -1528,6 +1534,40 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
     } catch (err: any) {
       toast.error(err.message);
     } finally { setUpdatingId(null); }
+  };
+
+  const executeStatusChange = async () => {
+    if (!confirmStatusChange) return;
+    const { emp, newStatus } = confirmStatusChange;
+    
+    setUpdatingId(emp.id);
+    const targetStatus = newStatus;
+    setConfirmStatusChange(null);
+    
+    try {
+      // Find active assignment
+      const { data: assignment } = await supabase
+        .from('worker_assignments')
+        .select('id')
+        .eq('employee_id', emp.id)
+        .eq('assignment_status', 'active')
+        .maybeSingle();
+
+      if (assignment) {
+        await deactivateIDCardLink(assignment.id, 'cancelled');
+        // deactivateIDCardLink updates the employee status to available automatically
+      } else {
+        await updateEmployeeStatus(emp.id, targetStatus);
+      }
+      
+      // Refresh list
+      load();
+      toast.success(`${emp.full_name} is now ${targetStatus} and released from client.`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update status');
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   const filtered = employees.filter(e => {
@@ -1695,6 +1735,39 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
            </p>
         </div>
       </div>
+
+      {/* Confirmation Dialog for Status Change */}
+      <Dialog open={!!confirmStatusChange} onOpenChange={(open) => !open && setConfirmStatusChange(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="w-5 h-5" />
+              Confirm Status Change
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-slate-600 leading-relaxed">
+              You are moving <span className="font-bold text-slate-900">{confirmStatusChange?.emp.full_name}</span> from <span className="font-bold text-blue-600">Assigned</span> to <span className="font-bold text-emerald-600">Available</span>.
+            </p>
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+              <p className="text-xs text-amber-700 font-medium">
+                This will automatically release the worker from their currently assigned client and deactivate their active ID card link. Are you sure you want to proceed?
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmStatusChange(null)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={executeStatusChange}
+            >
+              Yes, Make Available
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
