@@ -961,9 +961,12 @@ export default function CRM() {
                 
                 // AUTO-TRIGGER LOGIC: Fire the greeting request automatically for new leads
                 calls.forEach((call: any) => {
-                    const phone = call.capturedWhatsapp || call.phone;
-                    // Only trigger if it has a phone, has no automation logged yet, and isn't already attempting locally
-                    if (phone && !call.automation_error && !newStatus[call.id]) {
+                    const phone = (call.capturedWhatsapp || call.phone || '').toString();
+                    const digits = phone.replace(/\D/g, '');
+                    
+                    // Only trigger if it has a valid-looking phone (at least 10 digits), 
+                    // has no automation logged yet, and isn't already attempting locally
+                    if (digits.length >= 10 && !call.automation_error && !newStatus[call.id]) {
                         // Mark as sending locally immediately to block duplicate dispatches in React's lifecycle
                         newStatus[call.id] = 'sending';
                         // Trigger async workflow
