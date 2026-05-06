@@ -2143,11 +2143,15 @@ export default function CRM() {
                                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                                                             <p className="text-sm text-slate-900 font-semibold truncate max-w-[200px]">{call.capturedName}</p>
                                                             <span className="text-sm text-[#1AA6A8] font-medium whitespace-nowrap">Est. ₹{call.capturedValue}/mo</span>
+                                                            <span className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                                                                <Phone className="w-3.5 h-3.5" /> {call.phone}
+                                                            </span>
                                                             {call.capturedWhatsapp && (
                                                                 <span className="flex items-center gap-1.5 text-xs font-bold text-[#1AA6A8] bg-[#EAFBFB] px-2.5 py-1 rounded-lg border border-[#1AA6A8]/10">
                                                                     <MessageCircle className="w-3.5 h-3.5" /> {call.capturedWhatsapp}
                                                                 </span>
                                                             )}
+
                                                         </div>
                                                     </div>
                                                     <div className="flex flex-wrap items-center gap-2 shrink-0">
