@@ -2964,6 +2964,7 @@ export default function CRM() {
                     </button>
                 </div>
             </div>
+        )}
             {/* Service Period Modal */}
             {isServicePeriodOpen && selectedWorker && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">

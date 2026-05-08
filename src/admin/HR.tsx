@@ -926,80 +926,35 @@ export default function HR() {
             // Static jsPDF used instead
 
             // Generate PDFs for download
-            if (manualPayrollData.type === 'both' || manualPayrollData.type === 'payslip') {
-                const workerDoc = new jsPDF();
-                workerDoc.setFontSize(22);
-                workerDoc.setTextColor(15, 23, 42); 
-                workerDoc.text("99Care AI", 14, 20);
-                workerDoc.setFontSize(14);
-                workerDoc.setTextColor(100, 116, 139); 
-                workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
-                workerDoc.setFontSize(10);
-                workerDoc.setTextColor(71, 85, 105);
-                workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
-                workerDoc.text(`Role: ${worker.role}`, 14, 52);
-                workerDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
-                workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 66);
+            const workerDoc = new jsPDF();
+            workerDoc.setFontSize(22);
+            workerDoc.setTextColor(15, 23, 42); 
+            workerDoc.text("99Care AI", 14, 20);
+            workerDoc.setFontSize(14);
+            workerDoc.setTextColor(100, 116, 139); 
+            workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
+            workerDoc.setFontSize(10);
+            workerDoc.setTextColor(71, 85, 105);
+            workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
+            workerDoc.text(`Role: ${worker.role}`, 14, 52);
+            workerDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
+            workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 66);
 
-                autoTable(workerDoc, {
-                    startY: 75,
-                    head: [['Description', 'Value']],
-                    body: [
-                        ['working days', `${manualPayrollData.daysWorked} days`],
-                        ['Salary per day', `Rs ${appliedRate.toFixed(2)}`],
-                        ['Total Amount :', `Rs ${totalCost.toFixed(2)}`],
-                        ['Security Deposit Adjustment :', `- Rs ${deposit.toFixed(2)}`],
-                        ['Advance Taken :', `- Rs ${advance.toFixed(2)}`],
-                        ['Net Payable Salary:', `Rs ${netBalance.toFixed(2)}`],
-                    ],
-                    theme: 'striped',
-                    headStyles: { fillColor: [26, 166, 168] },
-                });
-                workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
-            }
-
-            if (manualPayrollData.type === 'both' || manualPayrollData.type === 'invoice') {
-                const clientDoc = new jsPDF();
-                clientDoc.setFontSize(22);
-                clientDoc.setTextColor(15, 23, 42); 
-                clientDoc.text("99Care AI", 14, 20);
-                clientDoc.setFontSize(14);
-                clientDoc.setTextColor(100, 116, 139); 
-                clientDoc.text("Official Client Invoice (Manual Entry)", 14, 30);
-                clientDoc.setFontSize(10);
-                clientDoc.setTextColor(71, 85, 105);
-                clientDoc.text(`Client Name: ${worker.assigned_client || 'Unassigned'}`, 14, 45);
-                clientDoc.text(`Service Provided By: ${worker.name} (${worker.role})`, 14, 52);
-                clientDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
-
-                autoTable(clientDoc, {
-                    startY: 65,
-                    head: [['Service Description', 'Calculation', 'Subtotal']],
-                    body: [
-                        [
-                            `Professional Services (${manualPayrollData.daysWorked} days)`,
-                            `${manualPayrollData.daysWorked} days @ Rs${appliedRate.toFixed(2)}`,
-                            `Rs ${totalCost.toFixed(2)}`
-                        ]
-                    ],
-                    theme: 'grid',
-                    headStyles: { fillColor: [15, 23, 42] },
-                });
-                
-                autoTable(clientDoc, {
-                    startY: (clientDoc as any).lastAutoTable.finalY + 10,
-                    head: [['Billing Summary', 'Amount']],
-                    body: [
-                        ['Gross Service Value', `Rs ${totalCost.toFixed(2)}`],
-                        ['Less: Initial Deposit', `- Rs ${deposit.toFixed(2)}`],
-                        [`Net Payable Amount`, `Rs ${netBalance.toFixed(2)}`]
-                    ],
-                    theme: 'plain',
-                    styles: { fontSize: 11 },
-                    columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }
-                });
-                clientDoc.save(`Invoice_${worker.assigned_client?.replace(/\s+/g, '_') || 'Client'}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
-            }
+            autoTable(workerDoc, {
+                startY: 75,
+                head: [['Description', 'Value']],
+                body: [
+                    ['working days', `${manualPayrollData.daysWorked} days`],
+                    ['Salary per day', `Rs ${appliedRate.toFixed(2)}`],
+                    ['Total Amount :', `Rs ${totalCost.toFixed(2)}`],
+                    ['Security Deposit Adjustment :', `- Rs ${deposit.toFixed(2)}`],
+                    ['Advance Taken :', `- Rs ${advance.toFixed(2)}`],
+                    ['Net Payable Salary:', `Rs ${netBalance.toFixed(2)}`],
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [26, 166, 168] },
+            });
+            workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
 
             toast.success("Manual payslip generated and downloaded successfully");
             fetchData();
@@ -1010,7 +965,7 @@ export default function HR() {
                 shiftHoursOverride: 0, 
                 serviceMonth: format(new Date(), 'MMMM yyyy'),
                 advanceAmount: 0,
-                type: 'both'
+                type: 'payslip'
             });
         } catch (error: any) {
             console.error(error);
