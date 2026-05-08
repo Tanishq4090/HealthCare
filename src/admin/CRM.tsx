@@ -885,9 +885,9 @@ export default function CRM() {
         setServiceEndDate('');
         setServiceHours(12); // Default to 12h shift
         
-        // Use lead's quoted value (Lead Value) instead of worker salary
-        const leadValue = staffPickerTargetLead?.estimated_value_monthly || 0;
-        setCalculatedBill(Math.round(leadValue / 30)); // Default to 1-day portion of monthly quote
+        // Use intelligent quoted rates
+        const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+        setCalculatedBill(Math.round(dailyRate));
     };
 
     const handleConfirmServicePeriod = async () => {
@@ -1040,6 +1040,13 @@ export default function CRM() {
         toast.success("Default template saved successfully!");
     };
 
+    // Helper to extract numeric values from strings like "₹45,000" or "1500/day"
+    const parsePrice = (str: string) => {
+        if (!str) return 0;
+        const matched = str.replace(/[^\d]/g, '');
+        return parseFloat(matched) || 0;
+    };
+
     const handleDispatchMessage = async () => {
         setIsAgentModalOpen(false);
         const toastId = toast.loading(`Dispatching AI Message to ${agentTargetLead?.name || 'Lead'}...`);
@@ -1126,10 +1133,19 @@ export default function CRM() {
                     await handleMoveLead(agentTargetLead.id, 'In Discussion');
                     toast.success(`Greeting dispatched! Moved ${agentTargetLead.name} to In Discussion.`, { id: toastId, duration: 4000 });
                 }
-                // If it was quotations -> move to Quotation Sent
+                // If it was quotations -> move to Quotation Sent and SAVE the rates for auto-estimation later
                 else if (agentTargetAction === 'quotation') {
-                    await handleMoveLead(agentTargetLead.id, 'Quotation Sent');
-                    toast.success(`Quotation sent! Moved ${agentTargetLead.name} to Quotation Sent.`, { id: toastId, duration: 4000 });
+                    const monthlyRate = parsePrice(quotationVars.v3);
+                    const dailyRate = parsePrice(quotationVars.v4);
+
+                    await supabase.from('crm_leads').update({
+                        pipeline_stage: 'Quotation Sent',
+                        quoted_monthly_rate: monthlyRate,
+                        quoted_daily_rate: dailyRate,
+                        estimated_value_monthly: monthlyRate // Primary lead value
+                    }).eq('id', agentTargetLead.id);
+
+                    toast.success(`Quotation sent! Moved ${agentTargetLead.name} to Quotation Sent and saved pricing for auto-estimation.`, { id: toastId, duration: 4000 });
                 }
                 else if (agentTargetAction === 'consent') {
                     toast.success(`Consent Form dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
@@ -3006,7 +3022,7 @@ export default function CRM() {
                                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'one_day' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
                                         onClick={() => {
                                             setServiceType('one_day');
-                                            const dailyRate = (staffPickerTargetLead?.estimated_value_monthly || 0) / 30;
+                                            const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
                                             setCalculatedBill(Math.round(dailyRate));
                                         }}
                                     >One Day</button>
@@ -3014,7 +3030,8 @@ export default function CRM() {
                                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'date_range' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
                                         onClick={() => {
                                             setServiceType('date_range');
-                                            setCalculatedBill(staffPickerTargetLead?.estimated_value_monthly || 0);
+                                            // Start with monthly rate as default for range
+                                            setCalculatedBill(staffPickerTargetLead?.quoted_monthly_rate || 0);
                                         }}
                                     >Date Range</button>
                                 </div>
@@ -3031,8 +3048,9 @@ export default function CRM() {
                                         <input type="number" min="1" max="24" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceHours} onChange={e => {
                                             const h = parseInt(e.target.value) || 1;
                                             setServiceHours(h);
-                                            // Quoted hourly rate based on 12h standard day
-                                            const hourlyRate = (staffPickerTargetLead?.estimated_value_monthly || 0) / 30 / 12;
+                                            // Pro-rate the daily rate based on 12h standard
+                                            const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                                            const hourlyRate = dailyRate / 12;
                                             setCalculatedBill(Math.round(h * hourlyRate));
                                         }} />
                                     </div>
@@ -3056,8 +3074,18 @@ export default function CRM() {
                                                 setServiceEndDate(e.target.value);
                                                 if (serviceStartDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
-                                                    const dailyRate = (staffPickerTargetLead?.estimated_value_monthly || 0) / 30;
-                                                    setCalculatedBill(Math.round(days * dailyRate));
+                                                    
+                                                    // Intelligent estimation:
+                                                    // If days >= 30, use the full month rate.
+                                                    // Otherwise, use daily rate * days.
+                                                    const monthlyRate = staffPickerTargetLead?.quoted_monthly_rate || 0;
+                                                    const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                                                    
+                                                    if (days >= 30) {
+                                                        setCalculatedBill(Math.round(monthlyRate));
+                                                    } else {
+                                                        setCalculatedBill(Math.round(days * dailyRate));
+                                                    }
                                                 }
                                             }} />
                                         </div>
