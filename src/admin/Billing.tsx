@@ -42,6 +42,10 @@ export default function Billing() {
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
 
+    // Invoice Modal State
+    const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+    const [invoiceData, setInvoiceData] = useState<any>(null);
+
     const fetchPayments = async () => {
         setIsLoading(true);
         try {
@@ -151,6 +155,27 @@ export default function Billing() {
         return `Hi ${bill.client}, your monthly invoice for ${bill.month} has been auto-generated. Total amount due: ${bill.amount}. Please click the link below to view the bill and scan the QR code to process your payment:\n${link}`;
     };
 
+    const openInvoiceModal = (bill: any) => {
+        const isMonthly = !!bill.month;
+        const prefix = isMonthly ? 'INV-M' : 'INV-D';
+        const billToProcess = { ...bill, invoice_no: bill.invoice_no || `${prefix}${Math.floor(Math.random() * 1000) + 100}` };
+        setAgentTargetBill(billToProcess);
+        
+        const amountNum = typeof bill.amount === 'string' ? parseFloat(bill.amount.replace(/[^\d.-]/g, '')) : bill.amount;
+
+        setInvoiceData({
+            clientName: bill.client,
+            phone: bill.client_phone || '+91 9016116564',
+            service: isMonthly ? `Monthly Service - ${bill.month}` : 'Security Deposit',
+            amount: amountNum,
+            date: new Date().toISOString(),
+            invoiceNumber: billToProcess.invoice_no
+        });
+        
+        setAgentDraftText(generateWhatsappDraft(billToProcess, agentDraftLang));
+        setIsInvoiceOpen(true);
+    };
+
     const openAgentModal = (bill: any) => {
         const billToProcess = { ...bill, invoice_no: bill.invoice_no || `INV-M${Math.floor(Math.random() * 1000) + 100}` };
         setAgentTargetBill(billToProcess);
@@ -243,7 +268,7 @@ export default function Billing() {
                                     </span>
 
                                     {dep.status === 'Pending Invoice' && (
-                                        <button onClick={() => handleGenerateDepositInvoice(dep.id, dep.client)} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2">
+                                        <button onClick={() => openInvoiceModal(dep)} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2">
                                             <FileText className="w-4 h-4" /> Prepare Invoice
                                         </button>
                                     )}
@@ -303,8 +328,8 @@ export default function Billing() {
                                                 <FileText className="w-4 h-4" /> Locked
                                             </button>
                                         ) : bill.status === 'Draft' ? (
-                                            <button onClick={() => openAgentModal(bill)} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
-                                                <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" /> AI WhatsApp Bill
+                                            <button onClick={() => openInvoiceModal(bill)} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
+                                                <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" /> Prepare Invoice
                                             </button>
                                         ) : (
                                             <button onClick={() => handleAction('Record Monthly Payment', bill.client, bill.id)} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
@@ -555,6 +580,151 @@ export default function Billing() {
                             <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                                 <Send className="w-4 h-4" /> Send Bill on WhatsApp
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Invoice Preview Modal */}
+            {isInvoiceOpen && invoiceData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-slate-200 max-h-[90vh] animate-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-primary" />
+                                Proforma Invoice
+                            </h3>
+                            <div className="flex gap-2">
+                                <button onClick={() => {
+                                    setIsInvoiceOpen(false);
+                                    
+                                    // Update status to 'Invoice Sent' locally
+                                    if (agentTargetBill.month) {
+                                        setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent', invoice_no: agentTargetBill.invoice_no } : b));
+                                    } else {
+                                        setDeposits(prev => prev.map(d => d.id === agentTargetBill.id ? { ...d, status: 'Invoice Sent', invoice_no: agentTargetBill.invoice_no } : d));
+                                    }
+                                    
+                                    setIsAgentModalOpen(true);
+                                }} className="px-4 py-1.5 bg-emerald-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                                    <Send className="w-4 h-4" /> Send via WhatsApp
+                                </button>
+                                <button onClick={() => setIsInvoiceOpen(false)} className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-200 rounded-md transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="p-8 overflow-y-auto bg-white custom-scrollbar">
+                            {/* Invoice Header */}
+                            <div className="flex justify-between items-start mb-10">
+                                <div>
+                                    <h1 className="text-3xl font-extrabold text-[#1AA6A8] tracking-tight flex items-center gap-2">
+                                        <div className="w-10 h-10 bg-[#1AA6A8] rounded-full flex items-center justify-center text-white text-xl">99</div>
+                                        CARE
+                                    </h1>
+                                    <p className="text-[#F05A28] font-semibold tracking-widest text-xs mt-1">HELPING HANDS</p>
+                                    <div className="mt-8">
+                                        <h2 className="text-xl font-bold text-slate-800 tracking-[0.2em]">INVOICE</h2>
+                                    </div>
+                                </div>
+                                <div className="text-right text-xs text-slate-600 flex flex-col items-end gap-1">
+                                    <p className="font-bold text-slate-800 text-lg">99 CARE</p>
+                                    <p>104, FORCHUN MALL, GALAXY CIRCAL,</p>
+                                    <p>PAL ADAJAN</p>
+                                    <p>Surat, GUJARAT, 395007</p>
+                                    <p className="mt-1"><span className="font-semibold text-slate-800">Mobile</span> +91 9016116564</p>
+                                    <p><span className="font-semibold text-slate-800">Email</span> 99careforyou@gmail.com</p>
+                                    <p><span className="font-semibold text-slate-800">Website</span> 99CARE.ORG</p>
+                                </div>
+                            </div>
+
+                            {/* Client & Invoice Details */}
+                            <div className="flex justify-between mb-8 border-t border-b border-slate-200 py-4">
+                                <div className="text-sm">
+                                    <p className="font-bold text-slate-800 mb-1">Bill To:</p>
+                                    <p className="font-bold text-lg text-slate-900">{invoiceData.clientName}</p>
+                                    <p className="text-slate-600">Ph: {invoiceData.phone}</p>
+                                </div>
+                                <div className="text-sm flex flex-col gap-2 text-right">
+                                    <div className="flex justify-end gap-8"><span className="font-bold text-slate-700">Invoice #:</span> <span className="font-semibold">{invoiceData.invoiceNumber}</span></div>
+                                    <div className="flex justify-end gap-8"><span className="font-bold text-slate-700">Invoice Date:</span> <span className="font-semibold">{new Date(invoiceData.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                                </div>
+                            </div>
+
+                            {/* Items Table */}
+                            <table className="w-full text-sm mb-8 border-collapse">
+                                <thead>
+                                    <tr className="bg-[#3B82F6] text-white">
+                                        <th className="py-1 px-3 text-left w-12 border-r border-[#60A5FA]">#</th>
+                                        <th className="py-1 px-3 text-left border-r border-[#60A5FA]">Item</th>
+                                        <th className="py-1 px-3 text-center border-r border-[#60A5FA] w-32">HSN/SAC</th>
+                                        <th className="py-1 px-3 text-right w-32">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr className="border-b border-slate-200">
+                                        <td className="py-2 px-3 text-left">1</td>
+                                        <td className="py-2 px-3 font-bold text-slate-800 uppercase">{invoiceData.service}</td>
+                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                        <td className="py-2 px-3 text-right font-semibold">{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            {/* Totals */}
+                            <div className="flex justify-end mb-10">
+                                <div className="w-1/2">
+                                    <div className="flex justify-between items-center py-2 border-b border-slate-300">
+                                        <span className="font-bold text-lg text-slate-800">Total</span>
+                                        <span className="font-bold text-xl text-slate-900">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2 text-sm bg-slate-100 px-2 mt-1">
+                                        <span className="font-semibold text-slate-700">Amount Payable:</span>
+                                        <span className="font-bold text-slate-800">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Payment & Sign */}
+                            <div className="flex justify-between text-sm mb-12">
+                                <div className="flex gap-8">
+                                    <div>
+                                        <p className="font-bold text-slate-800 mb-2 text-xs">Pay using UPI:</p>
+                                        <div className="w-20 h-20 bg-slate-200 border border-slate-300 flex items-center justify-center rounded-md overflow-hidden p-1">
+                                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=99careforyou@okaxis&pn=99%20CARE&am=${invoiceData.amount}&cu=INR`} alt="UPI QR" className="w-full h-full object-cover" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-slate-800 mb-1 text-xs">Bank Details:</p>
+                                        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-slate-700 text-[11px]">
+                                            <span className="font-semibold">Bank:</span> <span>The Sutex Co-Operative Bank Ltd.</span>
+                                            <span className="font-semibold">Account Holder:</span> <span>99 CARE HOME HEALTHCARE SERVICE</span>
+                                            <span className="font-semibold">Account #:</span> <span>001810021002033</span>
+                                            <span className="font-semibold">IFSC Code:</span> <span>SUTB0248018</span>
+                                            <span className="font-semibold">Branch:</span> <span>Adajan Pal</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-center flex flex-col items-center justify-end">
+                                    <p className="text-[10px] text-slate-500 mb-1">For 99 CARE</p>
+                                    <div className="h-10 w-28 border-b border-slate-400 flex items-end justify-center mb-1"></div>
+                                    <p className="text-[10px] text-slate-600">Authorized Signatory</p>
+                                </div>
+                            </div>
+
+                            {/* Notes */}
+                            <div className="text-[11px] text-slate-600 leading-tight border-t border-slate-200 pt-3 pb-8">
+                                <p className="font-bold text-slate-800 mb-1">Notes:</p>
+                                <p>Thank you So much for appoint us.</p>
+                                <p>We 99 care is part of 99FAS companies based on Services provider entities. Where we can supply all Building and maintenance related work. In our 99CARE we provide best care taker and nursing services at home.</p>
+                                <p>15,000/- paid in advanced before work start for more than 1 days' work. And all bill has to paid on timely based. Advanced Will Settled in Last final bill.</p>
+                                <p>Please Rate us, your one vote is very important and precious for us.</p>
+                                <div className="mt-3">
+                                    <p>Falguni(Co-Founder)</p>
+                                    <p>[99care.org]</p>
+                                    <p>[+91 9016116564]</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

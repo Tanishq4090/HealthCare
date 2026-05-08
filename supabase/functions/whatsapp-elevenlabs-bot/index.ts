@@ -405,7 +405,7 @@ serve(async (req) => {
                 `Thank you for your inquiry! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it on this number shortly. Feel free to ask any other questions! 😊✨`,
 
             'Quotation Sent': 
-                `Thank you! 🙏 Our 99 Care team will send you the consent form link on this number shortly. Please keep an eye out for it — we're excited to get started! ✨`,
+                `Thank you! 🙏 Please complete the consent form we shared with you so that we can move forward and assign your staff. 😊✨`,
 
             'Form Submitted':
                 `Thank you for filling the consent form! 🙏 Our 99 Care team is now identifying the best suited care professional for your needs and will be in touch with you very shortly. 😊`,
@@ -420,7 +420,28 @@ serve(async (req) => {
                 `Thank you for your message! 🙏 Our 99 Care team has noted your query and will get back to you shortly. We appreciate your trust in us! 😊`,
         };
 
-        const leadStage = earlyLead?.pipeline_stage || '';
+        let leadStage = earlyLead?.pipeline_stage || '';
+
+        // Dynamic check for Quotation Sent -> Form Submitted
+        if (leadStage === 'Quotation Sent' && earlyLead?.id) {
+            try {
+                const { data: consentData } = await supabase
+                    .from('client_consents')
+                    .select('id')
+                    .eq('lead_id', earlyLead.id)
+                    .maybeSingle();
+
+                if (consentData) {
+                    // Force update stage
+                    await supabase.from('crm_leads').update({ pipeline_stage: 'Form Submitted' }).eq('id', earlyLead.id);
+                    leadStage = 'Form Submitted';
+                    console.log(`[Consent Check] Lead ${earlyLead.id} found in client_consents. Automatically moved to Form Submitted.`);
+                }
+            } catch (err) {
+                console.error("[Consent Check Error]:", err);
+            }
+        }
+
         const scriptedReply = STAGE_SCRIPTS[leadStage];
 
         if (scriptedReply) {

@@ -72,6 +72,12 @@ export interface WorkerAssignment {
   assignment_status: AssignmentStatus;
   notes: string | null;
   deposit_paid: number;
+  start_date?: string;
+  end_date?: string;
+  service_type?: 'one_day' | 'date_range';
+  hours_per_day?: number;
+  total_bill_amount?: number;
+  invoice_number?: string;
 }
 
 // ── ID Card Types ──────────────────────────────────────────

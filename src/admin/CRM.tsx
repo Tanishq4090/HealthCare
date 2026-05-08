@@ -248,6 +248,14 @@ export default function CRM() {
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
     const [templateDraftText, setTemplateDraftText] = useState('');
     const [quotationVars, setQuotationVars] = useState({ v1: '', v2: '', v3: '', v4: '' });
+    
+    // Service Period Modal State
+    const [isServicePeriodOpen, setIsServicePeriodOpen] = useState(false);
+    const [serviceType, setServiceType] = useState<'one_day' | 'date_range'>('one_day');
+    const [serviceStartDate, setServiceStartDate] = useState('');
+    const [serviceEndDate, setServiceEndDate] = useState('');
+    const [serviceHours, setServiceHours] = useState(1);
+    const [calculatedBill, setCalculatedBill] = useState(0);
 
     // Transcript Modal State
     const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
@@ -857,53 +865,70 @@ export default function CRM() {
         setIsStaffPickerOpen(true);
     };
 
-    const confirmWorkerSelection = async (worker: any) => {
+    const confirmWorkerSelection = (worker: any) => {
+        // Guard: mock workers have numeric IDs (e.g. '3') — not valid UUIDs
+        const isRealWorker = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worker.id);
+        if (!isRealWorker) {
+            toast.error(
+                `Cannot assign "${worker.name || worker.full_name}" — this is a demo worker. Please add real workers in the HR module first.`
+            );
+            return;
+        }
+
         setSelectedWorker(worker);
         setIsStaffPickerOpen(false);
+        setIsServicePeriodOpen(true);
+        // Reset service form
+        setServiceType('one_day');
+        setServiceStartDate(new Date().toISOString().split('T')[0]);
+        setServiceEndDate('');
+        setServiceHours(1);
+        setCalculatedBill(worker.hourly_rate || 0);
+    };
 
-        // Show loading state while assignment is created
-        const toastId = toast.loading(`Creating assignment for ${worker.name || worker.full_name}...`);
+    const handleConfirmServicePeriod = async () => {
+        if (!selectedWorker || !staffPickerTargetLead) return;
+
+        setIsServicePeriodOpen(false);
+        const toastId = toast.loading(`Creating assignment for ${selectedWorker.name || selectedWorker.full_name}...`);
 
         try {
-            // Guard: mock workers have numeric IDs (e.g. '3') — not valid UUIDs
-            const isRealWorker = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worker.id);
-            if (!isRealWorker) {
-                toast.error(
-                    `Cannot assign "${worker.name || worker.full_name}" — this is a demo worker. Please add real workers in the HR module first.`,
-                    { id: toastId }
-                );
-                return;
-            }
             // Create the assignment + ID card link FIRST
             const result = await assignWorkerToClient(
-                worker.id, 
+                selectedWorker.id, 
                 staffPickerTargetLead.id,
                 undefined,
-                0,   // depositPaid (default to 0 via CRM workflow here)
-                true // skipWhatsApp — CRM dispatch will handle it
+                0,   // depositPaid
+                true, // skipWhatsApp
+                {
+                    startDate: serviceStartDate,
+                    endDate: serviceType === 'date_range' ? serviceEndDate : undefined,
+                    serviceType,
+                    hoursPerDay: serviceType === 'one_day' ? serviceHours : 0,
+                    totalBillAmount: calculatedBill
+                }
             );
 
-            // Store the result so handleDispatchMessage can use it later
+            // Store the result
             setAssignmentResult(result);
-
-            // Now open the WhatsApp modal with the REAL shareable URL
+            
+            // Open the WhatsApp modal with ID card link
             setAgentTargetLead(staffPickerTargetLead);
             setAgentTargetAction('staff');
             setIsEditingTemplate(false);
 
-            // Generate draft with real link injected
             const draft = generateWhatsappDraft(
                 staffPickerTargetLead.name, 
                 'staff', 
                 agentDraftLang, 
-                worker,
-                result.shareableUrl  // pass the real URL
+                selectedWorker,
+                result.shareableUrl
             );
             setAgentDraftText(draft);
             setIsAgentModalOpen(true);
 
             toast.success(
-                `${worker.name || worker.full_name} assigned! Review the message below.`, 
+                `${selectedWorker.name || selectedWorker.full_name} assigned! Review the message below.`, 
                 { id: toastId, duration: 3000 }
             );
         } catch (err: any) {
@@ -2846,36 +2871,36 @@ export default function CRM() {
                             )}
 
                             {selectedInspectorLead.pipeline_stage === 'In Discussion' && (
-                                <button
-                                    onClick={() => { openAgentModal(selectedInspectorLead, 'quotation'); }}
-                                    className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                    Send Quotation
-                                </button>
+                                <div className="flex flex-col gap-2">
+                                    <button
+                                        onClick={() => { openAgentModal(selectedInspectorLead, 'quotation'); }}
+                                        className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                        Send Quotation
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            await handleMoveLead(selectedInspectorLead.id, 'Quotation Sent');
+                                            toast.success("Quotation Approved! Lead moved to Quotation Sent.");
+                                            setSelectedInspectorLead(null);
+                                        }}
+                                        className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                        Quotation Approved
+                                    </button>
+                                </div>
                             )}
 
                             {selectedInspectorLead.pipeline_stage === 'Quotation Sent' && (
-                                <div className="flex flex-col gap-2">
-                                    <button
-                                        onClick={() => { openAgentModal(selectedInspectorLead, 'consent'); }}
-                                        className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                        Send Consent Form Link
-                                    </button>
-                                    <button
-                                        onClick={async () => { 
-                                            await handleMoveLead(selectedInspectorLead.id, 'Form Submitted');
-                                            toast.success("Consent marked as Agreed! Lead moved to Form Submitted.");
-                                            setSelectedInspectorLead(null);
-                                        }}
-                                        className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2"
-                                    >
-                                        <CheckCircle2 className="w-4 h-4" />
-                                        Mark Consent Agreed
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={() => { openAgentModal(selectedInspectorLead, 'consent'); }}
+                                    className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                >
+                                    <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                    Send Consent Form Link
+                                </button>
                             )}
 
                             {selectedInspectorLead.pipeline_stage === 'Form Submitted' && (
@@ -2939,7 +2964,94 @@ export default function CRM() {
                     </button>
                 </div>
             </div>
-        )}
+            {/* Service Period Modal */}
+            {isServicePeriodOpen && selectedWorker && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <Calendar className="w-5 h-5 text-primary" />
+                                Assign Service Period
+                            </h3>
+                            <button onClick={() => setIsServicePeriodOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 flex flex-col gap-5 overflow-y-auto max-h-[70vh]">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">Service Type</label>
+                                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                                    <button 
+                                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'one_day' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+                                        onClick={() => {
+                                            setServiceType('one_day');
+                                            setCalculatedBill(serviceHours * (selectedWorker.hourly_rate || 0));
+                                        }}
+                                    >One Day</button>
+                                    <button 
+                                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'date_range' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+                                        onClick={() => {
+                                            setServiceType('date_range');
+                                            setCalculatedBill(selectedWorker.monthly_daily_rate || 0);
+                                        }}
+                                    >Date Range</button>
+                                </div>
+                            </div>
+                            
+                            {serviceType === 'one_day' ? (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
+                                        <input type="date" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Hours</label>
+                                        <input type="number" min="1" max="24" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceHours} onChange={e => {
+                                            const h = parseInt(e.target.value) || 1;
+                                            setServiceHours(h);
+                                            setCalculatedBill(h * (selectedWorker.hourly_rate || 0));
+                                        }} />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <label className="block text-sm font-semibold text-slate-700 mb-2">Start Date</label>
+                                            <input type="date" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceStartDate} onChange={e => {
+                                                setServiceStartDate(e.target.value);
+                                                if (serviceEndDate) {
+                                                    const days = Math.max(1, Math.ceil((new Date(serviceEndDate).getTime() - new Date(e.target.value).getTime()) / (1000 * 3600 * 24)) + 1);
+                                                    setCalculatedBill(days * (selectedWorker.monthly_daily_rate || 0));
+                                                }
+                                            }} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-sm font-semibold text-slate-700 mb-2">End Date</label>
+                                            <input type="date" min={serviceStartDate} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceEndDate} onChange={e => {
+                                                setServiceEndDate(e.target.value);
+                                                if (serviceStartDate) {
+                                                    const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
+                                                    setCalculatedBill(days * (selectedWorker.monthly_daily_rate || 0));
+                                                }
+                                            }} />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                            
+                            <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 flex justify-between items-center mt-2">
+                                <span className="font-bold text-primary">Estimated Total Bill</span>
+                                <span className="text-xl font-extrabold text-primary">₹{calculatedBill.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50">
+                            <button onClick={() => setIsServicePeriodOpen(false)} className="flex-1 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
+                            <button onClick={handleConfirmServicePeriod} className="flex-1 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm" disabled={serviceType === 'date_range' && !serviceEndDate}>Confirm Assignment</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

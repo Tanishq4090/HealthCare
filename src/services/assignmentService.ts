@@ -123,7 +123,14 @@ export async function assignWorkerToClient(
   clientUuid: string,
   notes?: string,
   depositPaid: number = 0,
-  skipWhatsApp: boolean = false
+  skipWhatsApp: boolean = false,
+  billingData?: {
+    startDate: string;
+    endDate?: string;
+    serviceType: 'one_day' | 'date_range';
+    hoursPerDay?: number;
+    totalBillAmount: number;
+  }
 ): Promise<AssignmentResult> {
 
   // ── Step 0: Ensure client exists in clients table (Convert from crm_leads if needed)
@@ -162,6 +169,12 @@ export async function assignWorkerToClient(
       assignment_status: 'active',
       notes:             notes?.trim() ?? null,
       deposit_paid:      depositPaid,
+      start_date:        billingData?.startDate,
+      end_date:          billingData?.endDate,
+      service_type:      billingData?.serviceType,
+      hours_per_day:     billingData?.hoursPerDay || 0,
+      total_bill_amount: billingData?.totalBillAmount || 0,
+      invoice_number:    `INV-${Date.now().toString().slice(-6)}`,
     })
     .select()
     .single();
