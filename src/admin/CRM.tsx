@@ -883,8 +883,11 @@ export default function CRM() {
         setServiceType('one_day');
         setServiceStartDate(new Date().toISOString().split('T')[0]);
         setServiceEndDate('');
-        setServiceHours(1);
-        setCalculatedBill(worker.hourly_rate || 0);
+        setServiceHours(12); // Default to 12h shift
+        
+        // Use lead's quoted value (Lead Value) instead of worker salary
+        const leadValue = staffPickerTargetLead?.estimated_value_monthly || 0;
+        setCalculatedBill(Math.round(leadValue / 30)); // Default to 1-day portion of monthly quote
     };
 
     const handleConfirmServicePeriod = async () => {
@@ -3003,14 +3006,15 @@ export default function CRM() {
                                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'one_day' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
                                         onClick={() => {
                                             setServiceType('one_day');
-                                            setCalculatedBill(serviceHours * (selectedWorker.hourly_rate || 0));
+                                            const dailyRate = (staffPickerTargetLead?.estimated_value_monthly || 0) / 30;
+                                            setCalculatedBill(Math.round(dailyRate));
                                         }}
                                     >One Day</button>
                                     <button 
                                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'date_range' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
                                         onClick={() => {
                                             setServiceType('date_range');
-                                            setCalculatedBill(selectedWorker.monthly_daily_rate || 0);
+                                            setCalculatedBill(staffPickerTargetLead?.estimated_value_monthly || 0);
                                         }}
                                     >Date Range</button>
                                 </div>
@@ -3027,7 +3031,9 @@ export default function CRM() {
                                         <input type="number" min="1" max="24" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceHours} onChange={e => {
                                             const h = parseInt(e.target.value) || 1;
                                             setServiceHours(h);
-                                            setCalculatedBill(h * (selectedWorker.hourly_rate || 0));
+                                            // Quoted hourly rate based on 12h standard day
+                                            const hourlyRate = (staffPickerTargetLead?.estimated_value_monthly || 0) / 30 / 12;
+                                            setCalculatedBill(Math.round(h * hourlyRate));
                                         }} />
                                     </div>
                                 </>
@@ -3050,7 +3056,8 @@ export default function CRM() {
                                                 setServiceEndDate(e.target.value);
                                                 if (serviceStartDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
-                                                    setCalculatedBill(days * (selectedWorker.monthly_daily_rate || 0));
+                                                    const dailyRate = (staffPickerTargetLead?.estimated_value_monthly || 0) / 30;
+                                                    setCalculatedBill(Math.round(days * dailyRate));
                                                 }
                                             }} />
                                         </div>
@@ -3060,7 +3067,16 @@ export default function CRM() {
                             
                             <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 flex justify-between items-center mt-2">
                                 <span className="font-bold text-primary">Estimated Total Bill</span>
-                                <span className="text-xl font-extrabold text-primary">₹{calculatedBill.toLocaleString()}</span>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-xl font-extrabold text-primary">₹</span>
+                                    <input 
+                                        type="number" 
+                                        className="w-24 bg-transparent text-xl font-extrabold text-primary border-b border-primary/30 outline-none text-right focus:border-primary transition-colors"
+                                        value={calculatedBill}
+                                        onChange={e => setCalculatedBill(parseInt(e.target.value) || 0)}
+                                        title="Click to override quoted amount"
+                                    />
+                                </div>
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50">
