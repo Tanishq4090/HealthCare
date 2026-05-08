@@ -1071,7 +1071,7 @@ export default function CRM() {
             
             let finalLogMessage = agentDraftText;
             if (agentTargetAction === 'quotation') {
-                finalLogMessage = `Quotation\n\nService Details for: ${quotationVars.v1}\n\nAs per your request, here are the details of the service:\n\nPricing Information\n${quotationVars.v2}\nFull Month: ${quotationVars.v3}\nFlexible Days: ${quotationVars.v4}\n\nService Policy\n• 1 day leave: No replacement provided\n• More than 1 day leave: Replacement available (subject to availability)\n\nTrial Policy\nIf the service is discontinued after a 2-day trial, charges will be same as Flexible Days rate.\n\nThis information is shared based on your inquiry. Please let us know if you need any further details.`;
+                finalLogMessage = `Quotation\n\nService Details for: ${quotationVars.v1}\n\nAs per your request, here are the details of the service:\n\nPricing Information\n${quotationVars.v2}\nFull Month Rate: ${quotationVars.v3}\nShort Term Rate: ${quotationVars.v4}\n\nService Policy\n• 1 day leave: No replacement provided\n• More than 1 day leave: Replacement available (subject to availability)\n\nTrial Policy\nIf the service is discontinued after a 2-day trial, charges will be same as Short Term Rate.\n\nThis information is shared based on your inquiry. Please let us know if you need any further details.`;
             }
 
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -2583,12 +2583,12 @@ export default function CRM() {
                                                     <input type="text" value={quotationVars.v2} onChange={e => setQuotationVars({...quotationVars, v2: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. 12 Hours" />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Complete Month</label>
-                                                    <input type="text" value={quotationVars.v3} onChange={e => setQuotationVars({...quotationVars, v3: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 45,000" />
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Complete Month (Per Day Rate)</label>
+                                                    <input type="text" value={quotationVars.v3} onChange={e => setQuotationVars({...quotationVars, v3: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 800/day" />
                                                 </div>
                                             </div>
                                             <div>
-                                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Incomplete Month</label>
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Incomplete Month (Per Day Rate)</label>
                                                 <input type="text" value={quotationVars.v4} onChange={e => setQuotationVars({...quotationVars, v4: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 1,500/day" />
                                             </div>
                                         </div>
@@ -3076,13 +3076,14 @@ export default function CRM() {
                                                     const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
                                                     
                                                     // Intelligent estimation:
-                                                    // If days >= 30, use the full month rate.
-                                                    // Otherwise, use daily rate * days.
-                                                    const monthlyRate = staffPickerTargetLead?.quoted_monthly_rate || 0;
+                                                    // Both rates are now per-day rates.
+                                                    // If days >= 30, use the monthly-commitment per-day rate.
+                                                    // Otherwise, use the standard short-term per-day rate.
+                                                    const monthlyDayRate = staffPickerTargetLead?.quoted_monthly_rate || 0;
                                                     const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
                                                     
                                                     if (days >= 30) {
-                                                        setCalculatedBill(Math.round(monthlyRate));
+                                                        setCalculatedBill(Math.round(days * monthlyDayRate));
                                                     } else {
                                                         setCalculatedBill(Math.round(days * dailyRate));
                                                     }
