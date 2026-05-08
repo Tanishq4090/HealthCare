@@ -121,12 +121,19 @@ export default function Clients() {
                 clientData = data || [];
             }
 
-            // 2. Fetch all employees to derive worker counts
+            // 3. Fetch all employees to derive worker counts
             const { data: employeeData, error: empError } = await supabase
                 .from('employees')
                 .select('id, full_name, assigned_client, status');
             
             if (empError) throw empError;
+
+            // 4. Fetch assignments to get deposit data
+            const { data: assignments, error: asgnError } = await supabase
+                .from('worker_assignments')
+                .select('client_id, deposit_paid');
+            
+            if (asgnError) throw asgnError;
 
             // Group employees by client name
             const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
@@ -143,17 +150,24 @@ export default function Clients() {
                 }
             });
 
-            // 3. Map database clients to UI structure
+            // Map deposits by client ID
+            const depositMap: Record<string, number> = {};
+            (assignments || []).forEach(a => {
+                depositMap[a.client_id] = (depositMap[a.client_id] || 0) + (Number(a.deposit_paid) || 0);
+            });
+
+            // 5. Map database clients to UI structure
             const enrichedClients = (clientData || []).map(c => ({
                 id: c.id,
                 name: c.client_name,
                 phone: c.phone_number,
                 email: c.email || '-',
-                contact: c.client_name, // Default contact to name if null
+                contact: c.client_name,
                 status: 'Active',
                 workerCount: workerMap[c.client_name]?.workerCount || 0,
                 activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
-                lifetimeValue: '₹0'
+                lifetimeValue: '₹0',
+                securityDeposit: depositMap[c.id] || 0
             }));
 
             setClients(enrichedClients);
@@ -226,7 +240,7 @@ export default function Clients() {
                                         <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
                                             <Wallet className="w-3 h-3" /> Security Deposit
                                         </p>
-                                        <p className="text-sm font-bold text-emerald-700">₹15,000</p>
+                                        <p className="text-sm font-bold text-emerald-700">₹{client.securityDeposit.toLocaleString()}</p>
                                     </div>
                                     <div className="col-span-2 flex items-center gap-2">
                                         <button
@@ -281,16 +295,9 @@ export default function Clients() {
                             Recent Reviews
                         </h3>
                         <div className="space-y-3">
-                            <div className="p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-                                <div className="flex text-amber-500 mb-1">
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                    <Star className="w-3.5 h-3.5 fill-current" />
-                                </div>
-                                <p className="text-sm text-slate-700 line-clamp-2">"Excellent staff provided by 99Care. Very professional tracking."</p>
-                                <p className="text-xs text-slate-400 mt-2">- Apex Medical Corp</p>
+                            <div className="flex flex-col items-center justify-center py-6 text-center">
+                                <MessageSquare className="w-8 h-8 text-slate-200 mb-2" />
+                                <p className="text-xs text-slate-400">No verified reviews found.<br/>Request reviews via WhatsApp to see them here.</p>
                             </div>
                         </div>
                     </div>

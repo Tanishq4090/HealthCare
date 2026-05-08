@@ -14,18 +14,8 @@ export default function Billing() {
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
-    const [deposits, setDeposits] = useState([
-        { id: 1, client: 'Apex Medical Corp', amount: '₹15,000', status: 'Pending Invoice', date: 'Oct 24, 2026', invoice_no: null },
-        { id: 2, client: 'Wellness Clinic Inc', amount: '₹5,000', status: 'Invoice Sent', date: 'Oct 23, 2026', invoice_no: 'INV-D502' },
-        { id: 3, client: 'Downtown Physio', amount: '₹12,500', status: 'Paid', date: 'Oct 20, 2026', invoice_no: 'INV-D499' }
-    ]);
-
-    // Dummy Data for Monthly Bills
-    const [monthlyBills, setMonthlyBills] = useState([
-        { id: 1, client: 'Apex Medical Corp', amount: '₹45,000', attendanceVerified: true, status: 'Draft', month: 'October', invoice_no: null },
-        { id: 2, client: 'Downtown Physio', amount: '₹28,500', attendanceVerified: false, status: 'Pending Verification', month: 'October', invoice_no: null },
-        { id: 3, client: 'CareFirst Hospital', amount: '₹62,000', attendanceVerified: true, status: 'Sent', month: 'October', invoice_no: 'INV-M103' },
-    ]);
+    const [deposits, setDeposits] = useState<any[]>([]);
+    const [monthlyBills, setMonthlyBills] = useState<any[]>([]);
 
     // Deposit Collect Modal State
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
@@ -45,6 +35,57 @@ export default function Billing() {
     // Invoice Modal State
     const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
     const [invoiceData, setInvoiceData] = useState<any>(null);
+
+    const fetchBillingData = async () => {
+        setIsLoading(true);
+        try {
+            // Fetch worker assignments joined with clients and employees
+            const { data, error } = await supabase
+                .from('worker_assignments')
+                .select(`
+                    id,
+                    total_bill_amount,
+                    invoice_number,
+                    assigned_at,
+                    clients (client_name, phone_number),
+                    employees (full_name)
+                `)
+                .order('assigned_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (data) {
+                // Map to deposits
+                const mappedDeposits = data.map(asgn => ({
+                    id: asgn.id,
+                    client: (asgn as any).clients?.client_name || 'Unknown',
+                    client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
+                    amount: `₹${(asgn.total_bill_amount || 0).toLocaleString()}`,
+                    status: asgn.invoice_number ? 'Invoice Sent' : 'Pending Invoice',
+                    date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    invoice_no: asgn.invoice_number
+                }));
+                setDeposits(mappedDeposits);
+                
+                // For monthly bills, map active assignments
+                setMonthlyBills(data.map(asgn => ({
+                    id: asgn.id,
+                    client: (asgn as any).clients?.client_name || 'Unknown',
+                    client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
+                    amount: `₹${(asgn.total_bill_amount || 0).toLocaleString()}`,
+                    attendanceVerified: true,
+                    status: asgn.invoice_number ? 'Sent' : 'Draft',
+                    month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
+                    invoice_no: asgn.invoice_number
+                })));
+            }
+        } catch (err: any) {
+            console.error('Error fetching billing data:', err);
+            toast.error('Failed to load billing records');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const fetchPayments = async () => {
         setIsLoading(true);
@@ -67,12 +108,25 @@ export default function Billing() {
     useEffect(() => {
         if (activeTab === 'history') {
             fetchPayments();
+        } else {
+            fetchBillingData();
         }
     }, [activeTab]);
 
-    const handleGenerateDepositInvoice = (id: number, clientName: string) => {
+    const handleGenerateDepositInvoice = async (id: string, clientName: string) => {
         const fakeInvoiceNo = `INV-D${Math.floor(Math.random() * 1000) + 500}`;
-        setDeposits(prev => prev.map(d => d.id === id ? { ...d, status: 'Invoice Sent', invoice_no: fakeInvoiceNo } : d));
+        
+        const { error } = await supabase
+            .from('worker_assignments')
+            .update({ invoice_number: fakeInvoiceNo })
+            .eq('id', id);
+
+        if (error) {
+            toast.error("Failed to update invoice in database");
+            return;
+        }
+
+        fetchBillingData();
         toast.success(`System auto-generated Deposit Invoice ${fakeInvoiceNo}. PDF emailed automatically to ${clientName}!`);
     };
 
@@ -149,7 +203,7 @@ export default function Billing() {
     // AI WhatsApp Agent Logic
     const generateWhatsappDraft = (bill: any, lang: string) => {
         if (!bill) return '';
-        const link = `https://healthfirst.ai/pay/${bill.invoice_no || Math.floor(Math.random() * 1000) + 100}`;
+        const link = `https://99care.org/pay/${bill.invoice_no || Math.floor(Math.random() * 1000) + 100}`;
         if (lang === 'Hinglish') return `Hello ${bill.client} team, aapka ${bill.month} mahine ka bill generate ho gaya hai. Total amount: ${bill.amount}. Is link par click karke QR code scan karein aur payment complete karein. 📄✅👇\n${link}`;
         if (lang === 'Hindi') return `Namaste ${bill.client}, aapka ${bill.month} mahine ka bil jama karne ke liye taiyar hai. Kul rashi: ${bill.amount}. Kripya is link dwara QR code scan karein aur bhugtan karein:\n${link}`;
         return `Hi ${bill.client}, your monthly invoice for ${bill.month} has been auto-generated. Total amount due: ${bill.amount}. Please click the link below to view the bill and scan the QR code to process your payment:\n${link}`;
@@ -618,11 +672,9 @@ export default function Billing() {
                             {/* Invoice Header */}
                             <div className="flex justify-between items-start mb-10">
                                 <div>
-                                    <h1 className="text-3xl font-extrabold text-[#1AA6A8] tracking-tight flex items-center gap-2">
-                                        <div className="w-10 h-10 bg-[#1AA6A8] rounded-full flex items-center justify-center text-white text-xl">99</div>
-                                        CARE
-                                    </h1>
-                                    <p className="text-[#F05A28] font-semibold tracking-widest text-xs mt-1">HELPING HANDS</p>
+                                    <div className="flex flex-col mb-4">
+                                        <img src="/99care-logo.svg" alt="99 CARE" className="h-14 w-auto object-contain" />
+                                    </div>
                                     <div className="mt-8">
                                         <h2 className="text-xl font-bold text-slate-800 tracking-[0.2em]">INVOICE</h2>
                                     </div>

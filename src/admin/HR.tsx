@@ -929,7 +929,7 @@ export default function HR() {
             const workerDoc = new jsPDF();
             workerDoc.setFontSize(22);
             workerDoc.setTextColor(15, 23, 42); 
-            workerDoc.text("99Care AI", 14, 20);
+            workerDoc.text("99 CARE", 14, 20);
             workerDoc.setFontSize(14);
             workerDoc.setTextColor(100, 116, 139); 
             workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
