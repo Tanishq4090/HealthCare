@@ -618,7 +618,8 @@ export default function CRM() {
                     status: callStatus,
                     transcript: call.transcript,
                     lead_id: call.lead_id,
-                    automation_error: call.automation_error
+                    automation_error: call.automation_error,
+                    created_at: call.created_at // Preserve raw timestamp for auto-trigger logic
                 };
             });
 
@@ -989,9 +990,25 @@ export default function CRM() {
                     const phone = (call.capturedWhatsapp || call.phone || '').toString();
                     const digits = phone.replace(/\D/g, '');
                     
-                    // Only trigger if it has a valid-looking phone (at least 10 digits), 
-                    // has no automation logged yet, and isn't already attempting locally
-                    if (digits.length >= 10 && !call.automation_error && !newStatus[call.id]) {
+                    // NEW: Time threshold check (15 minutes)
+                    // Only auto-greet calls that happened in the last 15 minutes to prevent 
+                    // greeting old logs that might be re-fetched or failed to update.
+                    const callTime = new Date(call.created_at).getTime();
+                    const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
+                    const isRecent = callTime > fifteenMinsAgo;
+
+                    // NEW: Stage check
+                    // Only auto-greet if lead is in a "New" or early stage (or not yet in CRM)
+                    const lead = leads.find(l => l.id === call.lead_id);
+                    const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry', 'In Discussion'].includes(lead.pipeline_stage);
+
+                    // Only trigger if:
+                    // 1. It has a valid-looking phone (at least 10 digits)
+                    // 2. It is recent (last 15 mins)
+                    // 3. Has no automation logged yet (null in DB)
+                    // 4. Lead is in a "New" stage (don't regreet if Quotation Sent etc.)
+                    // 5. Isn't already attempting locally in this session
+                    if (digits.length >= 10 && isRecent && !call.automation_error && isNewLead && !newStatus[call.id]) {
                         // Mark as sending locally immediately to block duplicate dispatches in React's lifecycle
                         newStatus[call.id] = 'sending';
                         // Trigger async workflow

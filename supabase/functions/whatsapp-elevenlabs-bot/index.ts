@@ -502,18 +502,26 @@ serve(async (req) => {
                 const leadName = leadRecord?.name?.split('—')[0]?.trim() || 'there';
                 const quotationMsg = `Namaste ${leadName} ji! 🙏\n\nWe already have your details from our recent call. Our 99 Care team is preparing your personalised quotation and will share it on this number shortly.\n\nFeel free to ask any questions in the meantime. We're always here for you! 😊✨`;
 
-                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
-                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ messaging_product: "whatsapp", to: purePhone, type: "text", text: { body: quotationMsg } })
-                    });
+                // Loop prevention: don't send this exact message twice in a row
+                const lastAssistantMsg = (historyData || []).filter((m: any) => m.role === 'assistant').pop();
+                
+                if (lastAssistantMsg?.content === quotationMsg) {
+                    console.log(`[Call Transcript] Already sent quotation prep msg to ${purePhone}. Handing over to AI.`);
+                    // Fall through to Groq AI logic below
+                } else {
+                    if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                        await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ messaging_product: "whatsapp", to: purePhone, type: "text", text: { body: quotationMsg } })
+                        });
+                    }
+                    await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: quotationMsg }]);
+                    await supabase.from('whatsapp_logs').update({
+                        status: 'success', payload: { type: 'ai_response', message: quotationMsg, original_recipient: fromPhone }
+                    }).eq('sid', wamid);
+                    return new Response('EVENT_RECEIVED', { status: 200 });
                 }
-                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: quotationMsg }]);
-                await supabase.from('whatsapp_logs').update({
-                    status: 'success', payload: { type: 'ai_response', message: quotationMsg, original_recipient: fromPhone }
-                }).eq('sid', wamid);
-                return new Response('EVENT_RECEIVED', { status: 200 });
             }
 
             if (leadRecord) {

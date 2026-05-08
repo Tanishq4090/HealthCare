@@ -267,7 +267,7 @@ serve(async (req) => {
            phone_number: capturedPhone || null,
            capturedName: capturedName,
            capturedWhatsapp: capturedPhone || null,
-           lead_id: isProcessed ? 'processed' : null,
+           lead_id: dbInfo?.lead_id || null,
            automation_error: dbInfo?.error || null
         };
     });
