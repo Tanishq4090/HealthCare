@@ -500,6 +500,7 @@ export default function CRM() {
             toast.error(`Invalid phone number: ${rawPhone}`);
             return;
         }
+        const last10 = digits.slice(-10);
 
         setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sending' }));
 
@@ -508,6 +509,29 @@ export default function CRM() {
         const firstName = (call.capturedName || 'there').split(' ')[0];
 
         try {
+            // Step 1: Check if we already sent a greeting to this number recently (last 24h)
+            // This is a real-time DB check — not just local state — to prevent duplicates on refresh
+            const { data: existingGreeting } = await supabase
+                .from('whatsapp_logs')
+                .select('id, created_at, status')
+                .or(`payload->>'original_recipient'.ilike.%${last10}%`)
+                .eq('status', 'success')
+                .filter('payload->>templateName', 'eq', 'greeting_msg')
+                .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+                .limit(1)
+                .maybeSingle();
+
+            if (existingGreeting) {
+                console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
+                await supabase.from('call_transcripts')
+                    .update({ automation_error: 'GREETING_SENT' })
+                    .eq('conversation_id', call.id);
+                setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
+                toast.success(`✅ Greeting already sent to ${firstName}! Marked as done.`);
+                return;
+            }
+
+            // Step 2: Send the greeting
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
@@ -525,9 +549,6 @@ export default function CRM() {
 
             const data = await res.json();
             
-            // The outbound function now returns { success: true/false, error?: string }
-            // It always returns HTTP 200 to avoid Supabase edge function errors,
-            // so we MUST check data.success rather than res.ok
             if (!res.ok) {
                 throw new Error(`Edge Function error: HTTP ${res.status}`);
             }
@@ -535,13 +556,30 @@ export default function CRM() {
                 throw new Error(data.error || 'WhatsApp delivery failed — template may be paused or rejected by Meta.');
             }
 
-            // Persist to DB so status survives page refresh
+            // Step 3: Verify delivery by checking whatsapp_logs was written
+            await new Promise(r => setTimeout(r, 1500)); // give DB a moment to write
+            const { data: verifyLog } = await supabase
+                .from('whatsapp_logs')
+                .select('id, status')
+                .or(`payload->>'original_recipient'.ilike.%${last10}%`)
+                .filter('payload->>templateName', 'eq', 'greeting_msg')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            const deliveryConfirmed = verifyLog?.status === 'success';
+
+            // Step 4: Persist to DB so status survives page refresh
             await supabase.from('call_transcripts')
                 .update({ automation_error: 'GREETING_SENT' })
                 .eq('conversation_id', call.id);
 
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
-            toast.success(`✅ Greeting sent to ${firstName}!`);
+            if (deliveryConfirmed) {
+                toast.success(`✅ Greeting sent & confirmed delivered to ${firstName}!`);
+            } else {
+                toast.success(`✅ Greeting dispatched to ${firstName}. (Delivery log pending)`);
+            }
         } catch (err: any) {
             console.error('[Greeting Error]', err.message);
             
@@ -970,12 +1008,12 @@ export default function CRM() {
         }
     }, [agentDraftLang, agentTargetAction, agentTargetLead, whatsappTemplates, isEditingTemplate, selectedWorker, assignmentResult]);
 
-    // Initialize per-call greeting status from DB and auto-trigger for new logs
+    // Initialize per-call greeting status from DB and auto-trigger for the latest new call
     useEffect(() => {
         if (calls.length > 0) {
             const initialStatus: Record<string, 'sending' | 'sent' | 'error'> = {};
             
-            // Map persistent DB states to local UI states
+            // Step 1: Map persistent DB states to local UI states for ALL calls
             calls.forEach((call: any) => {
                 if (call.automation_error === 'GREETING_SENT') {
                     initialStatus[call.id] = 'sent';
@@ -988,36 +1026,31 @@ export default function CRM() {
                 // Preserve any in-flight 'sending' states from `prev`
                 const newStatus = { ...initialStatus, ...prev };
                 
-                // AUTO-TRIGGER LOGIC: Fire the greeting request automatically for new leads
-                calls.forEach((call: any) => {
+                // Step 2: AUTO-TRIGGER — only for the SINGLE most recent ungreeted call.
+                // Calls are already sorted newest-first. We find the first one that qualifies.
+                const fiveMinsAgo = Date.now() - (5 * 60 * 1000);
+
+                // Find the single newest eligible call to auto-greet
+                const targetCall = calls.find((call: any) => {
                     const phone = (call.capturedWhatsapp || call.phone || '').toString();
                     const digits = phone.replace(/\D/g, '');
-                    
-                    // NEW: Time threshold check (15 minutes)
-                    // Only auto-greet calls that happened in the last 15 minutes to prevent 
-                    // greeting old logs that might be re-fetched or failed to update.
                     const callTime = new Date(call.created_at).getTime();
-                    const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
-                    const isRecent = callTime > fifteenMinsAgo;
-
-                    // NEW: Stage check
-                    // Only auto-greet if lead is in a "New" or early stage (or not yet in CRM)
+                    const isRecent = callTime > fiveMinsAgo;
+                    const alreadyHandled = !!newStatus[call.id]; // 'sent', 'error', or 'sending'
+                    const dbAlreadyLogged = !!call.automation_error; // persisted in DB
                     const lead = leads.find(l => l.id === call.lead_id);
-                    const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry', 'In Discussion'].includes(lead.pipeline_stage);
+                    const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
 
-                    // Only trigger if:
-                    // 1. It has a valid-looking phone (at least 10 digits)
-                    // 2. It is recent (last 15 mins)
-                    // 3. Has no automation logged yet (null in DB)
-                    // 4. Lead is in a "New" stage (don't regreet if Quotation Sent etc.)
-                    // 5. Isn't already attempting locally in this session
-                    if (digits.length >= 10 && isRecent && !call.automation_error && isNewLead && !newStatus[call.id]) {
-                        // Mark as sending locally immediately to block duplicate dispatches in React's lifecycle
-                        newStatus[call.id] = 'sending';
-                        // Trigger async workflow
-                        handleSendCallGreeting(call);
-                    }
+                    return digits.length >= 10 && isRecent && !dbAlreadyLogged && !alreadyHandled && isNewLead;
                 });
+
+                if (targetCall) {
+                    console.log(`[Auto-Greet] Triggering for most recent call: ${targetCall.id} (${targetCall.phone})`);
+                    // Mark as sending immediately to prevent any duplicate triggers
+                    newStatus[targetCall.id] = 'sending';
+                    // Fire async
+                    handleSendCallGreeting(targetCall);
+                }
 
                 return newStatus;
             });
