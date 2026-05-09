@@ -132,34 +132,7 @@ serve(async (req) => {
       "to": digits,
     };
 
-    if (sendFlow) {
-      // Send the interactive WhatsApp Flow form (same as what the bot sends to new contacts)
-      // Read Flow ID from Supabase secrets if not passed from client
-      const resolvedFlowId = flowId || Deno.env.get('WHATSAPP_FLOW_ID');
-      if (!resolvedFlowId) {
-        return new Response(JSON.stringify({ success: false, error: 'WHATSAPP_FLOW_ID is not configured in Supabase secrets.' }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      metaBody.type = "interactive";
-      metaBody.interactive = {
-        type: "flow",
-        header: { type: "text", text: "Welcome to 99 Care! 👋" },
-        body: { text: "Namaste! 🙏 I'm Khushi. To get the best care for your loved ones, please fill in a few quick details and our team will prepare your personalised quotation right away!" },
-        footer: { text: "Trusted by families across Surat" },
-        action: {
-          name: "flow",
-          parameters: {
-            flow_message_version: "3",
-            flow_token: `intake_${digits}_${Date.now()}`,
-            flow_id: resolvedFlowId,
-            flow_cta: "Fill Service Details 📋",
-            flow_action: "navigate",
-            flow_action_payload: { screen: "INTAKE_FORM" }
-          }
-        }
-      };
-    } else if (useTemplate) {
+    if (useTemplate) {
       metaBody.type = "template";
       
       const parameters = [];
@@ -189,9 +162,9 @@ serve(async (req) => {
           });
       }
 
-      // Special handling for Flow templates (like post_call_intake or consent_form)
-      // Meta's API requires type: "payload" for Flow button parameters
-      if (templateName === "post_call_intake" || templateName === "consent_form") {
+      // Add flow button to greeting_msg, post_call_intake, or consent_form templates
+      const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
+      if ((templateName === "greeting_msg" || templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
         const initialScreen = templateName === "consent_form" ? "CONSENT_SCREEN" : "INTAKE_FORM";
         
         components.push({

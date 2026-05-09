@@ -531,12 +531,14 @@ export default function CRM() {
                 return;
             }
 
-            // Step 2: Send the WhatsApp Flow greeting (with embedded form)
-            // The edge function reads WHATSAPP_FLOW_ID from Supabase secrets automatically.
-            // Falls back to plain greeting_msg template if sendFlow fails.
-            const requestBody: any = {
+            // Step 2: Send the greeting_msg WhatsApp template.
+            // The edge function automatically attaches the Flow button to this template.
+            // Using a template (not interactive flow) ensures it works outside the 24-hour window.
+            const requestBody = {
                 phone: digits,
-                sendFlow: true, // Tells edge function to send interactive Flow form
+                useTemplate: true,
+                templateName: 'greeting_msg',
+                templateParams: [firstName],
             };
 
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
