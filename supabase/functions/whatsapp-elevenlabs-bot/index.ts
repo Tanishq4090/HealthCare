@@ -314,7 +314,7 @@ serve(async (req) => {
         // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
         const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id, pipeline_stage, name')
+            .select('id, pipeline_stage, name, quoted_monthly_rate')
             .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(1);
@@ -401,8 +401,9 @@ serve(async (req) => {
         // This guarantees consistent, on-brand messaging at every step of the customer journey.
         // NOTE: We never update the pipeline stage here — the CRM team does that manually.
         const STAGE_SCRIPTS: Record<string, string> = {
-            'In Discussion':
-                `Thank you for your inquiry! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it on this number shortly. Feel free to ask any other questions! 😊✨`,
+            'In Discussion': earlyLead?.quoted_monthly_rate > 0
+                ? `Thank you! 🙏 Our 99 Care team will connect with you shortly for closing on this quotation. 😊✨`
+                : `Thank you for your inquiry! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it on this number shortly. Feel free to ask any other questions! 😊✨`,
 
             'Quotation Sent': 
                 `Thank you! 🙏 Please complete the consent form we shared with you so that we can move forward and assign your staff. 😊✨`,
