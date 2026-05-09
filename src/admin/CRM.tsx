@@ -533,11 +533,16 @@ export default function CRM() {
 
             // Step 2: Send the post_call_intake WhatsApp template.
             // This template has the Flow button already attached in Meta Business Manager.
+            // It expects exactly 3 parameters: {{1}} Name, {{2}} Service, {{3}} Shift.
             const requestBody = {
                 phone: digits,
                 useTemplate: true,
                 templateName: 'post_call_intake',
-                templateParams: [], // Meta expects 0 parameters for this specific template
+                templateParams: [
+                    firstName, 
+                    call.intent || 'Home Healthcare', 
+                    'General'
+                ],
             };
 
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
