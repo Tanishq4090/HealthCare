@@ -314,7 +314,7 @@ serve(async (req) => {
         // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
         const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id, pipeline_stage, name, quoted_monthly_rate')
+            .select('id, pipeline_stage, name')
             .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(1);
@@ -400,8 +400,10 @@ serve(async (req) => {
         // For specific pipeline stages, send a precise pre-written reply instead of calling Groq.
         // This guarantees consistent, on-brand messaging at every step of the customer journey.
         // NOTE: We never update the pipeline stage here — the CRM team does that manually.
+        const quotationAlreadySent = historyData.some(m => m.role === 'assistant' && (m.content.includes('Pricing Information') || m.content.includes('Service Details for')));
+        
         const STAGE_SCRIPTS: Record<string, string> = {
-            'In Discussion': earlyLead?.quoted_monthly_rate > 0
+            'In Discussion': quotationAlreadySent
                 ? `Thank you! 🙏 Our 99 Care team will connect with you shortly for closing on this quotation. 😊✨`
                 : `Thank you for your inquiry! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it on this number shortly. Feel free to ask any other questions! 😊✨`,
 

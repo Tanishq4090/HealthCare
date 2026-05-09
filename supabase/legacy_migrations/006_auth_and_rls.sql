@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- 1.5 Create Missing Tables IF NOT EXISTS
 CREATE TABLE IF NOT EXISTS public.payroll (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    worker_id UUID REFERENCES public.workers(id),
+    worker_id UUID REFERENCES public.employees(id),
     amount NUMERIC,
     status TEXT DEFAULT 'pending',
     created_at TIMESTAMPTZ DEFAULT now()
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.payroll (
 
 CREATE TABLE IF NOT EXISTS public.duty_logs (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    worker_id UUID REFERENCES public.workers(id),
+    worker_id UUID REFERENCES public.employees(id),
     client_id UUID REFERENCES public.clients(id),
     date DATE,
     status TEXT,
@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS public.contact_submissions (
 
 -- 2. Enable RLS on all tables
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
