@@ -516,7 +516,7 @@ export default function CRM() {
                 .select('id, created_at, status')
                 .or(`payload->>'original_recipient'.ilike.%${last10}%`)
                 .eq('status', 'success')
-                .filter('payload->>templateName', 'eq', 'greeting_msg')
+                .filter('payload->>templateName', 'eq', 'post_call_intake')
                 .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
                 .limit(1)
                 .maybeSingle();
@@ -531,13 +531,12 @@ export default function CRM() {
                 return;
             }
 
-            // Step 2: Send the greeting_msg WhatsApp template.
-            // The edge function automatically attaches the Flow button to this template.
-            // Using a template (not interactive flow) ensures it works outside the 24-hour window.
+            // Step 2: Send the post_call_intake WhatsApp template.
+            // This template has the Flow button already attached in Meta Business Manager.
             const requestBody = {
                 phone: digits,
                 useTemplate: true,
-                templateName: 'greeting_msg',
+                templateName: 'post_call_intake',
                 templateParams: [firstName],
             };
 
@@ -566,7 +565,7 @@ export default function CRM() {
                 .from('whatsapp_logs')
                 .select('id, status')
                 .or(`payload->>'original_recipient'.ilike.%${last10}%`)
-                .filter('payload->>templateName', 'eq', 'greeting_msg')
+                .filter('payload->>templateName', 'eq', 'post_call_intake')
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
