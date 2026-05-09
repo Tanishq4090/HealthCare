@@ -114,7 +114,7 @@ serve(async (req) => {
         return new Response('ok', { status: 200, headers: corsHeaders });
     }
 
-    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams } = payload;
+    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId } = payload;
     const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
     const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 
@@ -132,7 +132,34 @@ serve(async (req) => {
       "to": digits,
     };
 
-    if (useTemplate) {
+    if (sendFlow) {
+      // Send the interactive WhatsApp Flow form (same as what the bot sends to new contacts)
+      // Read Flow ID from Supabase secrets if not passed from client
+      const resolvedFlowId = flowId || Deno.env.get('WHATSAPP_FLOW_ID');
+      if (!resolvedFlowId) {
+        return new Response(JSON.stringify({ success: false, error: 'WHATSAPP_FLOW_ID is not configured in Supabase secrets.' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      metaBody.type = "interactive";
+      metaBody.interactive = {
+        type: "flow",
+        header: { type: "text", text: "Welcome to 99 Care! 👋" },
+        body: { text: "Namaste! 🙏 I'm Khushi. To get the best care for your loved ones, please fill in a few quick details and our team will prepare your personalised quotation right away!" },
+        footer: { text: "Trusted by families across Surat" },
+        action: {
+          name: "flow",
+          parameters: {
+            flow_message_version: "3",
+            flow_token: `intake_${digits}_${Date.now()}`,
+            flow_id: resolvedFlowId,
+            flow_cta: "Fill Service Details 📋",
+            flow_action: "navigate",
+            flow_action_payload: { screen: "INTAKE_FORM" }
+          }
+        }
+      };
+    } else if (useTemplate) {
       metaBody.type = "template";
       
       const parameters = [];

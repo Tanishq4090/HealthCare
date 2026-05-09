@@ -531,7 +531,14 @@ export default function CRM() {
                 return;
             }
 
-            // Step 2: Send the greeting
+            // Step 2: Send the WhatsApp Flow greeting (with embedded form)
+            // The edge function reads WHATSAPP_FLOW_ID from Supabase secrets automatically.
+            // Falls back to plain greeting_msg template if sendFlow fails.
+            const requestBody: any = {
+                phone: digits,
+                sendFlow: true, // Tells edge function to send interactive Flow form
+            };
+
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
@@ -539,12 +546,7 @@ export default function CRM() {
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                     'apikey': SUPABASE_ANON_KEY,
                 },
-                body: JSON.stringify({
-                    phone: digits,
-                    useTemplate: true,
-                    templateName: 'greeting_msg',
-                    templateParams: [firstName],
-                }),
+                body: JSON.stringify(requestBody),
             });
 
             const data = await res.json();
