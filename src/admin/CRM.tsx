@@ -1044,12 +1044,13 @@ export default function CRM() {
                     const digits = phone.replace(/\D/g, '');
                     const callTime = new Date(call.created_at).getTime();
                     const isRecent = callTime > fiveMinsAgo;
-                    const alreadyHandled = !!newStatus[call.id]; // 'sent', 'error', or 'sending'
-                    const dbAlreadyLogged = !!call.automation_error; // persisted in DB
+                    const isToday = new Date(call.created_at).toDateString() === new Date().toDateString();
+                    const alreadyHandled = !!newStatus[call.id];
+                    const dbAlreadyLogged = !!call.automation_error;
                     const lead = leads.find(l => l.id === call.lead_id);
                     const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
 
-                    return digits.length >= 10 && isRecent && !dbAlreadyLogged && !alreadyHandled && isNewLead;
+                    return digits.length >= 10 && isRecent && isToday && !dbAlreadyLogged && !alreadyHandled && isNewLead;
                 });
 
                 if (targetCall) {
