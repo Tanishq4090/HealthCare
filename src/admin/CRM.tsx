@@ -537,7 +537,7 @@ export default function CRM() {
                 phone: digits,
                 useTemplate: true,
                 templateName: 'post_call_intake',
-                templateParams: [firstName],
+                templateParams: [], // Meta expects 0 parameters for this specific template
             };
 
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
