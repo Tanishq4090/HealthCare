@@ -487,7 +487,7 @@ export default function CRM() {
     };
 
     // Send WhatsApp greeting_msg template manually from call log card
-    const handleSendCallGreeting = async (call: any) => {
+    const handleSendCallGreeting = async (call: any, isManual = false) => {
         const rawPhone = call.capturedWhatsapp || call.phone;
         if (!rawPhone) {
             toast.error('No WhatsApp number found for this call.');
@@ -521,7 +521,7 @@ export default function CRM() {
                 .limit(1)
                 .maybeSingle();
 
-            if (existingGreeting) {
+            if (existingGreeting && !isManual) {
                 console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
                 await supabase.from('call_transcripts')
                     .update({ automation_error: 'GREETING_SENT' })
@@ -2303,15 +2303,18 @@ export default function CRM() {
                                                                 </button>
                                                             );
                                                             if (greetStatus === 'sent' || dbSent) return (
-                                                                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shrink-0">
-                                                                    <CheckCircle2 className="w-3.5 h-3.5" /> Greeting Sent
-                                                                </div>
+                                                                <button 
+                                                                    onClick={() => handleSendCallGreeting(call, true)}
+                                                                    className="px-3 py-2 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-lg border border-emerald-100 flex items-center gap-1.5 shrink-0 hover:bg-emerald-100 transition-colors"
+                                                                >
+                                                                    <RotateCcw className="w-3.5 h-3.5" /> Sent (Resend?)
+                                                                </button>
                                                             );
                                                             if (greetStatus === 'error') {
                                                                 const errorDetail = call.automation_error?.replace('GREETING_ERROR: ', '') || 'Unknown error';
                                                                 return (
                                                                     <button 
-                                                                        onClick={() => handleSendCallGreeting(call)} 
+                                                                        onClick={() => handleSendCallGreeting(call, true)} 
                                                                         className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-1.5 shrink-0 hover:bg-red-100 transition-colors"
                                                                         title={`Error: ${errorDetail}`}
                                                                     >
@@ -2320,7 +2323,7 @@ export default function CRM() {
                                                                 );
                                                             }
                                                             return (
-                                                                <button onClick={() => handleSendCallGreeting(call)} className="px-3 py-2 bg-[#E6F7F7] text-[#0E7C7E] text-xs font-bold rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
+                                                                <button onClick={() => handleSendCallGreeting(call, true)} className="px-3 py-2 bg-[#E6F7F7] text-[#0E7C7E] text-xs font-bold rounded-lg border border-[#1AA6A8]/20 flex items-center gap-1.5 shrink-0 hover:bg-[#1AA6A8] hover:text-white transition-colors">
                                                                     <MessageCircle className="w-3.5 h-3.5" /> Send Greeting
                                                                 </button>
                                                             );
