@@ -1047,6 +1047,46 @@ export default function CRM() {
         return parseFloat(matched) || 0;
     };
 
+    // Helper to dispatch WhatsApp templates programmatically
+    const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[]) => {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        let phoneDigits = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '');
+        if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+        if (!phoneDigits) throw new Error("No phone number found.");
+        
+        const templateMap: Record<string, string> = {
+            inquiry: 'greeting_msg',
+            quotation: 'quote_client',
+            consent: 'consent_form',
+            deposit: 'deposit_request',
+            staff: 'staff_assignment'
+        };
+
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+                phone: phoneDigits,
+                leadId: lead.id,
+                useTemplate: true,
+                templateName: templateMap[action],
+                templateParams: params || [lead.name.split(' ')[0] || 'there'],
+            })
+        });
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`Dispatch failed: ${errBody || response.statusText}`);
+        }
+        return response.json();
+    };
+
     const handleDispatchMessage = async () => {
         setIsAgentModalOpen(false);
         const toastId = toast.loading(`Dispatching AI Message to ${agentTargetLead?.name || 'Lead'}...`);
@@ -2917,9 +2957,20 @@ export default function CRM() {
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            await handleMoveLead(selectedInspectorLead.id, 'Quotation Sent');
-                                            toast.success("Quotation Approved! Lead moved to Quotation Sent.");
-                                            setSelectedInspectorLead(null);
+                                            const toastId = toast.loading("Approving quotation and sending consent form...");
+                                            try {
+                                                // 1. Move lead to Quotation Sent
+                                                await handleMoveLead(selectedInspectorLead.id, 'Quotation Sent');
+                                                
+                                                // 2. Dispatch Consent Form automatically
+                                                await dispatchWhatsAppTemplate(selectedInspectorLead, 'consent');
+                                                
+                                                toast.success("✅ Quotation Approved! Consent form sent to client.", { id: toastId });
+                                                setSelectedInspectorLead(null);
+                                            } catch (err: any) {
+                                                console.error("[Approve Error]", err);
+                                                toast.error(`Failed to complete automation: ${err.message}`, { id: toastId });
+                                            }
                                         }}
                                         className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                     >

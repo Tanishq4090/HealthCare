@@ -527,6 +527,8 @@ serve(async (req) => {
             if (leadRecord) {
                 const isFinished = ['Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
                 leadDataContext = `\n\n### CRM LEAD:\n- Name: ${leadRecord.name}\n- Stage: ${leadRecord.pipeline_stage}\n` +
+                    `- Quoted Monthly Rate: ${leadRecord.quoted_monthly_rate || 0}\n` +
+                    `- Quoted Daily Rate: ${leadRecord.quoted_daily_rate || 0}\n` +
                     (isFinished ? `### This lead is done or form filled. Be extremely brief. Reassure them the team will be in touch, then STOP asking questions.\n` : '');
             }
 
@@ -550,7 +552,9 @@ RULES (follow strictly):
 - NEVER quote prices. NEVER ask for information already collected.
 - If the user's message is a GOODBYE or FAREWELL (e.g. "bye", "take care", "good night", "you too"), respond with EXACTLY: {"replyToUser": null, "pipelineStageUpdate": null}
 - If the user's message is a POSITIVE REPLY or acknowledgment (e.g. "yes", "okay", "done", "sure", "proceed", "haan", "bilkul"):
-    * If their CRM stage is "In Discussion": Always reply: "Thank you! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it here shortly. 😊✨"
+    * If their CRM stage is "In Discussion": 
+        * If Quoted Monthly Rate > 0: Always reply: "Thank you! 🙏 Our 99 Care team will connect with you shortly for closing on this quotation. 😊✨"
+        * Otherwise: Always reply: "Thank you! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it here shortly. 😊✨"
     * If their CRM stage is "Form Submitted": Reply: "Thank you! 🙏 Our 99 Care team will verify your form and assign the best suited staff shortly. 😊"
     * Otherwise: Say thank you and that the 99 Care team will get back to them soon.
 - NEVER ask follow-up questions if the lead's details are already collected.
