@@ -410,6 +410,7 @@ serve(async (req) => {
                 .select('id')
                 .filter('payload->>type', 'eq', 'flow_submission')
                 .or(`payload->>'original_recipient'.ilike.%${last10}%,payload->>'phone'.ilike.%${last10}%`)
+                .gt('created_at', earlyLead.created_at) // Only count forms filled for THIS lead instance
                 .limit(1);
             isFormFilled = !!formLogs && formLogs.length > 0;
         }

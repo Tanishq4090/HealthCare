@@ -234,6 +234,7 @@ export default function CRM() {
     const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom'>('inquiry');
     // Per-call greeting dispatch status (keyed by call.id)
     const [callGreetingStatus, setCallGreetingStatus] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
+    const processingCalls = useRef<Set<string>>(new Set());
     const [assignmentResult, setAssignmentResult] = useState<any>(null);
 
     // Staff Picker State
@@ -488,6 +489,8 @@ export default function CRM() {
 
     // Send WhatsApp greeting_msg template manually from call log card
     const handleSendCallGreeting = async (call: any, isManual = false) => {
+        if (processingCalls.current.has(call.id)) return;
+        
         const rawPhone = call.capturedWhatsapp || call.phone;
         if (!rawPhone) {
             toast.error('No WhatsApp number found for this call.');
@@ -502,6 +505,7 @@ export default function CRM() {
         }
         const last10 = digits.slice(-10);
 
+        processingCalls.current.add(call.id);
         setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sending' }));
 
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -598,6 +602,8 @@ export default function CRM() {
 
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'error' }));
             toast.error(`❌ Greeting failed: ${err.message}`, { duration: 8000 });
+        } finally {
+            processingCalls.current.delete(call.id);
         }
     };
 
@@ -1021,7 +1027,6 @@ export default function CRM() {
         if (calls.length > 0) {
             const initialStatus: Record<string, 'sending' | 'sent' | 'error'> = {};
             
-            // Step 1: Map persistent DB states to local UI states for ALL calls
             calls.forEach((call: any) => {
                 if (call.automation_error === 'GREETING_SENT') {
                     initialStatus[call.id] = 'sent';
@@ -1030,39 +1035,32 @@ export default function CRM() {
                 }
             });
 
-            setCallGreetingStatus(prev => {
-                // Preserve any in-flight 'sending' states from `prev`
-                const newStatus = { ...initialStatus, ...prev };
+            // Update UI state with DB data
+            setCallGreetingStatus(prev => ({ ...initialStatus, ...prev }));
+
+            // Step 2: AUTO-TRIGGER — only for the SINGLE most recent ungreeted call.
+            const fiveMinsAgo = Date.now() - (5 * 60 * 1000);
+            
+            const targetCall = calls.find((call: any) => {
+                const phone = (call.capturedWhatsapp || call.phone || '').toString();
+                const digits = phone.replace(/\D/g, '');
+                const isToday = new Date(call.created_at).toDateString() === new Date().toDateString();
+                const callTime = new Date(call.created_at).getTime();
+                const isRecent = callTime > fiveMinsAgo;
                 
-                // Step 2: AUTO-TRIGGER — only for the SINGLE most recent ungreeted call.
-                // Calls are already sorted newest-first. We find the first one that qualifies.
-                const fiveMinsAgo = Date.now() - (5 * 60 * 1000);
+                // CRITICAL: Check local UI state + the mutex ref to avoid double-firing
+                const alreadyHandled = !!callGreetingStatus[call.id] || processingCalls.current.has(call.id);
+                const dbAlreadyLogged = !!call.automation_error;
+                const lead = leads.find(l => l.id === call.lead_id);
+                const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
 
-                // Find the single newest eligible call to auto-greet
-                const targetCall = calls.find((call: any) => {
-                    const phone = (call.capturedWhatsapp || call.phone || '').toString();
-                    const digits = phone.replace(/\D/g, '');
-                    const callTime = new Date(call.created_at).getTime();
-                    const isRecent = callTime > fiveMinsAgo;
-                    const isToday = new Date(call.created_at).toDateString() === new Date().toDateString();
-                    const alreadyHandled = !!newStatus[call.id];
-                    const dbAlreadyLogged = !!call.automation_error;
-                    const lead = leads.find(l => l.id === call.lead_id);
-                    const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
-
-                    return digits.length >= 10 && isRecent && isToday && !dbAlreadyLogged && !alreadyHandled && isNewLead;
-                });
-
-                if (targetCall) {
-                    console.log(`[Auto-Greet] Triggering for most recent call: ${targetCall.id} (${targetCall.phone})`);
-                    // Mark as sending immediately to prevent any duplicate triggers
-                    newStatus[targetCall.id] = 'sending';
-                    // Fire async
-                    handleSendCallGreeting(targetCall);
-                }
-
-                return newStatus;
+                return digits.length >= 10 && isRecent && isToday && !dbAlreadyLogged && !alreadyHandled && isNewLead;
             });
+
+            if (targetCall) {
+                console.log(`[Auto-Greet] Triggering for: ${targetCall.id}`);
+                handleSendCallGreeting(targetCall);
+            }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [calls]);
