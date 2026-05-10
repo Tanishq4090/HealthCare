@@ -1098,7 +1098,7 @@ export default function CRM() {
         
         const templateMap: Record<string, string> = {
             inquiry: 'greeting_msg',
-            quotation: 'quote_client',
+            quotation: 'quotation',
             consent: 'consent_form',
             deposit: 'deposit_request',
             staff: 'staff_assignment'
@@ -1151,7 +1151,7 @@ export default function CRM() {
             
             let finalLogMessage = agentDraftText;
             if (agentTargetAction === 'quotation') {
-                finalLogMessage = `Quotation\n\nService Details for: ${quotationVars.v1}\n\nAs per your request, here are the details of the service:\n\nPricing Information\n${quotationVars.v2}\nFull Month Rate: ${quotationVars.v3}\nShort Term Rate: ${quotationVars.v4}\n\nService Policy\n• 1 day leave: No replacement provided\n• More than 1 day leave: Replacement available (subject to availability)\n\nTrial Policy\nIf the service is discontinued after a 2-day trial, charges will be same as Short Term Rate.\n\nThis information is shared based on your inquiry. Please let us know if you need any further details.`;
+                finalLogMessage = `Quotation\n\nService Details for: ${quotationVars.v1}\n\nAs per your request, here are the details of the service:\n\n💰 Pricing Information\n${quotationVars.v2} Service\nFull Month: ₹${quotationVars.v3} per day\nFlexible Days: ₹${quotationVars.v4} per day\n\n🕒 Service Policy\n• 1 day leave: No replacement provided\n• More than 1 day leave: Replacement available (subject to availability)\n\n⚠️ Trial Policy\nIf the service is discontinued after a 2-day trial, charges will be same as Flexible Days rate.\n\nThis information is shared based on your inquiry. Please let us know if you need any further details.`;
             }
 
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -1170,7 +1170,7 @@ export default function CRM() {
                     leadId: agentTargetLead?.id,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
-                                  : (agentTargetAction === 'quotation' ? 'quote_client' 
+                                  : (agentTargetAction === 'quotation' ? 'quotation' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
                                   : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
