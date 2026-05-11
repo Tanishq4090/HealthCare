@@ -396,7 +396,11 @@ export default function CRM() {
     const [editingInspectorEmail, setEditingInspectorEmail] = useState(false);
     const [inspectorEmailDraft, setInspectorEmailDraft] = useState('');
     const [editingInspectorService, setEditingInspectorService] = useState(false);
-    const [inspectorServiceDraft, setInspectorServiceDraft] = useState('');
+        const [inspectorServiceDraft, setInspectorServiceDraft] = useState('');
+    const [inspectorNameDraft, setInspectorNameDraft] = useState('');
+    const [inspectorPhoneDraft, setInspectorPhoneDraft] = useState('');
+    const [editingInspectorName, setEditingInspectorName] = useState(false);
+    const [editingInspectorPhone, setEditingInspectorPhone] = useState(false);
 
     // Kanban Accordion State
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
@@ -554,7 +558,17 @@ export default function CRM() {
     // ── Activity: Log a new event ──────────────────────────────────────────
     const logActivity = async (leadId: string, eventType: string, description: string, metadata: any = {}) => {
         if (!leadId || leadId.length < 10) return; // Skip mock leads
-        await supabase.from('crm_lead_activity').insert([{ lead_id: leadId, event_type: eventType, description, metadata }]);
+        try {
+            const { error } = await supabase.from('crm_lead_activity').insert([{ 
+                lead_id: leadId, 
+                event_type: eventType, 
+                description, 
+                metadata 
+            }]);
+            if (error) console.warn("Activity logging skipped:", error.message);
+        } catch (e) {
+            console.error("Activity log error:", e);
+        }
     };
 
     // ── Inspector: Save a field (email or service_interest) ───────────────
@@ -1687,9 +1701,9 @@ export default function CRM() {
         }
     };
 
-    const handleUpdateLeadDetails = async (leadId: string) => {
-        const newName = editingLeadName.trim();
-        const newPhone = editingLeadPhone.trim();
+    const handleUpdateLeadDetails = async (leadId: string, customName?: string, customPhone?: string) => {
+        const newName = (customName !== undefined ? customName : editingLeadName).trim();
+        const newPhone = (customPhone !== undefined ? customPhone : editingLeadPhone).trim();
 
         if (!newName) {
             setEditingLeadDetailsId(null);
@@ -2953,7 +2967,28 @@ export default function CRM() {
                             {getInitials(selectedInspectorLead.name)}
                         </div>
                         <div className="min-w-0">
-                            <h2 className="text-base font-bold text-slate-900 truncate">{selectedInspectorLead.name}</h2>
+                            {editingInspectorName ? (
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={inspectorNameDraft}
+                                    onChange={e => setInspectorNameDraft(e.target.value)}
+                                    onBlur={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorName(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, name: inspectorNameDraft} : null); }}
+                                    onKeyDown={e => { 
+                                        if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorName(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, name: inspectorNameDraft} : null); } 
+                                        if (e.key === 'Escape') setEditingInspectorName(false); 
+                                    }}
+                                    className="text-base font-bold text-slate-900 bg-white border-b border-primary/50 outline-none w-full"
+                                />
+                            ) : (
+                                <h2 
+                                    className="text-base font-bold text-slate-900 truncate cursor-pointer hover:text-primary transition-colors"
+                                    onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorName(true); }}
+                                    title="Click to edit name"
+                                >
+                                    {selectedInspectorLead.name}
+                                </h2>
+                            )}
                             {(selectedInspectorLead.service_interest || selectedInspectorLead.notes) && (
                                 <p className="text-xs text-slate-500 truncate">
                                     {selectedInspectorLead.service_interest
@@ -3016,7 +3051,29 @@ export default function CRM() {
                             {/* Phone */}
                             <div className="flex items-center justify-between px-4 py-3">
                                 <span className="flex items-center gap-2 text-sm text-slate-500"><Phone className="w-3.5 h-3.5 text-slate-400" /> Phone</span>
-                                <span className="text-sm font-semibold text-slate-800">{formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone) || 'No phone'}</span>
+{editingInspectorPhone ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={inspectorPhoneDraft}
+                                        onChange={e => setInspectorPhoneDraft(e.target.value)}
+                                        onBlur={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft} : null); }}
+                                        onKeyDown={e => { 
+                                            if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft} : null); } 
+                                            if (e.key === 'Escape') setEditingInspectorPhone(false); 
+                                        }}
+                                        className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
+                                        placeholder="Phone number"
+                                    />
+                                ) : (
+                                    <span 
+                                        className="text-sm font-semibold text-slate-800 cursor-pointer hover:text-primary transition-colors"
+                                        onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
+                                        title="Click to edit phone"
+                                    >
+                                        {formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone) || 'No phone'}
+                                    </span>
+                                )}
                             </div>
                             {/* Email */}
                             <div className="flex items-center justify-between px-4 py-3">

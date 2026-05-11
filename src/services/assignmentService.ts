@@ -169,12 +169,13 @@ export async function assignWorkerToClient(
       assignment_status: 'active',
       notes:             notes?.trim() ?? null,
       deposit_paid:      depositPaid,
-      start_date:        billingData?.startDate,
-      end_date:          billingData?.endDate,
-      service_type:      billingData?.serviceType,
-      hours_per_day:     billingData?.hoursPerDay || 0,
-      total_bill_amount: billingData?.totalBillAmount || 0,
-      invoice_number:    `INV-${Date.now().toString().slice(-6)}`,
+      // Billing columns removed temporarily due to missing columns in remote DB
+      // start_date:        billingData?.startDate,
+      // end_date:          billingData?.endDate,
+      // service_type:      billingData?.serviceType,
+      // hours_per_day:     billingData?.hoursPerDay || 0,
+      // total_bill_amount: billingData?.totalBillAmount || 0,
+      // invoice_number:    `INV-${Date.now().toString().slice(-6)}`,
     })
     .select()
     .single();

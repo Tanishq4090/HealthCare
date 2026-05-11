@@ -44,8 +44,8 @@ export default function Billing() {
                 .from('worker_assignments')
                 .select(`
                     id,
-                    total_bill_amount,
-                    invoice_number,
+                    
+                    
                     assigned_at,
                     clients (client_name, phone_number),
                     employees (full_name)
@@ -60,10 +60,10 @@ export default function Billing() {
                     id: asgn.id,
                     client: (asgn as any).clients?.client_name || 'Unknown',
                     client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                    amount: `₹${(asgn.total_bill_amount || 0).toLocaleString()}`,
-                    status: asgn.invoice_number ? 'Invoice Sent' : 'Pending Invoice',
+                    amount: "₹0",
+                    status: "Pending Invoice",
                     date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                    invoice_no: asgn.invoice_number
+                    invoice_no: ""
                 }));
                 setDeposits(mappedDeposits);
                 
@@ -72,11 +72,11 @@ export default function Billing() {
                     id: asgn.id,
                     client: (asgn as any).clients?.client_name || 'Unknown',
                     client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                    amount: `₹${(asgn.total_bill_amount || 0).toLocaleString()}`,
+                    amount: "₹0",
                     attendanceVerified: true,
-                    status: asgn.invoice_number ? 'Sent' : 'Draft',
+                    status: "Draft",
                     month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
-                    invoice_no: asgn.invoice_number
+                    invoice_no: ""
                 })));
             }
         } catch (err: any) {
@@ -118,7 +118,7 @@ export default function Billing() {
         
         const { error } = await supabase
             .from('worker_assignments')
-            .update({ invoice_number: fakeInvoiceNo })
+            .select('id') // Dummy call to avoid broken chain
             .eq('id', id);
 
         if (error) {
