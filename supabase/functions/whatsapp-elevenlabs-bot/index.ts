@@ -120,6 +120,14 @@ serve(async (req) => {
                         other_details: formData.other_details,
                         terms_accepted: formData.terms_accepted === 'on' || formData.terms_accepted === true
                     }]);
+
+                    // Log activity event
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: existingLead.id,
+                        event_type: 'form_filled',
+                        description: `Consent form filled for ${formData.patient_name}`,
+                        metadata: { patient_name: formData.patient_name, service_category: formData.service_category }
+                    }]);
                 } else {
                     console.warn(`[Flow] Consent Form received but no CRM Lead found for ${purePhone}! Saving orphans not implemented.`);
                 }
@@ -182,17 +190,30 @@ serve(async (req) => {
                 name,
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Flow',
+                service_interest: service !== 'Unknown' ? service : undefined,
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
                 notes: `Service: ${service} | Shift: ${shiftType} | Location: ${area}, ${city}, ${state}, ${country} | Care for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
             };
 
+            let upsertedLeadId: string | null = existingLead?.id ?? null;
             if (existingLead) {
                 await supabase.from('crm_leads').update(leadPayload).eq('id', existingLead.id);
                 console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'})`);
             } else {
-                await supabase.from('crm_leads').insert([{ ...leadPayload, pipeline_stage: 'In Discussion', status: 'new' }]);
+                const { data: newLead } = await supabase.from('crm_leads').insert([{ ...leadPayload, pipeline_stage: 'In Discussion', status: 'new' }]).select('id').single();
+                upsertedLeadId = newLead?.id ?? null;
                 console.log(`[Flow] Created new lead for ${name}`);
+            }
+
+            // Log form_filled activity
+            if (upsertedLeadId) {
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: upsertedLeadId,
+                    event_type: 'form_filled',
+                    description: `Intake form submitted — Service: ${service}`,
+                    metadata: { service, shift_type: shiftType, care_for: careFor, location: locationStr }
+                }]);
             }
 
             // Send warm confirmation

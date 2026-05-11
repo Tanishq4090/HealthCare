@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -390,6 +390,14 @@ export default function CRM() {
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
     const [selectedInspectorLead, setSelectedInspectorLead] = useState<any | null>(null);
 
+    // Inspector editing state for new fields
+    const [inspectorActivity, setInspectorActivity] = useState<any[]>([]);
+    const [isLoadingActivity, setIsLoadingActivity] = useState(false);
+    const [editingInspectorEmail, setEditingInspectorEmail] = useState(false);
+    const [inspectorEmailDraft, setInspectorEmailDraft] = useState('');
+    const [editingInspectorService, setEditingInspectorService] = useState(false);
+    const [inspectorServiceDraft, setInspectorServiceDraft] = useState('');
+
     // Kanban Accordion State
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
     const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
@@ -484,6 +492,77 @@ export default function CRM() {
                 setCallStatus('idle');
                 toast.error('Failed to start call. Please allow microphone access.');
             }
+        }
+    };
+
+    // ── Helper: Relative time (e.g. "2h ago") ──────────────────────────────
+    const getRelativeTime = (dateStr: string) => {
+        const diff = Date.now() - new Date(dateStr).getTime();
+        const mins = Math.floor(diff / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs}h ago`;
+        const days = Math.floor(hrs / 24);
+        return `${days}d ago`;
+    };
+
+    // ── Helper: Initials from name ─────────────────────────────────────────
+    const getInitials = (name: string) => {
+        const parts = (name || '').trim().split(' ').filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return (parts[0]?.[0] || '?').toUpperCase();
+    };
+
+    // ── Helper: Consistent avatar color from name ──────────────────────────
+    const AVATAR_COLORS = [
+        'bg-teal-500', 'bg-blue-500', 'bg-purple-500', 'bg-rose-500',
+        'bg-amber-500', 'bg-emerald-500', 'bg-indigo-500', 'bg-pink-500'
+    ];
+    const getAvatarColor = (name: string) => {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+    };
+
+    // ── Helper: Format activity timestamp ─────────────────────────────────
+    const formatActivityTime = (dateStr: string) => {
+        const d = new Date(dateStr);
+        const today = new Date();
+        const isToday = d.toDateString() === today.toDateString();
+        const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        return isToday ? `Today, ${timeStr}` : `${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}, ${timeStr}`;
+    };
+
+    // ── Activity: Fetch from DB ────────────────────────────────────────────
+    const fetchLeadActivity = async (leadId: string) => {
+        setIsLoadingActivity(true);
+        try {
+            const { data } = await supabase
+                .from('crm_lead_activity')
+                .select('*')
+                .eq('lead_id', leadId)
+                .order('created_at', { ascending: true });
+            setInspectorActivity(data || []);
+        } catch (e) {
+            setInspectorActivity([]);
+        } finally {
+            setIsLoadingActivity(false);
+        }
+    };
+
+    // ── Activity: Log a new event ──────────────────────────────────────────
+    const logActivity = async (leadId: string, eventType: string, description: string, metadata: any = {}) => {
+        if (!leadId || leadId.length < 10) return; // Skip mock leads
+        await supabase.from('crm_lead_activity').insert([{ lead_id: leadId, event_type: eventType, description, metadata }]);
+    };
+
+    // ── Inspector: Save a field (email or service_interest) ───────────────
+    const saveInspectorField = async (leadId: string, field: string, value: string) => {
+        setSelectedInspectorLead((prev: any) => prev ? { ...prev, [field]: value } : null);
+        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, [field]: value } : l));
+        if (leadId.length >= 10) {
+            await supabase.from('crm_leads').update({ [field]: value }).eq('id', leadId);
         }
     };
 
@@ -1717,6 +1796,9 @@ export default function CRM() {
                     phone_number: call.phone === 'Unknown Number' ? null : call.phone,
                     called_at: new Date().toISOString(),
                 }, { onConflict: 'conversation_id' });
+
+                // Log lead_created activity
+                await logActivity(newLead.id, 'lead_created', 'Lead created from AI phone call', { source: 'AI Phone Call', call_id: String(call.id) });
             }
 
             // Optimistically mark the call as processed in the UI
@@ -1743,6 +1825,13 @@ export default function CRM() {
             }]);
             
             if (error) throw error;
+
+            // Log lead_created activity — fetch the newly created lead ID first
+            const { data: freshLead } = await supabase.from('crm_leads').select('id').eq('source', 'Manual Add').order('created_at', { ascending: false }).limit(1).single();
+            if (freshLead?.id) {
+                await logActivity(freshLead.id, 'lead_created', 'Lead created manually', { source: 'Manual Add' });
+            }
+
             toast.success("Manual Lead created! Double-click to edit name/number.");
             fetchLeads();
         } catch (err: any) {
@@ -1960,115 +2049,7 @@ export default function CRM() {
                                             {col.items.length === 0 ? (
                                                 <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                             ) : (
-                                                <div className="flex flex-wrap gap-5 min-w-min">
-                                                    {displayedItems.map((item) => (
-                                                        <div key={item.id} className="w-[320px] shrink-0 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default flex flex-col gap-4">
-                                                            {/* Header Row: Type and Name */}
-                                                            <div className="flex items-start gap-3">
-                                                                <div className="relative group/priority w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-xl" title="Change Priority">
-                                                                    <select 
-                                                                        value={item.priority || 'medium'} 
-                                                                        onChange={(e) => handleUpdatePriority(item.id, e.target.value)}
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                                                    >
-                                                                        <option value="hot">🔥 Hot</option>
-                                                                        <option value="medium">☀️ Medium</option>
-                                                                        <option value="cold">❄️ Cold</option>
-                                                                    </select>
-                                                                    <span className="pointer-events-none group-hover/priority:scale-110 transition-transform">
-                                                                        {item.priority === 'hot' ? '🔥' : item.priority === 'cold' ? '❄️' : '☀️'}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex flex-col min-w-0 pt-0.5 flex-1" 
-                                                                    onDoubleClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setEditingLeadDetailsId(item.id);
-                                                                        setEditingLeadName(item.name);
-                                                                        setEditingLeadPhone(item.whatsapp_number || item.phone || '');
-                                                                    }}
-                                                                >
-                                                                    {editingLeadDetailsId === item.id ? (
-                                                                        <input
-                                                                            autoFocus
-                                                                            type="text"
-                                                                            value={editingLeadName}
-                                                                            onChange={e => setEditingLeadName(e.target.value)}
-                                                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); }}
-                                                                            className="w-full text-xl font-extrabold text-slate-900 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary leading-tight"
-                                                                            placeholder="Lead Name"
-                                                                        />
-                                                                    ) : (
-                                                                        <h4 className="text-xl font-extrabold text-slate-900 truncate leading-tight cursor-text hover:text-primary transition-colors" title="Double click to edit">{item.name}</h4>
-                                                                    )}
-                                                                    <div className="flex items-center gap-2 mt-1">
-                                                                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{item.priority || 'Medium'} Priority</span>
-                                                                        {item.assigned_worker_name && (
-                                                                            <span className="text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md border border-primary/20 flex items-center gap-1" title={`Assigned to ${item.assigned_worker_name}`}>
-                                                                                <Users className="w-3 h-3" />
-                                                                                <span className="truncate max-w-[80px]">{item.assigned_worker_name}</span>
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            
-                                                            {/* Phone & Status Row */}
-                                                            <div className="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100"
-                                                                onDoubleClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setEditingLeadDetailsId(item.id);
-                                                                    setEditingLeadName(item.name);
-                                                                    setEditingLeadPhone(item.whatsapp_number || item.phone || '');
-                                                                }}
-                                                            >
-                                                                <div className="flex items-center gap-2 text-[15px] font-bold text-slate-700 flex-1 min-w-0 pr-2">
-                                                                    <Phone className="w-4 h-4 text-primary shrink-0" />
-                                                                    {editingLeadDetailsId === item.id ? (
-                                                                        <input
-                                                                            type="text"
-                                                                            value={editingLeadPhone}
-                                                                            onChange={e => setEditingLeadPhone(e.target.value)}
-                                                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); }}
-                                                                            onBlur={() => handleUpdateLeadDetails(item.id)}
-                                                                            className="w-full text-[13px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary"
-                                                                            placeholder="Phone Number"
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="truncate cursor-text hover:text-primary transition-colors" title="Double click to edit">
-                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No Phone'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                {/* Status Icon */}
-                                                                {(() => {
-                                                                    const log = deliveryLogs.find(l => l.payload?.lead_id === item.id);
-                                                                    if (!log) return null;
-                                                                    const isFailed = ['failed', 'undelivered'].includes(log.status);
-                                                                    const isDelivered = ['delivered', 'read'].includes(log.status);
-                                                                    return (
-                                                                        <div className="flex items-center shrink-0">
-                                                                            {isFailed ? (
-                                                                                <span title={`WhatsApp Failed: ${log.error_message}`}><AlertCircle className="w-5 h-5 text-red-500" /></span>
-                                                                            ) : isDelivered ? (
-                                                                                <span title="WhatsApp Delivered"><CheckCircle2 className="w-5 h-5 text-[#1AA6A8]" /></span>
-                                                                            ) : (
-                                                                                <span title={log.status}><Loader2 className="w-5 h-5 text-slate-400 animate-spin" /></span>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })()}
-                                                            </div>
-
-                                                            {/* View Details Toggle Button */}
-                                                            <button 
-                                                                onClick={(e) => { e.stopPropagation(); setSelectedInspectorLead(item); }}
-                                                                className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-primary hover:border-primary/30 text-[13px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 group shadow-sm"
-                                                            >
-                                                                View Details <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                                            </button>
-                                                        </div>
-                                                    ))}
+                                                <div className="flex flex-wrap gap-4 min-w-min">
                                                     {hasMore && (
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
@@ -2868,46 +2849,58 @@ export default function CRM() {
         {/* Right Sidebar Inspector (Non-blocking) */}
         {selectedInspectorLead && (
             <div className="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.05)] border-l border-slate-200 z-[90] flex flex-col animate-in slide-in-from-right duration-300">
-                <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
-                    <div>
-                        <h2 className="text-xl font-bold text-slate-900">{selectedInspectorLead.name}</h2>
-                        <p className="text-sm font-medium text-slate-500 mt-0.5">{formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone)}</p>
+
+                {/* ── Inspector Header ─────────────────────────────── */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(selectedInspectorLead.name)}`}>
+                            {getInitials(selectedInspectorLead.name)}
+                        </div>
+                        <div className="min-w-0">
+                            <h2 className="text-base font-bold text-slate-900 truncate">{selectedInspectorLead.name}</h2>
+                            {(selectedInspectorLead.service_interest || selectedInspectorLead.notes) && (
+                                <p className="text-xs text-slate-500 truncate">
+                                    {selectedInspectorLead.service_interest
+                                        || (selectedInspectorLead.notes ? selectedInspectorLead.notes.split('|')[0].replace('Service:', '').trim() : '')}
+                                </p>
+                            )}
+                        </div>
                     </div>
-                    <button 
+                    <button
                         onClick={() => setSelectedInspectorLead(null)}
-                        className="p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm"
+                        className="p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm shrink-0 ml-2"
                     >
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
-                    
+                <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 custom-scrollbar">
+
                     {/* Assigned Staff Info */}
                     {selectedInspectorLead.assigned_worker_name && (
-                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-                                    <Users className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Assigned Staff</p>
-                                    <p className="text-sm font-bold text-slate-900">{selectedInspectorLead.assigned_worker_name}</p>
-                                </div>
+                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shrink-0">
+                                <Users className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Assigned Staff</p>
+                                <p className="text-sm font-bold text-slate-900">{selectedInspectorLead.assigned_worker_name}</p>
                             </div>
                         </div>
                     )}
 
-                    {/* Pipeline Stage Management */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pipeline Stage</label>
+                    {/* ── Pipeline Stage ─────────────────────────────── */}
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pipeline Stage</p>
                         <select
                             value={selectedInspectorLead.pipeline_stage}
                             onChange={async (e) => {
                                 await handleMoveLead(selectedInspectorLead.id, e.target.value);
+                                await logActivity(selectedInspectorLead.id, 'stage_changed', `Moved to "${e.target.value}"`, { from: selectedInspectorLead.pipeline_stage, to: e.target.value });
                                 setSelectedInspectorLead((prev: any) => prev ? {...prev, pipeline_stage: e.target.value} : null);
+                                setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'stage_changed', description: `Moved to "${e.target.value}"`, created_at: new Date().toISOString() }]);
                             }}
-                            className="w-full text-sm font-bold bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
+                            className="w-full text-sm font-bold bg-white border border-slate-200 text-slate-800 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
                         >
                             <option disabled className="text-slate-400 font-bold bg-slate-50">-- Pipeline --</option>
                             {pipelineStages.map(stage => (
@@ -2920,52 +2913,145 @@ export default function CRM() {
                         </select>
                     </div>
 
-                    {/* Value and Source */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lead Value</span>
-                            {editingLeadValueId === selectedInspectorLead.id ? (
-                                <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden w-full max-w-[120px]">
-                                    <span className="text-primary text-sm font-semibold pl-2">₹</span>
+                    {/* ── Contact Details ────────────────────────────── */}
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Contact Details</p>
+                        <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
+                            {/* Phone */}
+                            <div className="flex items-center justify-between px-4 py-3">
+                                <span className="flex items-center gap-2 text-sm text-slate-500"><Phone className="w-3.5 h-3.5 text-slate-400" /> Phone</span>
+                                <span className="text-sm font-semibold text-slate-800">{formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone) || 'No phone'}</span>
+                            </div>
+                            {/* Email */}
+                            <div className="flex items-center justify-between px-4 py-3">
+                                <span className="flex items-center gap-2 text-sm text-slate-500"><Mail className="w-3.5 h-3.5 text-slate-400" /> Email</span>
+                                {editingInspectorEmail ? (
                                     <input
-                                        type="text"
-                                        value={editingLeadValueAmount}
-                                        onChange={e => setEditingLeadValueAmount(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                handleUpdateLeadValue(selectedInspectorLead.id);
-                                                setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
-                                            }
-                                            if (e.key === 'Escape') setEditingLeadValueId(null);
-                                        }}
-                                        onBlur={() => {
-                                            handleUpdateLeadValue(selectedInspectorLead.id);
-                                            setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
-                                        }}
                                         autoFocus
-                                        className="w-full bg-transparent text-sm font-semibold text-primary outline-none py-1 px-1"
+                                        type="email"
+                                        value={inspectorEmailDraft}
+                                        onChange={e => setInspectorEmailDraft(e.target.value)}
+                                        onBlur={() => { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); }}
+                                        onKeyDown={e => { if (e.key === 'Enter') { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); } if (e.key === 'Escape') setEditingInspectorEmail(false); }}
+                                        className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
+                                        placeholder="email@example.com"
                                     />
-                                </div>
-                            ) : (
-                                <div 
-                                    className="text-lg font-bold text-primary cursor-pointer hover:scale-105 transition-transform" 
-                                    title="Click to edit value"
-                                    onClick={() => {
-                                        setEditingLeadValueId(selectedInspectorLead.id);
-                                        setEditingLeadValueAmount(selectedInspectorLead.valueAmount?.toString() || '0');
-                                    }}
-                                >
-                                    {selectedInspectorLead.value}
-                                </div>
-                            )}
-                        </div>
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col justify-center items-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</span>
-                            <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-                                {selectedInspectorLead.source}
+                                ) : (
+                                    <span
+                                        className={`text-sm font-semibold cursor-pointer hover:text-primary transition-colors ${selectedInspectorLead.email ? 'text-primary' : 'text-slate-400 italic'}`}
+                                        onClick={() => { setInspectorEmailDraft(selectedInspectorLead.email || ''); setEditingInspectorEmail(true); }}
+                                        title="Click to edit"
+                                    >
+                                        {selectedInspectorLead.email || 'Add email'}
+                                    </span>
+                                )}
+                            </div>
+                            {/* Source */}
+                            <div className="flex items-center justify-between px-4 py-3">
+                                <span className="flex items-center gap-2 text-sm text-slate-500"><Globe className="w-3.5 h-3.5 text-slate-400" /> Source</span>
+                                <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.source || '—'}</span>
                             </div>
                         </div>
                     </div>
+
+                    {/* ── Lead Value ─────────────────────────────────── */}
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Lead Value</p>
+                        <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
+                            {/* Monthly value */}
+                            <div className="flex items-center justify-between px-4 py-3">
+                                <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Monthly value</span>
+                                {editingLeadValueId === selectedInspectorLead.id ? (
+                                    <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden">
+                                        <span className="text-primary text-sm font-semibold pl-2">₹</span>
+                                        <input
+                                            type="text"
+                                            value={editingLeadValueAmount}
+                                            onChange={e => setEditingLeadValueAmount(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    handleUpdateLeadValue(selectedInspectorLead.id);
+                                                    setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
+                                                }
+                                                if (e.key === 'Escape') setEditingLeadValueId(null);
+                                            }}
+                                            onBlur={() => {
+                                                handleUpdateLeadValue(selectedInspectorLead.id);
+                                                setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
+                                            }}
+                                            autoFocus
+                                            className="w-20 bg-transparent text-sm font-semibold text-primary outline-none py-1 px-1"
+                                        />
+                                    </div>
+                                ) : (
+                                    <span
+                                        className="text-sm font-bold text-primary cursor-pointer hover:scale-105 transition-transform inline-block"
+                                        title="Click to edit"
+                                        onClick={() => { setEditingLeadValueId(selectedInspectorLead.id); setEditingLeadValueAmount(selectedInspectorLead.valueAmount?.toString() || '0'); }}
+                                    >
+                                        {selectedInspectorLead.value || '₹0/mo'}
+                                    </span>
+                                )}
+                            </div>
+                            {/* Est. Annual */}
+                            <div className="flex items-center justify-between px-4 py-3">
+                                <span className="flex items-center gap-2 text-sm text-slate-500"><Calendar className="w-3.5 h-3.5 text-slate-400" /> Est. annual</span>
+                                <span className="text-sm font-bold text-slate-800">₹{((selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0) * 12).toLocaleString('en-IN')}</span>
+                            </div>
+                            {/* Priority */}
+                            <div className="flex items-center justify-between px-4 py-3">
+                                <span className="flex items-center gap-2 text-sm text-slate-500"><Star className="w-3.5 h-3.5 text-slate-400" /> Priority</span>
+                                <select
+                                    value={selectedInspectorLead.priority || 'medium'}
+                                    onChange={async (e) => {
+                                        await handleUpdatePriority(selectedInspectorLead.id, e.target.value);
+                                        setSelectedInspectorLead((prev: any) => prev ? {...prev, priority: e.target.value} : null);
+                                    }}
+                                    className={`text-sm font-bold bg-transparent border-0 outline-none cursor-pointer ${selectedInspectorLead.priority === 'hot' ? 'text-red-600' : selectedInspectorLead.priority === 'cold' ? 'text-blue-600' : 'text-amber-600'}`}
+                                >
+                                    <option value="hot">Hot</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="cold">Low</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Activity Timeline ──────────────────────────── */}
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Activity Timeline</p>
+                        <div className="flex flex-col gap-0">
+                            {isLoadingActivity ? (
+                                <div className="flex items-center gap-2 py-4 text-slate-400 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>
+                            ) : inspectorActivity.length === 0 ? (
+                                <p className="text-sm text-slate-400 italic py-2">No activity yet.</p>
+                            ) : (
+                                inspectorActivity.map((evt, i) => {
+                                    const isLast = i === inspectorActivity.length - 1;
+                                    const dotColor = evt.event_type === 'lead_created' ? 'bg-teal-500'
+                                        : evt.event_type === 'greeting_sent' ? 'bg-blue-500'
+                                        : evt.event_type === 'form_filled' ? 'bg-purple-500'
+                                        : evt.event_type === 'stage_changed' ? 'bg-amber-500'
+                                        : evt.event_type === 'quotation_sent' ? 'bg-orange-500'
+                                        : evt.event_type === 'call_received' ? 'bg-emerald-500'
+                                        : 'bg-slate-400';
+                                    return (
+                                        <div key={evt.id} className="flex gap-3">
+                                            <div className="flex flex-col items-center">
+                                                <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dotColor}`} />
+                                                {!isLast && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+                                            </div>
+                                            <div className={`pb-4 min-w-0 ${isLast ? '' : ''}`}>
+                                                <p className="text-sm font-semibold text-slate-800 leading-tight">{evt.description}</p>
+                                                <p className="text-[11px] text-slate-400 mt-0.5">{formatActivityTime(evt.created_at)}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+
 
                     {/* AI & Process Actions */}
                     <div className="border-t border-slate-100 pt-5 mt-2">
@@ -2981,7 +3067,11 @@ export default function CRM() {
                             
                             {selectedInspectorLead.pipeline_stage === 'New Inquiry' && (
                                 <button
-                                    onClick={() => { openAgentModal(selectedInspectorLead, 'inquiry'); }}
+                                    onClick={async () => {
+                                        openAgentModal(selectedInspectorLead, 'inquiry');
+                                        await logActivity(selectedInspectorLead.id, 'greeting_sent', 'AI greeting message sent');
+                                        setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'greeting_sent', description: 'AI greeting message sent', created_at: new Date().toISOString() }]);
+                                    }}
                                     className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                 >
                                     <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
@@ -2992,7 +3082,11 @@ export default function CRM() {
                             {selectedInspectorLead.pipeline_stage === 'In Discussion' && (
                                 <div className="flex flex-col gap-2">
                                     <button
-                                        onClick={() => { openAgentModal(selectedInspectorLead, 'quotation'); }}
+                                        onClick={async () => {
+                                            openAgentModal(selectedInspectorLead, 'quotation');
+                                            await logActivity(selectedInspectorLead.id, 'quotation_sent', 'Quotation sent to lead');
+                                            setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'quotation_sent', description: 'Quotation sent to lead', created_at: new Date().toISOString() }]);
+                                        }}
                                         className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                     >
                                         <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

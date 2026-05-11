@@ -188,7 +188,10 @@ serve(async (req) => {
             if (existingLead) {
                 console.log(`[Call Webhook] Found lead: ${existingLead.id} (${existingLead.name})`);
                 // Update call timestamp and stage if still 'New'
-                const updatePayload: any = { last_called_at: startTime };
+                const updatePayload: any = {
+                    last_called_at: startTime,
+                    service_interest: detectedService !== 'Home Healthcare' ? detectedService : existingLead.service_interest || undefined,
+                };
                 if (existingLead.pipeline_stage === 'New' || existingLead.pipeline_stage === 'New Lead') {
                     updatePayload.pipeline_stage = 'In Discussion';
                 }
@@ -197,23 +200,38 @@ serve(async (req) => {
                 if (finalWhatsappNumber && finalWhatsappNumber !== callerPhone) {
                     await supabase.from('crm_leads').update({ whatsapp_number: finalWhatsappNumber }).eq('id', existingLead.id);
                 }
+                // Log call_received activity
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: existingLead.id,
+                    event_type: 'call_received',
+                    description: `AI call received (${Math.round(callDurationSecs)}s)`,
+                    metadata: { conversation_id: conversationId, duration_secs: callDurationSecs, detected_service: detectedService }
+                }]);
             } else {
                 // Auto-create a new lead for this caller — never miss a contact
                 console.log(`[Call Webhook] No existing lead. Auto-creating for ${phoneForLookup}`);
-                await supabase.from('crm_leads').insert([{
+                const { data: newLead } = await supabase.from('crm_leads').insert([{
                     name: detectedName !== 'Customer' ? detectedName : 'Unknown Caller',
                     phone: phoneForLookup,
                     whatsapp_number: effectivePhoneNumber || phoneForLookup,
                     source: 'AI Phone Call',
                     pipeline_stage: 'New Inquiry',
+                    service_interest: detectedService !== 'Home Healthcare' ? detectedService : null,
                     status: 'new',
                     last_called_at: startTime
-                }]);
-            }
+                }]).select('id').single();
 
-            // NOTE: Greeting is now sent manually from the CRM Voice tab.
-            // No automatic WhatsApp dispatch happens here.
-        }
+                if (newLead?.id) {
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: newLead.id,
+                        event_type: 'lead_created',
+                        description: 'Lead created via AI phone call',
+                        metadata: { conversation_id: conversationId, source: 'AI Phone Call', detected_service: detectedService }
+                    }]);
+                }
+            }
+        } // end if (phoneForLookup)
+
 
         console.log(`[Webhook] Transcript saved for conversation: ${conversationId}`);
         return new Response(JSON.stringify({ ok: true, conversation_id: conversationId }), { 
