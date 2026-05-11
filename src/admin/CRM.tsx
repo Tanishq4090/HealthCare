@@ -2991,13 +2991,20 @@ export default function CRM() {
                                     </button>
                                 </div>
                             ) : (
-                                <h2 
-                                    className="text-base font-bold text-slate-900 truncate cursor-pointer hover:text-primary transition-colors"
-                                    onDoubleClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorName(true); }}
-                                    title="Double-tap to edit name"
-                                >
-                                    {selectedInspectorLead.name}
-                                </h2>
+                                <div className="group/inspname flex items-center gap-2">
+                                    <h2 
+                                        className="text-base font-bold text-slate-900 truncate cursor-pointer hover:text-primary transition-colors"
+                                        onDoubleClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorName(true); }}
+                                    >
+                                        {selectedInspectorLead.name}
+                                    </h2>
+                                    <button 
+                                        onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorName(true); }}
+                                        className="opacity-0 group-hover/inspname:opacity-100 p-1 text-slate-400 hover:text-primary transition-all"
+                                    >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             )}
                             {(selectedInspectorLead.service_interest || selectedInspectorLead.notes) && (
                                 <p className="text-xs text-slate-500 truncate">
@@ -3083,13 +3090,20 @@ export default function CRM() {
                                         </button>
                                     </div>
                                 ) : (
-                                    <span 
-                                        className="text-sm font-semibold text-slate-800 cursor-pointer hover:text-primary transition-colors"
-                                        onDoubleClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
-                                        title="Double-tap to edit phone"
-                                    >
-                                        {formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone) || 'No phone'}
-                                    </span>
+                                    <div className="group/inspphone flex items-center gap-2">
+                                        <span 
+                                            className="text-sm font-semibold text-slate-800 cursor-pointer hover:text-primary transition-colors"
+                                            onDoubleClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
+                                        >
+                                            {formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone) || 'No phone'}
+                                        </span>
+                                        <button 
+                                            onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
+                                            className="opacity-0 group-hover/inspphone:opacity-100 p-1 text-slate-400 hover:text-primary transition-all"
+                                        >
+                                            <Edit3 className="w-3 h-3" />
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                             {/* Email */}
