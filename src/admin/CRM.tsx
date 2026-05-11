@@ -2092,13 +2092,13 @@ export default function CRM() {
                                                                                 onChange={e => setEditingLeadName(e.target.value)}
                                                                                 onBlur={() => handleUpdateLeadDetails(item.id)}
                                                                                 onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); if (e.key === 'Escape') setEditingLeadDetailsId(null); }}
-                                                                                className="text-sm font-bold text-slate-900 w-full border-b border-primary outline-none bg-transparent"
+                                                                                className="text-sm font-bold text-slate-900 w-full border border-primary/30 rounded px-2 py-1 outline-none bg-white shadow-sm"
                                                                             />
                                                                         ) : (
                                                                             <p
-                                                                                className="text-sm font-bold text-slate-900 truncate leading-tight cursor-pointer hover:text-primary transition-colors"
-                                                                                onDoubleClick={() => { setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
-                                                                                title="Double-click to edit name"
+                                                                                className="text-sm font-bold text-slate-900 truncate leading-tight cursor-pointer hover:text-primary transition-colors py-0.5 pr-2 rounded hover:bg-slate-50"
+                                                                                onClick={() => { setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
+                                                                                title="Click to edit name"
                                                                             >
                                                                                 {item.name}
                                                                             </p>
@@ -2124,14 +2124,14 @@ export default function CRM() {
                                                                             onChange={e => setEditingLeadPhone(e.target.value)}
                                                                             onBlur={() => handleUpdateLeadDetails(item.id)}
                                                                             onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); if (e.key === 'Escape') setEditingLeadDetailsId(null); }}
-                                                                            className="text-xs text-slate-600 w-full border-b border-primary outline-none bg-transparent"
+                                                                            className="text-xs text-slate-900 w-full border border-primary/30 rounded px-1.5 py-0.5 outline-none bg-white shadow-sm"
                                                                             placeholder="Phone number"
                                                                         />
                                                                     ) : (
                                                                         <span
                                                                             className="text-xs text-slate-600 truncate cursor-pointer hover:text-primary transition-colors flex items-center gap-1"
-                                                                            onDoubleClick={() => { setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
-                                                                            title="Double-click to edit phone"
+                                                                            onClick={() => { setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
+                                                                            title="Click to edit phone"
                                                                         >
                                                                             <Phone className="w-3 h-3 text-slate-400 shrink-0" />
                                                                             {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
