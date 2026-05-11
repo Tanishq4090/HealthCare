@@ -2085,26 +2085,9 @@ export default function CRM() {
                                                                         {getInitials(item.name)}
                                                                     </div>
                                                                     <div className="flex-1 min-w-0">
-                                                                        {editingLeadDetailsId === item.id ? (
-                                                                            <input
-                                                                                onMouseDown={e => e.stopPropagation()}
-                                                                                autoFocus
-                                                                                type="text"
-                                                                                value={editingLeadName}
-                                                                                onChange={e => setEditingLeadName(e.target.value)}
-                                                                                onBlur={() => { handleUpdateLeadDetails(item.id); }}
-                                                                                onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); if (e.key === 'Escape') setEditingLeadDetailsId(null); }}
-                                                                                className="text-sm font-bold text-slate-900 w-full border border-primary/30 rounded px-2 py-1 outline-none bg-white shadow-sm"
-                                                                            />
-                                                                        ) : (
-                                                                            <p
-                                                                                className="text-sm font-bold text-slate-900 truncate leading-tight cursor-pointer hover:text-primary transition-colors py-0.5 pr-2 rounded hover:bg-slate-50"
-                                                                                onMouseDown={(e) => { e.stopPropagation(); setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
-                                                                                title="Click to edit name"
-                                                                            >
-                                                                                {item.name}
-                                                                            </p>
-                                                                        )}
+                                                                        <p className="text-sm font-bold text-slate-900 truncate leading-tight">
+                                                                            {item.name}
+                                                                        </p>
                                                                         <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${priorityMeta.cls}`}>
                                                                             {priorityMeta.label}
                                                                         </span>
@@ -2119,27 +2102,10 @@ export default function CRM() {
                                                                 )}
                                                                 {/* Phone row */}
                                                                 <div className="flex items-center gap-2">
-                                                                    {editingLeadDetailsId === item.id ? (
-                                                                        <input
-                                                                            type="text"
-                                                                            value={editingLeadPhone}
-                                                                            onChange={e => setEditingLeadPhone(e.target.value)}
-                                                                            onBlur={() => { handleUpdateLeadDetails(item.id); }}
-                                                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); if (e.key === 'Escape') setEditingLeadDetailsId(null); }}
-                                                                            className="text-xs text-slate-900 w-full border border-primary/30 rounded px-1.5 py-0.5 outline-none bg-white shadow-sm"
-                                                                            placeholder="Phone number"
-                                                                            onMouseDown={e => e.stopPropagation()}
-                                                                        />
-                                                                    ) : (
-                                                                        <span
-                                                                            className="text-xs text-slate-600 truncate cursor-pointer hover:text-primary transition-colors flex items-center gap-1"
-                                                                            onMouseDown={(e) => { e.stopPropagation(); setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
-                                                                            title="Click to edit phone"
-                                                                        >
-                                                                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
-                                                                        </span>
-                                                                    )}
+                                                                    <span className="text-xs text-slate-600 truncate flex items-center gap-1">
+                                                                        <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                        {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
+                                                                    </span>
                                                                     {deliveryLog && (
                                                                         <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${deliveryLog.status === 'delivered' ? 'bg-green-100 text-green-700' : deliveryLog.status === 'read' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
                                                                             {deliveryLog.status}
@@ -2148,6 +2114,7 @@ export default function CRM() {
                                                                 </div>
                                                                 {/* Time */}
                                                                 <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
+                                                                <div className="flex-1"></div>
                                                             </div>
                                                             {/* View Details */}
                                                             <button
