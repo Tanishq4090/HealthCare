@@ -2078,11 +2078,24 @@ export default function CRM() {
                                                         
                                                         let serviceName = rawService;
                                                         let serviceTime = null;
+                                                        let serviceLocation = null;
                                                         
-                                                        if (rawService && rawService.includes(' Date: ')) {
-                                                            const parts = rawService.split(' Date: ');
-                                                            serviceName = parts[0];
-                                                            serviceTime = parts[1];
+                                                        if (rawService) {
+                                                            // Case-insensitive split by DATE:
+                                                            const dateMatch = rawService.match(/(.*?)DATE:\s*(.*)/i);
+                                                            if (dateMatch) {
+                                                                serviceName = dateMatch[1].trim();
+                                                                const rest = dateMatch[2];
+                                                                
+                                                                // Case-insensitive split by LOCATION:
+                                                                const locMatch = rest.match(/(.*?)LOCATION:\s*(.*)/i);
+                                                                if (locMatch) {
+                                                                    serviceTime = locMatch[1].trim();
+                                                                    serviceLocation = locMatch[2].trim();
+                                                                } else {
+                                                                    serviceTime = rest.trim();
+                                                                }
+                                                            }
                                                         }
                                                         const deliveryLog = deliveryLogs.find(l => l.payload?.lead_id === item.id);
                                                         return (
@@ -2110,15 +2123,25 @@ export default function CRM() {
                                                                     </div>
                                                                 </div>
                                                                 {/* Service Interest */}
-                                                                 {/* Service Date/Time */}
-                                                                 {serviceTime && (
-                                                                     <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
-                                                                         <Calendar className="w-3 h-3 text-primary shrink-0" />
-                                                                         <span className="text-[10px] font-medium text-slate-600">
-                                                                             {serviceTime}
-                                                                         </span>
-                                                                     </div>
-                                                                 )}
+                                                                 {/* Service Details Breakdown */}
+                                                                 <div className="flex flex-col gap-1.5">
+                                                                     {serviceTime && (
+                                                                         <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                                                             <Clock className="w-3 h-3 text-primary shrink-0" />
+                                                                             <span className="text-[10px] font-medium text-slate-600 truncate">
+                                                                                 {serviceTime}
+                                                                             </span>
+                                                                         </div>
+                                                                     )}
+                                                                     {serviceLocation && (
+                                                                         <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                                                             <Globe className="w-3 h-3 text-primary shrink-0" />
+                                                                             <span className="text-[10px] font-medium text-slate-600 truncate">
+                                                                                 {serviceLocation}
+                                                                             </span>
+                                                                         </div>
+                                                                     )}
+                                                                 </div>
                                                                 {/* Phone row */}
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="text-xs text-slate-600 truncate flex items-center gap-1">
