@@ -2050,6 +2050,102 @@ export default function CRM() {
                                                 <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                             ) : (
                                                 <div className="flex flex-wrap gap-4 min-w-min">
+                                                    {displayedItems.map((item) => {
+                                                        const priorityMeta = item.priority === 'hot'
+                                                            ? { label: 'Hot', cls: 'bg-red-100 text-red-700 border-red-200' }
+                                                            : item.priority === 'cold'
+                                                            ? { label: 'Low', cls: 'bg-blue-100 text-blue-700 border-blue-200' }
+                                                            : { label: 'Medium', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
+                                                        const serviceLabel = item.service_interest
+                                                            || (item.notes ? item.notes.split('|')[0].replace('Service:', '').trim() : null)
+                                                            || item.intent
+                                                            || null;
+                                                        const deliveryLog = deliveryLogs.find(l => l.payload?.lead_id === item.id);
+                                                        return (
+                                                        <div key={item.id} className="w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
+                                                            <div className="p-4 flex flex-col gap-3 flex-1">
+                                                                {/* Row 1: Avatar + Name + Priority */}
+                                                                <div className="flex items-start gap-3">
+                                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(item.name)}`}>
+                                                                        {getInitials(item.name)}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        {editingLeadDetailsId === item.id ? (
+                                                                            <input
+                                                                                autoFocus
+                                                                                type="text"
+                                                                                value={editingLeadName}
+                                                                                onChange={e => setEditingLeadName(e.target.value)}
+                                                                                onBlur={() => handleUpdateLeadDetails(item.id)}
+                                                                                onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); if (e.key === 'Escape') setEditingLeadDetailsId(null); }}
+                                                                                className="text-sm font-bold text-slate-900 w-full border-b border-primary outline-none bg-transparent"
+                                                                            />
+                                                                        ) : (
+                                                                            <p
+                                                                                className="text-sm font-bold text-slate-900 truncate leading-tight cursor-pointer hover:text-primary transition-colors"
+                                                                                onDoubleClick={() => { setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
+                                                                                title="Double-click to edit name"
+                                                                            >
+                                                                                {item.name}
+                                                                            </p>
+                                                                        )}
+                                                                        <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${priorityMeta.cls}`}>
+                                                                            {priorityMeta.label}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                {/* Service Interest */}
+                                                                {serviceLabel && (
+                                                                    <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
+                                                                        {serviceLabel}
+                                                                    </p>
+                                                                )}
+                                                                {/* Phone row */}
+                                                                <div className="flex items-center gap-2">
+                                                                    {editingLeadDetailsId === item.id ? (
+                                                                        <input
+                                                                            type="text"
+                                                                            value={editingLeadPhone}
+                                                                            onChange={e => setEditingLeadPhone(e.target.value)}
+                                                                            onBlur={() => handleUpdateLeadDetails(item.id)}
+                                                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateLeadDetails(item.id); if (e.key === 'Escape') setEditingLeadDetailsId(null); }}
+                                                                            className="text-xs text-slate-600 w-full border-b border-primary outline-none bg-transparent"
+                                                                            placeholder="Phone number"
+                                                                        />
+                                                                    ) : (
+                                                                        <span
+                                                                            className="text-xs text-slate-600 truncate cursor-pointer hover:text-primary transition-colors flex items-center gap-1"
+                                                                            onDoubleClick={() => { setEditingLeadDetailsId(item.id); setEditingLeadName(item.name); setEditingLeadPhone(item.whatsapp_number || item.phone || ''); }}
+                                                                            title="Double-click to edit phone"
+                                                                        >
+                                                                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
+                                                                        </span>
+                                                                    )}
+                                                                    {deliveryLog && (
+                                                                        <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${deliveryLog.status === 'delivered' ? 'bg-green-100 text-green-700' : deliveryLog.status === 'read' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                                            {deliveryLog.status}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {/* Time */}
+                                                                <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
+                                                            </div>
+                                                            {/* View Details */}
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedInspectorLead(item);
+                                                                    fetchLeadActivity(item.id);
+                                                                }}
+                                                                className="w-full py-2 border-t border-slate-100 text-slate-500 hover:text-primary hover:bg-slate-50 text-[12px] font-semibold rounded-b-2xl transition-all flex items-center justify-center gap-1.5 group"
+                                                            >
+                                                                View Details <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                            </button>
+                                                        </div>
+                                                        );
+                                                    })}
                                                     {hasMore && (
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
