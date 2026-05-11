@@ -2071,10 +2071,19 @@ export default function CRM() {
                                                             : item.priority === 'cold'
                                                             ? { label: 'Low', cls: 'bg-blue-100 text-blue-700 border-blue-200' }
                                                             : { label: 'Medium', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
-                                                        const serviceLabel = item.service_interest
+                                                        const rawService = item.service_interest
                                                             || (item.notes ? item.notes.split('|')[0].replace('Service:', '').trim() : null)
                                                             || item.intent
                                                             || null;
+                                                        
+                                                        let serviceName = rawService;
+                                                        let serviceTime = null;
+                                                        
+                                                        if (rawService && rawService.includes(' Date: ')) {
+                                                            const parts = rawService.split(' Date: ');
+                                                            serviceName = parts[0];
+                                                            serviceTime = parts[1];
+                                                        }
                                                         const deliveryLog = deliveryLogs.find(l => l.payload?.lead_id === item.id);
                                                         return (
                                                         <div key={item.id} className="w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
@@ -2088,18 +2097,28 @@ export default function CRM() {
                                                                         <p className="text-sm font-bold text-slate-900 truncate leading-tight">
                                                                             {item.name}
                                                                         </p>
-                                                                        <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${priorityMeta.cls}`}>
-                                                                            {priorityMeta.label}
-                                                                        </span>
+                                                                         <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
+                                                                                 {priorityMeta.label}
+                                                                             </span>
+                                                                             {serviceName && !serviceName.includes(" Date: ") && (
+                                                                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wider">
+                                                                                     {serviceName}
+                                                                                 </span>
+                                                                             )}
+                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                                 {/* Service Interest */}
-                                                                {serviceLabel && (
-                                                                    <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
-                                                                        <span className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
-                                                                        {serviceLabel}
-                                                                    </p>
-                                                                )}
+                                                                 {/* Service Date/Time */}
+                                                                 {serviceTime && (
+                                                                     <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                                                         <Calendar className="w-3 h-3 text-primary shrink-0" />
+                                                                         <span className="text-[10px] font-medium text-slate-600">
+                                                                             {serviceTime}
+                                                                         </span>
+                                                                     </div>
+                                                                 )}
                                                                 {/* Phone row */}
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="text-xs text-slate-600 truncate flex items-center gap-1">
