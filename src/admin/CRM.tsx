@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -2970,23 +2970,30 @@ export default function CRM() {
                         </div>
                         <div className="min-w-0">
                             {editingInspectorName ? (
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={inspectorNameDraft}
-                                    onChange={e => setInspectorNameDraft(e.target.value)}
-                                    onBlur={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorName(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, name: inspectorNameDraft} : null); }}
-                                    onKeyDown={e => { 
-                                        if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorName(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, name: inspectorNameDraft} : null); } 
-                                        if (e.key === 'Escape') setEditingInspectorName(false); 
-                                    }}
-                                    className="text-base font-bold text-slate-900 bg-white border-b border-primary/50 outline-none w-full"
-                                />
+                                <div className="flex items-center gap-1.5 w-full">
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={inspectorNameDraft}
+                                        onChange={e => setInspectorNameDraft(e.target.value)}
+                                        onKeyDown={e => { 
+                                            if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorName(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, name: inspectorNameDraft} : null); } 
+                                            if (e.key === 'Escape') setEditingInspectorName(false); 
+                                        }}
+                                        className="text-base font-bold text-slate-900 bg-white border-b border-primary/50 outline-none flex-1 min-w-0"
+                                    />
+                                    <button 
+                                        onClick={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorName(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, name: inspectorNameDraft} : null); }}
+                                        className="p-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 shadow-sm"
+                                    >
+                                        <Check className="w-4 h-4" />
+                                    </button>
+                                </div>
                             ) : (
                                 <h2 
                                     className="text-base font-bold text-slate-900 truncate cursor-pointer hover:text-primary transition-colors"
-                                    onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorName(true); }}
-                                    title="Click to edit name"
+                                    onDoubleClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorName(true); }}
+                                    title="Double-tap to edit name"
                                 >
                                     {selectedInspectorLead.name}
                                 </h2>
@@ -3054,24 +3061,31 @@ export default function CRM() {
                             <div className="flex items-center justify-between px-4 py-3">
                                 <span className="flex items-center gap-2 text-sm text-slate-500"><Phone className="w-3.5 h-3.5 text-slate-400" /> Phone</span>
 {editingInspectorPhone ? (
-                                    <input
-                                        autoFocus
-                                        type="text"
-                                        value={inspectorPhoneDraft}
-                                        onChange={e => setInspectorPhoneDraft(e.target.value)}
-                                        onBlur={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft} : null); }}
-                                        onKeyDown={e => { 
-                                            if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft} : null); } 
-                                            if (e.key === 'Escape') setEditingInspectorPhone(false); 
-                                        }}
-                                        className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
-                                        placeholder="Phone number"
-                                    />
+                                    <div className="flex items-center gap-1.5">
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={inspectorPhoneDraft}
+                                            onChange={e => setInspectorPhoneDraft(e.target.value)}
+                                            onKeyDown={e => { 
+                                                if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft} : null); } 
+                                                if (e.key === 'Escape') setEditingInspectorPhone(false); 
+                                            }}
+                                            className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
+                                            placeholder="Phone number"
+                                        />
+                                        <button 
+                                            onClick={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? {...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft} : null); }}
+                                            className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
+                                        >
+                                            <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 ) : (
                                     <span 
                                         className="text-sm font-semibold text-slate-800 cursor-pointer hover:text-primary transition-colors"
-                                        onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
-                                        title="Click to edit phone"
+                                        onDoubleClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
+                                        title="Double-tap to edit phone"
                                     >
                                         {formatPhoneNumber(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone) || 'No phone'}
                                     </span>
@@ -3081,21 +3095,28 @@ export default function CRM() {
                             <div className="flex items-center justify-between px-4 py-3">
                                 <span className="flex items-center gap-2 text-sm text-slate-500"><Mail className="w-3.5 h-3.5 text-slate-400" /> Email</span>
                                 {editingInspectorEmail ? (
-                                    <input
-                                        autoFocus
-                                        type="email"
-                                        value={inspectorEmailDraft}
-                                        onChange={e => setInspectorEmailDraft(e.target.value)}
-                                        onBlur={() => { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); }}
-                                        onKeyDown={e => { if (e.key === 'Enter') { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); } if (e.key === 'Escape') setEditingInspectorEmail(false); }}
-                                        className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
-                                        placeholder="email@example.com"
-                                    />
+                                    <div className="flex items-center gap-1.5">
+                                        <input
+                                            autoFocus
+                                            type="email"
+                                            value={inspectorEmailDraft}
+                                            onChange={e => setInspectorEmailDraft(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); } if (e.key === 'Escape') setEditingInspectorEmail(false); }}
+                                            className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
+                                            placeholder="email@example.com"
+                                        />
+                                        <button 
+                                            onClick={() => { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); }}
+                                            className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
+                                        >
+                                            <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 ) : (
                                     <span
                                         className={`text-sm font-semibold cursor-pointer hover:text-primary transition-colors ${selectedInspectorLead.email ? 'text-primary' : 'text-slate-400 italic'}`}
-                                        onClick={() => { setInspectorEmailDraft(selectedInspectorLead.email || ''); setEditingInspectorEmail(true); }}
-                                        title="Click to edit"
+                                        onDoubleClick={() => { setInspectorEmailDraft(selectedInspectorLead.email || ''); setEditingInspectorEmail(true); }}
+                                        title="Double-tap to edit"
                                     >
                                         {selectedInspectorLead.email || 'Add email'}
                                     </span>
@@ -3117,32 +3138,39 @@ export default function CRM() {
                             <div className="flex items-center justify-between px-4 py-3">
                                 <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Monthly value</span>
                                 {editingLeadValueId === selectedInspectorLead.id ? (
-                                    <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden">
-                                        <span className="text-primary text-sm font-semibold pl-2">₹</span>
-                                        <input
-                                            type="text"
-                                            value={editingLeadValueAmount}
-                                            onChange={e => setEditingLeadValueAmount(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    handleUpdateLeadValue(selectedInspectorLead.id);
-                                                    setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
-                                                }
-                                                if (e.key === 'Escape') setEditingLeadValueId(null);
-                                            }}
-                                            onBlur={() => {
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden">
+                                            <span className="text-primary text-sm font-semibold pl-2">₹</span>
+                                            <input
+                                                type="text"
+                                                value={editingLeadValueAmount}
+                                                onChange={e => setEditingLeadValueAmount(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        handleUpdateLeadValue(selectedInspectorLead.id);
+                                                        setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
+                                                    }
+                                                    if (e.key === 'Escape') setEditingLeadValueId(null);
+                                                }}
+                                                autoFocus
+                                                className="w-20 bg-transparent text-sm font-semibold text-primary outline-none py-1 px-1"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => {
                                                 handleUpdateLeadValue(selectedInspectorLead.id);
                                                 setSelectedInspectorLead((prev: any) => prev ? {...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹'+editingLeadValueAmount+'/mo'} : null);
                                             }}
-                                            autoFocus
-                                            className="w-20 bg-transparent text-sm font-semibold text-primary outline-none py-1 px-1"
-                                        />
+                                            className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
+                                        >
+                                            <Check className="w-3.5 h-3.5" />
+                                        </button>
                                     </div>
                                 ) : (
                                     <span
                                         className="text-sm font-bold text-primary cursor-pointer hover:scale-105 transition-transform inline-block"
-                                        title="Click to edit"
-                                        onClick={() => { setEditingLeadValueId(selectedInspectorLead.id); setEditingLeadValueAmount(selectedInspectorLead.valueAmount?.toString() || '0'); }}
+                                        title="Double-tap to edit"
+                                        onDoubleClick={() => { setEditingLeadValueId(selectedInspectorLead.id); setEditingLeadValueAmount(selectedInspectorLead.valueAmount?.toString() || '0'); }}
                                     >
                                         {selectedInspectorLead.value || '₹0/mo'}
                                     </span>
