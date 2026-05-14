@@ -1280,9 +1280,16 @@ export default function CRM() {
                 leadId: quotationTargetLead.id
             };
 
-            const response = await fetch('https://ixzqwqfcpqglnxntihxs.supabase.co/functions/v1/meta-whatsapp-outbound', {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY,
+                },
                 body: JSON.stringify(payload)
             });
 
