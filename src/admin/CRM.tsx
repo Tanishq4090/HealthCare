@@ -1586,6 +1586,9 @@ export default function CRM() {
             
             // Sync UI only after database confirms
             setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
+            if (selectedInspectorLead && selectedInspectorLead.id === id) {
+                setSelectedInspectorLead(prev => ({ ...prev, pipeline_stage: newStage }));
+            }
             toast.success(`Pipeline state updated successfully!`, { id: toastId });
             
             // Background refresh to ensure full consistency (assigned worker names, etc)
