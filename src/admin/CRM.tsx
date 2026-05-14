@@ -1597,8 +1597,17 @@ export default function CRM() {
             // Sync UI only after database confirms
             setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
             if (selectedInspectorLead && selectedInspectorLead.id === id) {
+                const oldStage = selectedInspectorLead.pipeline_stage;
                 setSelectedInspectorLead((prev: any) => ({ ...prev, pipeline_stage: newStage }));
+                
+                // Log the movement activity
+                await logActivity(id, 'stage_changed', `Pipeline moved: ${oldStage} → ${newStage}`, { from: oldStage, to: newStage });
+                fetchLeadActivity(id);
+            } else {
+                // Still log even if not selected in inspector
+                await logActivity(id, 'stage_changed', `Pipeline moved to ${newStage}`, { to: newStage });
             }
+
             toast.success(`Pipeline state updated successfully!`, { id: toastId });
             
             // Background refresh to ensure full consistency (assigned worker names, etc)
