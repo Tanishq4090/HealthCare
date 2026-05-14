@@ -1294,6 +1294,11 @@ export default function CRM() {
             });
 
             if (!response.ok) throw new Error('Failed to send WhatsApp message');
+            
+            const data = await response.json();
+            if (data.success === false) {
+                throw new Error(data.error || 'Meta API rejected the message.');
+            }
 
             // 3. Move Lead
             await handleMoveLead(quotationTargetLead.id, 'Quotation Sent');
