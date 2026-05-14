@@ -1375,12 +1375,12 @@ export default function CRM() {
                     leadId: agentTargetLead?.id,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
-                                  : (agentTargetAction === 'quotation' ? 'quote_client' 
+                                  : (agentTargetAction === 'quotation' ? 'quote_client_v2' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
                                   : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
                     templateParams: agentTargetAction === 'quotation' 
-                                    ? [quotationVars.v1, quotationVars.v2, quotationVars.v3, quotationVars.v4] 
+                                    ? [finalLogMessage] 
                                     : agentTargetAction === 'staff'
                                     ? [
                                         selectedWorker?.full_name || selectedWorker?.name || 'Your Care Professional',
