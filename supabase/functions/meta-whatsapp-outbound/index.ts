@@ -280,7 +280,9 @@ serve(async (req) => {
                 lead_id: leadId, 
                 original_recipient: digits,
                 templateName,
-                useTemplate
+                useTemplate,
+                templateParams,
+                message
             }
         });
 

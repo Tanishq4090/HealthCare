@@ -1276,7 +1276,8 @@ export default function CRM() {
                 leadName: quotationTargetLead.name,
                 message: msgText,
                 useTemplate: true,
-                templateName: 'quote_client_v2', // Trigger interactive message
+                templateName: 'quote_client_v2',
+                templateParams: [msgText],
                 leadId: quotationTargetLead.id
             };
 
