@@ -1240,7 +1240,7 @@ export default function CRM() {
                 hours_per_day: quotationData.hoursPerDay,
                 days_per_week: quotationData.daysPerWeek,
                 shift_type: quotationData.shiftType,
-                start_date: quotationData.startDate,
+                start_date: quotationData.startDate || null,
                 duration: quotationData.duration,
                 complete_month_rate: quotationData.completeMonthRate,
                 incomplete_month_rate: quotationData.incompleteMonthRate,
@@ -1251,7 +1251,7 @@ export default function CRM() {
                 message_template: quotationData.messageTemplate,
                 language: quotationData.language,
                 custom_message: quotationData.customMessage,
-                valid_until: quotationData.validUntil
+                valid_until: quotationData.validUntil || null
             });
 
             if (dbError) throw dbError;
