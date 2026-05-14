@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
+import { SendQuotationModal } from './components/SendQuotationModal';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -231,6 +232,8 @@ export default function CRM() {
 
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+    const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+    const [quotationTargetLead, setQuotationTargetLead] = useState<any>(null);
     const [agentTargetLead, setAgentTargetLead] = useState<any>(null);
     const [agentTargetAction, setAgentTargetAction] = useState<'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom'>('inquiry');
     // Per-call greeting dispatch status (keyed by call.id)
@@ -1091,12 +1094,14 @@ export default function CRM() {
     };
 
     const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom') => {
+        if (action === 'quotation') {
+            setQuotationTargetLead(lead);
+            setIsQuotationModalOpen(true);
+            return;
+        }
         setAgentTargetLead(lead);
         setAgentTargetAction(action);
         setIsEditingTemplate(false);
-        if (action === 'quotation') {
-            setQuotationVars({ v1: '', v2: '', v3: '', v4: '' });
-        }
         const draft = generateWhatsappDraft(lead.name, action, agentDraftLang, selectedWorker);
         setAgentDraftText(draft);
         setIsAgentModalOpen(true);
@@ -2654,6 +2659,14 @@ export default function CRM() {
                     </div>
                 </div>
             )}
+
+                        {/* Send Quotation Modal */}
+            <SendQuotationModal 
+                isOpen={isQuotationModalOpen} 
+                onClose={() => setIsQuotationModalOpen(false)} 
+                lead={quotationTargetLead} 
+                onDispatch={handleDispatchQuotation} 
+            />
 
             {/* AI WhatsApp Draft Modal */}
             {isAgentModalOpen && agentTargetLead && (

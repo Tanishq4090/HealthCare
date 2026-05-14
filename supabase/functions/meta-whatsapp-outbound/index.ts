@@ -145,6 +145,12 @@ serve(async (req) => {
                   text: (val && val.trim()) ? val.trim() : safeDefaults[i] || '...'
               });
           }
+      } else if (templateName === "quote_client_v2") {
+          // Send the entire structured message as the first parameter
+          parameters.push({
+              type: "text",
+              text: message || "Here is your quotation."
+          });
       } else if (templateName === "greeting_msg" || !templateName) {
           // Fallback to legacy greeting_msg parameter
           parameters.push({
