@@ -1310,10 +1310,20 @@ export default function CRM() {
                 `Quotation sent: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
             );
 
-            // Also add local inspector activity state update if it's the selected lead
+            // 5. Update Lead Value in DB
+            await supabase
+                .from('crm_leads')
+                .update({ monthly_value: quotationData.estimatedTotal })
+                .eq('id', quotationTargetLead.id);
+
+            // Sync UI: Update Lead Value and Activity Timeline
             if (selectedInspectorLead && selectedInspectorLead.id === quotationTargetLead.id) {
-                setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'quotation_sent', description: `Quotation sent: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`, created_at: new Date().toISOString() }]);
+                setSelectedInspectorLead((prev: any) => ({ ...prev, monthly_value: quotationData.estimatedTotal }));
+                fetchLeadActivity(quotationTargetLead.id);
             }
+
+            // Also update the main leads list
+            setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? { ...l, monthly_value: quotationData.estimatedTotal } : l));
 
             toast.success(`Quotation successfully sent!`, { id: toastId });
         } catch (error: any) {
