@@ -145,7 +145,7 @@ serve(async (req) => {
                   text: (val && val.trim()) ? val.trim() : safeDefaults[i] || '...'
               });
           }
-      } else if (templateName === "quote_client_v2") {
+      } else if (templateName === "care_quotation_v1") {
           // Send the entire structured message as the first parameter
           parameters.push({
               type: "text",

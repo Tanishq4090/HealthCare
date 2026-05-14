@@ -1197,7 +1197,7 @@ export default function CRM() {
         
         const templateMap: Record<string, string> = {
             inquiry: 'greeting_msg',
-            quotation: 'quote_client',
+            quotation: 'care_quotation_v1',
             consent: 'consent_form',
             deposit: 'deposit_request',
             staff: 'staff_assignment'
@@ -1276,7 +1276,7 @@ export default function CRM() {
                 leadName: quotationTargetLead.name,
                 message: msgText,
                 useTemplate: true,
-                templateName: 'quote_client_v2',
+                templateName: 'care_quotation_v1',
                 templateParams: [msgText],
                 leadId: quotationTargetLead.id
             };
@@ -1376,7 +1376,7 @@ export default function CRM() {
                     leadId: agentTargetLead?.id,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
-                                  : (agentTargetAction === 'quotation' ? 'quote_client_v2' 
+                                  : (agentTargetAction === 'quotation' ? 'care_quotation_v1' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
                                   : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
