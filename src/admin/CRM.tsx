@@ -2202,7 +2202,7 @@ export default function CRM() {
                                                             ? { label: 'Low', cls: 'bg-blue-100 text-blue-700 border-blue-200' }
                                                             : { label: 'Medium', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
                                                         const rawService = item.service_interest
-                                                            || (item.notes ? item.notes.split('|')[0].replace('Service:', '').trim() : null)
+                                                            || (item.notes ? (item.notes.includes('|') ? item.notes.split('|')[0] : item.notes.split('\n')[0]).replace(/Service:/i, '').trim() : null)
                                                             || item.intent
                                                             || null;
                                                         
