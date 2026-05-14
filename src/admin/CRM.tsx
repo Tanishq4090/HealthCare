@@ -1435,9 +1435,11 @@ export default function CRM() {
                         estimated_value_monthly: monthlyRate // Primary lead value
                     }).eq('id', agentTargetLead.id);
 
+                    await logActivity(agentTargetLead.id, 'quotation_sent', `Quotation sent: ₹${monthlyRate}/mo`);
                     toast.success(`Quotation sent! Moved ${agentTargetLead.name} to Quotation Sent and saved pricing for auto-estimation.`, { id: toastId, duration: 4000 });
                 }
                 else if (agentTargetAction === 'consent') {
+                    await logActivity(agentTargetLead.id, 'consent_sent', 'Consent form link sent');
                     toast.success(`Consent Form dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
                 }
                 // If staff assignment -> move to Staff Assigned
@@ -3412,8 +3414,6 @@ export default function CRM() {
                                 <button
                                     onClick={async () => {
                                         openAgentModal(selectedInspectorLead, 'inquiry');
-                                        await logActivity(selectedInspectorLead.id, 'greeting_sent', 'AI greeting message sent');
-                                        setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'greeting_sent', description: 'AI greeting message sent', created_at: new Date().toISOString() }]);
                                     }}
                                     className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                 >
@@ -3427,8 +3427,6 @@ export default function CRM() {
                                     <button
                                         onClick={async () => {
                                             openAgentModal(selectedInspectorLead, 'quotation');
-                                            await logActivity(selectedInspectorLead.id, 'quotation_sent', 'Quotation sent to lead');
-                                            setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'quotation_sent', description: 'Quotation sent to lead', created_at: new Date().toISOString() }]);
                                         }}
                                         className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                     >
