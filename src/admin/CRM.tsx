@@ -1226,6 +1226,90 @@ export default function CRM() {
         return response.json();
     };
 
+    const handleDispatchQuotation = async (quotationData: any) => {
+        setIsQuotationModalOpen(false);
+        const toastId = toast.loading(`Sending quotation to ${quotationTargetLead.name}...`);
+        
+        try {
+            // 1. Save to DB
+            const { error: dbError } = await supabase.from('crm_quotations').insert({
+                lead_id: quotationTargetLead.id,
+                service_name: quotationData.serviceName,
+                service_category: quotationData.serviceCategory,
+                recipient_age_condition: quotationData.recipientCondition,
+                hours_per_day: quotationData.hoursPerDay,
+                days_per_week: quotationData.daysPerWeek,
+                shift_type: quotationData.shiftType,
+                start_date: quotationData.startDate,
+                duration: quotationData.duration,
+                complete_month_rate: quotationData.completeMonthRate,
+                incomplete_month_rate: quotationData.incompleteMonthRate,
+                setup_fee: quotationData.setupFee,
+                deposit: quotationData.deposit,
+                estimated_monthly_total: quotationData.estimatedTotal,
+                inclusions: quotationData.inclusions,
+                message_template: quotationData.messageTemplate,
+                language: quotationData.language,
+                custom_message: quotationData.customMessage,
+                valid_until: quotationData.validUntil
+            });
+
+            if (dbError) throw dbError;
+
+            // 2. Format Whatsapp message payload (Structured text)
+            let msgText = `*SERVICE QUOTATION*\n`;
+            msgText += `*Service:* ${quotationData.serviceName}\n`;
+            if (quotationData.hoursPerDay) msgText += `*Hours:* ${quotationData.hoursPerDay} hrs / ${quotationData.shiftType}\n`;
+            if (quotationData.daysPerWeek) msgText += `*Schedule:* ${quotationData.daysPerWeek} days/week\n`;
+            msgText += `*Rate (Full):* ₹${quotationData.completeMonthRate}/day\n`;
+            msgText += `*Rate (Partial):* ₹${quotationData.incompleteMonthRate}/day\n`;
+            if (quotationData.setupFee) msgText += `*Setup Fee:* ₹${quotationData.setupFee}\n`;
+            msgText += `*Est. Monthly:* ₹${quotationData.estimatedTotal}\n\n`;
+            if (quotationData.inclusions && quotationData.inclusions.length > 0) {
+                msgText += `*Included:*\n- ${quotationData.inclusions.join('\n- ')}\n\n`;
+            }
+            msgText += `${quotationData.customMessage}`;
+
+            // Send via meta-whatsapp-outbound
+            const payload = {
+                phone: quotationTargetLead.whatsapp_number || quotationTargetLead.phone,
+                leadName: quotationTargetLead.name,
+                message: msgText,
+                useTemplate: true,
+                templateName: 'quote_client_v2', // Trigger interactive message
+                leadId: quotationTargetLead.id
+            };
+
+            const response = await fetch('https://ixzqwqfcpqglnxntihxs.supabase.co/functions/v1/meta-whatsapp-outbound', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error('Failed to send WhatsApp message');
+
+            // 3. Move Lead
+            await handleMoveLead(quotationTargetLead.id, 'Quotation Sent');
+
+            // 4. Log Activity
+            await logActivity(
+                quotationTargetLead.id,
+                'quotation_sent',
+                `Quotation sent: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
+            );
+
+            // Also add local inspector activity state update if it's the selected lead
+            if (selectedInspectorLead && selectedInspectorLead.id === quotationTargetLead.id) {
+                setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'quotation_sent', description: `Quotation sent: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`, created_at: new Date().toISOString() }]);
+            }
+
+            toast.success(`Quotation successfully sent!`, { id: toastId });
+        } catch (error: any) {
+            console.error('Quotation dispatch error:', error);
+            toast.error(`Error: ${error.message}`, { id: toastId });
+        }
+    };
+
     const handleDispatchMessage = async () => {
         setIsAgentModalOpen(false);
         const toastId = toast.loading(`Dispatching AI Message to ${agentTargetLead?.name || 'Lead'}...`);
