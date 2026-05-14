@@ -1269,6 +1269,10 @@ export default function CRM() {
                 msgText += `*Included:*\n- ${quotationData.inclusions.join('\n- ')}\n\n`;
             }
             msgText += `${quotationData.customMessage}`;
+            
+            // Meta Utility templates don't allow newlines in variables. 
+            // We'll use a separator for the template version, but keep the original for the log.
+            const sanitizedMsg = msgText.replace(/\n+/g, ' | ');
 
             // Send via meta-whatsapp-outbound
             const payload = {
@@ -1277,7 +1281,7 @@ export default function CRM() {
                 message: msgText,
                 useTemplate: true,
                 templateName: 'quote_client_v2',
-                templateParams: [msgText],
+                templateParams: [sanitizedMsg],
                 leadId: quotationTargetLead.id
             };
 
@@ -1381,7 +1385,7 @@ export default function CRM() {
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
                                   : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
                     templateParams: agentTargetAction === 'quotation' 
-                                    ? [finalLogMessage] 
+                                    ? [finalLogMessage.replace(/\n+/g, ' | ')] 
                                     : agentTargetAction === 'staff'
                                     ? [
                                         selectedWorker?.full_name || selectedWorker?.name || 'Your Care Professional',
