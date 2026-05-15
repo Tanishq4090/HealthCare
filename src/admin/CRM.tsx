@@ -125,11 +125,14 @@ export default function CRM() {
                 });
                 
                 // Cloud Sync: If database has columns for stages/templates, use them
-                if (data.pipeline_stages) {
-                    setPipelineStages(data.pipeline_stages);
-                }
                 if (data.client_stages) {
                     setClientStages(data.client_stages);
+                }
+                if (data.pipeline_stages) {
+                    // Defensively strip out any client stages that may have leaked in
+                    const knownClientStages = new Set(data.client_stages ?? ['Active Client', 'Monthly Billing', 'Closed Won']);
+                    const cleanPipeline = data.pipeline_stages.filter((s: string) => !knownClientStages.has(s));
+                    setPipelineStages(cleanPipeline.length > 0 ? cleanPipeline : data.pipeline_stages);
                 }
                 if (data.whatsapp_templates) {
                     setWhatsappTemplates(data.whatsapp_templates);
