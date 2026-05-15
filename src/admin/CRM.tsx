@@ -622,9 +622,12 @@ export default function CRM() {
     // Send WhatsApp greeting_msg template manually from call log card
     const handleSendCallGreeting = async (call: any, isManual = false) => {
         if (processingCalls.current.has(call.id)) return;
+        // ── LOCK IMMEDIATELY to close the race window ──────────────────────
+        processingCalls.current.add(call.id);
         
         const rawPhone = call.capturedWhatsapp || call.phone;
         if (!rawPhone) {
+            processingCalls.current.delete(call.id);
             toast.error('No WhatsApp number found for this call.');
             return;
         }
@@ -632,12 +635,12 @@ export default function CRM() {
         let digits = rawPhone.replace(/\D/g, '');
         if (digits.length === 10) digits = `91${digits}`;
         if (digits.length < 11) {
+            processingCalls.current.delete(call.id);
             toast.error(`Invalid phone number: ${rawPhone}`);
             return;
         }
         const last10 = digits.slice(-10);
 
-        processingCalls.current.add(call.id);
         setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sending' }));
 
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -645,6 +648,28 @@ export default function CRM() {
         const firstName = (call.capturedName || 'there').split(' ')[0];
 
         try {
+            // ── DB-LEVEL IDEMPOTENCY CHECK ──────────────────────────────────
+            // Check call_transcripts directly so even a page-refresh or second
+            // component instance can't re-send while one is already in-flight.
+            const { data: transcriptRow } = await supabase
+                .from('call_transcripts')
+                .select('automation_error')
+                .eq('conversation_id', call.id)
+                .maybeSingle();
+
+            if (transcriptRow?.automation_error === 'GREETING_SENT' || 
+                transcriptRow?.automation_error === 'GREETING_PROCESSING') {
+                console.log(`[Auto-Greet] DB lock found (${transcriptRow.automation_error}) for ${call.id} — skipping.`);
+                setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
+                return;
+            }
+
+            // Mark as in-progress in DB BEFORE the actual WhatsApp send
+            // so any concurrent invocation will see the lock and bail out
+            await supabase.from('call_transcripts')
+                .update({ automation_error: 'GREETING_PROCESSING' })
+                .eq('conversation_id', call.id);
+
             // Step 1: Check if we already sent a greeting to this number recently (last 24h)
             // This is a real-time DB check — not just local state — to prevent duplicates on refresh
             const { data: existingGreeting } = await supabase
