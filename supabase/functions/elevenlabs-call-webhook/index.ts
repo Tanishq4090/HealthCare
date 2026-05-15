@@ -191,6 +191,7 @@ serve(async (req) => {
                 const updatePayload: any = {
                     last_called_at: startTime,
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : existingLead.service_interest || undefined,
+                    notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call\n\n${existingLead.notes || ''}`
                 };
                 if (existingLead.pipeline_stage === 'New' || existingLead.pipeline_stage === 'New Lead') {
                     updatePayload.pipeline_stage = 'In Discussion';
@@ -217,6 +218,7 @@ serve(async (req) => {
                     source: 'AI Phone Call',
                     pipeline_stage: 'New Inquiry',
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : null,
+                    notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call`,
                     status: 'new',
                     last_called_at: startTime
                 }]).select('id').single();

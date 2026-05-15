@@ -160,16 +160,16 @@ serve(async (req) => {
 
             // --- LEGACY LEAD QUALIFICATION FLOW BRANCH ---
 
-            const name = formData.name || contact?.profile?.name || 'Unknown';
-            const service = formData.service || 'Unknown';
+            const name = formData.name || formData.patient_name || contact?.profile?.name || 'Unknown';
+            const service = formData.service || formData.service_type || formData.service_category || 'Unknown';
             const country = formData.country || '';
             const state = formData.state || '';
             const city = formData.city || '';
             const area = formData.area || '';
-            const shiftType = formData.shift_type || '';
-            const careFor = formData.care_for || '';
+            const shiftType = formData.shift_type || formData.shift || '';
+            const careFor = formData.care_for || formData.careFor || '';
 
-            console.log(`[Flow] Parsed: name=${name}, service=${service}, location=${city}, ${state}`);
+            console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}`);
 
             // Upsert into CRM leads
             const { data: existingLeads } = await supabase
@@ -192,7 +192,7 @@ serve(async (req) => {
                 source: 'WhatsApp Flow',
                 service_interest: service !== 'Unknown' ? service : undefined,
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
-                notes: `Service: ${service} | Shift: ${shiftType} | Location: ${area}, ${city}, ${state}, ${country} | Care for: ${careFor}`,
+                notes: `Service: ${service}\nShift: ${shiftType}\nLocation: ${area}, ${city}, ${state}, ${country}\nCare for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
             };
 
