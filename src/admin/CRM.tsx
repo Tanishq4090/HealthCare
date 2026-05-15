@@ -405,6 +405,8 @@ export default function CRM() {
     const [inspectorPhoneDraft, setInspectorPhoneDraft] = useState('');
     const [editingInspectorName, setEditingInspectorName] = useState(false);
     const [editingInspectorPhone, setEditingInspectorPhone] = useState(false);
+    const [inspectorNoteDraft, setInspectorNoteDraft] = useState('');
+    const [isSavingNote, setIsSavingNote] = useState(false);
 
     // Kanban Accordion State
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
@@ -581,6 +583,36 @@ export default function CRM() {
         setLeads(prev => prev.map(l => l.id === leadId ? { ...l, [field]: value } : l));
         if (leadId.length >= 10) {
             await supabase.from('crm_leads').update({ [field]: value }).eq('id', leadId);
+        }
+    };
+
+    const handleAddNote = async (leadId: string, noteText: string) => {
+        if (!noteText.trim()) return;
+        setIsSavingNote(true);
+        try {
+            // Fetch current notes so we can append
+            const { data: current } = await supabase.from('crm_leads').select('notes').eq('id', leadId).single();
+            const timestamp = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+            const newEntry = `[${timestamp}] ${noteText.trim()}`;
+            const updatedNotes = current?.notes ? `${current.notes}\n\n${newEntry}` : newEntry;
+            await supabase.from('crm_leads').update({ notes: updatedNotes }).eq('id', leadId);
+            setSelectedInspectorLead((prev: any) => prev ? { ...prev, notes: updatedNotes } : null);
+            setLeads(prev => prev.map(l => l.id === leadId ? { ...l, notes: updatedNotes } : l));
+            // Log as activity
+            await supabase.from('crm_lead_activity').insert([{
+                lead_id: leadId,
+                event_type: 'note_added',
+                description: `Note: ${noteText.trim().substring(0, 80)}${noteText.length > 80 ? '...' : ''}`,
+                metadata: { note: noteText.trim() }
+            }]);
+            // Refresh activity feed
+            fetchLeadActivity(leadId);
+            setInspectorNoteDraft('');
+            toast.success('Note saved!');
+        } catch (err) {
+            toast.error('Failed to save note.');
+        } finally {
+            setIsSavingNote(false);
         }
     };
 
@@ -3380,6 +3412,7 @@ export default function CRM() {
                                         : evt.event_type === 'stage_changed' ? 'bg-amber-500'
                                         : evt.event_type === 'quotation_sent' ? 'bg-orange-500'
                                         : evt.event_type === 'call_received' ? 'bg-emerald-500'
+                                        : evt.event_type === 'note_added' ? 'bg-indigo-500'
                                         : 'bg-slate-400';
                                     return (
                                         <div key={evt.id} className="flex gap-3">
@@ -3398,8 +3431,34 @@ export default function CRM() {
                         </div>
                     </div>
 
+                    {/* ── Add Note ──────────────────────────────────────── */}
+                    <div className="border-t border-slate-100 pt-5">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Add Note</p>
+                        <div className="flex flex-col gap-2">
+                            <textarea
+                                rows={3}
+                                value={inspectorNoteDraft}
+                                onChange={e => setInspectorNoteDraft(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                        handleAddNote(selectedInspectorLead.id, inspectorNoteDraft);
+                                    }
+                                }}
+                                placeholder="Write a note… (Ctrl+Enter to save)"
+                                className="w-full text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder-slate-400 transition-all"
+                            />
+                            <button
+                                onClick={() => handleAddNote(selectedInspectorLead.id, inspectorNoteDraft)}
+                                disabled={isSavingNote || !inspectorNoteDraft.trim()}
+                                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold py-2 rounded-lg transition-all shadow-sm"
+                            >
+                                {isSavingNote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                                {isSavingNote ? 'Saving…' : 'Save Note'}
+                            </button>
+                        </div>
+                    </div>
 
-                    {/* AI & Process Actions */}
+
                     <div className="border-t border-slate-100 pt-5 mt-2">
                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Actions & Processing</h3>
                         <div className="flex flex-col gap-3">
