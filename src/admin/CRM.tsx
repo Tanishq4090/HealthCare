@@ -3086,7 +3086,7 @@ export default function CRM() {
                                             )}
                                             <div className={`flex ${isAI ? 'justify-start' : 'justify-end'}`}>
                                                 <div className={`max-w-[75%] rounded-lg px-3 py-2 shadow-sm flex flex-col relative ${isAI ? 'bg-white rounded-tl-none' : 'bg-[#d9fdd3] rounded-tr-none'}`}>
-                                                    <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                                                    <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed break-all">{msg.content}</p>
                                                     <span className="text-[10px] text-slate-500 text-right mt-1 ml-4 block">{time}</span>
                                                 </div>
                                             </div>
