@@ -191,7 +191,7 @@ serve(async (req) => {
             // Upsert into CRM leads
             const { data: existingLeads } = await supabase
                 .from('crm_leads')
-                .select('id, pipeline_stage, service_interest')
+                .select('id, pipeline_stage, notes')
                 .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
                 .order('created_at', { ascending: false })
                 .limit(1);
@@ -203,15 +203,19 @@ serve(async (req) => {
             const currentStage = existingLead?.pipeline_stage || '';
             const shouldUpdateStage = earlyStages.includes(currentStage);
 
-            // Don't overwrite service_interest with 'Unknown' if lead already has one
+            // Don't overwrite service if lead already has one in notes
+            let existingService = 'Unknown';
+            if (existingLead?.notes) {
+                const match = existingLead.notes.match(/Service:\s*(.+)/i);
+                if (match && match[1]) existingService = match[1].trim();
+            }
             const resolvedService = service !== 'Unknown' ? service
-                : (existingLead?.service_interest || 'Unknown');
+                : (existingService !== 'Unknown' ? existingService : 'Unknown');
 
             const leadPayload: any = {
                 name,
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Flow',
-                service_interest: resolvedService !== 'Unknown' ? resolvedService : undefined,
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
                 notes: `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
@@ -219,22 +223,25 @@ serve(async (req) => {
 
             let upsertedLeadId: string | null = existingLead?.id ?? null;
             if (existingLead) {
-                await supabase.from('crm_leads').update(leadPayload).eq('id', existingLead.id);
-                console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'})`);
+                const { error: updErr } = await supabase.from('crm_leads').update(leadPayload).eq('id', existingLead.id);
+                if (updErr) console.error(`[Flow] DB Update Error for lead ${existingLead.id}:`, updErr);
+                else console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'})`);
             } else {
-                const { data: newLead } = await supabase.from('crm_leads').insert([{ ...leadPayload, pipeline_stage: 'In Discussion', status: 'new' }]).select('id').single();
+                const { data: newLead, error: insErr } = await supabase.from('crm_leads').insert([{ ...leadPayload, pipeline_stage: 'In Discussion', status: 'new' }]).select('id').single();
+                if (insErr) console.error(`[Flow] DB Insert Error:`, insErr);
                 upsertedLeadId = newLead?.id ?? null;
                 console.log(`[Flow] Created new lead for ${name}`);
             }
 
-            // Log form_filled activity (locationStr is now defined above — no more crash)
+            // Log form_filled activity
             if (upsertedLeadId) {
-                await supabase.from('crm_lead_activity').insert([{
+                const { error: actErr } = await supabase.from('crm_lead_activity').insert([{
                     lead_id: upsertedLeadId,
                     event_type: 'form_filled',
                     description: `Intake form submitted — Service: ${resolvedService}`,
                     metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr }
                 }]);
+                if (actErr) console.error(`[Flow] Activity Insert Error:`, actErr);
             }
 
             // Send warm confirmation echoing back their details
