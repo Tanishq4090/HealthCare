@@ -1353,14 +1353,30 @@ export default function CRM() {
                 .update({ monthly_value: quotationData.estimatedTotal })
                 .eq('id', quotationTargetLead.id);
 
-            // Sync UI: Update Lead Value and Activity Timeline
+            // 6. Auto-populate Service + Shift into notes so bubbles show on card
+            const { data: existingLead } = await supabase.from('crm_leads').select('notes').eq('id', quotationTargetLead.id).single();
+            const serviceEntry = `Service: ${quotationData.serviceName}${quotationData.shiftType ? `\nShift: ${quotationData.shiftType}` : ''}`;
+            let updatedNotes = serviceEntry;
+            if (existingLead?.notes) {
+                // Replace old Service/Shift lines if present, otherwise prepend
+                const hasServiceLine = /^Service:/m.test(existingLead.notes);
+                if (!hasServiceLine) {
+                    updatedNotes = `${serviceEntry}\n\n${existingLead.notes}`;
+                } else {
+                    // Leave existing notes untouched (already has service info)
+                    updatedNotes = existingLead.notes;
+                }
+            }
+            await supabase.from('crm_leads').update({ notes: updatedNotes }).eq('id', quotationTargetLead.id);
+
+            // Sync UI: Update Lead Value, Notes and Activity Timeline
             if (selectedInspectorLead && selectedInspectorLead.id === quotationTargetLead.id) {
-                setSelectedInspectorLead((prev: any) => ({ ...prev, monthly_value: quotationData.estimatedTotal }));
+                setSelectedInspectorLead((prev: any) => ({ ...prev, monthly_value: quotationData.estimatedTotal, notes: updatedNotes }));
                 fetchLeadActivity(quotationTargetLead.id);
             }
 
             // Also update the main leads list
-            setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? { ...l, monthly_value: quotationData.estimatedTotal } : l));
+            setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? { ...l, monthly_value: quotationData.estimatedTotal, notes: updatedNotes } : l));
 
             toast.success(`Quotation successfully sent!`, { id: toastId });
         } catch (error: any) {
@@ -3553,6 +3569,26 @@ export default function CRM() {
                                 >
                                     <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                     Send Deposit Invoice
+                                </button>
+                            )}
+
+                            {selectedInspectorLead.pipeline_stage === 'Deposit Pending' && (
+                                <button
+                                    onClick={async () => {
+                                        const toastId = toast.loading('Confirming deposit and activating client...');
+                                        try {
+                                            await handleMoveLead(selectedInspectorLead.id, 'Active Client');
+                                            await logActivity(selectedInspectorLead.id, 'stage_changed', 'Deposit received — moved to Active Client');
+                                            toast.success('✅ Deposit confirmed! Lead moved to Active Client.', { id: toastId });
+                                            setSelectedInspectorLead(null);
+                                        } catch (err: any) {
+                                            toast.error(`Failed: ${err.message}`, { id: toastId });
+                                        }
+                                    }}
+                                    className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-200 text-emerald-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                >
+                                    <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                    Deposit Received → Activate Client
                                 </button>
                             )}
 
