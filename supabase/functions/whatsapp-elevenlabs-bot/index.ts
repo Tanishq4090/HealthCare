@@ -185,10 +185,13 @@ serve(async (req) => {
 
             console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}`);
 
+            // ── Build location string FIRST (used both in notes and activity log) ──
+            const locationStr = [area, city, state, country].filter(Boolean).join(', ');
+
             // Upsert into CRM leads
             const { data: existingLeads } = await supabase
                 .from('crm_leads')
-                .select('id, pipeline_stage')
+                .select('id, pipeline_stage, service_interest')
                 .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
                 .order('created_at', { ascending: false })
                 .limit(1);
@@ -200,13 +203,17 @@ serve(async (req) => {
             const currentStage = existingLead?.pipeline_stage || '';
             const shouldUpdateStage = earlyStages.includes(currentStage);
 
+            // Don't overwrite service_interest with 'Unknown' if lead already has one
+            const resolvedService = service !== 'Unknown' ? service
+                : (existingLead?.service_interest || 'Unknown');
+
             const leadPayload: any = {
                 name,
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Flow',
-                service_interest: service !== 'Unknown' ? service : undefined,
+                service_interest: resolvedService !== 'Unknown' ? resolvedService : undefined,
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
-                notes: `Service: ${service}\nShift: ${shiftType}\nLocation: ${area}, ${city}, ${state}, ${country}\nCare for: ${careFor}`,
+                notes: `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
             };
 
@@ -220,19 +227,19 @@ serve(async (req) => {
                 console.log(`[Flow] Created new lead for ${name}`);
             }
 
-            // Log form_filled activity
+            // Log form_filled activity (locationStr is now defined above — no more crash)
             if (upsertedLeadId) {
                 await supabase.from('crm_lead_activity').insert([{
                     lead_id: upsertedLeadId,
                     event_type: 'form_filled',
-                    description: `Intake form submitted — Service: ${service}`,
-                    metadata: { service, shift_type: shiftType, care_for: careFor, location: locationStr }
+                    description: `Intake form submitted — Service: ${resolvedService}`,
+                    metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr }
                 }]);
             }
 
-            // Send warm confirmation
-            const locationStr = [area, city, state, country].filter(Boolean).join(', ');
-            const confirmMsg = `Thank you ${name.split(' ')[0]}! 🙏😊\n\nWe've received your enquiry:\n✅ Service: ${service}\n📍 Area: ${locationStr}\n⏱️ Shift: ${shiftType}\n👤 Care for: ${careFor}\n\nOur 99 Care team will prepare your personalised quotation and share it on this number shortly. We're excited to serve you! ✨`;
+            // Send warm confirmation echoing back their details
+            const firstName = name.split(' ')[0];
+            const confirmMsg = `Thank you ${firstName}! 🙏😊\n\nWe've received your details:\n✅ Service: ${resolvedService}\n${shiftType ? `⏱️ Shift: ${shiftType}\n` : ''}${locationStr ? `📍 Area: ${locationStr}\n` : ''}${careFor ? `👤 Care for: ${careFor}\n` : ''}\nOur 99 Care team will prepare your personalised quotation and share it with you shortly. We're excited to serve you! ✨`;
 
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
@@ -245,12 +252,26 @@ serve(async (req) => {
                         text: { body: confirmMsg }
                     })
                 });
+
+                // --- ADMIN NOTIFICATION ---
+                const adminPhone = Deno.env.get('ADMIN_PHONE_NUMBER') || '918000044090';
+                const adminAlert = `🚨 *New Intake Form Filled!*\n\n*Name:* ${name}\n*Service:* ${resolvedService}\n*Shift:* ${shiftType || '-'}\n*Area:* ${locationStr || '-'}\n\n👉 Open CRM Kanban board to send quotation.`;
+                await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messaging_product: "whatsapp",
+                        to: adminPhone,
+                        type: "text",
+                        text: { body: adminAlert }
+                    })
+                });
             }
 
             await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
             await supabase.from('whatsapp_logs').insert([{
                 sid: wamid, status: 'success',
-                payload: { type: 'flow_submission', name, service, original_recipient: fromPhone }
+                payload: { type: 'flow_submission', name, service: resolvedService, original_recipient: fromPhone }
             }]);
 
             return new Response('EVENT_RECEIVED', { status: 200 });

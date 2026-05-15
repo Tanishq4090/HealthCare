@@ -169,10 +169,33 @@ export default function CRM() {
             })
             .subscribe();
 
+        const activitySub = supabase.channel('realtime_activity_v2')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_lead_activity' }, (payload) => {
+                const activity = payload.new;
+                if (activity.event_type === 'form_filled') {
+                    toast.success(`📋 New Intake Form: ${activity.metadata?.service || 'Unknown Service'}`, { duration: 6000 });
+                    
+                    // Trigger browser notification if supported and granted
+                    if ("Notification" in window && Notification.permission === "granted") {
+                        new Notification("New Intake Form Filled", {
+                            body: activity.description || 'A lead just submitted their requirements.',
+                            icon: '/favicon.ico'
+                        });
+                    }
+                }
+            })
+            .subscribe();
+
+        // Request browser notification permission
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
         return () => {
             clearInterval(interval);
             supabase.removeChannel(callSub);
             supabase.removeChannel(leadsSub);
+            supabase.removeChannel(activitySub);
         };
     }, []);
 

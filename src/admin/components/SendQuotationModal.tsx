@@ -45,6 +45,48 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
         }
     }, [completeMonthRate]);
 
+    useEffect(() => {
+        if (isOpen && lead) {
+            setDaysPerWeek('7'); // Default to 7 days
+            if (lead.notes) {
+                const serviceMatch = lead.notes.match(/Service:\s*(.+)/i);
+                if (serviceMatch && serviceMatch[1] && serviceMatch[1] !== 'Unknown') {
+                    const sName = serviceMatch[1].trim();
+                    setServiceName(sName);
+                    // Guess category
+                    const nameLower = sName.toLowerCase();
+                    if (nameLower.includes('baby') || nameLower.includes('mother') || nameLower.includes('new born')) setServiceCategory('Mother & baby');
+                    else if (nameLower.includes('elder') || nameLower.includes('old age')) setServiceCategory('Elder care');
+                    else if (nameLower.includes('post-op') || nameLower.includes('surgery')) setServiceCategory('Post-op care');
+                    else if (nameLower.includes('physio')) setServiceCategory('Physiotherapy');
+                }
+                
+                const shiftMatch = lead.notes.match(/Shift:\s*(.+)/i);
+                if (shiftMatch && shiftMatch[1]) {
+                    const shiftStr = shiftMatch[1].toLowerCase();
+                    if (shiftStr.includes('24') || shiftStr.includes('live')) {
+                        setShiftType('24/7 Live-in');
+                        setHoursPerDay('24');
+                    } else if (shiftStr.includes('10') || shiftStr.includes('12')) {
+                        setShiftType('Day shift');
+                        setHoursPerDay(shiftStr.match(/\d+/)?.[0] || '10');
+                    } else if (shiftStr.includes('day') || shiftStr.includes('general')) {
+                        setShiftType('Day shift');
+                        setHoursPerDay('10');
+                    } else if (shiftStr.includes('night')) {
+                        setShiftType('Night shift');
+                        setHoursPerDay('10');
+                    }
+                }
+                
+                const careForMatch = lead.notes.match(/Care for:\s*(.+)/i);
+                if (careForMatch && careForMatch[1]) {
+                    setRecipientCondition(careForMatch[1].trim());
+                }
+            }
+        }
+    }, [isOpen, lead]);
+
     if (!isOpen) return null;
 
     const toggleInclusion = (item: string) => {
