@@ -161,13 +161,27 @@ serve(async (req) => {
             // --- LEGACY LEAD QUALIFICATION FLOW BRANCH ---
 
             const name = formData.name || formData.patient_name || contact?.profile?.name || 'Unknown';
-            const service = formData.service || formData.service_type || formData.service_category || 'Unknown';
+            const service = formData.service
+                || formData.service_type
+                || formData.service_required
+                || formData.service_name
+                || formData.services
+                || formData.service_category
+                || formData.serviceRequired
+                || formData['Service Required']
+                || formData['service required']
+                || 'Unknown';
             const country = formData.country || '';
             const state = formData.state || '';
             const city = formData.city || '';
-            const area = formData.area || '';
-            const shiftType = formData.shift_type || formData.shift || '';
-            const careFor = formData.care_for || formData.careFor || '';
+            const area = formData.area || formData.area_pincode || formData['area_pincode'] || '';
+            const shiftType = formData.shift_type
+                || formData.shift
+                || formData.shift_type_required
+                || formData['Shift Type']
+                || formData['shift type']
+                || '';
+            const careFor = formData.care_for || formData.careFor || formData.care_required || '';
 
             console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}`);
 

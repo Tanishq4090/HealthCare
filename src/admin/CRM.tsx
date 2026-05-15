@@ -2201,32 +2201,34 @@ export default function CRM() {
                                                             : item.priority === 'cold'
                                                             ? { label: 'Low', cls: 'bg-blue-100 text-blue-700 border-blue-200' }
                                                             : { label: 'Medium', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
-                                                        const rawService = item.service_interest
-                                                            || (item.notes ? (item.notes.includes('|') ? item.notes.split('|')[0] : item.notes.split('\n')[0]).replace(/Service:/i, '').trim() : null)
-                                                            || item.intent
-                                                            || null;
-                                                        
-                                                        let serviceName = rawService;
-                                                        let serviceTime = null;
-                                                        let serviceLocation = null;
-                                                        
-                                                        if (rawService) {
-                                                            // Case-insensitive split by DATE:
-                                                            const dateMatch = rawService.match(/(.*?)DATE:\s*(.*)/i);
-                                                            if (dateMatch) {
-                                                                serviceName = dateMatch[1].trim();
-                                                                const rest = dateMatch[2];
-                                                                
-                                                                // Case-insensitive split by LOCATION:
-                                                                const locMatch = rest.match(/(.*?)LOCATION:\s*(.*)/i);
-                                                                if (locMatch) {
-                                                                    serviceTime = locMatch[1].trim();
-                                                                    serviceLocation = locMatch[2].trim();
-                                                                } else {
-                                                                    serviceTime = rest.trim();
-                                                                }
+                                                        // Extract service name: prefer service_interest column, then parse from notes
+                                                        let serviceName: string | null = item.service_interest || null;
+                                                        let shiftBubble: string | null = null;
+                                                        let serviceLocation: string | null = null;
+
+                                                        if (item.notes) {
+                                                            // Parse structured notes: "Service: X\nShift: Y\nLocation: Z"
+                                                            const serviceMatch = item.notes.match(/^Service:\s*(.+)$/im);
+                                                            const shiftMatch   = item.notes.match(/^Shift:\s*(.+)$/im);
+                                                            const locMatch     = item.notes.match(/^Location:\s*(.+)$/im);
+                                                            if (!serviceName && serviceMatch) {
+                                                                serviceName = serviceMatch[1].trim();
+                                                            }
+                                                            if (shiftMatch) {
+                                                                shiftBubble = shiftMatch[1].trim();
+                                                            }
+                                                            if (locMatch) {
+                                                                serviceLocation = locMatch[1].replace(/^,\s*|,\s*$/g, '').trim();
                                                             }
                                                         }
+
+                                                        // Fallback: use intent if still nothing
+                                                        if (!serviceName) serviceName = item.intent || null;
+
+                                                        // Sanitize: drop placeholder / empty values
+                                                        if (serviceName === 'Unknown' || serviceName === '') serviceName = null;
+                                                        if (shiftBubble === '' || shiftBubble === 'Unknown') shiftBubble = null;
+                                                        if (serviceLocation === ', , , ' || serviceLocation === '') serviceLocation = null;
                                                         const deliveryLog = deliveryLogs.find(l => l.payload?.lead_id === item.id);
                                                         return (
                                                         <div key={item.id} className="w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
@@ -2244,22 +2246,21 @@ export default function CRM() {
                                                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
                                                                                  {priorityMeta.label}
                                                                              </span>
-                                                                             {serviceName && !serviceName.includes(" Date: ") && (
-                                                                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wider">
+                                                                             {serviceName && (
+                                                                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
                                                                                      {serviceName}
                                                                                  </span>
                                                                              )}
                                                                          </div>
                                                                     </div>
                                                                 </div>
-                                                                {/* Service Interest */}
                                                                  {/* Service Details Breakdown */}
                                                                  <div className="flex flex-col gap-1.5">
-                                                                     {serviceTime && (
+                                                                     {shiftBubble && (
                                                                          <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
                                                                              <Clock className="w-3 h-3 text-primary shrink-0" />
                                                                              <span className="text-[10px] font-medium text-slate-600 truncate">
-                                                                                 {serviceTime}
+                                                                                 {shiftBubble}
                                                                              </span>
                                                                          </div>
                                                                      )}
