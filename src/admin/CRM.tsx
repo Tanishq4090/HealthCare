@@ -2283,6 +2283,14 @@ export default function CRM() {
                                                                                      {serviceName}
                                                                                  </span>
                                                                              )}
+                                                                             {item.assigned_worker_name && (
+                                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
+                                                                                     <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                                                     </svg>
+                                                                                     {item.assigned_worker_name}
+                                                                                 </span>
+                                                                             )}
                                                                          </div>
                                                                     </div>
                                                                 </div>
