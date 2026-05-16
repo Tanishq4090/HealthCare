@@ -131,11 +131,35 @@ export default function CRM() {
                 if (data.pipeline_stages) {
                     // Defensively strip out any client stages that may have leaked in
                     const knownClientStages = new Set(data.client_stages ?? ['Active Client', 'Monthly Billing', 'Closed Won']);
-                    const cleanPipeline = data.pipeline_stages.filter((s: string) => !knownClientStages.has(s));
-                    setPipelineStages(cleanPipeline.length > 0 ? cleanPipeline : data.pipeline_stages);
+                    let cleanPipeline = data.pipeline_stages.filter((s: string) => !knownClientStages.has(s) && s !== 'New Lead');
+                    
+                    // If we removed 'New Lead', ensure 'New Inquiry' is present
+                    if (!cleanPipeline.includes('New Inquiry')) {
+                        cleanPipeline = ['New Inquiry', ...cleanPipeline];
+                    }
+                    
+                    setPipelineStages(cleanPipeline);
                 }
                 if (data.whatsapp_templates) {
-                    setWhatsappTemplates(data.whatsapp_templates);
+                    let updatedTemplates = { ...data.whatsapp_templates };
+                    let needsMigration = false;
+                    
+                    // Check if 'inquiry' template is still using old hardcoded text
+                    const oldEnglish = "Hi {{name}}, welcome to 99 Care! We've received your inquiry.";
+                    if (updatedTemplates.inquiry?.English?.includes(oldEnglish)) {
+                        updatedTemplates.inquiry = {
+                            Hinglish: "Hi {{name}}! 🌟 99 Care me aapka swagat hai. Kripya niche diye gaye button par click karke apni zaroorat batayein taaki hum aapke liye best staff find kar sakein.",
+                            Hindi: "Namaste {{name}} ji, 99 Care mein aapka swagat hai! Kripya niche diye gaye button par click karein aur apni requirements form me bharein.",
+                            English: "Hi {{name}}, welcome to 99 Care! Please tap the button below to fill out our intake form so we can understand your requirements and assign the best healthcare staff for you."
+                        };
+                        needsMigration = true;
+                    }
+                    
+                    setWhatsappTemplates(updatedTemplates);
+                    
+                    if (needsMigration) {
+                        supabase.from('automation_settings').update({ whatsapp_templates: updatedTemplates }).eq('id', 'global').then(() => console.log("Migrated WhatsApp templates to cloud."));
+                    }
                 }
             } else if (!data && !error) {
                 console.log("[fetchAutomationSettings] row missing, initializing...");
