@@ -1454,7 +1454,10 @@ export default function CRM() {
             // 5. Update Lead Value in DB
             await supabase
                 .from('crm_leads')
-                .update({ monthly_value: quotationData.estimatedTotal })
+                .update({ 
+                    estimated_value_monthly: quotationData.estimatedTotal,
+                    quoted_monthly_rate: quotationData.estimatedTotal 
+                })
                 .eq('id', quotationTargetLead.id);
 
             // 6. Auto-populate Service + Shift into notes so bubbles show on card
@@ -1477,7 +1480,10 @@ export default function CRM() {
             if (selectedInspectorLead && selectedInspectorLead.id === quotationTargetLead.id) {
                 setSelectedInspectorLead((prev: any) => ({ 
                     ...prev, 
-                    monthly_value: quotationData.estimatedTotal, 
+                    estimated_value_monthly: quotationData.estimatedTotal,
+                    valueAmount: quotationData.estimatedTotal,
+                    quoted_monthly_rate: quotationData.estimatedTotal,
+                    value: '₹' + quotationData.estimatedTotal + '/mo',
                     notes: updatedNotes
                 }));
                 fetchLeadActivity(quotationTargetLead.id);
@@ -3627,8 +3633,12 @@ export default function CRM() {
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            const confirmed = window.confirm("⚠️ Warning: You haven't sent a quotation to this lead on WhatsApp yet.\n\nAre you sure you want to bypass the quotation and send the consent form directly?");
-                                            if (!confirmed) return;
+                                            const hasQuotation = selectedInspectorLead.quoted_monthly_rate > 0 || selectedInspectorLead.estimated_value_monthly > 0 || selectedInspectorLead.valueAmount > 0;
+                                            
+                                            if (!hasQuotation) {
+                                                const confirmed = window.confirm("⚠️ Warning: You haven't sent a quotation to this lead on WhatsApp yet.\n\nAre you sure you want to bypass the quotation and send the consent form directly?");
+                                                if (!confirmed) return;
+                                            }
 
                                             const toastId = toast.loading("Approving quotation and sending consent form...");
                                             try {
