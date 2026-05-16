@@ -329,9 +329,9 @@ export default function CRM() {
 
     const [whatsappTemplates, setWhatsappTemplates] = useState<Record<string, Record<string, string>>>({
         inquiry: {
-            Hinglish: "🌟 Welcome to 99 Care! 🌟\n{{name}} sir/ma'am, aapki inquiry mili humein. Hamari team aapke ghar par best healthcare staff provide karne ke liye ready hai!\n\nKoi bhi sawaal ho toh seedha reply karein. Hum aapki service mein!💙✨",
-            Hindi: "Namaste {{name}} ji, 99 Care mein aapka swagat hai! Aapki inquiry hamein mili hai. Humari team aapke liye best healthcare solution lekar aayegi. Kripya apni zaroorat batayein.",
-            English: "Hi {{name}}, welcome to 99 Care! We've received your inquiry. Our team is ready to provide the best healthcare staff for your home. Please share your requirements and we'll get back to you shortly!"
+            Hinglish: "Hi {{name}}! 🌟 99 Care me aapka swagat hai. Kripya niche diye gaye button par click karke apni zaroorat batayein taaki hum aapke liye best staff find kar sakein.",
+            Hindi: "Namaste {{name}} ji, 99 Care mein aapka swagat hai! Kripya niche diye gaye button par click karein aur apni requirements form me bharein.",
+            English: "Hi {{name}}, welcome to 99 Care! Please tap the button below to fill out our intake form so we can understand your requirements and assign the best healthcare staff for you."
         },
         quotation: {
             Hinglish: "Namaste {{name}} ji! 🙏 Aapke liye humne ek customized quotation taiyar ki hai.\n\n📋 Service: {{v1}}\n⏰ Hours: {{v2}}\n💰 Full Month: {{v3}}\n💵 Half Month: {{v4}}\n\nKoi bhi changes chahiye toh batayein — hum adjust kar sakte hain!",
@@ -379,7 +379,7 @@ export default function CRM() {
 
     // Initialize pipelineStages from localStorage or defaults
     // Initialize pipelineStages - prioritize clean split defaults
-    const [pipelineStages, setPipelineStages] = useState<string[]>(['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending']);
+    const [pipelineStages, setPipelineStages] = useState<string[]>(['New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending']);
 
     const [clientStages, setClientStages] = useState<string[]>(['Active Client', 'Monthly Billing', 'Closed Won']);
 
@@ -2966,7 +2966,7 @@ export default function CRM() {
 
             {/* AI WhatsApp Draft Modal */}
             {isAgentModalOpen && agentTargetLead && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[100] transition-all">
                     <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
                         <div className="p-5 border-b border-slate-100 bg-[#1AA6A8]/10 flex justify-between items-center">
                             <div className="flex items-center gap-3">
@@ -3091,7 +3091,8 @@ export default function CRM() {
                                         <textarea
                                             value={isEditingTemplate ? templateDraftText : agentDraftText}
                                             onChange={(e) => isEditingTemplate ? setTemplateDraftText(e.target.value) : setAgentDraftText(e.target.value)}
-                                            className="w-full h-32 px-4 py-3 rounded-xl border border-[#1AA6A8]/20 outline-none focus:ring-2 focus:ring-[#1AA6A8] focus:border-transparent text-sm bg-[#E6F7F7] text-[#0E7C7E] resize-none font-medium leading-relaxed mb-6"
+                                            readOnly={!isEditingTemplate && agentTargetAction === 'inquiry'}
+                                            className={`w-full h-32 px-4 py-3 rounded-xl border border-[#1AA6A8]/20 outline-none focus:ring-2 focus:ring-[#1AA6A8] focus:border-transparent text-sm resize-none font-medium leading-relaxed mb-6 ${(!isEditingTemplate && agentTargetAction === 'inquiry') ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-[#E6F7F7] text-[#0E7C7E]'}`}
                                         />
                                     )}
                                     

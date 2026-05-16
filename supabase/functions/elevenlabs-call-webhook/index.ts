@@ -193,7 +193,7 @@ serve(async (req) => {
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : existingLead.service_interest || undefined,
                     notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call\n\n${existingLead.notes || ''}`
                 };
-                if (existingLead.pipeline_stage === 'New' || existingLead.pipeline_stage === 'New Lead') {
+                if (existingLead.pipeline_stage === 'New' || existingLead.pipeline_stage === 'New Inquiry') {
                     updatePayload.pipeline_stage = 'In Discussion';
                 }
                 await supabase.from('crm_leads').update(updatePayload).eq('id', existingLead.id);

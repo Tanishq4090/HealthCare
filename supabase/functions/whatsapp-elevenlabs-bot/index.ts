@@ -220,7 +220,7 @@ serve(async (req) => {
 
             // Only move to 'In Discussion' if lead is still in early stages.
             // Never overwrite a downstream stage like 'Quotation Sent', 'Staff Assigned' etc.
-            const earlyStages = ['New Lead', 'New Inquiry', 'In Discussion', ''];
+            const earlyStages = ['New Inquiry', 'In Discussion', ''];
             const currentStage = existingLead?.pipeline_stage || '';
             const shouldUpdateStage = earlyStages.includes(currentStage);
 
@@ -401,7 +401,7 @@ serve(async (req) => {
                 name: contact?.profile?.name || 'Unknown Lead',
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Chat',
-                pipeline_stage: 'New Lead',
+                pipeline_stage: 'New Inquiry',
                 status: 'new'
             }]);
 
@@ -760,7 +760,7 @@ serve(async (req) => {
 
             if (callTranscripts && callTranscripts.length > 0) {
                 const isEarlyStage = !leadRecord || 
-                    ['New', 'New Lead'].includes(leadRecord.pipeline_stage) || 
+                    ['New', 'New Inquiry'].includes(leadRecord.pipeline_stage) || 
                     (leadRecord.pipeline_stage === 'In Discussion' && (!leadRecord.quoted_monthly_rate || leadRecord.quoted_monthly_rate === 0));
 
                 if (isEarlyStage) {
