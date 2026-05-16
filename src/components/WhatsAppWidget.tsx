@@ -163,38 +163,38 @@ export function WhatsAppWidget() {
 
             {/* ── Menu View ── */}
             {view === 'menu' && (
-              <div className="flex-1 p-6 bg-slate-50 flex flex-col justify-center gap-4">
+              <div className="flex-1 p-6 bg-white dark:bg-slate-800 flex flex-col justify-center gap-4">
                 <div className="text-center mb-2">
-                  <h3 className="font-bold text-slate-800 mb-1">Hi there! 👋</h3>
-                  <p className="text-sm text-slate-500">How would you like to reach us today?</p>
+                  <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-1">Hi there! 👋</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">How would you like to reach us today?</p>
                 </div>
                 
                 <a 
                   href={WHATSAPP_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 w-full p-4 bg-white border border-[#25D366]/30 hover:border-[#25D366] rounded-xl shadow-sm transition-all group"
+                  className="flex items-center gap-3 w-full p-4 bg-slate-50 dark:bg-slate-700 border border-[#25D366]/30 hover:border-[#25D366] rounded-xl shadow-sm transition-all group"
                 >
                   <div className="w-10 h-10 bg-[#25D366]/10 rounded-full flex items-center justify-center group-hover:bg-[#25D366]/20 transition-colors">
                     <MessageCircle className="w-5 h-5 text-[#25D366]" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-bold text-slate-800 text-sm">Chat on WhatsApp</h4>
-                    <p className="text-xs text-slate-500">Open WhatsApp app</p>
+                    <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Chat on WhatsApp</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Open WhatsApp app</p>
                   </div>
                   <ExternalLink className="w-4 h-4 text-slate-400" />
                 </a>
 
                 <button 
                   onClick={() => setView('nameForm')}
-                  className="flex items-center gap-3 w-full p-4 bg-white border border-brand-teal/30 hover:border-brand-teal rounded-xl shadow-sm transition-all group text-left"
+                  className="flex items-center gap-3 w-full p-4 bg-slate-50 dark:bg-slate-700 border border-brand-teal/30 hover:border-brand-teal rounded-xl shadow-sm transition-all group text-left"
                 >
                   <div className="w-10 h-10 bg-brand-teal/10 rounded-full flex items-center justify-center group-hover:bg-brand-teal/20 transition-colors">
                     <Globe className="w-5 h-5 text-brand-teal" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-bold text-slate-800 text-sm">Chat on Website</h4>
-                    <p className="text-xs text-slate-500">Stay on this page</p>
+                    <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Chat on Website</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Stay on this page</p>
                   </div>
                   <ArrowRight className="w-4 h-4 text-slate-400" />
                 </button>
@@ -203,11 +203,11 @@ export function WhatsAppWidget() {
 
             {/* ── Name Form View ── */}
             {view === 'nameForm' && (
-              <div className="flex-1 p-6 bg-slate-50 flex flex-col justify-center">
+              <div className="flex-1 p-6 bg-white dark:bg-slate-800 flex flex-col justify-center">
                 <form onSubmit={handleNameSubmit} className="space-y-4">
                   <div className="text-center mb-6">
-                    <h3 className="font-bold text-slate-800 mb-1">Let's get started!</h3>
-                    <p className="text-sm text-slate-500">What should we call you?</p>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-1">Let's get started!</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">What should we call you?</p>
                   </div>
                   <input
                     ref={nameRef}
@@ -216,7 +216,7 @@ export function WhatsAppWidget() {
                     value={userName}
                     onChange={e => setUserName(e.target.value)}
                     placeholder="Your Name"
-                    className="w-full text-sm bg-white text-slate-800 dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                    className="w-full text-sm bg-slate-50 text-slate-800 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
                   <button 
                     type="submit"
