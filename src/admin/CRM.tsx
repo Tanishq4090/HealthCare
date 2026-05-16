@@ -3570,6 +3570,9 @@ export default function CRM() {
                                     </button>
                                     <button
                                         onClick={async () => {
+                                            const confirmed = window.confirm("⚠️ Warning: You haven't sent a quotation to this lead on WhatsApp yet.\n\nAre you sure you want to bypass the quotation and send the consent form directly?");
+                                            if (!confirmed) return;
+
                                             const toastId = toast.loading("Approving quotation and sending consent form...");
                                             try {
                                                 // 1. Move lead to Quotation Sent
