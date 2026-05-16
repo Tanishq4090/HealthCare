@@ -1389,28 +1389,40 @@ export default function CRM() {
                 msgText += `_This quote is valid until ${new Date(quotationData.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}_`;
             }
 
-            // Meta template params: strip markdown formatting (asterisks/underscores don't render in params)
-            // and enforce the 1024-char limit Meta imposes on template body parameter values.
-            const sanitizedMsg = msgText
-                .replace(/\*/g, '')      // Remove bold markers
-                .replace(/_(.*?)_/g, '$1') // Remove italic markers
-                .trim()
-                .slice(0, 1024);
+            // Meta template params cannot contain newlines or multiple spaces.
+            // So we send the full formatted message as a standard text first,
+            // then send the template with a summarized param to show the buttons.
+            
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            
+            // 1. Send full quotation as standard text (preserves newlines & formatting)
+            await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({
+                    phone: quotationTargetLead.whatsapp_number || quotationTargetLead.phone,
+                    message: msgText,
+                    useTemplate: false,
+                    leadId: quotationTargetLead.id
+                })
+            });
 
-            // Send via meta-whatsapp-outbound
-            // quote_client_v2 template has ONE body param: {{1}} = quote body
+            // 2. Send the template with buttons using a newline-free summary
+            const summaryParam = `Total Estimate: ₹${quotationData.estimatedTotal}/mo`;
             const payload = {
                 phone: quotationTargetLead.whatsapp_number || quotationTargetLead.phone,
                 leadName: quotationTargetLead.name,
-                message: msgText,
+                message: msgText, // passed for logging
                 useTemplate: true,
                 templateName: 'quote_client_v2',
-                templateParams: [sanitizedMsg],
+                templateParams: [summaryParam],
                 leadId: quotationTargetLead.id
             };
-
-            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
             const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
