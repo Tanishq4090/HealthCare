@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar as CalendarIcon, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface SendQuotationModalProps {
     isOpen: boolean;
@@ -95,6 +96,15 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     };
 
     const handleDispatch = () => {
+        if (!serviceName.trim()) return toast.error('Please enter the Service Name.');
+        if (!recipientCondition.trim()) return toast.error('Please specify the Care Recipient Condition.');
+        if (!hoursPerDay) return toast.error('Please enter Hours per day.');
+        if (!daysPerWeek) return toast.error('Please enter Days per week.');
+        if (!startDate) return toast.error('Please select a Proposed Start Date.');
+        if (!completeMonthRate) return toast.error('Please enter the Complete Month Rate.');
+        if (!incompleteMonthRate) return toast.error('Please enter the Incomplete Month Rate.');
+        if (!validUntil) return toast.error('Please select a Quote Valid Until date.');
+
         onDispatch({
             serviceName,
             serviceCategory,
