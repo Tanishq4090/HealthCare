@@ -151,8 +151,8 @@ serve(async (req) => {
               type: "text",
               text: (message || "Here is your quotation.").trim()
           });
-      } else if (templateName === "greeting_msg" || !templateName) {
-          // Fallback to legacy greeting_msg parameter
+      } else if (templateName === "post_call_intake" || !templateName) {
+          // Fallback to post_call_intake parameter
           parameters.push({
               type: "text",
               text: leadName ? leadName.trim() : 'there'
@@ -168,9 +168,9 @@ serve(async (req) => {
           });
       }
 
-      // Add flow button to greeting_msg, post_call_intake, or consent_form templates
+      // Add flow button to post_call_intake or consent_form templates
       const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
-      if ((templateName === "greeting_msg" || templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
+      if ((templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
         const initialScreen = templateName === "consent_form" ? "CONSENT_SCREEN" : "INTAKE_FORM";
         
         components.push({
@@ -192,7 +192,7 @@ serve(async (req) => {
       }
 
       metaBody.template = {
-        name: templateName || "greeting_msg", 
+        name: templateName || "post_call_intake", 
         language: {
           code: "en"
         },
