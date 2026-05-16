@@ -543,7 +543,9 @@ serve(async (req) => {
 
             } else if (isAskQuestion) {
                 replyMsg = `Of course! 😊 Yes, our 99 Care team will be happy to answer your questions — go ahead and ask, we're listening! 🙏`;
-
+                if (earlyLead?.id) {
+                    await supabase.from('crm_leads').update({ needs_attention: true }).eq('id', earlyLead.id);
+                }
             } else if (isScheduleCall) {
                 replyMsg = `Noted! 📞 The 99 Care team will get on a call with you shortly. Please stay available on this number. Thank you for your patience! 🙏`;
             }

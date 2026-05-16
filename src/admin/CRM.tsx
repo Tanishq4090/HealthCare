@@ -2342,7 +2342,10 @@ export default function CRM() {
                                                         if (serviceLocation === ', , , ' || serviceLocation === '') serviceLocation = null;
                                                         const deliveryLog = deliveryLogs.find(l => l.payload?.lead_id === item.id);
                                                         return (
-                                                        <div key={item.id} className="w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
+                                                        <div key={item.id} className="relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
+                                                            {item.needs_attention && (
+                                                                <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
+                                                            )}
                                                             <div className="p-4 flex flex-col gap-3 flex-1">
                                                                 {/* Row 1: Avatar + Name + Priority */}
                                                                 <div className="flex items-start gap-3">
@@ -2410,10 +2413,14 @@ export default function CRM() {
                                                             </div>
                                                             {/* View Details */}
                                                             <button
-                                                                onClick={(e) => {
+                                                                onClick={async (e) => {
                                                                     e.stopPropagation();
                                                                     setSelectedInspectorLead(item);
                                                                     fetchLeadActivity(item.id);
+                                                                    if (item.needs_attention) {
+                                                                        setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                        await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                    }
                                                                 }}
                                                                 className="w-full py-2 border-t border-slate-100 text-slate-500 hover:text-primary hover:bg-slate-50 text-[12px] font-semibold rounded-b-2xl transition-all flex items-center justify-center gap-1.5 group"
                                                             >
