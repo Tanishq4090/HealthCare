@@ -463,7 +463,116 @@ serve(async (req) => {
             }
         }
 
+        // --- 8.5. QUOTATION QUICK-REPLY HANDLER ---
+        // Intercept the three buttons from the quote_client_v2 template before hitting stage scripts.
+        const rawBodyLower = rawBody.toLowerCase().trim();
+        const isAcceptQuote = rawBodyLower === 'accept this quote';
+        const isAskQuestion = rawBodyLower === 'ask a question';
+        const isScheduleCall = rawBodyLower === 'schedule a call';
+
+        if (isAcceptQuote || isAskQuestion || isScheduleCall) {
+            let replyMsg = '';
+
+            if (isAcceptQuote) {
+                replyMsg = `Thank you for accepting the quote! 🙏😊\n\nOur 99 Care team will shortly send you the consent form link so we can finalise your care arrangement. We're excited to serve your family! ✨`;
+
+                // Move lead to 'Quotation Sent' (approved) stage
+                if (earlyLead?.id) {
+                    await supabase.from('crm_leads')
+                        .update({ pipeline_stage: 'Quotation Sent' })
+                        .eq('id', earlyLead.id);
+                    console.log(`[Quote Accept] Moved lead ${earlyLead.id} to Quotation Sent`);
+
+                    // Log activity
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: earlyLead.id,
+                        event_type: 'quote_accepted',
+                        description: 'Lead accepted the quotation via WhatsApp button'
+                    }]);
+
+                    // Auto-dispatch the consent form Flow
+                    const CONSENT_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
+                    if (META_SYSTEM_TOKEN && META_PHONE_ID && CONSENT_FLOW_ID) {
+                        const consentFlowMsg = {
+                            messaging_product: "whatsapp",
+                            to: purePhone,
+                            type: "template",
+                            template: {
+                                name: "consent_form",
+                                language: { code: "en" },
+                                components: [
+                                    {
+                                        type: "body",
+                                        parameters: [{ type: "text", text: earlyLead.name?.split(' ')[0] || 'there' }]
+                                    },
+                                    {
+                                        type: "button",
+                                        sub_type: "flow",
+                                        index: "0",
+                                        parameters: [{
+                                            type: "action",
+                                            action: {
+                                                flow_token: `consent_${purePhone}_${Date.now()}`,
+                                                flow_action_data: { screen: "CONSENT_SCREEN" }
+                                            }
+                                        }]
+                                    }
+                                ]
+                            }
+                        };
+
+                        const consentRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify(consentFlowMsg)
+                        });
+
+                        if (consentRes.ok) {
+                            console.log(`[Consent Form] Auto-dispatched to ${purePhone}`);
+                            await supabase.from('whatsapp_messages').insert([{
+                                phone: purePhone,
+                                role: 'assistant',
+                                content: '[Consent form link sent]'
+                            }]);
+                        } else {
+                            const errText = await consentRes.text();
+                            console.error(`[Consent Form Error] ${consentRes.status}: ${errText}`);
+                        }
+                    }
+                }
+
+            } else if (isAskQuestion) {
+                replyMsg = `Of course! 😊 Yes, our 99 Care team will be happy to answer your questions — go ahead and ask, we're listening! 🙏`;
+
+            } else if (isScheduleCall) {
+                replyMsg = `Noted! 📞 The 99 Care team will get on a call with you shortly. Please stay available on this number. Thank you for your patience! 🙏`;
+            }
+
+            // Send the reply
+            if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messaging_product: "whatsapp",
+                        to: purePhone,
+                        type: "text",
+                        text: { preview_url: false, body: replyMsg }
+                    })
+                });
+            }
+
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: replyMsg }]);
+            await supabase.from('whatsapp_logs').update({
+                status: 'success',
+                payload: { type: 'quote_button_reply', button: rawBody, reply: replyMsg, original_recipient: fromPhone }
+            }).eq('sid', wamid);
+
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
         // --- 9. STAGE-SCRIPTED RESPONSES ---
+
         // For specific pipeline stages, send a precise pre-written reply instead of calling Groq.
         // This guarantees consistent, on-brand messaging at every step of the customer journey.
         // NOTE: We never update the pipeline stage here — the CRM team does that manually.

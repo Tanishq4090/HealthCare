@@ -142,14 +142,14 @@ serve(async (req) => {
               const val = templateParams[i];
               parameters.push({
                   type: "text",
-                  text: (val && val.trim()) ? val.trim().replace(/\n+/g, ' | ') : safeDefaults[i] || '...'
+                  text: (val && val.trim()) ? val.trim() : safeDefaults[i] || '...'
               });
           }
       } else if (templateName === "quote_client_v2") {
           // Send the entire structured message as the first parameter
           parameters.push({
               type: "text",
-              text: (message || "Here is your quotation.").replace(/\n+/g, ' | ')
+              text: (message || "Here is your quotation.").trim()
           });
       } else if (templateName === "greeting_msg" || !templateName) {
           // Fallback to legacy greeting_msg parameter

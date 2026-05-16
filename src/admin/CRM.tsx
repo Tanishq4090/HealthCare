@@ -1367,9 +1367,9 @@ export default function CRM() {
                 msgText += `_This quote is valid until ${new Date(quotationData.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}_`;
             }
 
-            // Meta Utility templates don't allow newlines in variables. 
-            // We'll use a separator for the template version, but keep the original for the log.
-            const sanitizedMsg = msgText.replace(/\n+/g, ' | ');
+            // Meta utility templates support newlines in body parameters.
+            // Pass the message as-is to preserve the structured formatting.
+            const sanitizedMsg = msgText.trim();
 
             // Send via meta-whatsapp-outbound
             const payload = {
@@ -1402,14 +1402,12 @@ export default function CRM() {
                 throw new Error(data.error || 'Meta API rejected the message.');
             }
 
-            // 3. Move Lead
-            await handleMoveLead(quotationTargetLead.id, 'Quotation Sent');
-
-            // 4. Log Activity
+            // 3. Log Activity (stage is NOT changed here — it stays 'In Discussion'
+            //    until the lead accepts the quote via WhatsApp or admin clicks 'Quotation Approved')
             await logActivity(
                 quotationTargetLead.id,
                 'quotation_sent',
-                `Quotation sent: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
+                `Quotation dispatched via WhatsApp: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
             );
 
             // 5. Update Lead Value in DB
