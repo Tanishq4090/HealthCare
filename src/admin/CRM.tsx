@@ -1490,7 +1490,14 @@ export default function CRM() {
             }
 
             // Also update the main leads list
-            setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? { ...l, monthly_value: quotationData.estimatedTotal, notes: updatedNotes } : l));
+            setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? { 
+                ...l, 
+                estimated_value_monthly: quotationData.estimatedTotal,
+                quoted_monthly_rate: quotationData.estimatedTotal,
+                valueAmount: quotationData.estimatedTotal,
+                value: '₹' + quotationData.estimatedTotal + '/mo',
+                notes: updatedNotes 
+            } : l));
 
             toast.success(`Quotation successfully sent!`, { id: toastId });
         } catch (error: any) {
@@ -3633,9 +3640,10 @@ export default function CRM() {
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            const hasQuotation = selectedInspectorLead.quoted_monthly_rate > 0 || selectedInspectorLead.estimated_value_monthly > 0 || selectedInspectorLead.valueAmount > 0;
+                                            const hasQuotationValue = selectedInspectorLead.quoted_monthly_rate > 0 || selectedInspectorLead.estimated_value_monthly > 0 || selectedInspectorLead.valueAmount > 0;
+                                            const hasQuotationLog = inspectorActivity.some((evt: any) => evt.event_type === 'quotation_sent');
                                             
-                                            if (!hasQuotation) {
+                                            if (!hasQuotationValue && !hasQuotationLog) {
                                                 const confirmed = window.confirm("⚠️ Warning: You haven't sent a quotation to this lead on WhatsApp yet.\n\nAre you sure you want to bypass the quotation and send the consent form directly?");
                                                 if (!confirmed) return;
                                             }
