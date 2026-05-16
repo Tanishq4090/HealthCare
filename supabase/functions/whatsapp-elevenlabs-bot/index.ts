@@ -518,6 +518,13 @@ serve(async (req) => {
                             .limit(1);
                         const consent = consents?.[0];
 
+                        // Extract location from notes if available
+                        let extractedAddress = "";
+                        if (earlyLead.notes) {
+                            const match = earlyLead.notes.match(/Location:\s*(.+)/i);
+                            if (match && match[1]) extractedAddress = match[1].trim();
+                        }
+
                         // Build pre-fill data payload
                         const prefillData = {
                             patient_name: consent?.patient_name || earlyLead.name || "",
@@ -529,7 +536,7 @@ serve(async (req) => {
                             age: consent?.age || "",
                             weight: consent?.weight || "",
                             alternate_contact_number: consent?.alternate_contact_number || "",
-                            address: consent?.address || "",
+                            address: consent?.address || extractedAddress,
                             reference_by: consent?.reference_by || "",
                             other_details: consent?.other_details || ""
                         };
