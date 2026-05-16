@@ -108,10 +108,16 @@ serve(async (req) => {
                 const existingLead = existingLeads?.[0] ?? null;
 
                 if (existingLead) {
-                    // Automatically advance the CRM pipeline
-                    await supabase.from('crm_leads').update({ pipeline_stage: 'Form Submitted' }).eq('id', existingLead.id);
+                    // Automatically advance the CRM pipeline and sync name
+                    await supabase.from('crm_leads').update({ 
+                        pipeline_stage: 'Form Submitted',
+                        name: formData.patient_name || existingLead.name
+                    }).eq('id', existingLead.id);
                     
                     // Securely store the patient details and terms acceptance
+                    // Delete old consent to ensure we overwrite if they are editing/resubmitting
+                    await supabase.from('client_consents').delete().eq('lead_id', existingLead.id);
+
                     await supabase.from('client_consents').insert([{
                         lead_id: existingLead.id,
                         phone: purePhone,
@@ -493,6 +499,41 @@ serve(async (req) => {
                     // Auto-dispatch the consent form Flow
                     const CONSENT_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
                     if (META_SYSTEM_TOKEN && META_PHONE_ID && CONSENT_FLOW_ID) {
+                        
+                        // 1. Fetch latest quotation to pre-fill service details
+                        const { data: quotes } = await supabase
+                            .from('crm_quotations')
+                            .select('*')
+                            .eq('lead_id', earlyLead.id)
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+                        const quote = quotes?.[0];
+
+                        // 2. Fetch existing consent (if editing)
+                        const { data: consents } = await supabase
+                            .from('client_consents')
+                            .select('*')
+                            .eq('lead_id', earlyLead.id)
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+                        const consent = consents?.[0];
+
+                        // Build pre-fill data payload
+                        const prefillData = {
+                            patient_name: consent?.patient_name || earlyLead.name || "",
+                            contact_number: consent?.contact_number || purePhone || "",
+                            service_category: consent?.service_category || quote?.service_category || quote?.service_name || "",
+                            service_start_date: consent?.service_start_date || (quote?.start_date ? quote.start_date.split('T')[0] : ""),
+                            offered_time: consent?.offered_time || quote?.shift_type || "",
+                            relative_name: consent?.relative_name || "",
+                            age: consent?.age || "",
+                            weight: consent?.weight || "",
+                            alternate_contact_number: consent?.alternate_contact_number || "",
+                            address: consent?.address || "",
+                            reference_by: consent?.reference_by || "",
+                            other_details: consent?.other_details || ""
+                        };
+
                         const consentFlowMsg = {
                             messaging_product: "whatsapp",
                             to: purePhone,
@@ -513,7 +554,10 @@ serve(async (req) => {
                                             type: "action",
                                             action: {
                                                 flow_token: `consent_${purePhone}_${Date.now()}`,
-                                                flow_action_data: { screen: "CONSENT_SCREEN" }
+                                                flow_action_data: { 
+                                                    screen: "CONSENT_SCREEN",
+                                                    data: prefillData
+                                                }
                                             }
                                         }]
                                     }
