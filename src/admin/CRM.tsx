@@ -1389,20 +1389,23 @@ export default function CRM() {
                 msgText += `_This quote is valid until ${new Date(quotationData.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}_`;
             }
 
-            // Meta utility templates support newlines in body parameters.
-            // Pass the message as-is to preserve the structured formatting.
-            const sanitizedMsg = msgText.trim();
+            // Meta template params: strip markdown formatting (asterisks/underscores don't render in params)
+            // and enforce the 1024-char limit Meta imposes on template body parameter values.
+            const sanitizedMsg = msgText
+                .replace(/\*/g, '')      // Remove bold markers
+                .replace(/_(.*?)_/g, '$1') // Remove italic markers
+                .trim()
+                .slice(0, 1024);
 
             // Send via meta-whatsapp-outbound
-            // quote_client_v2 template has two body params: {{1}} = first name, {{2}} = quote body
-            const leadFirstName = quotationTargetLead.name?.split(' ')[0] || 'there';
+            // quote_client_v2 template has ONE body param: {{1}} = quote body
             const payload = {
                 phone: quotationTargetLead.whatsapp_number || quotationTargetLead.phone,
                 leadName: quotationTargetLead.name,
                 message: msgText,
                 useTemplate: true,
                 templateName: 'quote_client_v2',
-                templateParams: [leadFirstName, sanitizedMsg],
+                templateParams: [sanitizedMsg],
                 leadId: quotationTargetLead.id
             };
 
