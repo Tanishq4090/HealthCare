@@ -216,7 +216,7 @@ export function WhatsAppWidget() {
                     value={userName}
                     onChange={e => setUserName(e.target.value)}
                     placeholder="Your Name"
-                    className="w-full text-sm bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal/30 transition-all placeholder:text-slate-400"
+                    className="w-full text-sm bg-white text-slate-800 dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
                   <button 
                     type="submit"
@@ -298,7 +298,7 @@ export function WhatsAppWidget() {
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Type a message…"
-                    className="flex-1 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-4 py-2 outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366]/30 transition-all placeholder:text-slate-400"
+                    className="flex-1 text-sm bg-slate-50 text-slate-800 dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 rounded-full px-4 py-2 outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366]/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
                     maxLength={300}
                   />
                   <button
