@@ -71,6 +71,15 @@ serve(async (req) => {
         console.log(`[Settings] greeting_enabled=${settings?.greeting_enabled}`);
         if (settings !== null && settings?.greeting_enabled === false) {
             console.log(`[Settings] Disabled. Skipping ${purePhone}`);
+            // Still log the user's message to show in CRM chat history
+            const inboundText = incomingMsg.text?.body
+                || incomingMsg.interactive?.button_reply?.title
+                || incomingMsg.interactive?.list_reply?.title
+                || incomingMsg.button?.text
+                || null;
+            if (inboundText) {
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: inboundText }]);
+            }
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
@@ -155,10 +164,16 @@ serve(async (req) => {
                     payload: { type: 'flow_submission_consent', patient_name: formData.patient_name, other_details: formData.other_details, original_recipient: fromPhone }
                 }]);
                 
+                // Log user action in chat history
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: '[Consent form submitted]' }]);
+
                 return new Response('EVENT_RECEIVED', { status: 200 });
             }
 
             // --- LEGACY LEAD QUALIFICATION FLOW BRANCH ---
+            // Log the form submission in chat history as a user message
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: '[Form submitted]' }]);
+
 
             const name = formData.name || formData.patient_name || contact?.profile?.name || 'Unknown';
             const service = formData.service
@@ -277,6 +292,7 @@ serve(async (req) => {
         if (incomingMsg.text?.body) rawBody = incomingMsg.text.body;
         else if (incomingMsg.interactive?.list_reply) rawBody = incomingMsg.interactive.list_reply.title;
         else if (incomingMsg.interactive?.button_reply) rawBody = incomingMsg.interactive.button_reply.title;
+        else if (incomingMsg.button?.text) rawBody = incomingMsg.button.text; // Template quick-reply buttons
 
         if (!rawBody) {
             console.log("Non-text message, ignoring.");
