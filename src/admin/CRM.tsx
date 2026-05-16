@@ -1098,7 +1098,7 @@ export default function CRM() {
         setIsStaffPickerOpen(true);
     };
 
-    const confirmWorkerSelection = (worker: any) => {
+    const confirmWorkerSelection = async (worker: any) => {
         // Guard: mock workers have numeric IDs (e.g. '3') — not valid UUIDs
         const isRealWorker = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worker.id);
         if (!isRealWorker) {
@@ -1111,11 +1111,33 @@ export default function CRM() {
         setSelectedWorker(worker);
         setIsStaffPickerOpen(false);
         setIsServicePeriodOpen(true);
-        // Reset service form
+        
+        // Fetch quotation and consent to auto-fill dates
+        let autoStartDate = new Date().toISOString().split('T')[0];
+        let autoHours = 12;
+
+        if (staffPickerTargetLead?.id) {
+            const { data: quote } = await supabase
+                .from('crm_quotations')
+                .select('start_date, hours_per_day')
+                .eq('lead_id', staffPickerTargetLead.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (quote?.start_date) {
+                autoStartDate = quote.start_date.split('T')[0];
+            }
+            if (quote?.hours_per_day) {
+                autoHours = quote.hours_per_day;
+            }
+        }
+
+        // Reset service form with auto-filled data
         setServiceType('one_day');
-        setServiceStartDate(new Date().toISOString().split('T')[0]);
+        setServiceStartDate(autoStartDate);
         setServiceEndDate('');
-        setServiceHours(12); // Default to 12h shift
+        setServiceHours(autoHours);
         
         // Use intelligent quoted rates
         const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
