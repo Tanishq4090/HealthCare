@@ -1962,7 +1962,7 @@ export default function CRM() {
                 ...l,
                 time: new Date(l.created_at).toLocaleDateString(),
                 valueAmount: l.estimated_value_monthly,
-                value: "₹" + l.estimated_value_monthly + "/mo",
+                value: l.estimated_value_monthly ? "₹" + l.estimated_value_monthly + "/mo" : "₹0/mo",
                 priority: l.priority || 'medium',
                 isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false
             };
