@@ -3298,10 +3298,18 @@ export default function CRM() {
                         <select
                             value={selectedInspectorLead.pipeline_stage}
                             onChange={async (e) => {
-                                await handleMoveLead(selectedInspectorLead.id, e.target.value);
-                                await logActivity(selectedInspectorLead.id, 'stage_changed', `Moved to "${e.target.value}"`, { from: selectedInspectorLead.pipeline_stage, to: e.target.value });
-                                setSelectedInspectorLead((prev: any) => prev ? {...prev, pipeline_stage: e.target.value} : null);
-                                setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'stage_changed', description: `Moved to "${e.target.value}"`, created_at: new Date().toISOString() }]);
+                                const newStage = e.target.value;
+                                
+                                // Warning if manually bypassing Quotation stage
+                                if (newStage === 'Quotation Sent' && selectedInspectorLead.pipeline_stage === 'In Discussion') {
+                                    const confirmed = window.confirm("⚠️ Warning: You are manually moving this lead to Quotation Sent without sending a quotation via WhatsApp.\n\nAre you sure you want to bypass the automated quotation sending process?");
+                                    if (!confirmed) return;
+                                }
+
+                                await handleMoveLead(selectedInspectorLead.id, newStage);
+                                await logActivity(selectedInspectorLead.id, 'stage_changed', `Moved to "${newStage}"`, { from: selectedInspectorLead.pipeline_stage, to: newStage });
+                                setSelectedInspectorLead((prev: any) => prev ? {...prev, pipeline_stage: newStage} : null);
+                                setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'stage_changed', description: `Moved to "${newStage}"`, created_at: new Date().toISOString() }]);
                             }}
                             className="w-full text-sm font-bold bg-white border border-slate-200 text-slate-800 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
                         >
