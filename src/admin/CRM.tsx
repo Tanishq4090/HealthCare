@@ -1292,7 +1292,7 @@ export default function CRM() {
     };
 
     // Helper to dispatch WhatsApp templates programmatically
-    const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[]) => {
+    const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[], flowData?: any) => {
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
         const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
         
@@ -1321,6 +1321,7 @@ export default function CRM() {
                 useTemplate: true,
                 templateName: templateMap[action],
                 templateParams: params || [lead.name.split(' ')[0] || 'there'],
+                flowData: flowData
             })
         });
 
@@ -3653,8 +3654,28 @@ export default function CRM() {
                                                 // 1. Move lead to Quotation Sent
                                                 await handleMoveLead(selectedInspectorLead.id, 'Quotation Sent');
                                                 
-                                                // 2. Dispatch Consent Form automatically
-                                                await dispatchWhatsAppTemplate(selectedInspectorLead, 'consent');
+                                                // Fetch latest quotation for autofill
+                                                const { data: latestQuote } = await supabase
+                                                    .from('crm_quotations')
+                                                    .select('*')
+                                                    .eq('lead_id', selectedInspectorLead.id)
+                                                    .order('created_at', { ascending: false })
+                                                    .limit(1)
+                                                    .maybeSingle();
+
+                                                let flowData = {};
+                                                if (latestQuote) {
+                                                    flowData = {
+                                                        service: latestQuote.service_name,
+                                                        shift: latestQuote.shift_type,
+                                                        monthly_rate: latestQuote.estimated_monthly_total?.toString(),
+                                                        duration: latestQuote.duration,
+                                                        deposit: latestQuote.deposit?.toString()
+                                                    };
+                                                }
+                                                
+                                                // 2. Dispatch Consent Form automatically with autofill data
+                                                await dispatchWhatsAppTemplate(selectedInspectorLead, 'consent', undefined, flowData);
                                                 
                                                 toast.success("✅ Quotation Approved! Consent form sent to client.", { id: toastId });
                                                 setSelectedInspectorLead(null);

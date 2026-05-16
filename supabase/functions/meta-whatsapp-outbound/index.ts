@@ -114,7 +114,7 @@ serve(async (req) => {
         return new Response('ok', { status: 200, headers: corsHeaders });
     }
 
-    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId } = payload;
+    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId, flowData } = payload;
     const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
     const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 
@@ -183,7 +183,8 @@ serve(async (req) => {
               action: {
                 flow_token: `flow_${digits}_${Date.now()}`,
                 flow_action_data: {
-                  screen: initialScreen
+                  screen: initialScreen,
+                  ...(flowData || {})
                 }
               }
             }
