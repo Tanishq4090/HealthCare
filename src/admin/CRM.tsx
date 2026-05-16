@@ -218,7 +218,7 @@ export default function CRM() {
                 title = 'Stage Advanced';
                 desc = `Moved lead to "${payload.pipelineStageUpdate}".`;
                 icon = CheckCircle2;
-            } else if (payload.templateName === 'greeting_msg') {
+            } else if (payload.templateName === 'post_call_intake') {
                 title = 'Auto-Greeting Sent';
                 desc = `Sent welcome menu to customer at ${payload.original_recipient}.`;
                 icon = MessageSquare;
@@ -642,7 +642,7 @@ export default function CRM() {
         }
     };
 
-    // Send WhatsApp greeting_msg template manually from call log card
+    // Send WhatsApp post_call_intake template manually from call log card
     const handleSendCallGreeting = async (call: any, isManual = false) => {
         if (processingCalls.current.has(call.id)) return;
         // ── LOCK IMMEDIATELY to close the race window ──────────────────────
@@ -972,7 +972,7 @@ export default function CRM() {
                         phone: phoneDigits,
                         leadId: lead.id,
                         useTemplate: true,
-                        templateName: 'greeting_msg',
+                        templateName: 'post_call_intake',
                         templateParams: [lead.name ? lead.name.split('—')[0].trim() : 'there'],
                     }),
                 });
@@ -1301,7 +1301,7 @@ export default function CRM() {
         if (!phoneDigits) throw new Error("No phone number found.");
         
         const templateMap: Record<string, string> = {
-            inquiry: 'greeting_msg',
+            inquiry: 'post_call_intake',
             quotation: 'quote_client',
             consent: 'consent_form',
             deposit: 'deposit_request',
@@ -1414,10 +1414,12 @@ export default function CRM() {
 
             // 2. Send the template with buttons using a newline-free summary
             const summaryParam = `Total Estimate: ₹${quotationData.estimatedTotal}/mo`;
+            const templateLogText = `Hello, please find the quotation details for your care request below:\n${summaryParam}\nPlease use the buttons below to respond or schedule a follow-up. We look forward to assisting your family.`;
+
             const payload = {
                 phone: quotationTargetLead.whatsapp_number || quotationTargetLead.phone,
                 leadName: quotationTargetLead.name,
-                message: msgText, // passed for logging
+                message: templateLogText, // passed for logging so it looks accurate in CRM
                 useTemplate: true,
                 templateName: 'quote_client_v2',
                 templateParams: [summaryParam],
@@ -1441,18 +1443,20 @@ export default function CRM() {
                 throw new Error(data.error || 'Meta API rejected the message.');
             }
 
-            // 3. Log Activity (stage is NOT changed here — it stays 'In Discussion'
-            //    until the lead accepts the quote via WhatsApp or admin clicks 'Quotation Approved')
+            // 3. Log Activity
             await logActivity(
                 quotationTargetLead.id,
                 'quotation_sent',
                 `Quotation dispatched via WhatsApp: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
             );
 
-            // 5. Update Lead Value in DB
+            // 5. Update Lead Value and Stage in DB
             await supabase
                 .from('crm_leads')
-                .update({ monthly_value: quotationData.estimatedTotal })
+                .update({ 
+                    monthly_value: quotationData.estimatedTotal,
+                    pipeline_stage: 'Quotation Sent'
+                })
                 .eq('id', quotationTargetLead.id);
 
             // 6. Auto-populate Service + Shift into notes so bubbles show on card
@@ -1473,7 +1477,12 @@ export default function CRM() {
 
             // Sync UI: Update Lead Value, Notes and Activity Timeline
             if (selectedInspectorLead && selectedInspectorLead.id === quotationTargetLead.id) {
-                setSelectedInspectorLead((prev: any) => ({ ...prev, monthly_value: quotationData.estimatedTotal, notes: updatedNotes }));
+                setSelectedInspectorLead((prev: any) => ({ 
+                    ...prev, 
+                    monthly_value: quotationData.estimatedTotal, 
+                    notes: updatedNotes,
+                    pipeline_stage: 'Quotation Sent' 
+                }));
                 fetchLeadActivity(quotationTargetLead.id);
             }
 
@@ -1529,7 +1538,7 @@ export default function CRM() {
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
-                    templateName: agentTargetAction === 'inquiry' ? 'greeting_msg' 
+                    templateName: agentTargetAction === 'inquiry' ? 'post_call_intake' 
                                   : (agentTargetAction === 'quotation' ? 'quote_client_v2' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
