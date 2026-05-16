@@ -260,19 +260,7 @@ serve(async (req) => {
                     })
                 });
 
-                // --- ADMIN NOTIFICATION ---
-                const adminPhone = Deno.env.get('ADMIN_PHONE_NUMBER') || '918000044090';
-                const adminAlert = `🚨 *New Intake Form Filled!*\n\n*Name:* ${name}\n*Service:* ${resolvedService}\n*Shift:* ${shiftType || '-'}\n*Area:* ${locationStr || '-'}\n\n👉 Open CRM Kanban board to send quotation.`;
-                await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        messaging_product: "whatsapp",
-                        to: adminPhone,
-                        type: "text",
-                        text: { body: adminAlert }
-                    })
-                });
+                // Removed ADMIN NOTIFICATION here per user request, it will only notify via CRM browser push notification
             }
 
             await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
