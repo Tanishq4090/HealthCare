@@ -387,7 +387,7 @@ serve(async (req) => {
         // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
         const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id, pipeline_stage, name, needs_attention')
+            .select('id, pipeline_stage, name, needs_attention, quoted_monthly_rate')
             .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(1);
@@ -636,7 +636,9 @@ serve(async (req) => {
             
             'New Lead': `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
             
-            'In Discussion': `Thank you for your patience! 🙏 Our 99 Care team is already preparing your personalised quotation based on the details you shared and will send it shortly. 😊✨`,
+            'In Discussion': earlyLead?.quoted_monthly_rate > 0 
+                ? `Our 99 team will contact you shortly for this and resolve all your issues 🙏`
+                : `Thank you for your patience! 🙏 Our 99 Care team is already preparing your personalised quotation based on the details you shared and will send it shortly. 😊✨`,
 
             'Quotation Sent': 
                 `Thank you! 🙏 Please complete the consent form we shared with you so that we can move forward and assign your staff. 😊✨`,
