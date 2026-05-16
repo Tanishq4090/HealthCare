@@ -33,7 +33,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     // Messaging
     const [messageTemplate, setMessageTemplate] = useState('Standard quotation');
     const [language, setLanguage] = useState('English');
-    const [customMessage, setCustomMessage] = useState(`Hi ${lead?.name || 'there'}, thank you for speaking with us today. Here is the personalised care quote for your mother, as discussed.`);
+    const [customMessage, setCustomMessage] = useState(`We can customise the hours or services to better suit your family's needs — just reply here and we'll adjust the quote.`);
     const [validUntil, setValidUntil] = useState('');
 
     useEffect(() => {

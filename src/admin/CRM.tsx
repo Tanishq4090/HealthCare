@@ -1340,8 +1340,7 @@ export default function CRM() {
             if (dbError) throw dbError;
 
             // 2. Format Whatsapp message payload (Structured text)
-            let msgText = `${quotationData.customMessage}\n\n`;
-            msgText += `*SERVICE QUOTATION*\n`;
+            let msgText = `*SERVICE QUOTATION*\n`;
             msgText += `*${quotationData.serviceName}*\n`;
             if (quotationData.serviceCategory) msgText += `${quotationData.serviceCategory}\n\n`;
             
@@ -1360,7 +1359,9 @@ export default function CRM() {
                 msgText += `*What is included*\n${quotationData.inclusions.join(', ')}\n\n`;
             }
             
-            msgText += `We can customise the hours or services to better suit your family's needs — just reply here and we'll adjust the quote.\n`;
+            if (quotationData.customMessage) {
+                msgText += `${quotationData.customMessage}\n`;
+            }
 
             if (quotationData.validUntil) {
                 msgText += `_This quote is valid until ${new Date(quotationData.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}_`;
