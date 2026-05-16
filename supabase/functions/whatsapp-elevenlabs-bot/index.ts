@@ -631,23 +631,12 @@ serve(async (req) => {
         // NOTE: We never update the pipeline stage here — the CRM team does that manually.
         const quotationAlreadySent = historyData.some(m => m.role === 'assistant' && (m.content.includes('Pricing Information') || m.content.includes('Service Details for')));
         
-        // Dynamic check for form completion status
-        let isFormFilled = false;
-        if (earlyLead?.id) {
-            const { data: formLogs } = await supabase
-                .from('whatsapp_logs')
-                .select('id')
-                .filter('payload->>type', 'eq', 'flow_submission')
-                .or(`payload->>'original_recipient'.ilike.%${last10}%,payload->>'phone'.ilike.%${last10}%`)
-                .gt('created_at', earlyLead.created_at) // Only count forms filled for THIS lead instance
-                .limit(1);
-            isFormFilled = !!formLogs && formLogs.length > 0;
-        }
-
         const STAGE_SCRIPTS: Record<string, string> = {
-            'In Discussion': isFormFilled
-                ? `Thank you for your patience! 🙏 Our 99 Care team is already preparing your personalised quotation based on the details you shared and will send it shortly. 😊✨`
-                : `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
+            'New': `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
+            
+            'New Lead': `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
+            
+            'In Discussion': `Thank you for your patience! 🙏 Our 99 Care team is already preparing your personalised quotation based on the details you shared and will send it shortly. 😊✨`,
 
             'Quotation Sent': 
                 `Thank you! 🙏 Please complete the consent form we shared with you so that we can move forward and assign your staff. 😊✨`,
