@@ -1394,13 +1394,15 @@ export default function CRM() {
             const sanitizedMsg = msgText.trim();
 
             // Send via meta-whatsapp-outbound
+            // quote_client_v2 template has two body params: {{1}} = first name, {{2}} = quote body
+            const leadFirstName = quotationTargetLead.name?.split(' ')[0] || 'there';
             const payload = {
                 phone: quotationTargetLead.whatsapp_number || quotationTargetLead.phone,
                 leadName: quotationTargetLead.name,
                 message: msgText,
                 useTemplate: true,
                 templateName: 'quote_client_v2',
-                templateParams: [sanitizedMsg],
+                templateParams: [leadFirstName, sanitizedMsg],
                 leadId: quotationTargetLead.id
             };
 
@@ -2035,23 +2037,8 @@ export default function CRM() {
         if (!call) return;
 
         try {
-            // Determine initial pipeline stage based on greeting success
-            let initialStage = 'In Discussion';
-            const phoneToCheck = call.capturedWhatsapp || call.phone;
-            
-            if (phoneToCheck && phoneToCheck !== 'Unknown Number') {
-                const last10 = phoneToCheck.replace(/\D/g, '').slice(-10);
-                const { data: greetingSent } = await supabase
-                    .from('whatsapp_messages')
-                    .select('id')
-                    .ilike('phone', `%${last10}%`)
-                    .ilike('content', '%[Automated Greeting]%')
-                    .maybeSingle();
-                
-                if (greetingSent) {
-                    initialStage = 'In Discussion';
-                }
-            }
+            // Always start at 'New Lead' — the WhatsApp greeting flow will move them to 'In Discussion'
+            const initialStage = 'New Lead';
 
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: call.capturedName || 'Voice Lead',
