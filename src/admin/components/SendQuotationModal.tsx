@@ -24,7 +24,6 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     const [duration, setDuration] = useState('Open-ended');
     const [completeMonthRate, setCompleteMonthRate] = useState('');
     const [incompleteMonthRate, setIncompleteMonthRate] = useState('');
-    const [setupFee, setSetupFee] = useState('');
     const [deposit, setDeposit] = useState('');
     const [selectedInclusions, setSelectedInclusions] = useState<string[]>(['Medication reminders', 'Vital monitoring']);
     
@@ -34,7 +33,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     // Messaging
     const [messageTemplate, setMessageTemplate] = useState('Standard quotation');
     const [language, setLanguage] = useState('English');
-    const [customMessage, setCustomMessage] = useState(`Hi ${lead?.name || 'there'}, based on our discussion here is the detailed quote for your mother's care. Please feel free to ask any questions — we're happy to customise this further for your family.`);
+    const [customMessage, setCustomMessage] = useState(`Hi ${lead?.name || 'there'}, thank you for speaking with us today. Here is the personalised care quote for your mother, as discussed.`);
     const [validUntil, setValidUntil] = useState('');
 
     useEffect(() => {
@@ -107,7 +106,6 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
             duration,
             completeMonthRate: Number(completeMonthRate) || null,
             incompleteMonthRate: Number(incompleteMonthRate) || null,
-            setupFee: Number(setupFee) || 0,
             deposit: Number(deposit) || 0,
             estimatedTotal,
             inclusions: selectedInclusions,
@@ -276,15 +274,9 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1.5">One-time joining / setup fee</label>
-                                <input type="number" value={setupFee} onChange={e => setSetupFee(e.target.value)} placeholder="e.g. ₹2,000 or 0" className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf]" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Deposit required</label>
-                                <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="e.g. ₹5,000" className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf]" />
-                            </div>
+                        <div className="mb-4">
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Deposit required</label>
+                            <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="e.g. ₹5,000" className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf]" />
                         </div>
 
                         <div className="bg-[#168a8b]/10 border border-[#168a8b]/20 rounded-lg p-3 flex justify-between items-center">

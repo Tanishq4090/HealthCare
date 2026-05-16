@@ -1340,19 +1340,32 @@ export default function CRM() {
             if (dbError) throw dbError;
 
             // 2. Format Whatsapp message payload (Structured text)
-            let msgText = `*SERVICE QUOTATION*\n`;
-            msgText += `*Service:* ${quotationData.serviceName}\n`;
-            if (quotationData.hoursPerDay) msgText += `*Hours:* ${quotationData.hoursPerDay} hrs / ${quotationData.shiftType}\n`;
-            if (quotationData.daysPerWeek) msgText += `*Schedule:* ${quotationData.daysPerWeek} days/week\n`;
-            msgText += `*Rate (Full):* ₹${quotationData.completeMonthRate}/day\n`;
-            msgText += `*Rate (Partial):* ₹${quotationData.incompleteMonthRate}/day\n`;
-            if (quotationData.setupFee) msgText += `*Setup Fee:* ₹${quotationData.setupFee}\n`;
-            msgText += `*Est. Monthly:* ₹${quotationData.estimatedTotal}\n\n`;
-            if (quotationData.inclusions && quotationData.inclusions.length > 0) {
-                msgText += `*Included:*\n- ${quotationData.inclusions.join('\n- ')}\n\n`;
-            }
-            msgText += `${quotationData.customMessage}`;
+            let msgText = `${quotationData.customMessage}\n\n`;
+            msgText += `*SERVICE QUOTATION*\n`;
+            msgText += `*${quotationData.serviceName}*\n`;
+            if (quotationData.serviceCategory) msgText += `${quotationData.serviceCategory}\n\n`;
             
+            if (quotationData.hoursPerDay) msgText += `Hours per day: ${quotationData.hoursPerDay} hrs - ${quotationData.shiftType}\n`;
+            if (quotationData.daysPerWeek) msgText += `Days per week: ${quotationData.daysPerWeek} days\n`;
+            if (quotationData.startDate) msgText += `Proposed start: ${new Date(quotationData.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}\n`;
+            if (quotationData.duration) msgText += `Duration: ${quotationData.duration}\n`;
+            
+            msgText += `Rate (full month): ₹${quotationData.completeMonthRate} / day\n`;
+            msgText += `Rate (partial month): ₹${quotationData.incompleteMonthRate} / day\n`;
+            if (quotationData.deposit) msgText += `Deposit: ₹${quotationData.deposit}\n`;
+            
+            msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal} / mo*\n\n`;
+            
+            if (quotationData.inclusions && quotationData.inclusions.length > 0) {
+                msgText += `*What is included*\n${quotationData.inclusions.join(', ')}\n\n`;
+            }
+            
+            msgText += `We can customise the hours or services to better suit your family's needs — just reply here and we'll adjust the quote.\n`;
+
+            if (quotationData.validUntil) {
+                msgText += `_This quote is valid until ${new Date(quotationData.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}_`;
+            }
+
             // Meta Utility templates don't allow newlines in variables. 
             // We'll use a separator for the template version, but keep the original for the log.
             const sanitizedMsg = msgText.replace(/\n+/g, ' | ');
