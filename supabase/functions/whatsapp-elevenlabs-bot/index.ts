@@ -676,10 +676,33 @@ serve(async (req) => {
             }
         }
 
+        // --- INTERCEPT QUESTIONS ---
+        if (earlyLead?.needs_attention === true) {
+            const supportMsg = `Our 99 team will contact you shortly for this and resolve all your issues 🙏`;
+            const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
+            
+            // Loop prevention: only send it once
+            if (lastAssistantMsg?.content !== supportMsg) {
+                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ messaging_product: "whatsapp", to: purePhone, type: "text", text: { body: supportMsg } })
+                    });
+                }
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: supportMsg }]);
+                await supabase.from('whatsapp_logs').update({
+                    status: 'success', payload: { type: 'support_reply', message: supportMsg, original_recipient: fromPhone }
+                }).eq('sid', wamid);
+            }
+            
+            // Stay silent on subsequent messages until staff steps in
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
         const scriptedReply = STAGE_SCRIPTS[leadStage];
 
-        // Do NOT send stage scripts if the lead just clicked "Ask a question" and is waiting for a reply
-        if (scriptedReply && earlyLead?.needs_attention !== true) {
+        if (scriptedReply) {
             // Check if we already sent this exact scripted reply as the last message
             const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
 

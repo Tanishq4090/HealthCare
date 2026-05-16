@@ -1443,20 +1443,18 @@ export default function CRM() {
                 throw new Error(data.error || 'Meta API rejected the message.');
             }
 
-            // 3. Log Activity
+            // 3. Log Activity (stage is NOT changed here — it stays 'In Discussion'
+            //    until the lead accepts the quote via WhatsApp or admin clicks 'Quotation Approved')
             await logActivity(
                 quotationTargetLead.id,
                 'quotation_sent',
                 `Quotation dispatched via WhatsApp: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
             );
 
-            // 5. Update Lead Value and Stage in DB
+            // 5. Update Lead Value in DB
             await supabase
                 .from('crm_leads')
-                .update({ 
-                    monthly_value: quotationData.estimatedTotal,
-                    pipeline_stage: 'Quotation Sent'
-                })
+                .update({ monthly_value: quotationData.estimatedTotal })
                 .eq('id', quotationTargetLead.id);
 
             // 6. Auto-populate Service + Shift into notes so bubbles show on card
@@ -1480,8 +1478,7 @@ export default function CRM() {
                 setSelectedInspectorLead((prev: any) => ({ 
                     ...prev, 
                     monthly_value: quotationData.estimatedTotal, 
-                    notes: updatedNotes,
-                    pipeline_stage: 'Quotation Sent' 
+                    notes: updatedNotes
                 }));
                 fetchLeadActivity(quotationTargetLead.id);
             }
