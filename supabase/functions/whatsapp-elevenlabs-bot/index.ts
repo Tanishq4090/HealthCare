@@ -387,7 +387,7 @@ serve(async (req) => {
         // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
         const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id, pipeline_stage, name')
+            .select('id, pipeline_stage, name, needs_attention')
             .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(1);
