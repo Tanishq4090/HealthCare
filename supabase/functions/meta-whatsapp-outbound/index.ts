@@ -159,6 +159,17 @@ serve(async (req) => {
           });
       }
 
+      // Ensure post_call_intake and staff_assignment always have exactly 3 parameters to prevent Meta API Error 132000
+      if (templateName === "post_call_intake" || templateName === "staff_assignment" || !templateName) {
+          const safeDefaults = ['there', 'Home Healthcare', 'General'];
+          while (parameters.length < 3) {
+              parameters.push({
+                  type: "text",
+                  text: safeDefaults[parameters.length]
+              });
+          }
+      }
+
       const components: any[] = [];
       
       if (parameters.length > 0) {
