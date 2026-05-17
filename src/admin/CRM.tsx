@@ -3688,14 +3688,16 @@ export default function CRM() {
                                                     .limit(1)
                                                     .maybeSingle();
 
-                                                let flowData = {};
+                                                let flowData: any = {
+                                                    patient_name: selectedInspectorLead.name || '',
+                                                    contact_number: (selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '').replace(/\D/g, '')
+                                                };
                                                 if (latestQuote) {
                                                     flowData = {
-                                                        service: latestQuote.service_name,
-                                                        shift: latestQuote.shift_type,
-                                                        monthly_rate: latestQuote.estimated_monthly_total?.toString(),
-                                                        duration: latestQuote.duration,
-                                                        deposit: latestQuote.deposit?.toString()
+                                                        ...flowData,
+                                                        service_category: latestQuote.service_category || latestQuote.service_name || '',
+                                                        offered_time: latestQuote.shift_type || '',
+                                                        service_start_date: latestQuote.start_date ? latestQuote.start_date.split('T')[0] : ''
                                                     };
                                                 }
                                                 
