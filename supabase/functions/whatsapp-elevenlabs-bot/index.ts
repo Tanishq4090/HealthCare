@@ -61,7 +61,7 @@ serve(async (req) => {
         if (!contact) return new Response('EVENT_RECEIVED', { status: 200 });
 
         const fromPhone = contact.wa_id;
-        const purePhone = fromPhone.trim();
+        const purePhone = fromPhone.replace(/\D/g, ''); // strict numeric only
         const last10 = purePhone.slice(-10);
         const wamid = incomingMsg.id;
 
@@ -394,83 +394,8 @@ serve(async (req) => {
         const earlyLead = earlyLeads?.[0] ?? null;
         console.log(`[CRM] Lead Lookup: ${earlyLead ? earlyLead.id + ' (' + earlyLead.pipeline_stage + ')' : 'None found for ' + purePhone}`);
 
-        // --- 10. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
-        if (!earlyLead) {
-            // Upsert into CRM leads immediately so they show up on Kanban
-            await supabase.from('crm_leads').insert([{ 
-                name: contact?.profile?.name || 'Unknown Lead',
-                whatsapp_number: purePhone,
-                source: 'WhatsApp Chat',
-                pipeline_stage: 'New Inquiry',
-                status: 'new'
-            }]);
-
-            if (META_SYSTEM_TOKEN && META_PHONE_ID && WHATSAPP_FLOW_ID) {
-                // Send native WhatsApp Flow form
-                const flowMessage = {
-                    messaging_product: "whatsapp",
-                    to: purePhone,
-                    type: "interactive",
-                    interactive: {
-                        type: "flow",
-                        header: { type: "text", text: "Welcome to 99 Care! 👋" },
-                        body: { text: "Namaste! 🙏 I'm Khushi. To get the best care for your loved ones, please fill in a few quick details and our team will prepare your personalised quotation right away!" },
-                        footer: { text: "Trusted by families across Surat" },
-                        action: {
-                            name: "flow",
-                            parameters: {
-                                flow_message_version: "3",
-                                flow_token: `intake_${purePhone}_${Date.now()}`,
-                                flow_id: WHATSAPP_FLOW_ID,
-                                flow_cta: "Fill Service Details 📋",
-                                flow_action: "navigate",
-                                flow_action_payload: { screen: "INTAKE_FORM" }
-                            }
-                        }
-                    }
-                };
-
-                const flowRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(flowMessage)
-                });
-
-                if (!flowRes.ok) {
-                    const flowErr = await flowRes.text();
-                    console.error(`[Flow Message Error] ${flowRes.status}: ${flowErr}`);
-                } else {
-                    console.log(`[Flow] Sent intake form to ${purePhone}`);
-                }
-
-                const welcomeText = "Namaste! 🙏 Please tap the button above to fill in your service details. It only takes 30 seconds!";
-                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: welcomeText }]);
-                await supabase.from('whatsapp_logs').update({
-                    status: 'success',
-                    payload: { type: 'flow_sent', original_recipient: fromPhone }
-                }).eq('sid', wamid);
-
-                return new Response('EVENT_RECEIVED', { status: 200 });
-            } else {
-                // Fallback: structured text prompt (if FLOW_ID not yet set)
-                const fallbackMsg = `Namaste! 🙏 I'm Khushi from 99 Care Home Healthcare Services, Surat.\n\nPlease reply with your details in this format:\n\n*Name | Service | City & Area | Shift (10hr/24hr) | Care for*\n\nExample:\nRajesh Patel | Old Age Care | Surat, Vesu | 10hr | Mother\n\nWe'll prepare your quotation right away! 😊✨`;
-                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
-                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ messaging_product: "whatsapp", to: purePhone, type: "text", text: { body: fallbackMsg } })
-                    });
-                }
-                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: fallbackMsg }]);
-                await supabase.from('whatsapp_logs').update({
-                    status: 'success', payload: { type: 'ai_response', message: fallbackMsg, original_recipient: fromPhone }
-                }).eq('sid', wamid);
-                return new Response('EVENT_RECEIVED', { status: 200 });
-            }
-        }
-
         // --- 8.5. QUOTATION QUICK-REPLY HANDLER ---
-        // Intercept the three buttons from the quote_client_v2 template before hitting stage scripts.
+        // Intercept the three buttons from the quote_client_v2 template before hitting stage scripts or new lead fallback.
         const rawBodyLower = rawBody.toLowerCase().trim();
         const isAcceptQuote = rawBodyLower === 'accept this quote';
         const isAskQuestion = rawBodyLower === 'ask a question';
@@ -623,6 +548,82 @@ serve(async (req) => {
 
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
+
+        // --- 10. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
+        if (!earlyLead) {
+            // Upsert into CRM leads immediately so they show up on Kanban
+            await supabase.from('crm_leads').insert([{ 
+                name: contact?.profile?.name || 'Unknown Lead',
+                whatsapp_number: purePhone,
+                source: 'WhatsApp Chat',
+                pipeline_stage: 'New Inquiry',
+                status: 'new'
+            }]);
+
+            if (META_SYSTEM_TOKEN && META_PHONE_ID && WHATSAPP_FLOW_ID) {
+                // Send native WhatsApp Flow form
+                const flowMessage = {
+                    messaging_product: "whatsapp",
+                    to: purePhone,
+                    type: "interactive",
+                    interactive: {
+                        type: "flow",
+                        header: { type: "text", text: "Welcome to 99 Care! 👋" },
+                        body: { text: "Namaste! 🙏 I'm Khushi. To get the best care for your loved ones, please fill in a few quick details and our team will prepare your personalised quotation right away!" },
+                        footer: { text: "Trusted by families across Surat" },
+                        action: {
+                            name: "flow",
+                            parameters: {
+                                flow_message_version: "3",
+                                flow_token: `intake_${purePhone}_${Date.now()}`,
+                                flow_id: WHATSAPP_FLOW_ID,
+                                flow_cta: "Fill Service Details 📋",
+                                flow_action: "navigate",
+                                flow_action_payload: { screen: "INTAKE_FORM" }
+                            }
+                        }
+                    }
+                };
+
+                const flowRes = await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(flowMessage)
+                });
+
+                if (!flowRes.ok) {
+                    const flowErr = await flowRes.text();
+                    console.error(`[Flow Message Error] ${flowRes.status}: ${flowErr}`);
+                } else {
+                    console.log(`[Flow] Sent intake form to ${purePhone}`);
+                }
+
+                const welcomeText = "Namaste! 🙏 Please tap the button above to fill in your service details. It only takes 30 seconds!";
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: welcomeText }]);
+                await supabase.from('whatsapp_logs').update({
+                    status: 'success',
+                    payload: { type: 'flow_sent', original_recipient: fromPhone }
+                }).eq('sid', wamid);
+
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            } else {
+                // Fallback: structured text prompt (if FLOW_ID not yet set)
+                const fallbackMsg = `Namaste! 🙏 I'm Khushi from 99 Care Home Healthcare Services, Surat.\n\nPlease reply with your details in this format:\n\n*Name | Service | City & Area | Shift (10hr/24hr) | Care for*\n\nExample:\nRajesh Patel | Old Age Care | Surat, Vesu | 10hr | Mother\n\nWe'll prepare your quotation right away! 😊✨`;
+                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ messaging_product: "whatsapp", to: purePhone, type: "text", text: { body: fallbackMsg } })
+                    });
+                }
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: fallbackMsg }]);
+                await supabase.from('whatsapp_logs').update({
+                    status: 'success', payload: { type: 'ai_response', message: fallbackMsg, original_recipient: fromPhone }
+                }).eq('sid', wamid);
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+        }
+
 
         // --- 9. STAGE-SCRIPTED RESPONSES ---
 
