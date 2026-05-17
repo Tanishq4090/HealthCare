@@ -1,9 +1,9 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
-import "https://deno.land/std@0.190.0/dotenv/load.ts";
+const { createClient } = require("@supabase/supabase-js");
+require("dotenv").config();
 
 const supabase = createClient(
-  Deno.env.get("VITE_SUPABASE_URL") || "",
-  Deno.env.get("VITE_SUPABASE_ANON_KEY") || "" 
+  process.env.VITE_SUPABASE_URL || "",
+  process.env.VITE_SUPABASE_ANON_KEY || ""
 );
 
 async function checkDB() {
