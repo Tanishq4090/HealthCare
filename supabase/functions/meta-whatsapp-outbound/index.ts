@@ -182,6 +182,7 @@ serve(async (req) => {
               type: "action",
               action: {
                 flow_token: `flow_${digits}_${Date.now()}`,
+                flow_id: FLOW_ID,
                 flow_action_data: {
                   screen: initialScreen,
                   ...(flowData || {})
@@ -207,21 +208,24 @@ serve(async (req) => {
       };
     }
 
-    const metaUrl = `https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`;
-    console.log(`[Outbound] Sending to ${digits} | template=${templateName || 'none'} | useTemplate=${useTemplate}`);
-    console.log(`[Outbound] Meta Body:`, JSON.stringify(metaBody).slice(0, 500));
-    
-    const metaResponse = await fetch(metaUrl, {
-      method: 'POST',
+    console.log(`[Meta] Dispatching to ${digits} using template: ${templateName || 'None'}`);
+    console.log(`[Meta] Payload: ${JSON.stringify(metaBody, null, 2)}`);
+
+    const response = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${META_SYSTEM_TOKEN}`,
-        'Content-Type': 'application/json',
+        "Authorization": `Bearer ${META_SYSTEM_TOKEN}`,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(metaBody)
+      body: JSON.stringify(metaBody),
     });
 
-    const metaData = await metaResponse.json();
-    console.log(`[Outbound] Meta HTTP ${metaResponse.status} | Response:`, JSON.stringify(metaData).slice(0, 500));
+    const resText = await response.text();
+    console.log(`[Meta] Response Status: ${response.status}`);
+    console.log(`[Meta] Response Body: ${resText}`);
+
+    let metaData: any = {};
+    try { metaData = JSON.parse(resText); } catch(e) {}
     
     // ── Thorough error detection ──────────────────────────────────────────
     // Meta can return errors in multiple ways:
@@ -230,7 +234,7 @@ serve(async (req) => {
     // 3. HTTP 200 but missing 'messages' array (template rejected/paused)
     const metaError = metaData.error;
     const hasMessages = metaData.messages && metaData.messages.length > 0;
-    const isActualSuccess = metaResponse.ok && hasMessages && !metaError;
+    const isActualSuccess = response.ok && hasMessages && !metaError;
 
     if (isActualSuccess) {
         const wamid = metaData.messages[0].id;
@@ -266,7 +270,7 @@ serve(async (req) => {
         // Build a clear error message for the CRM
         const errorMsg = metaError 
             ? `Meta API Error ${metaError.code || ''}: ${metaError.message || metaError.error_data?.details || 'Unknown error'}` 
-            : `Meta returned HTTP ${metaResponse.status} without a message ID. Template may be paused or rejected.`;
+            : `Meta returned HTTP ${response.status} without a message ID. Template may be paused or rejected.`;
         
         console.error(`[Outbound] DELIVERY FAILED: ${errorMsg}`);
 
@@ -274,7 +278,7 @@ serve(async (req) => {
         await supabase.from('whatsapp_logs').insert({
             sid: `error_${digits}_${Date.now()}`,
             status: 'failed',
-            error_code: metaError?.code?.toString() || metaResponse.status.toString(),
+            error_code: metaError?.code?.toString() || response.status.toString(),
             error_message: errorMsg,
             payload: { 
                 meta_response: metaData,
@@ -291,7 +295,7 @@ serve(async (req) => {
             success: false, 
             error: errorMsg,
             meta_error_code: metaError?.code,
-            meta_status: metaResponse.status 
+            meta_status: response.status 
         }), {
           status: 200, // Return 200 to avoid Supabase edge function errors, but success: false
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
