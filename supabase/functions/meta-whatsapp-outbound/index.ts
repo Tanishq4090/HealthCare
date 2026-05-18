@@ -179,7 +179,7 @@ serve(async (req) => {
               {
                 type: "image",
                 image: {
-                  link: "https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png"
+                  link: "https://raw.githubusercontent.com/Tanishq4090/HealthCare/main/public/hero-appointment.png"
                 }
               }
             ]
