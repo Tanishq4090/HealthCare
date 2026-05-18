@@ -3154,12 +3154,14 @@ export default function CRM() {
                                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                                         <Edit3 className="w-4 h-4 text-primary" /> {isEditingTemplate ? 'Edit Default Template' : 'Review Editable Draft'}
                                     </label>
-                                    <button
-                                        onClick={() => setIsEditingTemplate(!isEditingTemplate)}
-                                        className="text-xs font-semibold text-[#1AA6A8] hover:text-[#1AA6A8] transition-colors"
-                                    >
-                                        {isEditingTemplate ? 'Back to Draft View' : '⚙️ Edit Default Template'}
-                                    </button>
+                                    {agentTargetAction !== 'deposit' && agentTargetAction !== 'consent' && (
+                                        <button
+                                            onClick={() => setIsEditingTemplate(!isEditingTemplate)}
+                                            className="text-xs font-semibold text-[#1AA6A8] hover:text-[#1AA6A8] transition-colors"
+                                        >
+                                            {isEditingTemplate ? 'Back to Draft View' : '⚙️ Edit Default Template'}
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="relative">
                                     {agentTargetAction === 'consent' && !isEditingTemplate ? (
@@ -3199,36 +3201,16 @@ export default function CRM() {
                                                 <FileText className="w-4 h-4 text-[#1AA6A8]" />
                                                 <span className="text-xs font-bold text-slate-700">Invoice Details (Auto-generated PDF)</span>
                                             </div>
-                                            <div className="grid grid-cols-3 gap-3">
+                                            <div className="grid grid-cols-2 gap-3">
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Deposit Amount (₹)</label>
                                                     <input 
                                                         type="number" 
                                                         value={invoiceDepositAmount} 
                                                         onChange={e => setInvoiceDepositAmount(e.target.value)} 
-                                                        className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
                                                         placeholder={agentTargetLead?.quoted_monthly_rate || '15000'} 
                                                     />
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <div className="flex-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Start Date</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={invoiceStartDate} 
-                                                            onChange={e => setInvoiceStartDate(e.target.value)} 
-                                                            className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
-                                                        />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={invoiceEndDate} 
-                                                            onChange={e => setInvoiceEndDate(e.target.value)} 
-                                                            className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
-                                                        />
-                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Due Date</label>
@@ -3236,7 +3218,25 @@ export default function CRM() {
                                                         type="date" 
                                                         value={invoiceDueDate} 
                                                         onChange={e => setInvoiceDueDate(e.target.value)} 
-                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Start Date</label>
+                                                    <input 
+                                                        type="date" 
+                                                        value={invoiceStartDate} 
+                                                        onChange={e => setInvoiceStartDate(e.target.value)} 
+                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
+                                                    <input 
+                                                        type="date" 
+                                                        value={invoiceEndDate} 
+                                                        onChange={e => setInvoiceEndDate(e.target.value)} 
+                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
                                                     />
                                                 </div>
                                             </div>
