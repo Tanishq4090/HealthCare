@@ -179,7 +179,7 @@ serve(async (req) => {
               {
                 type: "image",
                 image: {
-                  link: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=600&q=80"
+                  link: "https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png"
                 }
               }
             ]
