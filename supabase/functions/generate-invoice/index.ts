@@ -91,17 +91,47 @@ serve(async (req) => {
         const dueDate      = fmt(due);
         const currentMonthYear = `${fullMonthNames[now.getMonth()]}(${now.getFullYear()})`;
 
+        // Parse structured data from notes if it exists
+        const notesStr = lead.notes || '';
+        const serviceMatch = notesStr.match(/^Service:\s*(.+)$/im);
+        const shiftMatch   = notesStr.match(/^Shift:\s*(.+)$/im);
+        const locMatch     = notesStr.match(/^Location:\s*(.+)$/im);
+
+        const extractedService = serviceMatch ? serviceMatch[1].trim() : 'OLD AGE CARE';
+        const extractedShift   = shiftMatch ? shiftMatch[1].trim() : '24';
+        const extractedLocation = locMatch ? locMatch[1].trim() : '';
+
         const clientName   = lead.name || 'Client';
         const clientPhone  = lead.phone || lead.whatsapp_number || '';
-        const clientCity   = lead.city || '';
+        
         const amount       = Number(deposit_amount || lead.quoted_monthly_rate || 15000);
         
-        const rawShift = lead.shift_duration ? lead.shift_duration.toString().toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() : '24';
+        const rawShift = extractedShift.toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() || '24';
         const shift = `${rawShift}HRS`;
-        const serviceType = lead.service_interest || 'OLD AGE CARE';
-        const service      = `${shift} (${serviceType.toUpperCase()})`;
+        const service      = `${shift} (${extractedService.toUpperCase()})`;
         
         const servicePeriod = service_period || 'As agreed';
+        
+        // Calculate number of days from servicePeriod (Format: "DD/MM/YYYY To DD/MM/YYYY")
+        let numberOfDays = 1;
+        try {
+            if (servicePeriod.includes(' To ')) {
+                const [startStr, endStr] = servicePeriod.split(' To ');
+                const parseDate = (dStr: string) => {
+                    const [d, m, y] = dStr.split('/');
+                    return new Date(Number(y), Number(m) - 1, Number(d));
+                };
+                const sDate = parseDate(startStr);
+                const eDate = parseDate(endStr);
+                if (!isNaN(sDate.getTime()) && !isNaN(eDate.getTime())) {
+                    const diffTime = Math.abs(eDate.getTime() - sDate.getTime());
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive
+                    if (diffDays > 0) numberOfDays = diffDays;
+                }
+            }
+        } catch (e) {
+            // Ignore parse errors, fallback to 1
+        }
         
         const amountStr    = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const amountWords  = `INR ${numberToWordsINR(amount)} Rupees Only.`;
@@ -193,7 +223,7 @@ serve(async (req) => {
         }
         
         // Add full address
-        const fullAddress = [lead.address, lead.city].filter(Boolean).join(', ') || 'Address not provided';
+        const fullAddress = extractedLocation || 'Address not provided';
         // Wrap address if it's too long
         const wrapAddress = (text: string, maxWidth: number) => {
             const words = text.split(' ');
@@ -369,7 +399,7 @@ serve(async (req) => {
         const rawNoteLines = [
             `Thank you So much for appoint us.`,
             `We 99 care is part of 99FAS companies based on Services provider entities. Where we can supply all Building and maintenance related work. In our 99CARE we provide best care taker and nursing services at home.`,
-            `${amountStr}/- paid in advanced before work start for more than 1 days' work. And all bill has to paid on timely based. Advanced Will Settled in Last final bill.`,
+            `${amountStr}/- paid in advanced before work start for more than ${numberOfDays} days' work. And all bill has to paid on timely based. Advanced Will Settled in Last final bill.`,
             `Please Rate us, your one vote is very important and precious for us.`,
             ``,
             `Falguni(Co-Founder)`,
