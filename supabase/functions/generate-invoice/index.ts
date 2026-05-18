@@ -133,22 +133,25 @@ serve(async (req) => {
         let curY = H - 50;
 
         // ── 1. HEADER (Logo left, Company Right) ────────────────
+        let taxInvoiceYOffset = 70;
         if (logoBuf) {
             try {
                 const logoImg = await pdfDoc.embedPng(logoBuf);
-                const logoDims = logoImg.scaleToFit(320, 100);
+                // Make logo significantly bigger
+                const logoDims = logoImg.scaleToFit(220, 220); 
                 page.drawImage(logoImg, {
                     x: 40,
-                    y: curY - logoDims.height + 25,
+                    y: curY - logoDims.height + 20,
                     width: logoDims.width,
                     height: logoDims.height
                 });
+                taxInvoiceYOffset = Math.max(70, logoDims.height - 5);
             } catch (e) {
                 page.drawText('99 CARE', { x: 40, y: curY - 20, size: 24, font: bold, color: BLUE });
             }
         }
         
-        page.drawText('TAX INVOICE', { x: 40, y: curY - 70, size: 14, font: bold, color: DARK });
+        page.drawText('TAX INVOICE', { x: 40, y: curY - taxInvoiceYOffset, size: 14, font: bold, color: DARK });
 
         // Company Info (Right)
         const cRightX = W - 40;
@@ -179,7 +182,8 @@ serve(async (req) => {
         page.drawText(clientName, { x: 40, y: curY, size: 12, font: bold, color: DARK });
         curY -= 14;
         if (clientPhone) {
-            page.drawText(`Ph: ${clientPhone}`, { x: 40, y: curY, size: 10, font: regular, color: DARK });
+            let formattedPhone = clientPhone.toString().replace(/^\+?91\s*/, '');
+            page.drawText(`Ph: +91 ${formattedPhone}`, { x: 40, y: curY, size: 10, font: regular, color: DARK });
             curY -= 14;
         }
         if (clientCity) {
