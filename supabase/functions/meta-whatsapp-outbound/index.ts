@@ -172,6 +172,20 @@ serve(async (req) => {
 
       const components: any[] = [];
       
+      if (templateName === "deposit_request") {
+          components.push({
+            type: "header",
+            parameters: [
+              {
+                type: "image",
+                image: {
+                  link: "https://framerusercontent.com/images/kpv1s2qVn6S7Z8I9w0a1b2c3d.png"
+                }
+              }
+            ]
+          });
+      }
+
       if (parameters.length > 0) {
           components.push({
             type: "body",

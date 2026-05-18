@@ -8,24 +8,25 @@ const supabase = createClient(
 );
 
 async function checkLogs() {
-  console.log("=== RECENT CONSENT FORM LOGS ===");
+  console.log("=== RECENT DEPOSIT REQUEST LOGS ===");
   const { data: logs, error: logsErr } = await supabase
     .from('whatsapp_logs')
     .select('*')
-    .filter('payload->>templateName', 'eq', 'consent_form')
+    .filter('payload->>templateName', 'eq', 'deposit_request')
     .order('created_at', { ascending: false })
     .limit(5);
   
   if (logsErr) console.error("Logs error:", logsErr);
   console.log(JSON.stringify(logs, null, 2));
 
-  console.log("\n=== ALL RECENT LOGS ===");
-  const { data: allLogs } = await supabase
+  console.log("\n=== ALL RECENT FAILED LOGS ===");
+  const { data: failedLogs } = await supabase
     .from('whatsapp_logs')
     .select('*')
+    .filter('status', 'eq', 'failed')
     .order('created_at', { ascending: false })
     .limit(5);
-  console.log(JSON.stringify(allLogs, null, 2));
+  console.log(JSON.stringify(failedLogs, null, 2));
 }
 
 checkLogs();
