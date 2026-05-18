@@ -312,7 +312,8 @@ export default function CRM() {
     const [templateDraftText, setTemplateDraftText] = useState('');
     const [quotationVars, setQuotationVars] = useState({ v1: '', v2: '', v3: '', v4: '' });
     const [invoiceDepositAmount, setInvoiceDepositAmount] = useState('');
-    const [invoiceServicePeriod, setInvoiceServicePeriod] = useState('');
+    const [invoiceStartDate, setInvoiceStartDate] = useState('');
+    const [invoiceEndDate, setInvoiceEndDate] = useState('');
     
     // Service Period Modal State
     const [isServicePeriodOpen, setIsServicePeriodOpen] = useState(false);
@@ -1575,6 +1576,17 @@ export default function CRM() {
 
             if (agentTargetAction === 'deposit') {
                 toast.loading("Generating PDF Invoice...", { id: toastId });
+                
+                const formatDateStr = (dateStr: string) => {
+                    if (!dateStr) return '';
+                    const [y, m, d] = dateStr.split('-');
+                    return `${d}/${m}/${y}`;
+                };
+
+                const formattedPeriod = (invoiceStartDate && invoiceEndDate)
+                    ? `${formatDateStr(invoiceStartDate)} To ${formatDateStr(invoiceEndDate)}`
+                    : 'As agreed';
+
                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                     method: 'POST',
                     headers: {
@@ -1584,7 +1596,7 @@ export default function CRM() {
                     body: JSON.stringify({
                         lead_id: agentTargetLead?.id,
                         deposit_amount: invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000,
-                        service_period: invoiceServicePeriod || 'As agreed'
+                        service_period: formattedPeriod
                     })
                 });
 
@@ -3196,15 +3208,25 @@ export default function CRM() {
                                                         placeholder={agentTargetLead?.quoted_monthly_rate || '15000'} 
                                                     />
                                                 </div>
-                                                <div>
-                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Service Period</label>
-                                                    <input 
-                                                        type="text" 
-                                                        value={invoiceServicePeriod} 
-                                                        onChange={e => setInvoiceServicePeriod(e.target.value)} 
-                                                        className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
-                                                        placeholder="e.g. 01/05/26 - 15/05/26" 
-                                                    />
+                                                <div className="flex gap-2">
+                                                    <div className="flex-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Start Date</label>
+                                                        <input 
+                                                            type="date" 
+                                                            value={invoiceStartDate} 
+                                                            onChange={e => setInvoiceStartDate(e.target.value)} 
+                                                            className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                        />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
+                                                        <input 
+                                                            type="date" 
+                                                            value={invoiceEndDate} 
+                                                            onChange={e => setInvoiceEndDate(e.target.value)} 
+                                                            className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                        />
+                                                    </div>
                                                 </div>
                                             </div>
                                             <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
