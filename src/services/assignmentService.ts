@@ -47,10 +47,11 @@ function generateToken(): string {
 
 /** Constructs the public-facing ID card shareable URL. */
 export function buildShareableUrl(token: string): string {
+  // Always prefer the explicit production URL env var, so WhatsApp links
+  // are never localhost even when sent from a dev machine.
   const base =
-    typeof window !== 'undefined'
-      ? window.location.origin
-      : (import.meta.env.VITE_APP_URL ?? 'https://your-domain.com');
+    import.meta.env.VITE_APP_URL?.replace(/\/$/, '') ??
+    (typeof window !== 'undefined' ? window.location.origin : 'https://health-care-iota-red.vercel.app');
   return `${base}/id-card/${token}`;
 }
 
