@@ -195,7 +195,7 @@ serve(async (req) => {
                 flow_token: `flow_${digits}_${Date.now()}`,
                 flow_action_data: {
                   screen: initialScreen,
-                  data: flowData || {}
+                  ...(flowData || {})
                 }
               }
             }

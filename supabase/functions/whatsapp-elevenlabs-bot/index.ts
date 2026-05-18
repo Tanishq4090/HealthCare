@@ -488,7 +488,7 @@ serve(async (req) => {
                                                 flow_token: `consent_${purePhone}_${Date.now()}`,
                                                 flow_action_data: { 
                                                     screen: "CONSENT_SCREEN",
-                                                    data: prefillData
+                                                    ...prefillData
                                                 }
                                             }
                                         }]
