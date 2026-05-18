@@ -1575,7 +1575,7 @@ export default function CRM() {
 
             let invoicePdfUrl = null;
 
-            if (agentTargetAction === 'deposit') {
+            if (agentTargetAction === 'deposit' || agentTargetAction === 'billing') {
                 toast.loading("Generating PDF Invoice...", { id: toastId });
                 
                 const formatDateStr = (dateStr: string) => {
@@ -1623,14 +1623,15 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
-                    sendInvoicePdf: agentTargetAction === 'deposit',
+                    sendInvoicePdf: agentTargetAction === 'deposit' || agentTargetAction === 'billing',
                     invoicePdfUrl: invoicePdfUrl,
-                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
+                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'billing' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'post_call_intake' 
                                   : (agentTargetAction === 'quotation' ? 'quote_client_v2' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
-                                  : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
+                                  : (agentTargetAction === 'billing' ? 'deposit_request' 
+                                  : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined))))),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [finalLogMessage.replace(/\n+/g, ' | ')] 
                                     : agentTargetAction === 'staff'
@@ -1639,7 +1640,7 @@ export default function CRM() {
                                         selectedWorker?.job_title || 'Care Staff',
                                         assignmentResult?.shareableUrl || ''
                                       ]
-                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' ? [(agentTargetLead?.name || 'there')] : undefined),
+                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there')] : undefined),
                 })
             });
 
@@ -3154,7 +3155,7 @@ export default function CRM() {
                                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                                         <Edit3 className="w-4 h-4 text-primary" /> {isEditingTemplate ? 'Edit Default Template' : 'Review Editable Draft'}
                                     </label>
-                                    {agentTargetAction !== 'deposit' && agentTargetAction !== 'consent' && (
+                                    {agentTargetAction !== 'deposit' && agentTargetAction !== 'consent' && agentTargetAction !== 'billing' && (
                                         <button
                                             onClick={() => setIsEditingTemplate(!isEditingTemplate)}
                                             className="text-xs font-semibold text-[#1AA6A8] hover:text-[#1AA6A8] transition-colors"
@@ -3195,7 +3196,7 @@ export default function CRM() {
                                                 <input type="text" value={quotationVars.v4} onChange={e => setQuotationVars({...quotationVars, v4: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 1,500/day" />
                                             </div>
                                         </div>
-                                    ) : agentTargetAction === 'deposit' && !isEditingTemplate ? (
+                                    ) : (agentTargetAction === 'deposit' || agentTargetAction === 'billing') && !isEditingTemplate ? (
                                         <div className="space-y-3 bg-white p-4 rounded-xl border border-[#1AA6A8]/20 shadow-sm relative z-10 w-full mb-6">
                                             <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
                                                 <FileText className="w-4 h-4 text-[#1AA6A8]" />
@@ -3203,7 +3204,9 @@ export default function CRM() {
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
-                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Deposit Amount (₹)</label>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">
+                                                        {agentTargetAction === 'billing' ? 'Billing Amount (₹)' : 'Deposit Amount (₹)'}
+                                                    </label>
                                                     <input 
                                                         type="number" 
                                                         value={invoiceDepositAmount} 
