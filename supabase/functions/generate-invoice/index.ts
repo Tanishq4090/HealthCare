@@ -110,7 +110,7 @@ serve(async (req) => {
 
         const [logoBuf, qrBuf, sigBuf] = await Promise.all([
             fetchImage('99care-logo.png'),
-            fetchImage('payment-qr.jpeg'),
+            fetchImage('payment-qr.JPG'),
             fetchImage('Signature.png')
         ]);
 
@@ -136,10 +136,10 @@ serve(async (req) => {
         if (logoBuf) {
             try {
                 const logoImg = await pdfDoc.embedPng(logoBuf);
-                const logoDims = logoImg.scaleToFit(250, 80);
+                const logoDims = logoImg.scaleToFit(320, 100);
                 page.drawImage(logoImg, {
                     x: 40,
-                    y: curY - logoDims.height + 15,
+                    y: curY - logoDims.height + 25,
                     width: logoDims.width,
                     height: logoDims.height
                 });
@@ -280,9 +280,14 @@ serve(async (req) => {
         if (qrBuf) {
             try {
                 const qrImg = await pdfDoc.embedJpg(qrBuf);
-                page.drawImage(qrImg, { x: 40, y: btmY - 95, width: 85, height: 85 });
+                page.drawImage(qrImg, { x: 40, y: btmY - 110, width: 100, height: 100 });
             } catch (e) {
-                // Ignore if QR fails to load
+                try {
+                    const qrImgPng = await pdfDoc.embedPng(qrBuf);
+                    page.drawImage(qrImgPng, { x: 40, y: btmY - 110, width: 100, height: 100 });
+                } catch (e2) {
+                    // Ignore if QR fails to load
+                }
             }
         }
 
@@ -327,7 +332,7 @@ serve(async (req) => {
         page.drawText(authText, { x: W - 40 - authW, y: btmY - 90, size: 8, font: regular, color: DARK });
 
         // ── 6. NOTES SECTION ────────────────────────────────────
-        curY = btmY - 120;
+        curY = btmY - 135;
         page.drawText('Notes:', { x: 40, y: curY, size: 9, font: bold, color: DARK });
         curY -= 14;
         page.drawText(currentMonthYear, { x: 40, y: curY, size: 9, font: regular, color: DARK });
@@ -335,12 +340,10 @@ serve(async (req) => {
         page.drawText(servicePeriod, { x: 40, y: curY, size: 9, font: regular, color: DARK });
         curY -= 20;
 
-        const noteLines = [
+        const rawNoteLines = [
             `Thank you So much for appoint us.`,
-            `We 99 care is part of 99FAS companies based on Services provider entities. Where we can supply all Building and maintenance related work. In`,
-            `our 99CARE we provide best care taker and nursing services at home.`,
-            `${amountStr}/- paid in advanced before work start for more than 1 days' work. And all bill has to paid on timely based. Advanced Will Settled in Last`,
-            `final bill.`,
+            `We 99 care is part of 99FAS companies based on Services provider entities. Where we can supply all Building and maintenance related work. In our 99CARE we provide best care taker and nursing services at home.`,
+            `${amountStr}/- paid in advanced before work start for more than 1 days' work. And all bill has to paid on timely based. Advanced Will Settled in Last final bill.`,
             `Please Rate us, your one vote is very important and precious for us.`,
             ``,
             `Falguni(Co-Founder)`,
@@ -348,7 +351,37 @@ serve(async (req) => {
             `[+91 9016116564]`
         ];
 
-        for (const line of noteLines) {
+        // Text wrapping function
+        const wrapText = (text: string, maxWidth: number, font: any, fontSize: number) => {
+            const words = text.split(' ');
+            let lines = [];
+            let currentLine = words[0];
+
+            for (let i = 1; i < words.length; i++) {
+                const word = words[i];
+                const width = font.widthOfTextAtSize(currentLine + " " + word, fontSize);
+                if (width < maxWidth) {
+                    currentLine += " " + word;
+                } else {
+                    lines.push(currentLine);
+                    currentLine = word;
+                }
+            }
+            lines.push(currentLine);
+            return lines;
+        };
+
+        const wrappedNotes: string[] = [];
+        const maxNoteWidth = W - 80;
+        for (const line of rawNoteLines) {
+            if (line === '') {
+                wrappedNotes.push('');
+            } else {
+                wrappedNotes.push(...wrapText(line, maxNoteWidth, regular, 9));
+            }
+        }
+
+        for (const line of wrappedNotes) {
             page.drawText(line, { x: 40, y: curY, size: 9, font: regular, color: DARK });
             curY -= 12;
         }
