@@ -141,11 +141,11 @@ serve(async (req) => {
                 const logoDims = logoImg.scaleToFit(220, 220); 
                 page.drawImage(logoImg, {
                     x: 40,
-                    y: curY - logoDims.height + 20,
+                    y: curY - logoDims.height + 40, // Moved upwards
                     width: logoDims.width,
                     height: logoDims.height
                 });
-                taxInvoiceYOffset = Math.max(70, logoDims.height - 5);
+                taxInvoiceYOffset = Math.max(70, logoDims.height - 25); // Adjusted gap
             } catch (e) {
                 page.drawText('99 CARE', { x: 40, y: curY - 20, size: 24, font: bold, color: BLUE });
             }
@@ -186,9 +186,26 @@ serve(async (req) => {
             page.drawText(`Ph: +91 ${formattedPhone}`, { x: 40, y: curY, size: 10, font: regular, color: DARK });
             curY -= 14;
         }
-        if (clientCity) {
-            // Using placeholder address structure if actual address is missing
-            page.drawText(clientCity, { x: 40, y: curY, size: 10, font: regular, color: DARK });
+        
+        // Add full address
+        const fullAddress = [lead.address, lead.city].filter(Boolean).join(', ') || 'Address not provided';
+        // Wrap address if it's too long
+        const wrapAddress = (text: string, maxWidth: number) => {
+            const words = text.split(' ');
+            let lines = [];
+            let currentLine = words[0];
+            for (let i = 1; i < words.length; i++) {
+                const word = words[i];
+                const width = regular.widthOfTextAtSize(currentLine + " " + word, 10);
+                if (width < maxWidth) { currentLine += " " + word; } 
+                else { lines.push(currentLine); currentLine = word; }
+            }
+            lines.push(currentLine);
+            return lines;
+        };
+        const addressLines = wrapAddress(fullAddress, 250);
+        for (const line of addressLines) {
+            page.drawText(line, { x: 40, y: curY, size: 10, font: regular, color: DARK });
             curY -= 14;
         }
 
