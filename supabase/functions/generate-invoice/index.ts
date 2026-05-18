@@ -95,7 +95,12 @@ serve(async (req) => {
         const clientPhone  = lead.phone || lead.whatsapp_number || '';
         const clientCity   = lead.city || '';
         const amount       = Number(deposit_amount || lead.quoted_monthly_rate || 15000);
-        const service      = lead.service_interest || '24HRS (OLD AGE CARE)';
+        
+        const rawShift = lead.shift_duration ? lead.shift_duration.toString().toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() : '24';
+        const shift = `${rawShift}HRS`;
+        const serviceType = lead.service_interest || 'OLD AGE CARE';
+        const service      = `${shift} (${serviceType.toUpperCase()})`;
+        
         const servicePeriod = service_period || 'As agreed';
         
         const amountStr    = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

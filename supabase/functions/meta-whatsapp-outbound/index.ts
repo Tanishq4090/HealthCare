@@ -179,7 +179,7 @@ serve(async (req) => {
               {
                 type: "image",
                 image: {
-                  link: "https://sgyladamwnanudnropwl.supabase.co/storage/v1/object/public/invoices/payment-qr.png"
+                  link: "https://sgyladamwnanudnropwl.supabase.co/storage/v1/object/public/invoices/payment-qr.JPG"
                 }
               }
             ]
