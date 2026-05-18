@@ -314,6 +314,7 @@ export default function CRM() {
     const [invoiceDepositAmount, setInvoiceDepositAmount] = useState('');
     const [invoiceStartDate, setInvoiceStartDate] = useState('');
     const [invoiceEndDate, setInvoiceEndDate] = useState('');
+    const [invoiceDueDate, setInvoiceDueDate] = useState('');
     
     // Service Period Modal State
     const [isServicePeriodOpen, setIsServicePeriodOpen] = useState(false);
@@ -1596,7 +1597,8 @@ export default function CRM() {
                     body: JSON.stringify({
                         lead_id: agentTargetLead?.id,
                         deposit_amount: invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000,
-                        service_period: formattedPeriod
+                        service_period: formattedPeriod,
+                        due_date: invoiceDueDate
                     })
                 });
 
@@ -3197,7 +3199,7 @@ export default function CRM() {
                                                 <FileText className="w-4 h-4 text-[#1AA6A8]" />
                                                 <span className="text-xs font-bold text-slate-700">Invoice Details (Auto-generated PDF)</span>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-3">
+                                            <div className="grid grid-cols-3 gap-3">
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Deposit Amount (₹)</label>
                                                     <input 
@@ -3227,6 +3229,15 @@ export default function CRM() {
                                                             className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
                                                         />
                                                     </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Due Date</label>
+                                                    <input 
+                                                        type="date" 
+                                                        value={invoiceDueDate} 
+                                                        onChange={e => setInvoiceDueDate(e.target.value)} 
+                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                    />
                                                 </div>
                                             </div>
                                             <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">

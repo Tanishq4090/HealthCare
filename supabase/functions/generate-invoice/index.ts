@@ -64,7 +64,7 @@ serve(async (req) => {
     }
 
     try {
-        const { lead_id, deposit_amount, service_period, invoice_number: input_invoice_number } = await req.json();
+        const { lead_id, deposit_amount, service_period, invoice_number: input_invoice_number, due_date } = await req.json();
         if (!lead_id) throw new Error('lead_id is required');
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -81,7 +81,16 @@ serve(async (req) => {
         // Invoice meta
         const invoiceNum   = input_invoice_number || `INV-${Date.now().toString().slice(-6)}`;
         const now          = new Date();
-        const due          = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+        
+        let due = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+        if (due_date) {
+            try {
+                const parsedDue = new Date(due_date);
+                if (!isNaN(parsedDue.getTime())) {
+                    due = parsedDue;
+                }
+            } catch (e) {}
+        }
         
         const monthNames   = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const fullMonthNames = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
