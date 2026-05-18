@@ -551,7 +551,25 @@ serve(async (req) => {
 
         // --- 10. NEW LEAD: Send WhatsApp Flow form (if Flow ID is set), else fallback text ---
         if (!earlyLead) {
-            // Upsert into CRM leads immediately so they show up on Kanban
+            // 🛡️ SAFETY GUARD: Final duplicate check using last-10-digit match
+            // This catches cases where phone number format mismatches (e.g., '917600004090' vs '7600004090')
+            // caused the earlyLead lookup to return null even though a lead exists.
+            const last10Safe = purePhone.slice(-10);
+            const { data: safetyCheck } = await supabase
+                .from('crm_leads')
+                .select('id, name, pipeline_stage')
+                .or(`phone.ilike.%${last10Safe}%,whatsapp_number.ilike.%${last10Safe}%`)
+                .limit(1);
+
+            if (safetyCheck && safetyCheck.length > 0) {
+                const existingLead = safetyCheck[0];
+                console.log(`[Safety Guard] Duplicate blocked — found lead ${existingLead.id} (${existingLead.name}, stage: ${existingLead.pipeline_stage}) for phone ${purePhone}. Skipping new lead creation.`);
+                // Fall through to stage-scripted responses for this existing lead
+                // by exiting this block without creating a duplicate
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+
+            // Truly new lead — create it
             await supabase.from('crm_leads').insert([{ 
                 name: contact?.profile?.name || 'Unknown Lead',
                 whatsapp_number: purePhone,

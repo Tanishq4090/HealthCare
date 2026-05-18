@@ -291,6 +291,14 @@ export default function CRM() {
     const processingCalls = useRef<Set<string>>(new Set());
     const [assignmentResult, setAssignmentResult] = useState<any>(null);
 
+    // Add Lead Modal State
+    const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
+    const [addLeadName, setAddLeadName] = useState('');
+    const [addLeadPhone, setAddLeadPhone] = useState('');
+    const [addLeadDuplicateWarning, setAddLeadDuplicateWarning] = useState<any>(null);
+    const [addLeadCheckingDuplicate, setAddLeadCheckingDuplicate] = useState(false);
+    const [addLeadConfirmDuplicate, setAddLeadConfirmDuplicate] = useState(false);
+
     // Staff Picker State
     const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
     const [staffPickerTargetLead, setStaffPickerTargetLead] = useState<any>(null);
@@ -2136,28 +2144,57 @@ export default function CRM() {
         }
     };
 
-    const handleAddManualLead = async () => {
+    const checkAddLeadDuplicate = async (phone: string) => {
+        if (!phone || phone.replace(/\D/g, '').length < 8) {
+            setAddLeadDuplicateWarning(null);
+            return;
+        }
+        setAddLeadCheckingDuplicate(true);
+        const digits = phone.replace(/\D/g, '');
+        const last10 = digits.slice(-10);
+        const { data } = await supabase
+            .from('crm_leads')
+            .select('id, name, pipeline_stage, whatsapp_number, phone')
+            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+            .limit(1);
+        setAddLeadCheckingDuplicate(false);
+        if (data && data.length > 0) {
+            setAddLeadDuplicateWarning(data[0]);
+            setAddLeadConfirmDuplicate(false);
+        } else {
+            setAddLeadDuplicateWarning(null);
+        }
+    };
+
+    const handleAddManualLead = async (opts?: { name: string; phone: string; isDuplicate?: boolean; duplicateOfId?: string }) => {
+        const leadName = opts?.name?.trim() || 'New Lead';
+        const leadPhone = opts?.phone?.trim() || '';
+        const digits = leadPhone.replace(/\D/g, '');
+        const standardized = digits.length === 10 ? `91${digits}` : digits;
         try {
-            const { error } = await supabase.from('crm_leads').insert([{
-                name: 'New Lead',
-                phone: '',
-                whatsapp_number: '',
+            const { data: newLead, error } = await supabase.from('crm_leads').insert([{
+                name: leadName,
+                phone: leadPhone || null,
+                whatsapp_number: standardized || null,
                 source: 'Manual Add',
                 status: 'New',
-                pipeline_stage: pipelineStages[0] || 'New Lead',
+                pipeline_stage: pipelineStages[0] || 'New Inquiry',
                 estimated_value_monthly: 0,
-            }]);
+                is_duplicate: opts?.isDuplicate || false,
+                duplicate_of_lead_id: opts?.duplicateOfId || null,
+            }]).select('id').single();
             
             if (error) throw error;
-
-            // Log lead_created activity — fetch the newly created lead ID first
-            const { data: freshLead } = await supabase.from('crm_leads').select('id').eq('source', 'Manual Add').order('created_at', { ascending: false }).limit(1).single();
-            if (freshLead?.id) {
-                await logActivity(freshLead.id, 'lead_created', 'Lead created manually', { source: 'Manual Add' });
+            if (newLead?.id) {
+                await logActivity(newLead.id, 'lead_created', opts?.isDuplicate ? 'Lead created manually (duplicate confirmed by staff)' : 'Lead created manually', { source: 'Manual Add' });
             }
-
-            toast.success("Manual Lead created! Double-click to edit name/number.");
+            toast.success(`Lead "${leadName}" created!`);
             fetchLeads();
+            setIsAddLeadModalOpen(false);
+            setAddLeadName('');
+            setAddLeadPhone('');
+            setAddLeadDuplicateWarning(null);
+            setAddLeadConfirmDuplicate(false);
         } catch (err: any) {
             toast.error("Failed to add lead: " + err.message);
         }
@@ -2268,7 +2305,7 @@ export default function CRM() {
                             Live Sync Active
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3">
-                            <button onClick={handleAddManualLead} className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm">
+                            <button onClick={() => { setIsAddLeadModalOpen(true); setAddLeadName(''); setAddLeadPhone(''); setAddLeadDuplicateWarning(null); setAddLeadConfirmDuplicate(false); }} className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm">
                                 <Plus className="w-4 h-4" /> Add Lead
                             </button>
                             <button onClick={handleExportLeadsToCSV} className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex">
@@ -3921,6 +3958,118 @@ export default function CRM() {
                         <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50">
                             <button onClick={() => setIsServicePeriodOpen(false)} className="flex-1 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
                             <button onClick={handleConfirmServicePeriod} className="flex-1 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm" disabled={serviceType === 'date_range' && !serviceEndDate}>Confirm Assignment</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── ADD LEAD MODAL ─── */}
+            {isAddLeadModalOpen && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setIsAddLeadModalOpen(false); }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                        {/* Header */}
+                        <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900">Add New Lead</h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">Fill in the lead's details to add them to the pipeline.</p>
+                                </div>
+                                <button onClick={() => setIsAddLeadModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
+                                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M18 6 6 18M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Form */}
+                        <div className="px-6 py-5 flex flex-col gap-4">
+                            {/* Name */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name <span className="text-red-400">*</span></label>
+                                <input
+                                    type="text"
+                                    value={addLeadName}
+                                    onChange={e => setAddLeadName(e.target.value)}
+                                    placeholder="e.g. Maulik Kariya"
+                                    className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] transition-all"
+                                />
+                            </div>
+
+                            {/* Phone */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1.5">WhatsApp / Phone Number</label>
+                                <div className="relative">
+                                    <input
+                                        type="tel"
+                                        value={addLeadPhone}
+                                        onChange={e => {
+                                            setAddLeadPhone(e.target.value);
+                                            checkAddLeadDuplicate(e.target.value);
+                                        }}
+                                        placeholder="e.g. 9974093920"
+                                        className={`w-full px-3.5 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2 transition-all ${
+                                            addLeadDuplicateWarning
+                                                ? 'border-amber-400 focus:ring-amber-300/30 focus:border-amber-400'
+                                                : 'border-slate-200 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8]'
+                                        }`}
+                                    />
+                                    {addLeadCheckingDuplicate && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                            <div className="w-4 h-4 border-2 border-slate-300 border-t-[#1AA6A8] rounded-full animate-spin" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Duplicate Warning Banner */}
+                                {addLeadDuplicateWarning && (
+                                    <div className="mt-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="text-amber-500 mt-0.5">⚠️</div>
+                                            <div className="flex-1">
+                                                <p className="text-xs font-bold text-amber-800">Duplicate phone number detected!</p>
+                                                <p className="text-xs text-amber-700 mt-0.5">
+                                                    An existing lead <strong>{addLeadDuplicateWarning.name}</strong> already uses this number
+                                                    (Stage: <strong>{addLeadDuplicateWarning.pipeline_stage}</strong>).
+                                                </p>
+                                                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={addLeadConfirmDuplicate}
+                                                        onChange={e => setAddLeadConfirmDuplicate(e.target.checked)}
+                                                        className="w-3.5 h-3.5 rounded accent-amber-500"
+                                                    />
+                                                    <span className="text-xs text-amber-700 font-medium">I understand — this is a different person using the same number</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 pb-6 flex gap-3">
+                            <button
+                                onClick={() => setIsAddLeadModalOpen(false)}
+                                className="flex-1 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (!addLeadName.trim()) { toast.error('Please enter a name.'); return; }
+                                    if (addLeadDuplicateWarning && !addLeadConfirmDuplicate) { toast.error('Please confirm the duplicate warning to proceed.'); return; }
+                                    handleAddManualLead({
+                                        name: addLeadName,
+                                        phone: addLeadPhone,
+                                        isDuplicate: !!addLeadDuplicateWarning && addLeadConfirmDuplicate,
+                                        duplicateOfId: addLeadDuplicateWarning?.id,
+                                    });
+                                }}
+                                disabled={!addLeadName.trim() || (!!addLeadDuplicateWarning && !addLeadConfirmDuplicate)}
+                                className="flex-1 py-2.5 text-sm font-bold text-white bg-[#1AA6A8] rounded-xl hover:bg-[#1AA6A8]/90 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                Add Lead
+                            </button>
                         </div>
                     </div>
                 </div>

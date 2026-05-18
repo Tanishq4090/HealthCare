@@ -1,0 +1,15 @@
+<current_dom_explanation>
+This is a temporary snapshot of the current page's DOM structure. The DOM will change if you navigate to or interact with another page. Use a tool like browser_get_dom to capture and preserve the DOM in your trajectory if needed for later reference.
+</current_dom_explanation>
+<current_dom>
+[0] (500,500)<div  />
+	99Care OS
+	Healthcare Operations Management
+	[1] (423,466)<label class='text-sm font-bold text-slate-700'>Username />
+	[2] (500,514)<input class='w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all' placeholder='Enter your username' />
+	[3] (422,575)<label class='text-sm font-bold text-slate-700'>Password />
+	[4] (500,622)<input class='w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all' placeholder='Enter your password' />
+	[5] (500,694)<button class='w-full bg-primary text-white font-bold py-3.5 px-4 rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed mt-2' />
+	Secured by 99Care OS Authentication
+
+</current_dom>

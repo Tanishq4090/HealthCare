@@ -1,0 +1,90 @@
+<current_dom_explanation>
+This is a temporary snapshot of the current page's DOM structure. The DOM will change if you navigate to or interact with another page. Use a tool like browser_get_dom to capture and preserve the DOM in your trajectory if needed for later reference.
+</current_dom_explanation>
+<current_dom>
+[0] (500,680)<div  />
+	[1] (61,42)<a class='flex items-center gap-3' href='/admin' title='Dashboard' />
+		99Care
+		Operations OS
+	[2] (79,128)<a class='flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900' href='/admin'>Dashboard />
+		Dashboard
+	[3] (79,183)<a class='flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors bg-primary/10 text-primary' href='/admin/crm'>AI CRM />
+		AI CRM
+	[4] (79,238)<a class='flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900' href='/admin/clients'>Clients />
+		Clients
+	[5] (79,293)<a class='flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900' href='/admin/hr'>AI HR />
+		AI HR
+	[6] (79,348)<a class='flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900' href='/admin/billing'>Finance
+Coming Soon />
+		Finance
+		Coming Soon
+	[7] (338,34)<input class='w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all' placeholder='Search clients, workers, or invoices...' />
+	[8] (893,34)<button class='relative p-2 transition-colors rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-50' />
+	[9] (947,34)<a class='text-sm font-medium text-primary hover:text-primary/80 transition-colors hidden sm:block' href='http://localhost:5174'>View Public Site />
+	AI CRM Center
+	AI-Powered Management
+	[10] (718,132)<button class='p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all relative group shadow-sm' />
+	[11] (777,132)<button class='px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap bg-white text-primary shadow-lg scale-105'>Pipeline />
+	[12] (834,132)<button class='px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap text-slate-500 hover:text-slate-900'>Clients />
+	[13] (889,132)<button class='px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap text-slate-500 hover:text-slate-900'>AI Auto />
+	[14] (946,132)<button class='px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap text-slate-500 hover:text-slate-900'>Voice AI />
+	Live Sync Active
+	[15] (865,207)<button class='px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm'>Add Lead />
+	[16] (945,207)<button class='px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex'>Export CSV />
+	[17] (279,280)<div  />
+		[18] (256,280)<h3 >New Lead />
+		1
+		[19] (207,282)<div  />
+			[20] (198,282)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[21] (215,282)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+	[22] (279,400)<div  />
+		[23] (256,368)<h3 >New Inquiry />
+		0
+		[24] (215,435)<div  />
+			[25] (198,435)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[26] (215,435)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+			[27] (232,435)<button class='p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors' title='Delete Stage' />
+	No leads in this stage
+	[28] (577,520)<div  />
+		[29] (256,520)<h3 >In Discussion />
+		7
+		[30] (939,520)<div  />
+			[31] (923,520)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[32] (939,520)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+			[33] (956,520)<button class='p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors' title='Delete Stage' />
+	[34] (577,608)<div  />
+		[35] (256,608)<h3 >Quotation Sent />
+		2
+		[36] (939,608)<div  />
+			[37] (923,608)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[38] (939,608)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+			[39] (956,608)<button class='p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors' title='Delete Stage' />
+	[40] (577,696)<div  />
+		[41] (256,696)<h3 >Form Submitted />
+		3
+		[42] (939,696)<div  />
+			[43] (923,696)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[44] (939,696)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+			[45] (956,696)<button class='p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors' title='Delete Stage' />
+	[46] (577,784)<div  />
+		[47] (256,784)<h3 >Staff Assigned />
+		0
+		[48] (939,784)<div  />
+			[49] (923,784)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[50] (939,784)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+			[51] (956,784)<button class='p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors' title='Delete Stage' />
+	[52] (577,872)<div  />
+		[53] (256,872)<h3 >Deposit Pending />
+		0
+		[54] (939,872)<div  />
+			[55] (923,872)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[56] (939,872)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+			[57] (956,872)<button class='p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors' title='Delete Stage' />
+	[58] (577,960)<div  />
+		[59] (256,960)<h3 >Active Client />
+		1
+		[60] (947,960)<div  />
+			[61] (939,960)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Left' />
+			[62] (956,960)<button class='p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors border-r border-slate-100' title='Slide Right' />
+
+</current_dom>

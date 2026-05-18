@@ -1,0 +1,41 @@
+<current_dom_explanation>
+This is a temporary snapshot of the current page's DOM structure. The DOM will change if you navigate to or interact with another page. Use a tool like browser_get_dom to capture and preserve the DOM in your trajectory if needed for later reference.
+</current_dom_explanation>
+<current_dom>
+[0] (500,500)<div  />
+	[1] (77,47)<a href='https://supabase.com' />
+		[2] (77,47)<img  />
+	[3] (908,47)<a class='relative justify-center cursor-pointer inline-flex items-center space-x-2 text-center font-regular ease-out duration-200 rounded-md outline-hidden transition-all outline-0 focus-visible:outline-4 focus-visible:outline-offset-1 border text-foreground bg-alternative dark:bg-muted hover:bg-selection border-strong hover:border-stronger focus-visible:outline-brand-600 data-[state=open]:bg-selection data-[state=open]:outline-brand-600 data-[state=open]:border-button-hover text-xs px-2.5 py-1 h-[26px]' href='https://supabase.com/docs' />
+		[4] (870,47)<div  />
+		[5] (917,47)<span >Documentation />
+	Welcome back
+	Sign in to your account
+	Last used
+	[6] (500,347)<button class='relative cursor-pointer space-x-2 text-center font-regular ease-out duration-200 rounded-md outline-hidden transition-all outline-0 focus-visible:outline-4 focus-visible:outline-offset-1 border text-foreground bg-alternative dark:bg-muted hover:bg-selection border-strong hover:border-stronger focus-visible:outline-brand-600 data-[state=open]:bg-selection data-[state=open]:outline-brand-600 data-[state=open]:border-button-hover w-full flex items-center justify-center text-base px-4 py-2 h-[42px]' />
+		[7] (431,347)<div  />
+		[8] (511,347)<span >Continue with GitHub />
+	[9] (500,413)<a class='relative cursor-pointer space-x-2 text-center font-regular ease-out duration-200 rounded-md outline-hidden transition-all outline-0 focus-visible:outline-4 focus-visible:outline-offset-1 border text-foreground bg-transparent border-strong hover:border-foreground-muted focus-visible:outline-border-strong data-[state=open]:border-stronger data-[state=open]:outline-border-strong w-full flex items-center justify-center text-base px-4 py-2 h-[42px]' href='/dashboard/sign-in-sso?returnTo=%2Fproject%2Fsgyladamwnanudnropwl%2Fsql%2Fnew' />
+		[10] (440,413)<div  />
+		[11] (511,413)<span >Continue with SSO />
+	or
+	[12] (355,511)<label class='text peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-sm transition-colors text-foreground flex gap-2 items-center wrap-break-word leading-normal'>Email />
+		Email
+	[13] (500,549)<input class='flex w-full rounded-md border border-control read-only:border-button bg-foreground/[.026] file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-foreground-muted read-only:text-foreground-light focus:ring-background-control focus:border-control focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-background-control focus-visible:ring-offset-2 focus-visible:ring-offset-foreground-muted disabled:cursor-not-allowed disabled:text-foreground-muted aria-[] aria-[invalid=true]:bg-destructive-200 aria-[invalid=true]:border-destructive-400 aria-[invalid=true]:focus:border-destructive aria-[invalid=true]:focus-visible:border-destructive text-base md:text-sm leading-4 px-3 py-2 h-[34px]' id='email' placeholder='you@example.com' />
+	[14] (366,596)<label class='text peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-sm transition-colors text-foreground flex gap-2 items-center wrap-break-word leading-normal'>Password />
+		Password
+	[15] (500,634)<input class='flex w-full rounded-md border border-control read-only:border-button bg-foreground/[.026] file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-foreground-muted read-only:text-foreground-light focus:ring-background-control focus:border-control focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-background-control focus-visible:ring-offset-2 focus-visible:ring-offset-foreground-muted disabled:cursor-not-allowed disabled:text-foreground-muted aria-[] aria-[invalid=true]:bg-destructive-200 aria-[invalid=true]:border-destructive-400 aria-[invalid=true]:focus:border-destructive aria-[invalid=true]:focus-visible:border-destructive text-base md:text-sm leading-4 px-3 py-2 h-[34px] pr-10' id='password' placeholder='••••••••' />
+	[16] (643,634)<button aria-label='Show password' class='justify-center cursor-pointer inline-flex items-center space-x-2 text-center font-regular ease-out duration-200 rounded-md outline-hidden transition-all outline-0 focus-visible:outline-4 focus-visible:outline-offset-1 border text-foreground bg-alternative dark:bg-muted hover:bg-selection border-strong hover:border-stronger focus-visible:outline-brand-600 data-[state=open]:bg-selection data-[state=open]:outline-brand-600 data-[state=open]:border-button-hover text-xs py-1 h-[26px] absolute right-1 top-1 px-1.5' title='Show password' />
+		[17] (643,634)<div  />
+	[18] (612,595)<a class='absolute top-0 right-0 text-sm text-foreground-lighter' href='/dashboard/forgot-password?returnTo=%2Fproject%2Fsgyladamwnanudnropwl%2Fsql%2Fnew'>Forgot password? />
+	[19] (500,709)<button class='relative cursor-pointer space-x-2 text-center font-regular ease-out duration-200 rounded-md outline-hidden transition-all outline-0 focus-visible:outline-4 focus-visible:outline-offset-1 border bg-brand-400 dark:bg-brand-500 hover:bg-brand/80 dark:hover:bg-brand/50 text-foreground border-brand-500/75 dark:border-brand/30 hover:border-brand-600 dark:hover:border-brand focus-visible:outline-brand-600 data-[state=open]:bg-brand-400/80 dark:data-[state=open]:bg-brand-500/80 data-[state=open]:outline-brand-600 w-full flex items-center justify-center text-base px-4 py-2 h-[42px]' />
+		[20] (500,709)<span >Sign in />
+	Don’t have an account?
+	[21] (562,777)<a class='underline transition text-foreground hover:text-foreground-light' href='/dashboard/sign-up?returnTo=%2Fproject%2Fsgyladamwnanudnropwl%2Fsql%2Fnew'>Sign up />
+	By continuing, you agree to Supabase’s
+	[22] (578,940)<a class='underline hover:text-foreground-light' href='https://supabase.com/terms'>Terms of Service />
+	and
+	[23] (399,957)<a class='underline hover:text-foreground-light' href='https://supabase.com/privacy'>Privacy Policy />
+	, and to receive periodic emails with updates.
+Supabase
+
+</current_dom>
