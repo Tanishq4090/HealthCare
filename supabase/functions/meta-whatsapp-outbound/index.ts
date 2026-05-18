@@ -179,7 +179,7 @@ serve(async (req) => {
               {
                 type: "image",
                 image: {
-                  link: "https://raw.githubusercontent.com/Tanishq4090/HealthCare/main/public/hero-appointment.png"
+                  link: "https://raw.githubusercontent.com/Tanishq4090/HealthCare/main/public/payment-qr.png"
                 }
               }
             ]
@@ -247,6 +247,35 @@ serve(async (req) => {
     const resText = await response.text();
     console.log(`[Meta] Response Status: ${response.status}`);
     console.log(`[Meta] Response Body: ${resText}`);
+
+    // If PDF invoice is requested, send it as a follow-up document message
+    const { sendInvoicePdf, invoicePdfUrl } = payload;
+    if (sendInvoicePdf && invoicePdfUrl) {
+      console.log(`[Meta] Dispatching PDF Invoice document to ${digits}...`);
+      const docBody = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: digits,
+        type: "document",
+        document: {
+          link: invoicePdfUrl,
+          filename: "99Care_Invoice.pdf",
+          caption: "📄 Your deposit invoice is attached. Please review and complete the payment. 🙏"
+        }
+      };
+
+      const docResponse = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${META_SYSTEM_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(docBody),
+      });
+
+      console.log(`[Meta] PDF Doc Response Status: ${docResponse.status}`);
+      console.log(`[Meta] PDF Doc Response Body: ${await docResponse.text()}`);
+    }
 
     let metaData: any = {};
     try { metaData = JSON.parse(resText); } catch(e) {}

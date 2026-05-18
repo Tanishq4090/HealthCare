@@ -311,6 +311,8 @@ export default function CRM() {
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
     const [templateDraftText, setTemplateDraftText] = useState('');
     const [quotationVars, setQuotationVars] = useState({ v1: '', v2: '', v3: '', v4: '' });
+    const [invoiceDepositAmount, setInvoiceDepositAmount] = useState('');
+    const [invoiceServicePeriod, setInvoiceServicePeriod] = useState('');
     
     // Service Period Modal State
     const [isServicePeriodOpen, setIsServicePeriodOpen] = useState(false);
@@ -1569,6 +1571,33 @@ export default function CRM() {
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+            let invoicePdfUrl = null;
+
+            if (agentTargetAction === 'deposit') {
+                toast.loading("Generating PDF Invoice...", { id: toastId });
+                const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    },
+                    body: JSON.stringify({
+                        lead_id: agentTargetLead?.id,
+                        deposit_amount: invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000,
+                        service_period: invoiceServicePeriod || 'As agreed'
+                    })
+                });
+
+                if (!invResp.ok) {
+                    const err = await invResp.text();
+                    throw new Error(`Failed to generate invoice: ${err}`);
+                }
+
+                const invData = await invResp.json();
+                invoicePdfUrl = invData.public_url;
+                toast.loading("Sending via WhatsApp...", { id: toastId });
+            }
+
             const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
@@ -1580,6 +1609,8 @@ export default function CRM() {
                     phone: phoneDigits,
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
+                    sendInvoicePdf: agentTargetAction === 'deposit',
+                    invoicePdfUrl: invoicePdfUrl,
                     useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'post_call_intake' 
                                   : (agentTargetAction === 'quotation' ? 'quote_client_v2' 
@@ -3148,6 +3179,38 @@ export default function CRM() {
                                                 <input type="text" value={quotationVars.v4} onChange={e => setQuotationVars({...quotationVars, v4: e.target.value})} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. ₹ 1,500/day" />
                                             </div>
                                         </div>
+                                    ) : agentTargetAction === 'deposit' && !isEditingTemplate ? (
+                                        <div className="space-y-3 bg-white p-4 rounded-xl border border-[#1AA6A8]/20 shadow-sm relative z-10 w-full mb-6">
+                                            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
+                                                <FileText className="w-4 h-4 text-[#1AA6A8]" />
+                                                <span className="text-xs font-bold text-slate-700">Invoice Details (Auto-generated PDF)</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Deposit Amount (₹)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={invoiceDepositAmount} 
+                                                        onChange={e => setInvoiceDepositAmount(e.target.value)} 
+                                                        className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                        placeholder={agentTargetLead?.quoted_monthly_rate || '15000'} 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Service Period</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={invoiceServicePeriod} 
+                                                        onChange={e => setInvoiceServicePeriod(e.target.value)} 
+                                                        className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" 
+                                                        placeholder="e.g. 01/05/26 - 15/05/26" 
+                                                    />
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                                                A custom PDF invoice will be generated and attached as a document along with the payment QR code template.
+                                            </p>
+                                        </div>
                                     ) : (
                                         <textarea
                                             value={isEditingTemplate ? templateDraftText : agentDraftText}
@@ -3157,7 +3220,7 @@ export default function CRM() {
                                         />
                                     )}
                                     
-                                    {(!isEditingTemplate && agentTargetAction !== 'quotation') && (
+                                    {(!isEditingTemplate && agentTargetAction !== 'quotation' && agentTargetAction !== 'deposit') && (
                                         <div className="absolute bottom-3 right-3 flex gap-1">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                                             <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-75"></span>
