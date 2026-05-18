@@ -179,7 +179,7 @@ serve(async (req) => {
               {
                 type: "image",
                 image: {
-                  link: "https://framerusercontent.com/images/kpv1s2qVn6S7Z8I9w0a1b2c3d.png"
+                  link: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=600&q=80"
                 }
               }
             ]
