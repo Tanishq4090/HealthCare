@@ -1150,12 +1150,23 @@ export default function CRM() {
         
         // Fetch quotation and consent to auto-fill dates
         let autoStartDate = new Date().toISOString().split('T')[0];
+        let autoEndDate = '';
         let autoHours = 12;
+        let autoType: 'one_day' | 'date_range' = 'date_range';
+        let autoBill = 0;
 
         if (staffPickerTargetLead?.id) {
             const { data: quote } = await supabase
                 .from('crm_quotations')
-                .select('start_date, hours_per_day')
+                .select('*')
+                .eq('lead_id', staffPickerTargetLead.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            const { data: consent } = await supabase
+                .from('client_consents')
+                .select('*')
                 .eq('lead_id', staffPickerTargetLead.id)
                 .order('created_at', { ascending: false })
                 .limit(1)
@@ -1163,21 +1174,80 @@ export default function CRM() {
 
             if (quote?.start_date) {
                 autoStartDate = quote.start_date.split('T')[0];
+            } else if (consent?.service_start_date) {
+                autoStartDate = consent.service_start_date.split('T')[0];
             }
+
             if (quote?.hours_per_day) {
                 autoHours = quote.hours_per_day;
+            } else if (consent?.offered_time) {
+                const hourMatch = consent.offered_time.match(/(\d+)/);
+                if (hourMatch) autoHours = parseInt(hourMatch[1]);
+            }
+
+            if (quote?.duration) {
+                const start = new Date(autoStartDate);
+                if (!isNaN(start.getTime())) {
+                    const dur = quote.duration.toLowerCase().trim();
+                    const match = dur.match(/^(\d+)\s*(day|month|year)s?$/);
+                    if (match) {
+                        const amount = parseInt(match[1]);
+                        const unit = match[2];
+                        if (unit === 'day') {
+                            start.setDate(start.getDate() + amount);
+                        } else if (unit === 'month') {
+                            start.setMonth(start.getMonth() + amount);
+                        } else if (unit === 'year') {
+                            start.setFullYear(start.getFullYear() + amount);
+                        }
+                        autoEndDate = start.toISOString().split('T')[0];
+                    } else if (dur.includes('month')) {
+                        const amountMatch = dur.match(/(\d+)/);
+                        const amount = amountMatch ? parseInt(amountMatch[1]) : 1;
+                        start.setMonth(start.getMonth() + amount);
+                        autoEndDate = start.toISOString().split('T')[0];
+                    } else if (dur.includes('day')) {
+                        const amountMatch = dur.match(/(\d+)/);
+                        const amount = amountMatch ? parseInt(amountMatch[1]) : 15;
+                        start.setDate(start.getDate() + amount);
+                        autoEndDate = start.toISOString().split('T')[0];
+                    }
+                }
+            } else {
+                // If there's no duration specified but it is date_range, default end date to start date + 1 month
+                const start = new Date(autoStartDate);
+                if (!isNaN(start.getTime())) {
+                    start.setMonth(start.getMonth() + 1);
+                    autoEndDate = start.toISOString().split('T')[0];
+                }
+            }
+
+            // Determine if single day or date range
+            if (quote?.service_category === 'one_day' || quote?.service_name === 'one_day') {
+                autoType = 'one_day';
+            } else {
+                autoType = 'date_range';
+            }
+
+            // Monthly total bill estimation
+            autoBill = quote?.estimated_monthly_total || quote?.complete_month_rate || 0;
+            if (!autoBill) {
+                const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                if (autoType === 'date_range' && autoEndDate) {
+                    const days = Math.max(1, Math.ceil((new Date(autoEndDate).getTime() - new Date(autoStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
+                    autoBill = Math.round(days * dailyRate);
+                } else {
+                    autoBill = Math.round(dailyRate);
+                }
             }
         }
 
         // Reset service form with auto-filled data
-        setServiceType('one_day');
+        setServiceType(autoType);
         setServiceStartDate(autoStartDate);
-        setServiceEndDate('');
+        setServiceEndDate(autoEndDate);
         setServiceHours(autoHours);
-        
-        // Use intelligent quoted rates
-        const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
-        setCalculatedBill(Math.round(dailyRate));
+        setCalculatedBill(autoBill);
     };
 
     const handleConfirmServicePeriod = async () => {
@@ -1198,7 +1268,7 @@ export default function CRM() {
                     startDate: serviceStartDate,
                     endDate: serviceType === 'date_range' ? serviceEndDate : undefined,
                     serviceType,
-                    hoursPerDay: serviceType === 'one_day' ? serviceHours : 0,
+                    hoursPerDay: serviceHours,
                     totalBillAmount: calculatedBill
                 }
             );
@@ -4066,6 +4136,10 @@ export default function CRM() {
                                                 }
                                             }} />
                                         </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Shift Hours</label>
+                                        <input type="number" min="1" max="24" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceHours} onChange={e => setServiceHours(parseInt(e.target.value) || 12)} />
                                     </div>
                                 </>
                             )}
