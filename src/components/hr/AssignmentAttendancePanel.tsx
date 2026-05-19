@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Loader2, Users } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Loader2, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { format, eachDayOfInterval, parseISO, isAfter, isToday } from 'date-fns';
@@ -47,6 +47,33 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
   const pastDays = useMemo(() => {
     return allDays.filter(d => !isAfter(d, new Date()));
   }, [allDays]);
+
+  const pageSize = 6;
+  const totalPages = Math.ceil(allDays.length / pageSize);
+
+  const initialPage = useMemo(() => {
+    if (allDays.length <= pageSize) return 0;
+    const todayIndex = allDays.findIndex(d => isToday(d));
+    if (todayIndex !== -1) {
+      return Math.floor(todayIndex / pageSize);
+    }
+    const firstDay = allDays[0];
+    if (firstDay && isAfter(new Date(), firstDay)) {
+      return totalPages - 1;
+    }
+    return 0;
+  }, [allDays, totalPages]);
+
+  const [currentPage, setCurrentPage] = useState(initialPage);
+
+  useEffect(() => {
+    setCurrentPage(initialPage);
+  }, [initialPage]);
+
+  const visibleDays = useMemo(() => {
+    const startIdx = currentPage * pageSize;
+    return allDays.slice(startIdx, startIdx + pageSize);
+  }, [allDays, currentPage]);
 
   const onSummaryChangeRef = useRef(onSummaryChange);
   useEffect(() => {
@@ -270,12 +297,39 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
             </div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2">
-              {allDays.map(d => {
-                const dateStr = format(d, 'yyyy-MM-dd');
-                const dayData = days.find(x => x.date === dateStr);
-                const isFuture = isAfter(d, new Date()) && !isToday(d);
-                const isMarking = markingDate === dateStr;
+            <div className="space-y-3">
+              {totalPages > 1 && visibleDays.length > 0 && (
+                <div className="flex items-center justify-between bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-xs">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 0))}
+                    disabled={currentPage === 0}
+                    className="flex items-center gap-0.5 px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded border border-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
+                    title="Previous Days"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Prev
+                  </button>
+                  <span className="text-slate-600 font-medium">
+                    Days {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, allDays.length)} of {allDays.length} ({format(visibleDays[0], 'd MMM')} – {format(visibleDays[visibleDays.length - 1], 'd MMM yyyy')})
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages - 1))}
+                    disabled={currentPage === totalPages - 1}
+                    className="flex items-center gap-0.5 px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded border border-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
+                    title="Next Days"
+                  >
+                    Next
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {visibleDays.map(d => {
+                  const dateStr = format(d, 'yyyy-MM-dd');
+                  const dayData = days.find(x => x.date === dateStr);
+                  const isFuture = isAfter(d, new Date()) && !isToday(d);
+                  const isMarking = markingDate === dateStr;
 
                 return (
                   <div
@@ -314,6 +368,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
 
