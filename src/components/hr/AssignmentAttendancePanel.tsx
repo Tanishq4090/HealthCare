@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Loader2, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -34,11 +34,17 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
   const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
   const startDate = parseISO(fallbackStart);
   const endDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
-  
+
   // ensure start date is not after end date for eachDayOfInterval
   const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
-  const allDays = eachDayOfInterval({ start: safeStartDate, end: endDate });
-  const pastDays = allDays.filter(d => !isAfter(d, new Date()));
+  
+  const allDays = useMemo(() => {
+    return eachDayOfInterval({ start: safeStartDate, end: endDate });
+  }, [safeStartDate, endDate]);
+
+  const pastDays = useMemo(() => {
+    return allDays.filter(d => !isAfter(d, new Date()));
+  }, [allDays]);
 
   const daysPresent = days.filter(d => d.status === 'Present').length;
   const daysHalf = days.filter(d => d.status === 'Half Day').length;
@@ -51,8 +57,10 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
     try {
       const { data, error } = await supabase
         .from('attendance')
-        .select('id, duty_date, status, is_half_day')
-        .eq('assignment_id', assignment.id);
+        .select('id, duty_date, status, is_half_day, assignment_id')
+        .eq('worker_id', assignment.employee_id)
+        .gte('duty_date', format(safeStartDate, 'yyyy-MM-dd'))
+        .lte('duty_date', format(endDate, 'yyyy-MM-dd'));
 
       if (error) throw error;
 
@@ -82,7 +90,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
     } finally {
       setIsLoading(false);
     }
-  }, [isExpanded, assignment.id]);
+  }, [isExpanded, assignment.employee_id, safeStartDate, endDate, allDays, onSummaryChange]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
@@ -101,6 +109,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
         }
       } else if (existing?.attendanceId) {
         const { error } = await supabase.from('attendance').update({
+          assignment_id: assignment.id,
           status: dbStatus,
           is_half_day: isHalfDay,
           hours_worked: status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0),
