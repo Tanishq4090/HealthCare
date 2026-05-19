@@ -214,7 +214,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
             <h3 className="font-bold text-slate-900 text-sm">{assignment.employees?.full_name || 'Unknown'}</h3>
             <p className="text-xs text-slate-500">{assignment.employees?.job_title} → {assignment.clients?.client_name || 'Unknown Client'}</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Ongoing'}
+              {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Ongoing'} ({allDays.length} {allDays.length === 1 ? 'day' : 'days'} assigned)
             </p>
           </div>
         </div>
@@ -325,12 +325,12 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
               <p className="font-bold text-slate-900">{effectiveDays} days</p>
             </div>
             <div className="border-l border-slate-100 pl-4">
-              <span className="text-slate-500 text-xs">Days in Period</span>
+              <span className="text-slate-500 text-xs">Assigned Days</span>
               <p className="font-bold text-slate-900">{allDays.length} days</p>
             </div>
             <div className="border-l border-slate-100 pl-4">
               <span className="text-slate-500 text-xs">Completion</span>
-              <p className="font-bold text-slate-900">{Math.round((days.filter(d => d.status !== null).length / Math.max(pastDays.length, 1)) * 100)}%</p>
+              <p className="font-bold text-slate-900">{Math.round((days.filter(d => d.status !== null).length / Math.max(allDays.length, 1)) * 100)}%</p>
             </div>
           </div>
         </div>
