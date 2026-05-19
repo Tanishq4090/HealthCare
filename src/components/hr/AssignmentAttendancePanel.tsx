@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Loader2, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -31,20 +31,27 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
   const [markingDate, setMarkingDate] = useState<string | null>(null);
   const [isBulkMarking, setIsBulkMarking] = useState(false);
 
-  const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
-  const startDate = parseISO(fallbackStart);
-  const endDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
+  const { startDate, safeStartDate, endDate, allDays } = useMemo(() => {
+    const fallbackStart = assignment.start_date || assignment.assigned_at;
+    const startDate = fallbackStart ? parseISO(fallbackStart) : new Date();
+    const endDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
 
-  // ensure start date is not after end date for eachDayOfInterval
-  const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
-  
-  const allDays = useMemo(() => {
-    return eachDayOfInterval({ start: safeStartDate, end: endDate });
-  }, [safeStartDate, endDate]);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+
+    const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
+    const allDays = eachDayOfInterval({ start: safeStartDate, end: endDate });
+    return { startDate, safeStartDate, endDate, allDays };
+  }, [assignment.start_date, assignment.assigned_at, assignment.end_date]);
 
   const pastDays = useMemo(() => {
     return allDays.filter(d => !isAfter(d, new Date()));
   }, [allDays]);
+
+  const onSummaryChangeRef = useRef(onSummaryChange);
+  useEffect(() => {
+    onSummaryChangeRef.current = onSummaryChange;
+  }, [onSummaryChange]);
 
   const daysPresent = days.filter(d => d.status === 'Present').length;
   const daysHalf = days.filter(d => d.status === 'Half Day').length;
@@ -84,13 +91,13 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
         daysAbsent: mapped.filter(d => d.status === 'Absent').length,
         daysHalf: mapped.filter(d => d.status === 'Half Day').length,
       };
-      onSummaryChange?.(summary);
+      onSummaryChangeRef.current?.(summary);
     } catch (err: any) {
       toast.error('Failed to load attendance: ' + err.message);
     } finally {
       setIsLoading(false);
     }
-  }, [isExpanded, assignment.employee_id, safeStartDate, endDate, allDays, onSummaryChange]);
+  }, [isExpanded, assignment.employee_id, safeStartDate, endDate, allDays]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
