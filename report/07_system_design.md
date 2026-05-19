@@ -5,6 +5,8 @@
 
 The following flowchart illustrates the overall flow of the 99Care OS system from user entry to the various functional modules:
 
+![System Flowchart](flowcharts/7_1_system_flowchart.png)
+
 ```mermaid
 flowchart TD
     A[User Visits Website / Admin Portal] --> B{Authenticated?}
@@ -60,28 +62,43 @@ flowchart TD
 
 The context diagram shows the system as a single process with its external entities:
 
+![Context Diagram — Level 0](flowcharts/7_2_context_diagram.png)
+
 ```mermaid
 flowchart LR
-    Patient["Patient / Client"]
-    Admin["Admin / Staff"]
-    Worker["Healthcare Worker"]
-    AI["ElevenLabs AI Agent"]
-    WA["WhatsApp Cloud API"]
+    subgraph Inputs ["Data Inputs"]
+        P_In["🧑 Patient (Bookings)"]
+        A_In["🧑‍💼 Admin (HR/Billing Config)"]
+        AI_In["🤖 ElevenLabs AI (Call Data)"]
+        W_In["👩‍⚕️ Worker (Attendance)"]
+    end
 
-    Patient -->|"Appointment Request, Inquiries"| System["99Care OS"]
-    System -->|"Appointment Confirmation, ID Card Link"| Patient
+    System("💻 99Care OS Core")
 
-    Admin -->|"Manage Leads, Assign Workers, Generate Bills"| System
-    System -->|"Dashboard Data, Reports, Notifications"| Admin
+    subgraph Outputs ["System Outputs"]
+        P_Out["🧑 Patient (ID Cards / Confirmations)"]
+        A_Out["🧑‍💼 Admin (Dashboards & Reports)"]
+        W_Out["👩‍⚕️ Worker (Assignments)"]
+        WA_Out["💬 WhatsApp Cloud API (Messages)"]
+    end
 
-    Worker -->|"Attendance Check-In"| System
-    System -->|"Assignment Details, ID Card"| Worker
+    P_In --> System
+    A_In --> System
+    AI_In --> System
+    W_In --> System
 
-    AI -->|"Call Transcripts, Lead Data"| System
-    System -->|"Call Log Queries"| AI
+    System --> P_Out
+    System --> A_Out
+    System --> W_Out
+    System --> WA_Out
 
-    WA -->|"Message Delivery Status"| System
-    System -->|"Template Messages, Greetings"| WA
+    classDef input fill:#E3F2FD,stroke:#0D47A1,stroke-width:1.5px,color:#0D47A1;
+    classDef system fill:#263238,stroke:#37474F,stroke-width:3px,color:#FFF,font-weight:bold;
+    classDef output fill:#E8F5E9,stroke:#2E7D32,stroke-width:1.5px,color:#2E7D32;
+    
+    class P_In,A_In,AI_In,W_In input;
+    class System system;
+    class P_Out,A_Out,W_Out,WA_Out output;
 ```
 
 ---
@@ -90,24 +107,22 @@ flowchart LR
 
 The Level 1 DFD breaks the system into its major processes:
 
+![Data Flow Diagram — Level 1](flowcharts/7_3_dfd_level_1.png)
+
 ```mermaid
 flowchart TD
-    subgraph External["External Entities"]
-        Client["Patient / Client"]
-        Admin["Admin User"]
-        EL["ElevenLabs AI"]
-        WA["WhatsApp API"]
-    end
+    Client["Patient / Client"]
+    Admin["Admin User"]
+    EL["ElevenLabs AI"]
+    WA["WhatsApp API"]
 
-    subgraph DS["Data Stores"]
-        D1[("crm_leads")]
-        D2[("employees")]
-        D3[("worker_assignments")]
-        D4[("attendance")]
-        D5[("payroll")]
-        D6[("call_transcripts")]
-        D7[("id_card_links")]
-    end
+    D1[("crm_leads")]
+    D2[("employees")]
+    D3[("worker_assignments")]
+    D4[("attendance")]
+    D5[("payroll")]
+    D6[("call_transcripts")]
+    D7[("id_card_links")]
 
     P1["1.0 Lead Management"]
     P2["2.0 Workforce Management"]
@@ -116,40 +131,41 @@ flowchart TD
     P5["5.0 Communication Engine"]
     P6["6.0 Authentication & Access Control"]
 
-    Client -->|"Appointment / Inquiry"| P1
-    EL -->|"Call Data & Transcript"| P1
+    Client -->|"Inquiry"| P1
+    EL -->|"Call Data"| P1
     P1 -->|"Store Lead"| D1
-    P1 -->|"Store Transcript"| D6
+    P1 -->|"Store Call"| D6
     Admin -->|"Manage Leads"| P1
 
-    Admin -->|"Add/Edit Workers"| P2
-    P2 -->|"Store Employee Data"| D2
-    P2 -->|"Read Employee Data"| D2
+    Admin -->|"Manage Workers"| P2
+    P2 -->|"Store Workers"| D2
 
-    Admin -->|"Assign Worker to Client"| P3
-    P3 -->|"Read Available Workers"| D2
-    P3 -->|"Create Assignment"| D3
-    P3 -->|"Generate ID Card Link"| D7
-    P3 -->|"Update Employee Status"| D2
-    P3 -->|"Update Lead Stage"| D1
-    P3 -->|"Send ID Card via WhatsApp"| P5
+    Admin -->|"Assign Worker"| P3
+    P3 -->|"Get Workers"| D2
+    P3 -->|"Create Assign"| D3
+    P3 -->|"Link ID"| D7
+    P3 -->|"Update Worker"| D2
+    P3 -->|"Update Lead"| D1
+    P3 -->|"Trigger WhatsApp"| P5
 
     Admin -->|"Mark Attendance"| P4
     P4 -->|"Store Attendance"| D4
-    P4 -->|"Read Rates from"| D2
-    P4 -->|"Generate Payroll"| D5
+    P4 -->|"Get Rates"| D2
+    P4 -->|"Calculate Pay"| D5
 
     P5 -->|"Send Templates"| WA
-    WA -->|"Delivery Status"| P5
-    P5 -->|"Greeting to"| Client
+    WA -->|"Status"| P5
+    P5 -->|"Greeting"| Client
 
-    Admin -->|"Login Credentials"| P6
-    P6 -->|"Validate & Issue JWT"| Admin
+    Admin -->|"Credentials"| P6
+    P6 -->|"JWT Token"| Admin
 ```
 
 ---
 
 ## 7.4 Entity Relationship Diagram (ERD)
+
+![Entity Relationship Diagram](flowcharts/7_4_erd.png)
 
 ```mermaid
 erDiagram
@@ -282,36 +298,30 @@ erDiagram
 
 ## 7.5 Use Case Diagram
 
+![Use Case Diagram](flowcharts/7_5_use_case.png)
+
 ```mermaid
-flowchart TD
-    subgraph Actors
-        Admin["🧑‍💼 Admin"]
-        Client["🏠 Client / Patient"]
-        Worker["👩‍⚕️ Healthcare Worker"]
+flowchart LR
+    subgraph Staff_AI ["Primary Operators"]
+        Admin["🧑‍💼 Admin User"]
         AI["🤖 AI Voice Agent"]
     end
 
-    subgraph UseCases["99Care OS — Use Cases"]
-        UC1["Login / Authenticate"]
-        UC2["View Dashboard"]
-        UC3["Manage CRM Pipeline"]
-        UC4["View Call Logs"]
-        UC5["Send WhatsApp Greeting"]
-        UC6["Add Lead to Pipeline"]
-        UC7["Add New Employee"]
-        UC8["Assign Worker to Client"]
-        UC9["Generate Digital ID Card"]
-        UC10["Track Attendance"]
-        UC11["Calculate Payroll"]
-        UC12["Manage Access Control"]
-        UC13["Book Appointment Online"]
-        UC14["View Public ID Card"]
-        UC15["Handle Inbound Call"]
-        UC16["Auto-Capture Lead Data"]
-        UC17["Release Worker from Client"]
-        UC18["Manage Recycle Bin"]
-        UC19["Generate Invoice PDF"]
-        UC20["Browse Services"]
+    subgraph UC ["Core Use Cases"]
+        UC1["Manage CRM Pipeline"]
+        UC2["Add Employee Profile"]
+        UC3["Assign Worker to Client"]
+        UC4["Track Attendance"]
+        UC5["Calculate Payroll"]
+        UC6["Handle Inbound Call"]
+        UC7["Auto-Capture Lead"]
+        UC8["Book Appointment"]
+        UC9["Verify Worker ID Card"]
+    end
+
+    subgraph Client_Worker ["End Users"]
+        Client["🏠 Patient / Client"]
+        Worker["👩‍⚕️ Healthcare Worker"]
     end
 
     Admin --> UC1
@@ -319,30 +329,27 @@ flowchart TD
     Admin --> UC3
     Admin --> UC4
     Admin --> UC5
-    Admin --> UC6
-    Admin --> UC7
-    Admin --> UC8
-    Admin --> UC9
-    Admin --> UC10
-    Admin --> UC11
-    Admin --> UC12
-    Admin --> UC17
-    Admin --> UC18
-    Admin --> UC19
 
-    Client --> UC13
-    Client --> UC14
-    Client --> UC20
+    AI --> UC6
+    AI --> UC7
 
-    Worker --> UC14
+    Client --> UC8
+    Client --> UC9
 
-    AI --> UC15
-    AI --> UC16
+    Worker --> UC9
+
+    classDef actor fill:#E3F2FD,stroke:#0D47A1,stroke-width:1.5px,color:#0D47A1;
+    classDef uc fill:#FFF,stroke:#333,stroke-width:1.5px;
+    
+    class Admin,AI,Client,Worker actor;
+    class UC1,UC2,UC3,UC4,UC5,UC6,UC7,UC8,UC9 uc;
 ```
 
 ---
 
 ## 7.6 Class Diagram
+
+![Class Diagram](flowcharts/7_6_class_diagram.png)
 
 ```mermaid
 classDiagram
@@ -440,14 +447,16 @@ classDiagram
 
 ## 7.7 Sequence Diagram — Lead Intake Flow (AI Voice Call)
 
+![Lead Intake Sequence Diagram](flowcharts/7_7_lead_intake_sequence.png)
+
 ```mermaid
 sequenceDiagram
-    actor Caller as Patient/Caller
-    participant EL as ElevenLabs AI Agent
-    participant WH as Webhook (Edge Function)
-    participant DB as Supabase Database
-    participant WA as WhatsApp API
-    participant Admin as CRM Dashboard
+    actor Caller as "Patient/Caller"
+    participant EL as "ElevenLabs AI Agent"
+    participant WH as "Webhook (Edge Function)"
+    participant DB as "Supabase Database"
+    participant WA as "WhatsApp API"
+    participant Admin as "CRM Dashboard"
 
     Caller->>EL: Dials 99 Care number
     EL->>Caller: AI greets and asks about service needed
@@ -466,14 +475,16 @@ sequenceDiagram
 
 ## 7.8 Sequence Diagram — Worker Assignment Flow
 
+![Worker Assignment Sequence Diagram](flowcharts/7_8_worker_assignment_sequence.png)
+
 ```mermaid
 sequenceDiagram
-    actor Admin as Admin User
-    participant UI as WorkerAllocation UI
-    participant AS as Assignment Service
-    participant DB as Supabase Database
-    participant WA as WhatsApp API
-    participant Client as Client/Patient
+    actor Admin as "Admin User"
+    participant UI as "WorkerAllocation UI"
+    participant AS as "Assignment Service"
+    participant DB as "Supabase Database"
+    participant WA as "WhatsApp API"
+    participant Client as "Client/Patient"
 
     Admin->>UI: Clicks "Assign" on available worker
     UI->>UI: Opens AssignDialog (search/select client)

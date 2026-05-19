@@ -15,7 +15,8 @@ interface AssignmentAttendancePanelProps {
   assignment: {
     id: string;
     employee_id: string;
-    start_date: string;
+    start_date?: string | null;
+    assigned_at?: string;
     end_date: string | null;
     employees: { full_name: string; job_title: string } | null;
     clients: { client_name: string } | null;
@@ -30,9 +31,13 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
   const [markingDate, setMarkingDate] = useState<string | null>(null);
   const [isBulkMarking, setIsBulkMarking] = useState(false);
 
-  const startDate = parseISO(assignment.start_date);
+  const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
+  const startDate = parseISO(fallbackStart);
   const endDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
-  const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+  
+  // ensure start date is not after end date for eachDayOfInterval
+  const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
+  const allDays = eachDayOfInterval({ start: safeStartDate, end: endDate });
   const pastDays = allDays.filter(d => !isAfter(d, new Date()));
 
   const daysPresent = days.filter(d => d.status === 'Present').length;

@@ -1,6 +1,6 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star, QrCode } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -1710,8 +1710,30 @@ export default function CRM() {
                 }
                 // If Deposit Invoice -> move to Deposit Pending
                 else if (agentTargetAction === 'deposit') {
+                    if (invoicePdfUrl) {
+                        await supabase
+                            .from('worker_assignments')
+                            .update({
+                                deposit_invoice_sent: true,
+                                invoice_pdf_url: invoicePdfUrl
+                            })
+                            .eq('client_id', agentTargetLead.id)
+                            .eq('assignment_status', 'active');
+                    }
                     await handleMoveLead(agentTargetLead.id, 'Deposit Pending');
                     toast.success(`Deposit Invoice dispatched! Moved ${agentTargetLead.name} to Deposit Pending.`, { id: toastId, duration: 4000 });
+                }
+                else if (agentTargetAction === 'billing') {
+                    if (invoicePdfUrl) {
+                        await supabase
+                            .from('worker_assignments')
+                            .update({
+                                invoice_pdf_url: invoicePdfUrl
+                            })
+                            .eq('client_id', agentTargetLead.id)
+                            .eq('assignment_status', 'active');
+                    }
+                    toast.success(`Billing Invoice dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
                 }
                 // Default acknowledgment
                 else {
@@ -3243,9 +3265,17 @@ export default function CRM() {
                                                     />
                                                 </div>
                                             </div>
-                                            <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-                                                A custom PDF invoice will be generated and attached as a document along with the payment QR code template.
-                                            </p>
+                                            <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-3">
+                                                <div className="p-2 bg-white rounded shadow-sm border border-slate-200 shrink-0">
+                                                    <QrCode className="w-6 h-6 text-slate-700" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-900 mb-0.5">Dynamic QR Code Attached</p>
+                                                    <p className="text-xs text-slate-500">
+                                                        The client can scan the QR code to securely pay ₹{invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || '15000'} via their preferred UPI app.
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : (
                                         <textarea

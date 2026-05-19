@@ -1,0 +1,23 @@
+sequenceDiagram
+    actor Admin as "Admin User"
+    participant UI as "WorkerAllocation UI"
+    participant AS as "Assignment Service"
+    participant DB as "Supabase Database"
+    participant WA as "WhatsApp API"
+    participant Client as "Client/Patient"
+
+    Admin->>UI: Clicks "Assign" on available worker
+    UI->>UI: Opens AssignDialog (search/select client)
+    Admin->>UI: Selects client, enters notes & deposit
+    UI->>AS: assignWorkerToClient(empId, clientId, notes, deposit)
+    AS->>DB: Check for existing active assignment
+    AS->>DB: INSERT worker_assignments (status: active)
+    AS->>DB: UPDATE employees (status: assigned, assigned_client)
+    AS->>DB: UPDATE crm_leads (stage: Staff Assigned)
+    AS->>AS: Generate secure random token (32 hex chars)
+    AS->>DB: INSERT id_card_links (token, is_active: true)
+    AS->>AS: Build shareable URL
+    AS->>WA: Send ID card link to client via WhatsApp
+    WA-->>Client: Receives WhatsApp with worker ID card link
+    AS-->>UI: Return success (URL, whatsappSent status)
+    UI-->>Admin: Shows success screen with shareable link

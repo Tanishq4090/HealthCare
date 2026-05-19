@@ -4,13 +4,14 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
-import { format, eachDayOfInterval, parseISO } from 'date-fns';
+import { format, eachDayOfInterval, parseISO, isAfter } from 'date-fns';
 
 interface PayslipGeneratorProps {
   assignment: {
     id: string;
     employee_id: string;
-    start_date: string;
+    start_date?: string | null;
+    assigned_at?: string;
     end_date: string | null;
     deposit_amount?: number;
     advance_paid?: number;
@@ -40,9 +41,13 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
   const client = assignment.clients;
 
   const dailyRate = emp?.monthly_daily_rate || 0;
-  const startDate = parseISO(assignment.start_date);
+  
+  const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
+  const startDate = parseISO(fallbackStart);
   const endDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
-  const totalPeriodDays = eachDayOfInterval({ start: startDate, end: endDate }).length;
+  const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
+  
+  const totalPeriodDays = eachDayOfInterval({ start: safeStartDate, end: endDate }).length;
 
   const daysWorked = attendanceSummary ? parseFloat(attendanceSummary.days_present || 0) : 0;
   const totalEarning = daysWorked * dailyRate;
