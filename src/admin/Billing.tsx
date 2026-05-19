@@ -7,6 +7,7 @@ const RupeeIcon = ({ className }: { className?: string }) => (
 );
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import PayslipGenerator from '../components/hr/PayslipGenerator';
 
 export default function Billing() {
     const [searchParams] = useSearchParams();
@@ -32,9 +33,15 @@ export default function Billing() {
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('Hinglish');
     const [agentDraftText, setAgentDraftText] = useState('');
 
+    const [invoiceDepositAmount, setInvoiceDepositAmount] = useState('');
+    const [invoiceStartDate, setInvoiceStartDate] = useState('');
+    const [invoiceEndDate, setInvoiceEndDate] = useState('');
+    const [invoiceDueDate, setInvoiceDueDate] = useState('');
+
     // Invoice Modal State
     const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
     const [invoiceData, setInvoiceData] = useState<any>(null);
+    const [generatingPayslipFor, setGeneratingPayslipFor] = useState<any>(null);
 
     const fetchBillingData = async () => {
         setIsLoading(true);
@@ -44,40 +51,83 @@ export default function Billing() {
                 .from('worker_assignments')
                 .select(`
                     id,
-                    
-                    
+                    employee_id,
+                    start_date,
+                    end_date,
+                    deposit_amount,
+                    advance_paid,
+                    client_billing_rate,
+                    deposit_invoice_sent,
+                    invoice_pdf_url,
                     assigned_at,
-                    clients (client_name, phone_number),
-                    employees (full_name)
+                    final_invoice_generated,
+                    final_invoice_number,
+                    clients (client_name, phone_number, id),
+                    employees (id, full_name, job_title, phone, monthly_daily_rate, short_term_daily_rate, preferred_payment_type)
                 `)
                 .order('assigned_at', { ascending: false });
 
             if (error) throw error;
 
+            let leadsMap: Record<string, number> = {};
+            let activeLeadIds = new Set<string>();
+            try {
+                const { data: leads } = await supabase
+                    .from('crm_leads')
+                    .select('id, estimated_value_monthly');
+                if (leads) {
+                    leads.forEach(l => {
+                        activeLeadIds.add(l.id);
+                        if (l.estimated_value_monthly) {
+                            leadsMap[l.id] = l.estimated_value_monthly;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('Could not fetch crm_leads rates:', err);
+            }
+
             if (data) {
+                // Filter data to only include active assignments where the client has a corresponding active lead in the CRM
+                const activeAssignments = data.filter(asgn => {
+                    const clientId = (asgn as any).clients?.id;
+                    return clientId && activeLeadIds.has(clientId);
+                });
+
                 // Map to deposits
-                const mappedDeposits = data.map(asgn => ({
-                    id: asgn.id,
-                    client: (asgn as any).clients?.client_name || 'Unknown',
-                    client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                    amount: "₹0",
-                    status: "Pending Invoice",
-                    date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                    invoice_no: ""
-                }));
+                const mappedDeposits = activeAssignments.map(asgn => {
+                    const clientId = (asgn as any).clients?.id;
+                    const amountVal = leadsMap[clientId] || 15000;
+                    return {
+                        id: asgn.id,
+                        client_id: clientId,
+                        client: (asgn as any).clients?.client_name || 'Unknown',
+                        client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
+                        amount: `₹${amountVal}`,
+                        status: asgn.deposit_invoice_sent ? "Invoice Sent" : "Pending Invoice",
+                        date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        invoice_no: "",
+                        invoice_pdf_url: asgn.invoice_pdf_url
+                    };
+                });
                 setDeposits(mappedDeposits);
                 
                 // For monthly bills, map active assignments
-                setMonthlyBills(data.map(asgn => ({
-                    id: asgn.id,
-                    client: (asgn as any).clients?.client_name || 'Unknown',
-                    client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                    amount: "₹0",
-                    attendanceVerified: true,
-                    status: "Draft",
-                    month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
-                    invoice_no: ""
-                })));
+                setMonthlyBills(activeAssignments.map(asgn => {
+                    const clientId = (asgn as any).clients?.id;
+                    const amountVal = leadsMap[clientId] || 15000;
+                    return {
+                        id: asgn.id,
+                        client: (asgn as any).clients?.client_name || 'Unknown',
+                        client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
+                        amount: `₹${amountVal}`,
+                        attendanceVerified: true,
+                        status: asgn.final_invoice_generated ? "Sent" : "Draft",
+                        month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
+                        invoice_no: asgn.final_invoice_number || "",
+                        rawAssignment: asgn
+                    };
+                }));
             }
         } catch (err: any) {
             console.error('Error fetching billing data:', err);
@@ -233,7 +283,11 @@ export default function Billing() {
     const openAgentModal = (bill: any) => {
         const billToProcess = { ...bill, invoice_no: bill.invoice_no || `INV-M${Math.floor(Math.random() * 1000) + 100}` };
         setAgentTargetBill(billToProcess);
-        setAgentDraftText(generateWhatsappDraft(billToProcess, agentDraftLang));
+        if (billToProcess.isDepositMode) {
+            setAgentDraftText(`Hello ${billToProcess.client}, your security deposit invoice has been prepared. Please review the details attached.`);
+        } else {
+            setAgentDraftText(generateWhatsappDraft(billToProcess, agentDraftLang));
+        }
         setIsAgentModalOpen(true);
     };
 
@@ -243,11 +297,100 @@ export default function Billing() {
         }
     }, [agentDraftLang, agentTargetBill]);
 
-    const handleDispatchMessage = () => {
-        // Launch real WhatsApp Web intent with drafted text
-        let phoneDigits = '917575041313'; // Default to test number
+    const handleDispatchMessage = async () => {
+        if (!agentTargetBill) return;
+
+        if (agentTargetBill.isDepositMode) {
+            setIsAgentModalOpen(false);
+            const toastId = toast.loading(`Generating PDF and dispatching to ${agentTargetBill.client}...`);
+            try {
+                const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+                const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                
+                const formatDateStr = (dateStr: string) => {
+                    if (!dateStr) return '';
+                    const [y, m, d] = dateStr.split('-');
+                    return `${d}/${m}/${y}`;
+                };
+
+                const formattedPeriod = (invoiceStartDate && invoiceEndDate)
+                    ? `${formatDateStr(invoiceStartDate)} To ${formatDateStr(invoiceEndDate)}`
+                    : 'As agreed';
+
+                const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    },
+                    body: JSON.stringify({
+                        lead_id: agentTargetBill.client_id,
+                        deposit_amount: invoiceDepositAmount || 15000,
+                        service_period: formattedPeriod,
+                        due_date: invoiceDueDate
+                    })
+                });
+
+                if (!invResp.ok) {
+                    const err = await invResp.text();
+                    throw new Error(`Failed to generate invoice: ${err}`);
+                }
+
+                const invData = await invResp.json();
+                const invoicePdfUrl = invData.public_url;
+                
+                toast.loading("Sending via WhatsApp...", { id: toastId });
+
+                let phoneDigits = '917575041313'; 
+                if (agentTargetBill.client_phone) {
+                    phoneDigits = agentTargetBill.client_phone.replace(/\D/g, '');
+                    if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+                }
+
+                const waResp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY,
+                    },
+                    body: JSON.stringify({
+                        phone: phoneDigits,
+                        message: agentDraftText,
+                        leadId: agentTargetBill.client_id,
+                        sendInvoicePdf: true,
+                        invoicePdfUrl: invoicePdfUrl,
+                        useTemplate: true,
+                        templateName: 'deposit_request',
+                        templateParams: [agentTargetBill.client]
+                    })
+                });
+
+                if (!waResp.ok) throw new Error(await waResp.text());
+
+                await supabase
+                    .from('worker_assignments')
+                    .update({
+                        deposit_invoice_sent: true,
+                        invoice_pdf_url: invoicePdfUrl
+                    })
+                    .eq('id', agentTargetBill.id);
+
+                toast.success(`Deposit Invoice dispatched to ${agentTargetBill.client}!`, { id: toastId, duration: 4000 });
+                
+                setDeposits(prev => prev.map(d => d.id === agentTargetBill.id ? { ...d, status: 'Invoice Sent', invoice_pdf_url: invoicePdfUrl } : d));
+
+            } catch (error: any) {
+                console.error('Dispatch error:', error);
+                toast.error(error.message || 'Failed to dispatch invoice', { id: toastId });
+            }
+            return;
+        }
+
+        // Launch real WhatsApp Web intent with drafted text for Monthly Billing
+        let phoneDigits = '917575041313'; 
         if (agentTargetBill?.client_phone) {
-            phoneDigits = agentTargetBill.client_phone.replace(/\D/g, ''); // Extract only digits
+            phoneDigits = agentTargetBill.client_phone.replace(/\D/g, ''); 
         }
         const waUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(agentDraftText)}`;
         window.open(waUrl, '_blank');
@@ -322,14 +465,21 @@ export default function Billing() {
                                     </span>
 
                                     {dep.status === 'Pending Invoice' && (
-                                        <button onClick={() => openInvoiceModal(dep)} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2">
+                                        <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2">
                                             <FileText className="w-4 h-4" /> Prepare Invoice
                                         </button>
                                     )}
                                     {dep.status === 'Invoice Sent' && (
-                                        <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-500" /> Record Collection
-                                        </button>
+                                        <>
+                                            {dep.invoice_pdf_url && (
+                                                <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
+                                                    <FileText className="w-4 h-4 text-primary" /> View PDF
+                                                </button>
+                                            )}
+                                            <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2">
+                                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
+                                            </button>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -382,7 +532,7 @@ export default function Billing() {
                                                 <FileText className="w-4 h-4" /> Locked
                                             </button>
                                         ) : bill.status === 'Draft' ? (
-                                            <button onClick={() => openInvoiceModal(bill)} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
+                                            <button onClick={() => setGeneratingPayslipFor(bill.rawAssignment)} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
                                                 <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" /> Prepare Invoice
                                             </button>
                                         ) : (
@@ -584,46 +734,99 @@ export default function Billing() {
                             </button>
                         </div>
                         <div className="p-5 space-y-4 flex-1">
-                            <div className="flex items-center justify-between">
-                                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                    <Globe className="w-4 h-4 text-primary" /> Target Language
-                                </label>
-                                <div className="flex bg-slate-100 rounded-lg p-1">
-                                    {['English', 'Hindi', 'Hinglish'].map(lang => (
-                                        <button
-                                            key={lang}
-                                            onClick={() => setAgentDraftLang(lang as any)}
-                                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        >
-                                            {lang}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                                    <Edit3 className="w-4 h-4 text-primary" /> Edit Generated Draft
-                                </label>
-                                <div className="relative">
-                                    <textarea
-                                        value={agentDraftText}
-                                        onChange={(e) => setAgentDraftText(e.target.value)}
-                                        className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed"
-                                    />
-                                    <div className="absolute bottom-3 right-3 flex gap-1">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
-                                        <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
+                            {agentTargetBill?.isDepositMode ? (
+                                <div className="space-y-3 bg-white p-4 rounded-xl border border-emerald-200 shadow-sm relative z-10 w-full mb-4">
+                                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
+                                        <FileText className="w-4 h-4 text-emerald-600" />
+                                        <span className="text-xs font-bold text-slate-700">Invoice Details (Auto-generated PDF)</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Deposit Amount (₹)</label>
+                                            <input 
+                                                type="number" 
+                                                value={invoiceDepositAmount} 
+                                                onChange={e => setInvoiceDepositAmount(e.target.value)} 
+                                                className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" 
+                                                placeholder="15000" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Due Date</label>
+                                            <input 
+                                                type="date" 
+                                                value={invoiceDueDate} 
+                                                onChange={e => setInvoiceDueDate(e.target.value)} 
+                                                className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Start Date</label>
+                                            <input 
+                                                type="date" 
+                                                value={invoiceStartDate} 
+                                                onChange={e => setInvoiceStartDate(e.target.value)} 
+                                                className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
+                                            <input 
+                                                type="date" 
+                                                value={invoiceEndDate} 
+                                                onChange={e => setInvoiceEndDate(e.target.value)} 
+                                                className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" 
+                                            />
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-3">
-                                    <div className="p-2 bg-white rounded shadow-sm border border-slate-200 shrink-0">
-                                        <QrCode className="w-6 h-6 text-slate-700" />
+                            ) : (
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                        <Globe className="w-4 h-4 text-primary" /> Target Language
+                                    </label>
+                                    <div className="flex bg-slate-100 rounded-lg p-1">
+                                        {['English', 'Hindi', 'Hinglish'].map(lang => (
+                                            <button
+                                                key={lang}
+                                                onClick={() => setAgentDraftLang(lang as any)}
+                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                            >
+                                                {lang}
+                                            </button>
+                                        ))}
                                     </div>
-                                    <div>
-                                        <p className="text-xs font-semibold text-slate-900 mb-0.5">Dynamic QR Code Attached</p>
-                                        <p className="text-xs text-slate-500">The client can scan the QR code to securely pay {agentTargetBill.amount} via their preferred UPI app.</p>
+                                </div>
+                            )}
+                            {!agentTargetBill?.isDepositMode && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                                        <Edit3 className="w-4 h-4 text-primary" /> Edit Generated Draft
+                                    </label>
+                                    <div className="relative">
+                                        <textarea
+                                            value={agentDraftText}
+                                            onChange={(e) => setAgentDraftText(e.target.value)}
+                                            className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed"
+                                        />
+                                        <div className="absolute bottom-3 right-3 flex gap-1">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
+                                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
+                                        </div>
                                     </div>
+                                </div>
+                            )}
+
+                            <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-3">
+                                <div className="p-2 bg-white rounded shadow-sm border border-slate-200 shrink-0">
+                                    <QrCode className="w-6 h-6 text-slate-700" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-900 mb-0.5">Dynamic QR Code Attached</p>
+                                    <p className="text-xs text-slate-500">
+                                        The client can scan the QR code to securely pay {agentTargetBill?.isDepositMode ? `₹${invoiceDepositAmount || '15000'}` : agentTargetBill.amount} via their preferred UPI app.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -632,7 +835,7 @@ export default function Billing() {
                                 Cancel
                             </button>
                             <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
-                                <Send className="w-4 h-4" /> Send Bill on WhatsApp
+                                <Send className="w-4 h-4" /> {agentTargetBill?.isDepositMode ? 'Send Deposit on WhatsApp' : 'Send Bill on WhatsApp'}
                             </button>
                         </div>
                     </div>
@@ -780,6 +983,18 @@ export default function Billing() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Payslip & Invoice Generator Modal */}
+            {generatingPayslipFor && (
+                <PayslipGenerator
+                    assignment={generatingPayslipFor}
+                    onClose={() => setGeneratingPayslipFor(null)}
+                    onGenerated={() => {
+                        setGeneratingPayslipFor(null);
+                        fetchBillingData();
+                    }}
+                />
             )}
         </div>
     );

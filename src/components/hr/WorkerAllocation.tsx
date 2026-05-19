@@ -42,6 +42,7 @@ import {
 } from '../../services/assignmentService';
 import { supabase } from '../../lib/supabase';
 import { EmployeeIDCard } from '../hr/EmployeeIDCard';
+import PayslipGenerator from './PayslipGenerator';
 import type { Employee, EmployeeStatus, CreateEmployeeInput } from '../../types/hr';
 
 // ── Types ─────────────────────────────────────────────────
@@ -461,6 +462,9 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [depositPaid, setDepositPaid] = useState<number>(0);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [clientBillingRate, setClientBillingRate] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ url: string; whatsappSent: boolean; whatsappError?: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -473,8 +477,18 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
   const debouncedSearch = useDebounce(clientSearch, 250);
 
+  // Auto-fill client billing rate from employee's rate when employee changes
   useEffect(() => {
-    if (!open) { setResult(null); setSelectedClient(null); setNotes(''); setClientSearch(''); setShowNewClient(false); }
+    if (employee?.monthly_daily_rate && clientBillingRate === 0) {
+      setClientBillingRate(employee.monthly_daily_rate);
+    }
+  }, [employee]);
+
+  useEffect(() => {
+    if (!open) {
+      setResult(null); setSelectedClient(null); setNotes(''); setClientSearch('');
+      setShowNewClient(false); setStartDate(''); setEndDate(''); setDepositPaid(0); setClientBillingRate(0);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -489,7 +503,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         const formatted = (data ?? []).map(l => ({
           id: l.id,
           client_name: l.name,
-          company_name: l.pipeline_stage, // Use stage as "company" info for clarity
+          company_name: l.pipeline_stage,
           phone_number: l.whatsapp_number || l.phone
         }));
         setClients(formatted);
@@ -518,9 +532,33 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
   const handleAssign = async () => {
     if (!employee || !selectedClient) { toast.error('Please select a client.'); return; }
+    if (!startDate) { toast.error('Please set an assignment start date.'); return; }
     setIsSubmitting(true);
     try {
-      const res = await assignWorkerToClient(employee.id, selectedClient.id, notes, depositPaid);
+      const res = await assignWorkerToClient(
+        employee.id,
+        selectedClient.id,
+        notes,
+        depositPaid,
+        false,
+        {
+          startDate,
+          endDate: endDate || undefined,
+          serviceType: endDate ? 'date_range' : 'one_day',
+          totalBillAmount: 0,
+        }
+      );
+
+      // Save the new billing fields to worker_assignments after creation
+      if (res.assignment?.id) {
+        await supabase.from('worker_assignments').update({
+          start_date: startDate,
+          end_date: endDate || null,
+          deposit_amount: depositPaid,
+          client_billing_rate: clientBillingRate || employee.monthly_daily_rate || 0,
+        }).eq('id', res.assignment.id);
+      }
+
       setResult({ url: res.shareableUrl, whatsappSent: res.whatsappSent, whatsappError: res.whatsappError });
       onAssigned();
     } catch (err: any) {
@@ -666,30 +704,56 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               </div>
             )}
 
+            {/* Assignment Date Range */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" /> Assignment Period
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Start Date <span className="text-red-400">*</span></label>
+                  <Input type="date" className="mt-1 text-sm border-slate-200" value={startDate}
+                    onChange={e => setStartDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">End Date (optional)</label>
+                  <Input type="date" className="mt-1 text-sm border-slate-200" value={endDate}
+                    min={startDate}
+                    onChange={e => setEndDate(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Security Deposit (₹)</label>
+                  <Input type="number" className="mt-1 text-sm border-slate-200" placeholder="0"
+                    value={depositPaid || ''} onChange={e => setDepositPaid(Number(e.target.value) || 0)} />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Upfront deposit from client.</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Client Billing Rate/Day (₹)</label>
+                  <Input type="number" className="mt-1 text-sm border-slate-200" placeholder={String(employee?.monthly_daily_rate || 0)}
+                    value={clientBillingRate || ''} onChange={e => setClientBillingRate(Number(e.target.value) || 0)} />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Rate charged to client per day.</p>
+                </div>
+              </div>
+            </div>
+
             {/* Notes */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Notes (optional)</label>
-                <textarea
-                  rows={2}
-                  className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-transparent"
-                  placeholder="Any special instructions..."
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Deposit Paid (₹)</label>
-                 <Input type="number" className="mt-1 border-slate-200" placeholder="0" value={depositPaid || ''}
-                   onChange={e => setDepositPaid(Number(e.target.value) || 0)} />
-                 <p className="text-[10px] text-slate-400 mt-1">Amount client paid upfront for this assignment.</p>
-              </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Notes (optional)</label>
+              <textarea
+                rows={2}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-transparent"
+                placeholder="Any special instructions..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+              />
             </div>
 
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
               <Button className="bg-primary hover:bg-primary/90 text-white gap-2" onClick={handleAssign}
-                disabled={isSubmitting || !selectedClient}>
+                disabled={isSubmitting || !selectedClient || !startDate}>
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Briefcase className="w-4 h-4" />}
                 {isSubmitting ? 'Assigning...' : 'Assign & Send Link'}
               </Button>
@@ -1255,6 +1319,7 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
   const [resending, setResending] = useState<string | null>(null);
   const [releasing, setReleasing] = useState<string | null>(null);
   const [releasingConfirm, setReleasingConfirm] = useState<string | null>(null);
+  const [generatingPayslipFor, setGeneratingPayslipFor] = useState<ActiveAssignment | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1439,6 +1504,10 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                             onClick={() => onPreview(a.employee)}>
                             <Shield className="w-3 h-3" /> ID Card
                           </Button>
+                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold gap-1.5 rounded-xl border border-blue-100"
+                            onClick={() => setGeneratingPayslipFor(a)}>
+                            <FileText className="w-3 h-3" /> Billing
+                          </Button>
                           <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-primary/5 text-primary hover:bg-primary/10 font-bold gap-1.5 rounded-xl border border-primary/10"
                             onClick={() => handleResend(a)} disabled={resending === a.id}>
                             {resending === a.id
@@ -1485,6 +1554,14 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
           </table>
         </div>
       </div>
+
+      {generatingPayslipFor && (
+        <PayslipGenerator
+          assignment={generatingPayslipFor as any}
+          onClose={() => setGeneratingPayslipFor(null)}
+          onGenerated={() => { setGeneratingPayslipFor(null); load(); }}
+        />
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
 import { format } from 'date-fns';
 import WorkerAllocation from '../components/hr/WorkerAllocation';
+import AssignmentAttendancePanel from '../components/hr/AssignmentAttendancePanel';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
@@ -35,6 +36,7 @@ export default function HR() {
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
     const [inlineMarkingId, setInlineMarkingId] = useState<string | null>(null);
+    const [activeAssignments, setActiveAssignments] = useState<any[]>([]);
 
     // Initial data fetch
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -295,29 +297,21 @@ export default function HR() {
     const fetchLiveAttendance = async () => {
         setAttendanceLoading(true);
         try {
-            // Fetch attendance logs with joined worker details for the selected date
             const { data, error } = await supabase
-                .from('attendance')
+                .from('worker_assignments')
                 .select(`
-                    id,
-                    check_in_time,
-                    check_out_time,
-                    status,
-                    worker_id,
-                    employees (
-                        full_name,
-                        job_title,
-                        assigned_client
-                    )
+                    *,
+                    employees(*),
+                    clients(client_name)
                 `)
-                .eq('duty_date', selectedAttendanceDate)
-                .order('check_in_time', { ascending: false });
+                .eq('assignment_status', 'active')
+                .order('assigned_at', { ascending: false });
 
             if (error) throw error;
-            setAttendanceLogs(data || []);
+            setActiveAssignments(data || []);
         } catch (err: any) {
-            console.error('Error fetching live attendance:', err);
-            toast.error('Failed to load recent attendance logs');
+            console.error('Error fetching active assignments:', err);
+            toast.error('Failed to load active assignments');
         } finally {
             setAttendanceLoading(false);
         }
@@ -1051,123 +1045,23 @@ export default function HR() {
                             <span className="text-slate-500 font-medium">Fetching roster data...</span>
                         </div>
                     ) : (
-                        <div className="flex flex-col flex-1 relative">
-                            {workers.filter((w: any) => w.status === 'assigned' || w.status === 'Active').length === 0 && (
+                        <div className="flex flex-col flex-1 relative bg-white">
+                            {activeAssignments.length === 0 && (
                                 <div className="m-6 bg-slate-50 border border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center">
                                     <div className="w-12 h-12 bg-white text-slate-400 rounded-full flex items-center justify-center shadow-sm border border-slate-100 mb-3">
                                         <AlertTriangle className="w-6 h-6" />
                                     </div>
-                                    <h3 className="text-base font-bold text-slate-900">No Active Workers</h3>
-                                    <p className="text-sm text-slate-500 mt-1 max-w-sm">There are no active workers in your directory to mark attendance for.</p>
+                                    <h3 className="text-base font-bold text-slate-900">No Active Deployments</h3>
+                                    <p className="text-sm text-slate-500 mt-1 max-w-sm">There are no active workers in your directory to track attendance for.</p>
                                 </div>
                             )}
-                            <div className="flex-1 overflow-y-auto bg-white flex flex-col h-[calc(100vh-280px)] border-t border-slate-200">
-                                {/* Minimalist Stats Header */}
-                                {(() => {
-                                    const activeWorkersList = workers.filter((w: any) => w.status === 'assigned' || w.status === 'Active');
-                                    const total = activeWorkersList.length;
-                                    const present = activeWorkersList.filter(w => ['Present', 'Completed', 'On Duty'].includes(attendanceLogs.find(l => l.worker_id === w.id)?.status || '')).length;
-                                    const absentLeave = activeWorkersList.filter(w => ['Absent', 'Paid Leave', 'Unpaid Leave', 'Half Day', 'Weekly Off'].includes(attendanceLogs.find(l => l.worker_id === w.id)?.status || '')).length;
-                                    const pending = total - present - absentLeave;
-
-                                    return (
-                                        <div className="bg-slate-50/80 backdrop-blur-md border-b border-slate-200 px-6 py-3 flex items-center justify-between text-sm sticky top-0 z-20">
-                                            <div className="flex items-center gap-6 text-slate-600 font-semibold">
-                                                <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-300"></div> Total: {total}</span>
-                                                <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-400"></div> Present: {present}</span>
-                                                <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-rose-400"></div> Leaves/Absent: {absentLeave}</span>
-                                            </div>
-                                            {pending > 0 && (
-                                                <div className="flex items-center gap-4">
-                                                    <span className="text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-md border border-amber-100">{pending} Pending</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
-
-                                {/* Minimalist Linear-style List */}
-                                <div className="flex flex-col divide-y divide-slate-100 pb-10">
-                                    {workers.filter((w: any) => w.status === 'assigned' || w.status === 'Active').map((worker: any) => {
-                                        const logForDay = attendanceLogs.find(l => l.worker_id === worker.id);
-                                        const currentStatus = logForDay ? logForDay.status : 'Pending';
-
-                                        return (
-                                            <div key={worker.id} className={`flex items-center justify-between px-6 py-4 transition-colors group ${currentStatus === 'Pending' ? 'bg-white hover:bg-primary/5' : 'bg-slate-50/30 hover:bg-slate-50'}`}>
-                                                {/* Meta Info */}
-                                                <div className="flex items-center gap-4 min-w-[300px]">
-                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border shadow-sm ${currentStatus === 'Pending' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white text-slate-400 border-slate-200'}`}>
-                                                        {worker.name.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <div className={`font-semibold ${currentStatus === 'Pending' ? 'text-slate-900' : 'text-slate-600'}`}>{worker.name}</div>
-                                                        <div className="text-xs text-slate-500 mt-0.5 font-medium">{worker.role} • <span className="text-slate-400">{worker.assigned_client || 'No Active Client'}</span></div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Logs */}
-                                                <div className="flex-1 px-4 hidden md:block text-slate-500 justify-center">
-                                                    {logForDay?.check_in_time ? (
-                                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-white border border-slate-200 px-2 py-1 rounded-md shadow-sm"><Clock className="w-3.5 h-3.5 text-slate-400"/> {new Date(logForDay.check_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                                    ) : <span className="text-slate-300 font-bold">—</span>}
-                                                </div>
-
-                                                {/* Status & Actions */}
-                                                <div className="flex justify-end min-w-[280px]">
-                                                    {currentStatus === 'Pending' ? (
-                                                        <div className="flex items-center gap-2">
-                                                            <button 
-                                                                onClick={() => handleInlineAttendanceMark(worker.id, 'Present')}
-                                                                disabled={inlineMarkingId === worker.id}
-                                                                className="px-4 py-2 bg-slate-100 hover:bg-[#E6F7F7] hover:text-[#1AA6A8] hover:border-[#1AA6A8]/20 border border-transparent text-slate-700 font-bold text-sm rounded-lg transition-all flex items-center gap-1.5"
-                                                            >
-                                                                {inlineMarkingId === worker.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>} Present
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => handleInlineAttendanceMark(worker.id, 'Absent')}
-                                                                disabled={inlineMarkingId === worker.id}
-                                                                className="px-4 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-transparent text-slate-700 font-bold text-sm rounded-lg transition-all flex items-center gap-1.5"
-                                                            >
-                                                                <X className="w-4 h-4"/> Absent
-                                                            </button>
-                                                            <select 
-                                                                className="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg outline-none cursor-pointer shadow-sm transition-all focus:ring-2 focus:ring-[#1AA6A8] appearance-none text-center"
-                                                                onChange={(e) => handleInlineAttendanceMark(worker.id, e.target.value)}
-                                                                value=""
-                                                                disabled={inlineMarkingId === worker.id}
-                                                                title="Other Statuses"
-                                                            >
-                                                                <option value="" disabled>Other...</option>
-                                                                <option value="Half Day">Half Day</option>
-                                                                <option value="Paid Leave">Paid Leave</option>
-                                                                <option value="Unpaid Leave">Unpaid Leave</option>
-                                                                <option value="Weekly Off">Weekly Off</option>
-                                                            </select>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-3">
-                                                            {currentStatus === 'Present' || currentStatus === 'Completed' || currentStatus === 'On Duty' ? (
-                                                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 rounded-md text-sm font-bold shadow-sm"><CheckCircle2 className="w-4 h-4"/> Present</span>
-                                                            ) : currentStatus === 'Absent' ? (
-                                                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-md text-sm font-bold shadow-sm"><X className="w-4 h-4"/> Absent</span>
-                                                            ) : (
-                                                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-sm font-bold shadow-sm"><Clock className="w-4 h-4"/> {currentStatus}</span>
-                                                            )}
-                                                            <button 
-                                                                onClick={() => handleInlineAttendanceMark(worker.id, 'Pending')}
-                                                                disabled={inlineMarkingId === worker.id}
-                                                                className="opacity-0 group-hover:opacity-100 p-2 text-slate-400 hover:text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-all shadow-sm"
-                                                                title="Undo"
-                                                            >
-                                                                <RefreshCw className="w-4 h-4"/>
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+                                {activeAssignments.map(assignment => (
+                                    <AssignmentAttendancePanel
+                                        key={assignment.id}
+                                        assignment={assignment}
+                                    />
+                                ))}
                             </div>
                         </div>
                     )}
