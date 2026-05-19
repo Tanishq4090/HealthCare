@@ -59,7 +59,6 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
   const effectiveDays = daysPresent + daysHalf * 0.5;
 
   const fetchAttendance = useCallback(async () => {
-    if (!isExpanded) return;
     setIsLoading(true);
     try {
       const { data, error } = await supabase
@@ -97,7 +96,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
     } finally {
       setIsLoading(false);
     }
-  }, [isExpanded, assignment.employee_id, safeStartDate, endDate, allDays]);
+  }, [assignment.employee_id, safeStartDate, endDate, allDays]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
