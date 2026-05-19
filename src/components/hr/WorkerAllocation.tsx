@@ -39,6 +39,7 @@ import {
   assignWorkerToClient,
   deactivateIDCardLink,
   sendIDCardLinkToClient,
+  buildShareableUrl,
 } from '../../services/assignmentService';
 import { supabase } from '../../lib/supabase';
 import { EmployeeIDCard } from '../hr/EmployeeIDCard';
@@ -1347,7 +1348,7 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
             .maybeSingle();
 
           const token = link?.token ?? null;
-          const shareableUrl = token ? `${window.location.origin}/id-card/${token}` : null;
+          const shareableUrl = token ? buildShareableUrl(token) : null;
           return {
             ...a,
             employee: a.employee, // supabase alias handles this
@@ -1541,11 +1542,7 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                             </Button>
                           )}
 
-                          <Button size="sm" variant="ghost"
-                            className="h-8 px-3 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-bold rounded-xl"
-                            onClick={() => handleComplete(a)} disabled={completing === a.id}>
-                            {completing === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Terminate'}
-                          </Button>
+
                         </div>
                       </td>
                     </tr>

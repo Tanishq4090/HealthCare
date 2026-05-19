@@ -678,42 +678,135 @@ export default function HR() {
                         period_end: new Date().toISOString().slice(0, 10) // Placeholder for demo
                     });
 
-                    // --- 1. Generate PDF Worker Payslip ---
+                    // --- 1. Generate PDF Worker Payslip (Tax Invoice Theme) ---
                     const workerDoc = new jsPDF();
-                    workerDoc.setFontSize(22);
-                    workerDoc.setTextColor(15, 23, 42); 
-                    workerDoc.text("99Care AI", 14, 20);
-                    workerDoc.setFontSize(14);
-                    workerDoc.setTextColor(100, 116, 139); 
-                    workerDoc.text("Official Worker Payslip", 14, 30);
-                    workerDoc.setFontSize(10);
-                    workerDoc.setTextColor(71, 85, 105);
-                    workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
-                    workerDoc.text(`Role: ${worker.role}`, 14, 52);
-                    workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 59);
-                    workerDoc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 14, 66);
+                    const dateNow = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    const payslipNo = `PS-${Date.now().toString().slice(-6)}`;
 
-                    autoTable(workerDoc, {
-                        startY: 75,
-                        headStyles: { fillColor: [26, 166, 168] },
-                        head: [['Description', 'Amount']],
-                        body: [
-                            [`working days`, `${daysWorked} days`],
-                            [`Salary per day`, `₹${appliedRate.toFixed(2)}`],
-                            [`Total Amount :`, `₹${totalCost.toFixed(2)}`],
-                            [`Advanced IF any :`, `- ₹${deposit.toFixed(2)}`],
-                        ],
+                    // Header – Company name left, info right
+                    workerDoc.setFont('helvetica', 'bold');
+                    workerDoc.setFontSize(22);
+                    workerDoc.setTextColor(30, 41, 59);
+                    workerDoc.text('99 CARE', 14, 25);
+                    workerDoc.setFontSize(13);
+                    workerDoc.setTextColor(60, 120, 216);
+                    workerDoc.text('WORKER PAYSLIP', 14, 33);
+
+                    // Company info right-aligned
+                    workerDoc.setFont('helvetica', 'normal');
+                    workerDoc.setFontSize(9);
+                    workerDoc.setTextColor(71, 85, 105);
+                    const wCompanyInfo = [
+                        '104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN',
+                        'Surat, GUJARAT, 395007',
+                        'Mobile: +91 9016116564',
+                        'Email: 99careforyou@gmail.com',
+                        'Website: 99CARE.ORG'
+                    ];
+                    let wCompY = 16;
+                    wCompanyInfo.forEach((line: string) => {
+                        workerDoc.text(line, 196, wCompY, { align: 'right' });
+                        wCompY += 4.5;
                     });
 
-                    let finalY = (workerDoc as any).lastAutoTable.finalY || 120;
-                    workerDoc.setFontSize(14);
-                    workerDoc.setTextColor(15, 23, 42);
-                    workerDoc.setFont("helvetica", "bold");
-                    workerDoc.text(`Pay Amount: ₹${Math.abs(netBalance).toFixed(2)}`, 14, finalY + 15);
+                    // Divider
+                    workerDoc.setDrawColor(180, 200, 240);
+                    workerDoc.setLineWidth(0.8);
+                    workerDoc.line(14, 42, 196, 42);
+
+                    // Left: Worker info
+                    workerDoc.setFont('helvetica', 'bold');
                     workerDoc.setFontSize(10);
-                    workerDoc.setFont("helvetica", "normal");
+                    workerDoc.setTextColor(30, 41, 59);
+                    workerDoc.text('Worker Details:', 14, 50);
+                    workerDoc.setFontSize(11);
+                    workerDoc.text(worker.name, 14, 56);
+                    workerDoc.setFont('helvetica', 'normal');
+                    workerDoc.setFontSize(9);
+                    workerDoc.setTextColor(71, 85, 105);
+                    workerDoc.text(`Designation: ${worker.role}`, 14, 62);
+                    workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 68);
+
+                    // Right: Payslip meta
+                    workerDoc.setFont('helvetica', 'bold');
+                    workerDoc.setFontSize(10);
+                    workerDoc.setTextColor(30, 41, 59);
+                    workerDoc.text('Payslip Details:', 130, 50);
+                    workerDoc.setFont('helvetica', 'normal');
+                    workerDoc.setFontSize(9);
+                    workerDoc.setTextColor(71, 85, 105);
+                    workerDoc.text(`Payslip #: ${payslipNo}`, 130, 56);
+                    workerDoc.text(`Issue Date: ${dateNow}`, 130, 62);
+
+                    // Earnings breakdown table
+                    autoTable(workerDoc, {
+                        startY: 78,
+                        theme: 'grid',
+                        headStyles: { fillColor: [60, 120, 216], textColor: 255, fontStyle: 'bold' },
+                        head: [['Earning Breakdown', 'Value']],
+                        body: [
+                            ['Working Days', `${daysWorked} days`],
+                            ['Salary Per Day', `Rs. ${appliedRate.toFixed(2)}`],
+                            ['Total Amount', `Rs. ${totalCost.toFixed(2)}`],
+                            ['Advance / Deductions', `- Rs. ${deposit.toFixed(2)}`],
+                        ],
+                        columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
+                    });
+
+                    let finalY = (workerDoc as any).lastAutoTable.finalY + 8;
+
+                    // Net Payable box
+                    workerDoc.setFillColor(240, 253, 244);
+                    workerDoc.setDrawColor(34, 197, 94);
+                    workerDoc.roundedRect(14, finalY, 182, 18, 3, 3, 'FD');
+                    workerDoc.setFont('helvetica', 'bold');
+                    workerDoc.setFontSize(11);
+                    workerDoc.setTextColor(21, 128, 61);
+                    workerDoc.text('NET AMOUNT PAYABLE TO WORKER:', 20, finalY + 11);
+                    workerDoc.text(`Rs. ${Math.abs(netBalance).toFixed(2)}`, 185, finalY + 11, { align: 'right' });
+
+                    // Bank details
+                    let wBkY = finalY + 30;
+                    workerDoc.setFont('helvetica', 'bold');
+                    workerDoc.setFontSize(10);
+                    workerDoc.setTextColor(30, 41, 59);
+                    workerDoc.text('Bank Details for Transfer:', 14, wBkY);
+                    wBkY += 6;
+                    const wBankLines = [
+                        { l: 'Bank:', v: 'The Sutex Co-Operative BankLtd.' },
+                        { l: 'Account Holder:', v: '99 CARE HOME HEALTHCARE SERVICE' },
+                        { l: 'Account #:', v: '001810021002033' },
+                        { l: 'IFSC Code:', v: 'SUTB0248018' },
+                        { l: 'Branch:', v: 'Adajan Pal' },
+                    ];
+                    wBankLines.forEach(({ l, v }) => {
+                        workerDoc.setFont('helvetica', 'normal');
+                        workerDoc.setFontSize(9);
+                        workerDoc.setTextColor(71, 85, 105);
+                        workerDoc.text(l, 14, wBkY);
+                        workerDoc.setFont('helvetica', 'bold');
+                        workerDoc.text(v, 42, wBkY);
+                        wBkY += 5;
+                    });
+
+                    // Signature
+                    const wSigY = finalY + 30;
+                    workerDoc.setFont('helvetica', 'normal');
+                    workerDoc.setFontSize(9);
+                    workerDoc.setTextColor(30, 41, 59);
+                    workerDoc.text('For 99 CARE', 150, wSigY);
+                    workerDoc.setDrawColor(100, 116, 139);
+                    workerDoc.setLineWidth(0.5);
+                    workerDoc.line(140, wSigY + 16, 190, wSigY + 16);
+                    workerDoc.setFontSize(8);
+                    workerDoc.setTextColor(71, 85, 105);
+                    workerDoc.text('Authorized Signatory', 150, wSigY + 20);
+
+                    // Footer
+                    workerDoc.setFontSize(7);
+                    workerDoc.setFont('helvetica', 'normal');
                     workerDoc.setTextColor(148, 163, 184);
-                    workerDoc.text(`Auto-Generated by 99Care AI Engine`, 14, finalY + 30);
+                    workerDoc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
 
                     // --- 2. Generate PDF Client Invoice ---
                     const clientDoc = new jsPDF();
@@ -735,7 +828,7 @@ export default function HR() {
                         headStyles: { fillColor: [26, 166, 168] },
                         head: [['Service Description', 'Unit Rate', 'Qty', 'Subtotal']],
                         body: [
-                            [`Manpower Supply (${worker.role})`, `₹${appliedRate.toFixed(2)}`, `${daysWorked} days`, `₹${totalCost.toFixed(2)}`],
+                            [`Manpower Supply (${worker.role})`, `Rs. ${appliedRate.toFixed(2)}`, `${daysWorked} days`, `Rs. ${totalCost.toFixed(2)}`],
                             [`Platform Fee (included)`, '0.00', '1', '0.00']
                         ],
                     });
@@ -743,8 +836,8 @@ export default function HR() {
                     finalY = (clientDoc as any).lastAutoTable.finalY || 120;
                     clientDoc.setFontSize(12);
                     clientDoc.setTextColor(15, 23, 42);
-                    clientDoc.text(`Total Amount Due: ₹${totalCost.toFixed(2)}`, 14, finalY + 15);
-                    clientDoc.text(`GST (18% Included): ₹${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
+                    clientDoc.text(`Total Amount Due: Rs. ${totalCost.toFixed(2)}`, 14, finalY + 15);
+                    clientDoc.text(`GST (18% Included): Rs. ${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
 
                     // Convert to base64 for Resend payload
                     const workerPdfBase64 = workerDoc.output('datauristring').split(',')[1];
@@ -833,17 +926,17 @@ export default function HR() {
             clientDoc.text(`Service Month: ${item.service_month || item.month || (currentMonth + '/' + currentYear)}`, 14, 66);
 
             const tableBody: any[] = [
-                [`Manpower Supply`, `₹${appliedRate.toFixed(2)}`, `${daysWorked} days`, `₹${baseCost.toFixed(2)}`]
+                [`Manpower Supply`, `Rs. ${appliedRate.toFixed(2)}`, `${daysWorked} days`, `Rs. ${baseCost.toFixed(2)}`]
             ];
             
             if (Number(invoiceExtras.additionalCharge) > 0) {
-                tableBody.push([invoiceExtras.chargeDesc, '-', '-', `₹${Number(invoiceExtras.additionalCharge).toFixed(2)}`]);
+                tableBody.push([invoiceExtras.chargeDesc, '-', '-', `Rs. ${Number(invoiceExtras.additionalCharge).toFixed(2)}`]);
             }
             if (Number(invoiceExtras.discount) > 0) {
-                tableBody.push(['Discount Applied', '-', '-', `- ₹${Number(invoiceExtras.discount).toFixed(2)}`]);
+                tableBody.push(['Discount Applied', '-', '-', `- Rs. ${Number(invoiceExtras.discount).toFixed(2)}`]);
             }
             if (Number(invoiceExtras.advanceAmount) > 0) {
-                tableBody.push(['Advanced Paid (Worker)', '-', '-', `- ₹${Number(invoiceExtras.advanceAmount).toFixed(2)}`]);
+                tableBody.push(['Advanced Paid (Worker)', '-', '-', `- Rs. ${Number(invoiceExtras.advanceAmount).toFixed(2)}`]);
             }
 
             autoTable(clientDoc, {
@@ -856,8 +949,8 @@ export default function HR() {
             const finalY = (clientDoc as any).lastAutoTable.finalY || 120;
             clientDoc.setFontSize(12);
             clientDoc.setTextColor(15, 23, 42);
-            clientDoc.text(`Total Amount Due: ₹${totalCost.toFixed(2)}`, 14, finalY + 15);
-            clientDoc.text(`GST (18% Included): ₹${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
+            clientDoc.text(`Total Amount Due: Rs. ${totalCost.toFixed(2)}`, 14, finalY + 15);
+            clientDoc.text(`GST (18% Included): Rs. ${(totalCost * 0.18).toFixed(2)}`, 14, finalY + 22);
             
             clientDoc.save(`Client_Invoice_${(item.client_name || 'Client').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
             toast.success("Invoice PDF Downloaded Successfully!");
@@ -917,37 +1010,138 @@ export default function HR() {
             const { error: dbError } = await supabase.from('payroll').insert([payrollEntry]);
             if (dbError) throw dbError;
 
-            // Static jsPDF used instead
-
-            // Generate PDFs for download
+            // Generate PDFs for download (Tax Invoice Theme)
             const workerDoc = new jsPDF();
-            workerDoc.setFontSize(22);
-            workerDoc.setTextColor(15, 23, 42); 
-            workerDoc.text("99 CARE", 14, 20);
-            workerDoc.setFontSize(14);
-            workerDoc.setTextColor(100, 116, 139); 
-            workerDoc.text("Official Worker Payslip (Manual Entry)", 14, 30);
-            workerDoc.setFontSize(10);
-            workerDoc.setTextColor(71, 85, 105);
-            workerDoc.text(`Worker Name: ${worker.name}`, 14, 45);
-            workerDoc.text(`Role: ${worker.role}`, 14, 52);
-            workerDoc.text(`Service Month: ${manualPayrollData.serviceMonth}`, 14, 59);
-            workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 66);
+            const mDateNow = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            const mPayslipNo = `PS-${Date.now().toString().slice(-6)}`;
 
-            autoTable(workerDoc, {
-                startY: 75,
-                head: [['Description', 'Value']],
-                body: [
-                    ['working days', `${manualPayrollData.daysWorked} days`],
-                    ['Salary per day', `Rs ${appliedRate.toFixed(2)}`],
-                    ['Total Amount :', `Rs ${totalCost.toFixed(2)}`],
-                    ['Security Deposit Adjustment :', `- Rs ${deposit.toFixed(2)}`],
-                    ['Advance Taken :', `- Rs ${advance.toFixed(2)}`],
-                    ['Net Payable Salary:', `Rs ${netBalance.toFixed(2)}`],
-                ],
-                theme: 'striped',
-                headStyles: { fillColor: [26, 166, 168] },
+            // Header
+            workerDoc.setFont('helvetica', 'bold');
+            workerDoc.setFontSize(22);
+            workerDoc.setTextColor(30, 41, 59);
+            workerDoc.text('99 CARE', 14, 25);
+            workerDoc.setFontSize(13);
+            workerDoc.setTextColor(60, 120, 216);
+            workerDoc.text('WORKER PAYSLIP', 14, 33);
+
+            // Company info right-aligned
+            workerDoc.setFont('helvetica', 'normal');
+            workerDoc.setFontSize(9);
+            workerDoc.setTextColor(71, 85, 105);
+            const mCompanyInfo = [
+                '104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN',
+                'Surat, GUJARAT, 395007',
+                'Mobile: +91 9016116564',
+                'Email: 99careforyou@gmail.com',
+                'Website: 99CARE.ORG'
+            ];
+            let mCompY = 16;
+            mCompanyInfo.forEach((line: string) => {
+                workerDoc.text(line, 196, mCompY, { align: 'right' });
+                mCompY += 4.5;
             });
+
+            // Divider
+            workerDoc.setDrawColor(180, 200, 240);
+            workerDoc.setLineWidth(0.8);
+            workerDoc.line(14, 42, 196, 42);
+
+            // Left: Worker info
+            workerDoc.setFont('helvetica', 'bold');
+            workerDoc.setFontSize(10);
+            workerDoc.setTextColor(30, 41, 59);
+            workerDoc.text('Worker Details:', 14, 50);
+            workerDoc.setFontSize(11);
+            workerDoc.text(worker.name, 14, 56);
+            workerDoc.setFont('helvetica', 'normal');
+            workerDoc.setFontSize(9);
+            workerDoc.setTextColor(71, 85, 105);
+            workerDoc.text(`Designation: ${worker.role}`, 14, 62);
+            workerDoc.text(`Assigned Client: ${worker.assigned_client || 'N/A'}`, 14, 68);
+
+            // Right: Payslip meta
+            workerDoc.setFont('helvetica', 'bold');
+            workerDoc.setFontSize(10);
+            workerDoc.setTextColor(30, 41, 59);
+            workerDoc.text('Payslip Details:', 130, 50);
+            workerDoc.setFont('helvetica', 'normal');
+            workerDoc.setFontSize(9);
+            workerDoc.setTextColor(71, 85, 105);
+            workerDoc.text(`Payslip #: ${mPayslipNo}`, 130, 56);
+            workerDoc.text(`Issue Date: ${mDateNow}`, 130, 62);
+            workerDoc.text(`Service Period: ${manualPayrollData.serviceMonth}`, 130, 68);
+
+            // Earnings table
+            autoTable(workerDoc, {
+                startY: 78,
+                theme: 'grid',
+                headStyles: { fillColor: [60, 120, 216], textColor: 255, fontStyle: 'bold' },
+                head: [['Earning Breakdown', 'Value']],
+                body: [
+                    ['Working Days', `${manualPayrollData.daysWorked} days`],
+                    ['Salary Per Day', `Rs. ${appliedRate.toFixed(2)}`],
+                    ['Total Amount', `Rs. ${totalCost.toFixed(2)}`],
+                    ['Security Deposit Adjustment', `- Rs. ${deposit.toFixed(2)}`],
+                    ['Advance Paid', `- Rs. ${advance.toFixed(2)}`],
+                ],
+                columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
+            });
+
+            let mFinalY = (workerDoc as any).lastAutoTable.finalY + 8;
+
+            // Net Payable box
+            workerDoc.setFillColor(240, 253, 244);
+            workerDoc.setDrawColor(34, 197, 94);
+            workerDoc.roundedRect(14, mFinalY, 182, 18, 3, 3, 'FD');
+            workerDoc.setFont('helvetica', 'bold');
+            workerDoc.setFontSize(11);
+            workerDoc.setTextColor(21, 128, 61);
+            workerDoc.text('NET AMOUNT PAYABLE TO WORKER:', 20, mFinalY + 11);
+            workerDoc.text(`Rs. ${Math.abs(netBalance).toFixed(2)}`, 185, mFinalY + 11, { align: 'right' });
+
+            // Bank details
+            let mBkY = mFinalY + 30;
+            workerDoc.setFont('helvetica', 'bold');
+            workerDoc.setFontSize(10);
+            workerDoc.setTextColor(30, 41, 59);
+            workerDoc.text('Bank Details for Transfer:', 14, mBkY);
+            mBkY += 6;
+            const mBankLines = [
+                { l: 'Bank:', v: 'The Sutex Co-Operative BankLtd.' },
+                { l: 'Account Holder:', v: '99 CARE HOME HEALTHCARE SERVICE' },
+                { l: 'Account #:', v: '001810021002033' },
+                { l: 'IFSC Code:', v: 'SUTB0248018' },
+                { l: 'Branch:', v: 'Adajan Pal' },
+            ];
+            mBankLines.forEach(({ l, v }) => {
+                workerDoc.setFont('helvetica', 'normal');
+                workerDoc.setFontSize(9);
+                workerDoc.setTextColor(71, 85, 105);
+                workerDoc.text(l, 14, mBkY);
+                workerDoc.setFont('helvetica', 'bold');
+                workerDoc.text(v, 42, mBkY);
+                mBkY += 5;
+            });
+
+            // Signature
+            const mSigY = mFinalY + 30;
+            workerDoc.setFont('helvetica', 'normal');
+            workerDoc.setFontSize(9);
+            workerDoc.setTextColor(30, 41, 59);
+            workerDoc.text('For 99 CARE', 150, mSigY);
+            workerDoc.setDrawColor(100, 116, 139);
+            workerDoc.setLineWidth(0.5);
+            workerDoc.line(140, mSigY + 16, 190, mSigY + 16);
+            workerDoc.setFontSize(8);
+            workerDoc.setTextColor(71, 85, 105);
+            workerDoc.text('Authorized Signatory', 150, mSigY + 20);
+
+            // Footer
+            workerDoc.setFontSize(7);
+            workerDoc.setFont('helvetica', 'normal');
+            workerDoc.setTextColor(148, 163, 184);
+            workerDoc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
+
             workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
 
             toast.success("Manual payslip generated and downloaded successfully");

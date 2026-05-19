@@ -101,43 +101,78 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
     const dateNow = format(new Date(), 'dd MMM yyyy');
     const period = `${format(startDate, 'dd MMM yyyy')} – ${format(endDate, 'dd MMM yyyy')}`;
 
-    // Header
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setTextColor(255, 255, 255);
+    // Header (Logo left, Company Right - matching Tax Invoice structure)
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('99Care', 14, 18);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Worker Payslip', 14, 28);
-    doc.setFontSize(10);
-    doc.text(`Issued: ${dateNow}`, 150, 18);
-    doc.text(`Period: ${period}`, 150, 28);
+    doc.setTextColor(30, 41, 59); // Slate-800
+    doc.text('99 CARE', 14, 25);
+    doc.setFontSize(13);
+    doc.setTextColor(60, 120, 216); // Accent Blue (#3c78d8)
+    doc.text('WORKER PAYSLIP', 14, 33);
 
-    // Worker Info
-    doc.setTextColor(15, 23, 42);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(emp?.full_name || 'Staff Member', 14, 55);
-    doc.setFontSize(10);
+    // Company Info (Right)
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Designation: ${emp?.job_title || 'N/A'}`, 14, 63);
-    doc.text(`Assigned Client: ${client?.client_name || 'N/A'}`, 14, 70);
-    doc.text(`Phone: ${emp?.phone || 'N/A'}`, 14, 77);
+    const companyInfo = [
+      '104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN',
+      'Surat, GUJARAT, 395007',
+      'Mobile: +91 9016116564',
+      'Email: 99careforyou@gmail.com',
+      'Website: 99CARE.ORG'
+    ];
+    let compY = 16;
+    companyInfo.forEach(line => {
+      doc.text(line, 196, compY, { align: 'right' });
+      compY += 4.5;
+    });
+
+    // Divider Line (matching the blue divider)
+    doc.setDrawColor(180, 200, 240);
+    doc.setLineWidth(0.8);
+    doc.line(14, 42, 196, 42);
+
+    // Worker Details & Payslip Meta
+    // Left side: Worker info
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text('Worker Details:', 14, 50);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(emp?.full_name || 'Staff Member', 14, 56);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Designation: ${emp?.job_title || 'N/A'}`, 14, 62);
+    doc.text(`Assigned Client: ${client?.client_name || 'N/A'}`, 14, 68);
+    doc.text(`Phone: ${emp?.phone || 'N/A'}`, 14, 74);
+
+    // Right side: Payslip Details
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text('Payslip Details:', 130, 50);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Payslip #: PS-${Date.now().toString().slice(-6)}`, 130, 56);
+    doc.text(`Issue Date: ${dateNow}`, 130, 62);
+    doc.text(`Service Period: ${period}`, 130, 68);
+    doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
 
     // Attendance Summary Table
     autoTable(doc, {
-      startY: 90,
+      startY: 84,
       theme: 'grid',
-      headStyles: { fillColor: [26, 166, 168], textColor: 255, fontStyle: 'bold' },
+      headStyles: { fillColor: [60, 120, 216], textColor: 255, fontStyle: 'bold' }, // Matching #3c78d8 Blue
       head: [['Attendance Summary', 'Value']],
       body: [
         ['Total Days in Period', `${totalPeriodDays} days`],
         ['Days Present', `${attendanceSummary?.days_present || 0} days`],
         ['Half Days', `${attendanceSummary?.days_half || 0} days`],
         ['Days Absent', `${attendanceSummary?.days_absent || 0} days`],
+        ['Effective Working Days', `${daysWorked} days`],
       ],
       columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
     });
@@ -151,8 +186,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
       headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
       head: [['Earning Breakdown', 'Amount']],
       body: [
-        [`Daily Rate (for ${hoursPerDay}h shift) × ${daysWorked} Days`, `₹${dailyRate.toFixed(2)} × ${daysWorked} = ₹${totalEarning.toFixed(2)}`],
-        ['Advance / Deductions', `- ₹${advanceDeduction.toFixed(2)}`],
+        [`Daily Rate (for ${hoursPerDay}h shift) × ${daysWorked} Days`, `Rs. ${dailyRate.toFixed(2)} × ${daysWorked} = Rs. ${totalEarning.toFixed(2)}`],
+        ['Advance Paid / Deductions', `- Rs. ${advanceDeduction.toFixed(2)}`],
       ],
       columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
     });
@@ -164,16 +199,76 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
     doc.setDrawColor(34, 197, 94);
     doc.roundedRect(14, finalY2, 182, 18, 3, 3, 'FD');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(21, 128, 61);
-    doc.text('NET AMOUNT PAYABLE TO WORKER:', 20, finalY2 + 12);
-    doc.text(`₹${Math.abs(netPayable).toFixed(2)}`, 185, finalY2 + 12, { align: 'right' });
+    doc.text('NET AMOUNT PAYABLE TO WORKER:', 20, finalY2 + 11);
+    doc.text(`Rs. ${Math.abs(netPayable).toFixed(2)}`, 185, finalY2 + 11, { align: 'right' });
+
+    // Bank Details (Center) & Signatory (Right)
+    let bkY = finalY2 + 30;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text('Bank Details for Transfer:', 14, bkY);
+    bkY += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    
+    const bankDetails = [
+      { label: 'Bank:', val: 'The Sutex Co-Operative BankLtd.' },
+      { label: 'Account Holder:', val: '99 CARE HOME HEALTHCARE SERVICE' },
+      { label: 'Account Number:', val: '001810021002033' },
+      { label: 'IFSC Code:', val: 'SUTB0248018' },
+      { label: 'Branch:', val: 'Adajan Pal' }
+    ];
+    
+    bankDetails.forEach(item => {
+      doc.text(item.label, 14, bkY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(item.val, 42, bkY);
+      doc.setFont('helvetica', 'normal');
+      bkY += 5;
+    });
+
+    // Signature Box (Right)
+    const sigY = finalY2 + 30;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 41, 59);
+    doc.text('For 99 CARE', 150, sigY);
+    
+    doc.line(140, sigY + 16, 190, sigY + 16);
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Authorized Signatory', 150, sigY + 20);
+
+    // Notes Section
+    let notesY = bkY + 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 41, 59);
+    doc.text('Notes:', 14, notesY);
+    notesY += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    
+    const noteLines = [
+      '1. This payslip is computer-generated and does not require a physical signature.',
+      '2. Any discrepancies in the attendance or salary calculation must be reported to HR within 3 working days.',
+      '3. Net payable amount has been initiated for bank transfer to the worker\'s registered bank account.'
+    ];
+    
+    noteLines.forEach(line => {
+      doc.text(line, 14, notesY);
+      notesY += 4.5;
+    });
 
     // Footer
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
-    doc.text('This is a computer-generated document. Auto-generated by 99Care AI Engine.', 14, 280);
+    doc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
 
     return doc;
   };
