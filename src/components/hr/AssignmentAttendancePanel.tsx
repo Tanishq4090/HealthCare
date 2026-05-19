@@ -106,6 +106,8 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
           hours_worked: status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0),
           check_in_time: new Date(`${dateStr}T09:00:00`).toISOString(),
           check_out_time: status !== 'Absent' ? new Date(`${dateStr}T${status === 'Half Day' ? '13' : '17'}:00:00`).toISOString() : null,
+          is_absent: status === 'Absent',
+          is_leave: false
         }).eq('id', existing.attendanceId);
         if (error) throw error;
       } else {
@@ -118,6 +120,8 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
           hours_worked: status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0),
           check_in_time: new Date(`${dateStr}T09:00:00`).toISOString(),
           check_out_time: status !== 'Absent' ? new Date(`${dateStr}T${status === 'Half Day' ? '13' : '17'}:00:00`).toISOString() : null,
+          is_absent: status === 'Absent',
+          is_leave: false
         }]);
         if (error) throw error;
       }
@@ -155,6 +159,8 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
           hours_worked: 8,
           check_in_time: new Date(`${dateStr}T09:00:00`).toISOString(),
           check_out_time: new Date(`${dateStr}T17:00:00`).toISOString(),
+          is_absent: false,
+          is_leave: false
         };
       });
 
