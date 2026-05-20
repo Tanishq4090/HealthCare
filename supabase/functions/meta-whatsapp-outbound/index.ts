@@ -186,14 +186,14 @@ serve(async (req) => {
           });
       }
       
-      if (templateName === "worker_payslip" && sendInvoicePdf && invoicePdfUrl) {
+      if (templateName === "worker_payslip" && payload.sendInvoicePdf && payload.invoicePdfUrl) {
           components.push({
             type: "header",
             parameters: [
               {
                 type: "document",
                 document: {
-                  link: invoicePdfUrl,
+                  link: payload.invoicePdfUrl,
                   filename: "Worker_Payslip.pdf"
                 }
               }

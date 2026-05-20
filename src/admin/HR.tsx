@@ -2437,6 +2437,15 @@ export default function HR() {
             )}
 
             {/* Live Payslip Preview Modal */}
+            {/* Worker Payslip Generator Modal (Billing) */}
+            {billingAssignment && (
+                <PayslipGenerator
+                    assignment={billingAssignment}
+                    onClose={() => setBillingAssignment(null)}
+                    onGenerated={() => { setBillingAssignment(null); fetchData(); }}
+                />
+            )}
+
             {previewPayslip && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
                     <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 my-8">
