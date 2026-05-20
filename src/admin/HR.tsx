@@ -1631,8 +1631,12 @@ export default function HR() {
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <p className="font-bold text-slate-900">{item.worker}</p>
-                                                                {item.status === 'Paid' && <span className="text-[9px] font-bold bg-[#EAFBFB] text-[#1AA6A8] px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Paid</span>}
+                                                                {(item.status === 'Paid' || item.status === 'Settled') && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
+                                                                {item.status === 'Pending Payment' && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>}
                                                             </div>
+                                                            {item.client_name && item.client_name !== 'N/A' && (
+                                                                <p className="text-[10px] text-slate-400 font-medium">→ {item.client_name}</p>
+                                                            )}
                                                             <p className="text-[10px] text-slate-500 font-medium">{days} days @ Rs. {item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'May 2026'}</p>
                                                         </div>
                                                     </div>
