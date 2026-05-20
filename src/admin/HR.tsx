@@ -61,6 +61,7 @@ export default function HR() {
     const [editingPayroll, setEditingPayroll] = useState<any>(null);
     const [previewPayslip, setPreviewPayslip] = useState<any>(null);
     const [billingAssignment, setBillingAssignment] = useState<any>(null);
+    const [autoCloseAssignmentOnGenerate, setAutoCloseAssignmentOnGenerate] = useState(false);
 
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
@@ -1521,6 +1522,11 @@ export default function HR() {
                                     <AssignmentAttendancePanel
                                         key={assignment.id}
                                         assignment={assignment}
+                                        onAssignmentCompleted={(completedAssignment) => {
+                                            setAutoCloseAssignmentOnGenerate(true);
+                                            setBillingAssignment(completedAssignment);
+                                            setActiveTab('Payroll');
+                                        }}
                                     />
                                 ))}
                             </div>
@@ -1731,6 +1737,7 @@ export default function HR() {
                                                                             if (error) {
                                                                                 toast.error('Error finding assignment: ' + error.message);
                                                                             } else if (data) {
+                                                                                setAutoCloseAssignmentOnGenerate(false);
                                                                                 setBillingAssignment(data);
                                                                             } else {
                                                                                 toast.error('No assignment found for this worker.');
@@ -2441,6 +2448,7 @@ export default function HR() {
             {billingAssignment && (
                 <PayslipGenerator
                     assignment={billingAssignment}
+                    autoCloseAssignmentOnGenerate={autoCloseAssignmentOnGenerate}
                     onClose={() => setBillingAssignment(null)}
                     onGenerated={() => { setBillingAssignment(null); fetchData(); }}
                 />

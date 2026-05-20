@@ -32,9 +32,10 @@ interface PayslipGeneratorProps {
   };
   onClose: () => void;
   onGenerated: () => void;
+  autoCloseAssignmentOnGenerate?: boolean;
 }
 
-export default function PayslipGenerator({ assignment, onClose, onGenerated }: PayslipGeneratorProps) {
+export default function PayslipGenerator({ assignment, onClose, onGenerated, autoCloseAssignmentOnGenerate }: PayslipGeneratorProps) {
   const [advanceAmount, setAdvanceAmount] = useState((assignment.advance_paid || 0).toString());
   const [isGenerating, setIsGenerating] = useState(false);
   const [attendanceSummary, setAttendanceSummary] = useState<any>(null);
@@ -388,6 +389,16 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
 
       await savePayslipToDB();
       toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });
+      
+      if (autoCloseAssignmentOnGenerate) {
+        const { error: closeError } = await supabase.from('worker_assignments').update({ assignment_status: 'completed' }).eq('id', assignment.id);
+        if (closeError) {
+          console.error('Failed to close assignment:', closeError);
+        } else {
+          toast.success('Worker duty marked as completed and closed!');
+        }
+      }
+      
       onGenerated();
     } catch (err: any) {
       toast.error(err.message || 'Failed to dispatch', { id: toastId });

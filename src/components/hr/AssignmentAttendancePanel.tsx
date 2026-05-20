@@ -22,6 +22,7 @@ interface AssignmentAttendancePanelProps {
     clients: { client_name: string } | null;
   };
   onSummaryChange?: (summary: { daysPresent: number; daysAbsent: number; daysHalf: number }) => void;
+  onAssignmentCompleted?: (assignment: any) => void;
 }
 
 export default function AssignmentAttendancePanel({ assignment, onSummaryChange }: AssignmentAttendancePanelProps) {
@@ -30,6 +31,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
   const [isLoading, setIsLoading] = useState(false);
   const [markingDate, setMarkingDate] = useState<string | null>(null);
   const [isBulkMarking, setIsBulkMarking] = useState(false);
+  const [showCompletionPopup, setShowCompletionPopup] = useState(false);
 
   const { startDate, safeStartDate, endDate, allDays } = useMemo(() => {
     const fallbackStart = assignment.start_date || assignment.assigned_at;
@@ -169,6 +171,11 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
       }
 
       await fetchAttendance();
+      
+      const prevMarked = days.filter(d => d.status !== null).length;
+      if (status !== null && prevMarked + 1 >= allDays.length) {
+        setShowCompletionPopup(true);
+      }
     } catch (err: any) {
       toast.error('Failed to update attendance: ' + err.message);
     } finally {
@@ -211,6 +218,11 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
 
       toast.success(`Marked ${inserts.length} days as Present`, { id: 'bulk-assign' });
       await fetchAttendance();
+      
+      const prevMarked = days.filter(d => d.status !== null).length;
+      if (prevMarked + unmarkedPast.length >= allDays.length) {
+        setShowCompletionPopup(true);
+      }
     } catch (err: any) {
       toast.error('Bulk mark failed: ' + err.message, { id: 'bulk-assign' });
     } finally {
@@ -385,6 +397,41 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange 
             <div className="border-l border-slate-100 pl-4">
               <span className="text-slate-500 text-xs">Completion</span>
               <p className="font-bold text-slate-900">{Math.round((days.filter(d => d.status !== null).length / Math.max(allDays.length, 1)) * 100)}%</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Completion Popup Modal */}
+      {showCompletionPopup && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-emerald-100">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Duty 100% Completed! 🎉</h2>
+              <p className="text-slate-500 mb-6">
+                All {allDays.length} assigned days for <strong>{assignment.employees?.full_name}</strong> have been marked. Would you like to generate their payslip and close this assignment now?
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCompletionPopup(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-colors"
+                >
+                  No, Later
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCompletionPopup(false);
+                    onAssignmentCompleted?.(assignment);
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
+                >
+                  Yes, Generate Payslip
+                </button>
+              </div>
             </div>
           </div>
         </div>
