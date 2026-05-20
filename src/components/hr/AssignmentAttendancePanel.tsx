@@ -25,7 +25,7 @@ interface AssignmentAttendancePanelProps {
   onAssignmentCompleted?: (assignment: any) => void;
 }
 
-export default function AssignmentAttendancePanel({ assignment, onSummaryChange }: AssignmentAttendancePanelProps) {
+export default function AssignmentAttendancePanel({ assignment, onSummaryChange, onAssignmentCompleted }: AssignmentAttendancePanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [days, setDays] = useState<AttendanceDay[]>([]);
   const [isLoading, setIsLoading] = useState(false);
