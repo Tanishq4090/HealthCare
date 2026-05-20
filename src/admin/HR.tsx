@@ -8,6 +8,7 @@ import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
 import { format } from 'date-fns';
 import WorkerAllocation from '../components/hr/WorkerAllocation';
 import AssignmentAttendancePanel from '../components/hr/AssignmentAttendancePanel';
+import PayslipGenerator from '../components/hr/PayslipGenerator';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
@@ -59,6 +60,7 @@ export default function HR() {
     const [isEditPayrollModalOpen, setIsEditPayrollModalOpen] = useState(false);
     const [editingPayroll, setEditingPayroll] = useState<any>(null);
     const [previewPayslip, setPreviewPayslip] = useState<any>(null);
+    const [billingAssignment, setBillingAssignment] = useState<any>(null);
 
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
@@ -136,6 +138,8 @@ export default function HR() {
             // Fetch from employees table instead of workers
             const { data: employeeData, error: employeeError } = await supabase.from('employees').select('*');
             const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
+            const { data: assignmentsData } = await supabase.from('worker_assignments').select('*, employees(*), clients(*)').eq('status', 'active');
+            if (assignmentsData) setActiveAssignments(assignmentsData);
             const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage, estimated_value_monthly').order('created_at', { ascending: false });
 
             // Fetch Month-to-Date Stats for all employees
@@ -1704,32 +1708,31 @@ export default function HR() {
                                                                 </button>
                                                             </div>
                                                         </div>
-                                                        {item.status !== 'Paid' ? (
-                                                            <button 
+                                                        <button
                                                                 onClick={async () => {
-                                                                    try {
-                                                                        const { error } = await supabase
-                                                                            .from('payroll')
-                                                                            .update({ status: 'Paid' })
-                                                                            .eq('id', item.id);
-                                                                        
-                                                                        if (error) throw error;
-                                                                        toast.success(`Salary marked as paid for ${item.worker}`);
-                                                                        fetchData(); // Refresh list
-                                                                    } catch (err: any) {
-                                                                        toast.error(err.message || "Failed to mark salary as paid");
+                                                                    // Find the assignment for this worker
+                                                                    const assignment = activeAssignments.find(
+                                                                        a => a.employee_id === item.worker_id || 
+                                                                             (a.employees && a.employees.full_name === item.worker)
+                                                                    );
+                                                                    if (assignment) {
+                                                                        setBillingAssignment(assignment);
+                                                                    } else {
+                                                                        // Fetch on demand if not in state
+                                                                        const { data } = await supabase
+                                                                            .from('worker_assignments')
+                                                                            .select('*, employees(*), clients(*)')
+                                                                            .or(`employee_id.eq.${item.worker_id || '00000000-0000-0000-0000-000000000000'}`)
+                                                                            .maybeSingle();
+                                                                        if (data) setBillingAssignment(data);
+                                                                        else toast.error('No active assignment found for this worker.');
                                                                     }
                                                                 }}
-                                                                className="p-2 rounded-lg bg-[#1AA6A8] text-white hover:bg-[#1AA6A8] transition-all shadow-sm active:scale-95"
-                                                                title="Mark as Paid"
+                                                                className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
+                                                                title="Open Payslip Generator"
                                                             >
-                                                                <CheckCircle2 className="w-4 h-4" />
+                                                                <FileText className="w-3 h-3" /> Billing
                                                             </button>
-                                                        ) : (
-                                                            <div className="p-2 rounded-lg bg-slate-100 text-slate-400">
-                                                                <CheckCircle2 className="w-4 h-4" />
-                                                            </div>
-                                                        )}
                                                         <button 
                                                             onClick={async () => {
                                                                 if (!confirm('Are you sure you want to delete this payslip?')) return;
