@@ -373,7 +373,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
 
       const { data: { publicUrl } } = supabase.storage.from('payslips').getPublicUrl(fileName);
 
-      const { error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+      const { data: waData, error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
         body: {
           phone,
           sendInvoicePdf: true,
@@ -384,6 +384,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
         }
       });
       if (waError) throw waError;
+      if (waData && waData.success === false) throw new Error(waData.error || 'Meta API rejected the message.');
 
       await savePayslipToDB();
       toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });

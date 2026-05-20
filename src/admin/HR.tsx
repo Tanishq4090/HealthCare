@@ -1693,11 +1693,12 @@ export default function HR() {
                                                                         
                                                                         const { data: { publicUrl } } = supabase.storage.from('payslips').getPublicUrl(fileName);
                                                                         
-                                                                        const { error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                                                                        const { data: waData, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
                                                                             body: { phone, sendInvoicePdf: true, invoicePdfUrl: publicUrl, useTemplate: true, templateName: 'worker_payslip', templateParams: [item.worker] }
                                                                         });
                                                                         
                                                                         if (error) throw error;
+                                                                        if (waData && waData.success === false) throw new Error(waData.error || 'Meta API rejected the message.');
                                                                         toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
                                                                     } catch (err: any) {
                                                                         toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
@@ -1713,9 +1714,30 @@ export default function HR() {
                                                                     if (assignment) {
                                                                         setBillingAssignment(assignment);
                                                                     } else {
-                                                                        const { data } = await supabase.from('worker_assignments').select('*, employees(*), clients(*)').or(`employee_id.eq.${item.worker_id || '00000000-0000-0000-0000-000000000000'}`).maybeSingle();
-                                                                        if (data) setBillingAssignment(data);
-                                                                        else toast.error('No active assignment found for this worker.');
+                                                                        let targetEmployeeId = item.worker_id;
+                                                                        if (!targetEmployeeId) {
+                                                                            const worker = workers.find(w => w.name === item.worker);
+                                                                            if (worker) targetEmployeeId = worker.id;
+                                                                        }
+                                                                        
+                                                                        if (targetEmployeeId) {
+                                                                            const { data, error } = await supabase
+                                                                                .from('worker_assignments')
+                                                                                .select('*, employees(*), clients(*)')
+                                                                                .eq('employee_id', targetEmployeeId)
+                                                                                .order('created_at', { ascending: false })
+                                                                                .limit(1)
+                                                                                .maybeSingle();
+                                                                            if (error) {
+                                                                                toast.error('Error finding assignment: ' + error.message);
+                                                                            } else if (data) {
+                                                                                setBillingAssignment(data);
+                                                                            } else {
+                                                                                toast.error('No assignment found for this worker.');
+                                                                            }
+                                                                        } else {
+                                                                            toast.error('Could not identify worker ID.');
+                                                                        }
                                                                     }
                                                                 }}
                                                                 className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
