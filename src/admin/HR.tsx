@@ -1644,30 +1644,58 @@ export default function HR() {
                                                                 </button>
                                                                 <button 
                                                                     onClick={async () => {
-                                                                        const txt = `Hello ${item.worker},\n\nYour payslip for ${item.month || item.service_month || 'the recent period'} has been generated.\n*Net Payable:* Rs. ${amount.toFixed(2)}\n\nPlease contact HR for the PDF copy or any discrepancies.\n\nRegards,\n99Care HR`;
                                                                         const workerRecord = workers.find(w => w.name === item.worker);
-                                                                        let phone = '';
-                                                                        if (workerRecord && workerRecord.phone) {
-                                                                            phone = workerRecord.phone.replace(/\D/g, '');
+                                                                        let phone = item.worker_phone || '';
+                                                                        if (!phone && workerRecord && workerRecord.phone) {
+                                                                            phone = workerRecord.phone;
+                                                                        }
+                                                                        if (phone) {
+                                                                            phone = phone.replace(/\D/g, '');
                                                                             if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
                                                                         }
                                                                         if (!phone) {
-                                                                            toast.error("No phone number found for this worker.");
+                                                                            toast.error("No phone number found for this worker. Please edit the worker profile or specify it in the manual generator.");
                                                                             return;
                                                                         }
-                                                                        const toastId = toast.loading("Dispatching WhatsApp message...");
+                                                                        
+                                                                        const toastId = toast.loading("Generating payslip and dispatching...");
                                                                         try {
+                                                                            // Generate PDF Blob
+                                                                            const pdfBlob = generatePayslipBlob(item);
+                                                                            const fileName = `payslip-${item.worker.replace(/\s+/g, '-')}-${Date.now()}.pdf`;
+                                                                            
+                                                                            // Upload to Supabase Storage
+                                                                            const { data: uploadData, error: uploadError } = await supabase.storage
+                                                                                .from('payslips')
+                                                                                .upload(fileName, pdfBlob, {
+                                                                                    contentType: 'application/pdf',
+                                                                                    upsert: false
+                                                                                });
+                                                                                
+                                                                            if (uploadError) throw uploadError;
+                                                                            
+                                                                            // Get Public URL
+                                                                            const { data: { publicUrl } } = supabase.storage
+                                                                                .from('payslips')
+                                                                                .getPublicUrl(fileName);
+                                                                                
+                                                                            // Dispatch via Meta API
                                                                             const { data, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
                                                                                 body: {
                                                                                     phone: phone,
-                                                                                    message: txt
+                                                                                    sendInvoicePdf: true,
+                                                                                    invoicePdfUrl: publicUrl,
+                                                                                    useTemplate: true,
+                                                                                    templateName: 'worker_payslip',
+                                                                                    templateParams: [item.worker]
                                                                                 }
                                                                             });
+                                                                            
                                                                             if (error) throw error;
-                                                                            toast.success("WhatsApp message dispatched successfully!", { id: toastId });
+                                                                            toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
                                                                         } catch (err: any) {
                                                                             console.error(err);
-                                                                            toast.error(err.message || "Failed to send WhatsApp message", { id: toastId });
+                                                                            toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
                                                                         }
                                                                     }}
                                                                     className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
@@ -2311,6 +2339,17 @@ export default function HR() {
                                     <p className="text-[10px] text-slate-500 mt-1">This overrides the worker's default shift length for this specific payslip.</p>
                                 </div>
                             )}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Worker Phone Number (for WhatsApp)</label>
+                                <input
+                                    type="text"
+                                    value={manualPayrollData.workerPhone || ''}
+                                    onChange={e => setManualPayrollData({...manualPayrollData, workerPhone: e.target.value})}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
+                                    placeholder="Leave empty to use directory number"
+                                />
+                                <p className="text-[10px] text-slate-500 mt-1">Only required if overriding or if missing in directory.</p>
+                            </div>
 
                         </div>
                         <div className="p-6 border-t border-slate-100 flex gap-3 bg-slate-50">
