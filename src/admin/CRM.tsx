@@ -1559,13 +1559,16 @@ export default function CRM() {
             );
 
             // 5. Update Lead Value in DB
-            await supabase
+            const { error: updateError } = await supabase
                 .from('crm_leads')
                 .update({ 
-                    estimated_value_monthly: quotationData.estimatedTotal,
-                    quoted_monthly_rate: quotationData.estimatedTotal 
+                    estimated_value_monthly: quotationData.estimatedTotal
                 })
                 .eq('id', quotationTargetLead.id);
+                
+            if (updateError) {
+                console.error('Failed to update lead value:', updateError);
+            }
 
             // 6. Auto-populate Service + Shift into notes so bubbles show on card
             const { data: existingLead } = await supabase.from('crm_leads').select('notes').eq('id', quotationTargetLead.id).single();
@@ -1589,7 +1592,6 @@ export default function CRM() {
                     ...prev, 
                     estimated_value_monthly: quotationData.estimatedTotal,
                     valueAmount: quotationData.estimatedTotal,
-                    quoted_monthly_rate: quotationData.estimatedTotal,
                     value: '₹' + quotationData.estimatedTotal + '/mo',
                     notes: updatedNotes
                 }));
@@ -1600,7 +1602,6 @@ export default function CRM() {
             setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? { 
                 ...l, 
                 estimated_value_monthly: quotationData.estimatedTotal,
-                quoted_monthly_rate: quotationData.estimatedTotal,
                 valueAmount: quotationData.estimatedTotal,
                 value: '₹' + quotationData.estimatedTotal + '/mo',
                 notes: updatedNotes 
@@ -1748,8 +1749,6 @@ export default function CRM() {
 
                     await supabase.from('crm_leads').update({
                         pipeline_stage: 'Quotation Sent',
-                        quoted_monthly_rate: monthlyRate,
-                        quoted_daily_rate: dailyRate,
                         estimated_value_monthly: monthlyRate // Primary lead value
                     }).eq('id', agentTargetLead.id);
 
