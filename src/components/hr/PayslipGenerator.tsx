@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, X, Loader2, Download } from 'lucide-react';
+import { FileText, X, Loader2, Download, Send } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
@@ -52,9 +52,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
   } else if (emp?.preferred_payment_type === 'short_term') {
     dailyRate = emp.short_term_daily_rate || 0;
   } else {
-    // monthly daily rate: prorated based on standard 12 hours
-    const baseRate = emp?.monthly_daily_rate || 0;
-    dailyRate = (baseRate / 12) * hoursPerDay;
+    // monthly daily rate: divide by 30 days to get per-day rate
+    dailyRate = (emp?.monthly_daily_rate || 0) / 30;
   }
 
   const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
@@ -309,40 +308,88 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
     return doc;
   };
 
+  const savePayslipToDB = async () => {
+    await supabase.from('worker_assignments').update({
+      payslip_generated: true,
+      advance_paid: advanceDeduction,
+    }).eq('id', assignment.id);
+
+    await supabase.from('payroll').insert([{
+      worker: emp?.full_name || 'Staff',
+      worker_id: assignment.employee_id,
+      assignment_id: assignment.id,
+      client_name: client?.client_name || 'N/A',
+      days_worked: daysWorked,
+      daily_rate: dailyRate,
+      total_amount: totalEarning,
+      deposit_received: 0,
+      advance_amount: advanceDeduction,
+      net_balance: netPayable,
+      worker_phone: emp?.phone || '',
+      payslip_type: 'worker',
+      status: netPayable > 0 ? 'Pending Payment' : 'Settled',
+      period_start: assignment.start_date,
+      period_end: assignment.end_date || new Date().toISOString(),
+    }]);
+  };
+
   const handleGeneratePayslip = async () => {
     if (!attendanceSummary) { toast.error('Load attendance first'); return; }
     setIsGenerating(true);
     try {
       const doc = await generatePayslipPDF();
       doc.save(`Payslip_${emp?.full_name?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-
-      // Update DB
-      await supabase.from('worker_assignments').update({
-        payslip_generated: true,
-        advance_paid: advanceDeduction,
-      }).eq('id', assignment.id);
-
-      await supabase.from('payroll').insert([{
-        worker: emp?.full_name || 'Staff',
-        worker_id: assignment.employee_id,
-        assignment_id: assignment.id,
-        client_name: client?.client_name || 'N/A',
-        days_worked: daysWorked,
-        daily_rate: dailyRate,
-        total_amount: totalEarning,
-        deposit_received: 0,
-        advance_amount: advanceDeduction,
-        net_balance: netPayable,
-        payslip_type: 'worker',
-        status: netPayable > 0 ? 'Pending Payment' : 'Settled',
-        period_start: assignment.start_date,
-        period_end: assignment.end_date || new Date().toISOString(),
-      }]);
-
+      await savePayslipToDB();
       toast.success('Worker payslip generated and saved!');
       onGenerated();
     } catch (err: any) {
       toast.error('Failed: ' + err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSendWhatsApp = async () => {
+    if (!attendanceSummary) { toast.error('Load attendance first'); return; }
+    let phone = emp?.phone || '';
+    if (!phone) {
+      toast.error('No phone number found for this worker. Please update their profile.');
+      return;
+    }
+    phone = phone.replace(/\D/g, '');
+    if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
+
+    const toastId = toast.loading('Generating and dispatching payslip via WhatsApp...');
+    setIsGenerating(true);
+    try {
+      const doc = await generatePayslipPDF();
+      const pdfBlob = doc.output('blob');
+      const fileName = `payslip-${(emp?.full_name || 'worker').replace(/\s+/g, '-')}-${Date.now()}.pdf`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('payslips')
+        .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('payslips').getPublicUrl(fileName);
+
+      const { error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+        body: {
+          phone,
+          sendInvoicePdf: true,
+          invoicePdfUrl: publicUrl,
+          useTemplate: true,
+          templateName: 'worker_payslip',
+          templateParams: [emp?.full_name || 'Worker']
+        }
+      });
+      if (waError) throw waError;
+
+      await savePayslipToDB();
+      toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });
+      onGenerated();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to dispatch', { id: toastId });
     } finally {
       setIsGenerating(false);
     }
@@ -450,14 +497,19 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
         </div>
 
         {/* Actions */}
-        <div className="p-5 border-t border-slate-100 flex gap-3 shrink-0">
-          <button onClick={onClose} className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
+        <div className="p-5 border-t border-slate-100 flex gap-3 shrink-0 flex-wrap">
+          <button onClick={onClose} className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
             Cancel
           </button>
           <button onClick={handleGeneratePayslip} disabled={isGenerating || !attendanceSummary}
-            className="flex-[2] py-2.5 bg-slate-900 text-white rounded-xl font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+            className="flex-1 py-2.5 bg-slate-900 text-white rounded-xl font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
             {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Download Worker Payslip
+            Download
+          </button>
+          <button onClick={handleSendWhatsApp} disabled={isGenerating || !attendanceSummary}
+            className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-semibold text-sm hover:bg-green-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+            {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Send via WhatsApp
           </button>
         </div>
       </div>
