@@ -185,6 +185,21 @@ serve(async (req) => {
             ]
           });
       }
+      
+      if (templateName === "worker_payslip" && sendInvoicePdf && invoicePdfUrl) {
+          components.push({
+            type: "header",
+            parameters: [
+              {
+                type: "document",
+                document: {
+                  link: invoicePdfUrl,
+                  filename: "Worker_Payslip.pdf"
+                }
+              }
+            ]
+          });
+      }
 
       if (parameters.length > 0) {
           components.push({
