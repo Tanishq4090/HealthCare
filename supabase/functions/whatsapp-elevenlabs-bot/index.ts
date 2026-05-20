@@ -387,7 +387,7 @@ serve(async (req) => {
         // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
         const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id, pipeline_stage, name, needs_attention, quoted_monthly_rate')
+            .select('id, pipeline_stage, name, needs_attention, estimated_value_monthly')
             .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(1);
@@ -655,7 +655,7 @@ serve(async (req) => {
             
             'New Lead': `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
             
-            'In Discussion': earlyLead?.quoted_monthly_rate > 0 
+            'In Discussion': earlyLead?.estimated_value_monthly > 0 
                 ? `Our 99 team will contact you shortly for this and resolve all your issues 🙏`
                 : `Thank you for your patience! 🙏 Our 99 Care team is already preparing your personalised quotation based on the details you shared and will send it shortly. 😊✨`,
 
@@ -780,7 +780,7 @@ serve(async (req) => {
             if (callTranscripts && callTranscripts.length > 0) {
                 const isEarlyStage = !leadRecord || 
                     ['New', 'New Inquiry'].includes(leadRecord.pipeline_stage) || 
-                    (leadRecord.pipeline_stage === 'In Discussion' && (!leadRecord.quoted_monthly_rate || leadRecord.quoted_monthly_rate === 0));
+                    (leadRecord.pipeline_stage === 'In Discussion' && (!leadRecord.estimated_value_monthly || leadRecord.estimated_value_monthly === 0));
 
                 if (isEarlyStage) {
                     const leadName = leadRecord?.name?.split('—')[0]?.trim() || 'there';
@@ -812,8 +812,7 @@ serve(async (req) => {
             if (leadRecord) {
                 const isFinished = ['Quotation Sent', 'Staff Assigned', 'Active Client', 'Closed Won'].includes(leadRecord.pipeline_stage);
                 leadDataContext = `\n\n### CRM LEAD:\n- Name: ${leadRecord.name}\n- Stage: ${leadRecord.pipeline_stage}\n` +
-                    `- Quoted Monthly Rate: ${leadRecord.quoted_monthly_rate || 0}\n` +
-                    `- Quoted Daily Rate: ${leadRecord.quoted_daily_rate || 0}\n` +
+                    `- Estimated Monthly Value: ${leadRecord.estimated_value_monthly || 0}\n` +
                     (isFinished ? `### This lead is done or form filled. Be extremely brief. Reassure them the team will be in touch, then STOP asking questions.\n` : '');
             }
 
@@ -838,7 +837,7 @@ RULES (follow strictly):
 - If the user's message is a GOODBYE or FAREWELL (e.g. "bye", "take care", "good night", "you too"), respond with EXACTLY: {"replyToUser": null, "pipelineStageUpdate": null}
 - If the user's message is a POSITIVE REPLY or acknowledgment (e.g. "yes", "okay", "done", "sure", "proceed", "haan", "bilkul"):
     * If their CRM stage is "In Discussion": 
-        * If Quoted Monthly Rate > 0: Always reply: "Thank you! 🙏 Our 99 Care team will connect with you shortly for closing on this quotation. 😊✨"
+        * If Estimated Monthly Value > 0: Always reply: "Thank you! 🙏 Our 99 Care team will connect with you shortly for closing on this quotation. 😊✨"
         * Otherwise: Always reply: "Thank you! 🙏 Our 99 Care team is already preparing your personalised quotation and will share it here shortly. 😊✨"
     * If their CRM stage is "Form Submitted": Reply: "Thank you! 🙏 Our 99 Care team will verify your form and assign the best suited staff shortly. 😊"
     * Otherwise: Say thank you and that the 99 Care team will get back to them soon.
