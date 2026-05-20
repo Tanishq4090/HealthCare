@@ -138,7 +138,7 @@ export default function HR() {
         try {
             // Fetch from employees table instead of workers
             const { data: employeeData, error: employeeError } = await supabase.from('employees').select('*');
-            const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
+            const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*, worker_assignments(assignment_status)');
             const { data: assignmentsData } = await supabase.from('worker_assignments').select('*, employees(*), clients(*)').eq('status', 'active');
             if (assignmentsData) setActiveAssignments(assignmentsData);
             const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage, estimated_value_monthly').order('created_at', { ascending: false });
@@ -1631,7 +1631,7 @@ export default function HR() {
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <p className="font-bold text-slate-900">{item.worker}</p>
-                                                                {(item.status === 'Paid' || item.status === 'Settled') && days > 0 && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
+                                                                {(item.status === 'Paid' || item.status === 'Settled') && item.worker_assignments?.assignment_status === 'completed' && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
                                                                 {item.status === 'Pending Payment' && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>}
                                                             </div>
                                                             {item.client_name && item.client_name !== 'N/A' && (
