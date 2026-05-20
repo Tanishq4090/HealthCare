@@ -870,11 +870,6 @@ export default function HR() {
     };
 
     const handleGeneratePayroll = async () => {
-        const testEmail = window.prompt("Resend Sandbox limits testing to your verified email. Enter the email you used to sign up for Resend:");
-        if (!testEmail) return;
-
-        // Static jsPDF used instead
-
         setIsGenerating(true);
         toast.loading("Analyzing active attendance logs and calculating daily fees...", { id: 'payroll-gen' });
 
@@ -1560,35 +1555,7 @@ export default function HR() {
                             <h2 className="text-xl font-bold text-slate-900">Financial Execution Center</h2>
                             <p className="text-sm text-slate-500">Automated calculation of client invoices and worker payslips.</p>
                         </div>
-                    <div className="grid grid-cols-3 gap-4 mb-2 mt-4">
-                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Total Payables</p>
-                                <p className="text-2xl font-black text-slate-900">Rs. {payrollItems.reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
-                            </div>
-                            <div className="w-10 h-10 rounded-full bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center">
-                                <Users className="w-5 h-5" />
-                            </div>
-                        </div>
-                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
-                            <div>
-                                <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-1">Unpaid Dues</p>
-                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
-                            </div>
-                            <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center">
-                                <AlertTriangle className="w-5 h-5" />
-                            </div>
-                        </div>
-                        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-4 shadow-md flex items-center justify-between text-white">
-                            <div>
-                                <p className="text-xs text-slate-300 font-bold uppercase tracking-wider mb-1">Paid Amount</p>
-                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
-                            </div>
-                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                                <CheckCircle2 className="w-5 h-5 text-green-400" />
-                            </div>
-                        </div>
-                    </div>
+
 
                         <div className="flex items-center gap-3">
                            <button
@@ -1618,6 +1585,35 @@ export default function HR() {
                                     </>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 mb-2 mt-4">
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Total Payables</p>
+                                <p className="text-2xl font-black text-slate-900">Rs. {payrollItems.reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center">
+                                <Users className="w-5 h-5" />
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-1">Unpaid Dues</p>
+                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                        </div>
+                        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-4 shadow-md flex items-center justify-between text-white">
+                            <div>
+                                <p className="text-xs text-slate-300 font-bold uppercase tracking-wider mb-1">Paid Amount</p>
+                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                                <CheckCircle2 className="w-5 h-5 text-green-400" />
+                            </div>
                         </div>
                     </div>
 
@@ -1660,24 +1656,30 @@ export default function HR() {
                                                             <div className="flex gap-2 justify-end mt-0.5">
                                                                 <button 
                                                                     onClick={() => setPreviewPayslip(item)} 
-                                                                    className="text-[10px] font-bold text-slate-500 hover:text-slate-900 transition-colors flex items-center gap-0.5"
+                                                                    className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
                                                                 >
                                                                     <Eye className="w-3 h-3" /> Preview
                                                                 </button>
                                                                 <button 
                                                                     onClick={() => handleGenerateSinglePayslip(item)} 
-                                                                    className="text-[10px] font-bold text-[#1AA6A8] hover:underline flex items-center gap-0.5"
+                                                                    className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
                                                                 >
-                                                                    <Download className="w-2.5 h-2.5" /> Download
+                                                                    <Download className="w-3 h-3" /> Download
                                                                 </button>
                                                                 <button 
                                                                     onClick={() => {
                                                                         const txt = encodeURIComponent(`Hello ${item.worker},\n\nYour payslip for ${item.month || item.service_month || 'the recent period'} has been generated.\n*Net Payable:* Rs. ${amount.toFixed(2)}\n\nPlease contact HR for the PDF copy or any discrepancies.\n\nRegards,\n99Care HR`);
-                                                                        window.open(`https://wa.me/?text=${txt}`, '_blank');
+                                                                        const workerRecord = workers.find(w => w.name === item.worker);
+                                                                        let phone = '';
+                                                                        if (workerRecord && workerRecord.phone) {
+                                                                            phone = workerRecord.phone.replace(/\D/g, '');
+                                                                            if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
+                                                                        }
+                                                                        window.open(`https://wa.me/${phone}?text=${txt}`, '_blank');
                                                                     }}
-                                                                    className="text-[10px] font-bold text-[#25D366] hover:underline flex items-center gap-0.5 ml-1"
+                                                                    className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
                                                                 >
-                                                                    <Send className="w-2.5 h-2.5" /> WhatsApp
+                                                                    <Send className="w-3 h-3" /> WhatsApp
                                                                 </button>
                                                             </div>
                                                         </div>
