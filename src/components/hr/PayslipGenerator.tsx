@@ -96,19 +96,55 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
   // Auto-fetch on mount
   useState(() => { fetchAttendance(); });
 
-  const generatePayslipPDF = () => {
+  const getLogo = (): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = '/99care-logo.svg';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 400;
+          canvas.height = 150;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            resolve(null);
+          }
+        } catch (err) {
+          console.error('Failed to convert SVG to PNG', err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+    });
+  };
+
+  const generatePayslipPDF = async () => {
     const doc = new jsPDF();
     const dateNow = format(new Date(), 'dd MMM yyyy');
     const period = `${format(startDate, 'dd MMM yyyy')} – ${format(endDate, 'dd MMM yyyy')}`;
 
     // Header (Logo left, Company Right - matching Tax Invoice structure)
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(22);
-    doc.setTextColor(30, 41, 59); // Slate-800
-    doc.text('99 CARE', 14, 25);
-    doc.setFontSize(13);
-    doc.setTextColor(60, 120, 216); // Accent Blue (#3c78d8)
-    doc.text('WORKER PAYSLIP', 14, 33);
+    const logoImg = await getLogo();
+    if (logoImg) {
+      doc.addImage(logoImg, 'PNG', 14, 14, 38, 15);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(60, 120, 216); // Accent Blue (#3c78d8)
+      doc.text('WORKER PAYSLIP', 14, 35);
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59); // Slate-800
+      doc.text('99 CARE', 14, 25);
+      doc.setFontSize(13);
+      doc.setTextColor(60, 120, 216); // Accent Blue (#3c78d8)
+      doc.text('WORKER PAYSLIP', 14, 33);
+    }
 
     // Company Info (Right)
     doc.setFont('helvetica', 'normal');
@@ -277,7 +313,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated }: P
     if (!attendanceSummary) { toast.error('Load attendance first'); return; }
     setIsGenerating(true);
     try {
-      const doc = generatePayslipPDF();
+      const doc = await generatePayslipPDF();
       doc.save(`Payslip_${emp?.full_name?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
 
       // Update DB

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare } from 'lucide-react';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare, Download, Eye } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
@@ -58,6 +58,7 @@ export default function HR() {
     // Payroll Edit Modal State
     const [isEditPayrollModalOpen, setIsEditPayrollModalOpen] = useState(false);
     const [editingPayroll, setEditingPayroll] = useState<any>(null);
+    const [previewPayslip, setPreviewPayslip] = useState<any>(null);
 
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
@@ -68,11 +69,13 @@ export default function HR() {
     const [isManualPayrollModalOpen, setIsManualPayrollModalOpen] = useState(false);
     const [manualPayrollData, setManualPayrollData] = useState({
         worker_id: '',
-        daysWorked: 0,
+        startDate: '',
+        endDate: '',
         shiftHoursOverride: 0,
-        serviceMonth: format(new Date(), 'MMMM yyyy'),
         advanceAmount: 0,
-        type: 'payslip' as 'payslip'
+        type: 'payslip' as 'payslip',
+        clientNameOverride: '',
+        dailyRateOverride: ''
     });
 
     // Manual Attendance State
@@ -619,6 +622,253 @@ export default function HR() {
         }
     };
 
+    const getDays = (item: any) => {
+        return item.days_worked || 0;
+    };
+
+    const getLogo = (): Promise<string | null> => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.src = '/99care-logo.svg';
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 400;
+                    canvas.height = 150;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0)';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/png'));
+                    } else {
+                        resolve(null);
+                    }
+                } catch (err) {
+                    console.error('Failed to convert SVG to PNG', err);
+                    resolve(null);
+                }
+            };
+            img.onerror = () => resolve(null);
+        });
+    };
+
+    const handleGenerateSinglePayslip = async (item: any) => {
+        toast.loading("Generating worker payslip...", { id: 'single-payslip-gen' });
+        try {
+            const worker = workers.find(w => w.id === item.worker_id || w.name === item.worker);
+            
+            let hoursPerDay = 10;
+            let period = '';
+            if (item.assignment_id) {
+                const { data: assignment } = await supabase
+                    .from('worker_assignments')
+                    .select('hours_per_day, start_date, end_date')
+                    .eq('id', item.assignment_id)
+                    .maybeSingle();
+                
+                if (assignment) {
+                    if (assignment.hours_per_day) {
+                        hoursPerDay = assignment.hours_per_day;
+                    }
+                    if (assignment.start_date && assignment.end_date) {
+                        const start = format(new Date(assignment.start_date), 'dd MMM yyyy');
+                        const end = format(new Date(assignment.end_date), 'dd MMM yyyy');
+                        period = `${start} – ${end}`;
+                    }
+                }
+            }
+
+            if (!period && item.period_start && item.period_end) {
+                const start = format(new Date(item.period_start), 'dd MMM yyyy');
+                const end = format(new Date(item.period_end), 'dd MMM yyyy');
+                period = `${start} – ${end}`;
+            } else if (!period) {
+                period = item.service_month || item.month || 'May 2026';
+            }
+
+            const doc = new jsPDF();
+            const dateNow = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            const payslipNo = `PS-${Date.now().toString().slice(-6)}`;
+
+            const logoImg = await getLogo();
+            if (logoImg) {
+                doc.addImage(logoImg, 'PNG', 14, 14, 38, 15);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(60, 120, 216);
+                doc.text('WORKER PAYSLIP', 14, 35);
+            } else {
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(22);
+                doc.setTextColor(30, 41, 59);
+                doc.text('99 CARE', 14, 25);
+                doc.setFontSize(13);
+                doc.setTextColor(60, 120, 216);
+                doc.text('WORKER PAYSLIP', 14, 33);
+            }
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(71, 85, 105);
+            const wCompanyInfo = [
+                '104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN',
+                'Surat, GUJARAT, 395007',
+                'Mobile: +91 9016116564',
+                'Email: 99careforyou@gmail.com',
+                'Website: 99CARE.ORG'
+            ];
+            let wCompY = 16;
+            wCompanyInfo.forEach((line: string) => {
+                doc.text(line, 196, wCompY, { align: 'right' });
+                wCompY += 4.5;
+            });
+
+            doc.setDrawColor(180, 200, 240);
+            doc.setLineWidth(0.8);
+            doc.line(14, 42, 196, 42);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Worker Details:', 14, 50);
+            doc.setFontSize(11);
+            doc.text(item.worker, 14, 56);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Designation: ${worker?.role || 'specialist'}`, 14, 62);
+            doc.text(`Assigned Client: ${item.client_name || 'N/A'}`, 14, 68);
+            if (worker?.phone) {
+                doc.text(`Phone: ${worker.phone}`, 14, 74);
+            }
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Payslip Details:', 130, 50);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Payslip #: ${payslipNo}`, 130, 56);
+            doc.text(`Issue Date: ${dateNow}`, 130, 62);
+            doc.text(`Service Period: ${period}`, 130, 68);
+            doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
+
+            const days = getDays(item);
+            const totalEarning = days * item.daily_rate;
+            const advance = item.advance_amount || 0;
+            const netBalance = totalEarning - advance;
+
+            autoTable(doc, {
+                startY: 84,
+                theme: 'grid',
+                headStyles: { fillColor: [60, 120, 216], textColor: 255, fontStyle: 'bold' },
+                head: [['Attendance Summary', 'Value']],
+                body: [
+                    ['Total Days in Period', `${days} days`],
+                    ['Days Present', `${days} days`],
+                    ['Half Days', `0 days`],
+                    ['Days Absent', `0 days`],
+                    ['Effective Working Days', `${days} days`],
+                ],
+                columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
+            });
+
+            const finalY1 = (doc as any).lastAutoTable.finalY + 8;
+
+            autoTable(doc, {
+                startY: finalY1,
+                theme: 'grid',
+                headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+                head: [['Earning Breakdown', 'Amount']],
+                body: [
+                    [`Daily Rate (for ${hoursPerDay}h shift) × ${days} Days`, `Rs. ${item.daily_rate.toFixed(2)} × ${days} = Rs. ${totalEarning.toFixed(2)}`],
+                    ['Advance Paid / Deductions', `- Rs. ${advance.toFixed(2)}`],
+                ],
+                columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
+            });
+
+            const finalY2 = (doc as any).lastAutoTable.finalY + 8;
+
+            doc.setFillColor(240, 253, 244);
+            doc.setDrawColor(34, 197, 94);
+            doc.roundedRect(14, finalY2, 182, 18, 3, 3, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(21, 128, 61);
+            doc.text('NET AMOUNT PAYABLE TO WORKER:', 20, finalY2 + 11);
+            doc.text(`Rs. ${Math.abs(netBalance).toFixed(2)}`, 185, finalY2 + 11, { align: 'right' });
+
+            let wBkY = finalY2 + 30;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Bank Details for Transfer:', 14, wBkY);
+            wBkY += 6;
+            const wBankLines = [
+                { l: 'Bank:', v: 'The Sutex Co-Operative BankLtd.' },
+                { l: 'Account Holder:', v: '99 CARE HOME HEALTHCARE SERVICE' },
+                { l: 'Account #:', v: '001810021002033' },
+                { l: 'IFSC Code:', v: 'SUTB0248018' },
+                { l: 'Branch:', v: 'Adajan Pal' },
+            ];
+            wBankLines.forEach(({ l, v }) => {
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(71, 85, 105);
+                doc.text(l, 14, wBkY);
+                doc.setFont('helvetica', 'bold');
+                doc.text(v, 42, wBkY);
+                wBkY += 5;
+            });
+
+            const wSigY = finalY2 + 30;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(30, 41, 59);
+            doc.text('For 99 CARE', 150, wSigY);
+            doc.setDrawColor(100, 116, 139);
+            doc.setLineWidth(0.5);
+            doc.line(140, wSigY + 16, 190, wSigY + 16);
+            doc.setFontSize(8);
+            doc.setTextColor(71, 85, 105);
+            doc.text('Authorized Signatory', 150, wSigY + 20);
+
+            let notesY = wBkY + 10;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Notes:', 14, notesY);
+            notesY += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+
+            const noteLines = [
+                '1. This payslip is computer-generated and does not require a physical signature.',
+                '2. Any discrepancies in the attendance or salary calculation must be reported to HR within 3 working days.',
+                '3. Net payable amount has been initiated for bank transfer to the worker\'s registered bank account.'
+            ];
+
+            noteLines.forEach(line => {
+                doc.text(line, 14, notesY);
+                notesY += 4.5;
+            });
+
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(148, 163, 184);
+            doc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
+
+            doc.save(`Payslip_${item.worker.replace(/\s+/g, '_')}_${payslipNo}.pdf`);
+            toast.success("Payslip generated successfully", { id: 'single-payslip-gen' });
+        } catch (err: any) {
+            console.error(err);
+            toast.error("Failed to generate payslip: " + err.message, { id: 'single-payslip-gen' });
+        }
+    };
+
     const handleGeneratePayroll = async () => {
         const testEmail = window.prompt("Resend Sandbox limits testing to your verified email. Enter the email you used to sign up for Resend:");
         if (!testEmail) return;
@@ -660,8 +910,8 @@ export default function HR() {
                         appliedRate = worker.short_term_daily_rate || 0;
                         totalCost = appliedRate; // Fixed Flat Monthly Salary
                     } else {
-                        appliedRate = worker.monthly_daily_rate || 0;
-                        totalCost = daysWorked * appliedRate; // Standard Daily Rate
+                        appliedRate = (worker.monthly_daily_rate || 0) / 30;
+                        totalCost = daysWorked * appliedRate; // Pro-rated Daily Rate
                     }
                     const deposit = worker.deposit_received || 0;
                     const netBalance = totalCost - deposit;
@@ -683,14 +933,23 @@ export default function HR() {
                     const dateNow = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     const payslipNo = `PS-${Date.now().toString().slice(-6)}`;
 
-                    // Header – Company name left, info right
-                    workerDoc.setFont('helvetica', 'bold');
-                    workerDoc.setFontSize(22);
-                    workerDoc.setTextColor(30, 41, 59);
-                    workerDoc.text('99 CARE', 14, 25);
-                    workerDoc.setFontSize(13);
-                    workerDoc.setTextColor(60, 120, 216);
-                    workerDoc.text('WORKER PAYSLIP', 14, 33);
+                    const logoImg = await getLogo();
+                    if (logoImg) {
+                        workerDoc.addImage(logoImg, 'PNG', 14, 14, 38, 15);
+                        workerDoc.setFont('helvetica', 'bold');
+                        workerDoc.setFontSize(11);
+                        workerDoc.setTextColor(60, 120, 216);
+                        workerDoc.text('WORKER PAYSLIP', 14, 35);
+                    } else {
+                        // Header – Company name left, info right
+                        workerDoc.setFont('helvetica', 'bold');
+                        workerDoc.setFontSize(22);
+                        workerDoc.setTextColor(30, 41, 59);
+                        workerDoc.text('99 CARE', 14, 25);
+                        workerDoc.setFontSize(13);
+                        workerDoc.setTextColor(60, 120, 216);
+                        workerDoc.text('WORKER PAYSLIP', 14, 33);
+                    }
 
                     // Company info right-aligned
                     workerDoc.setFont('helvetica', 'normal');
@@ -962,10 +1221,20 @@ export default function HR() {
     };
 
     const handleManualPayrollGenerate = async () => {
-        if (!manualPayrollData.worker_id || manualPayrollData.daysWorked <= 0) {
-            toast.error("Please select a worker and enter valid days worked.");
+        const start = manualPayrollData.startDate;
+        const end = manualPayrollData.endDate || manualPayrollData.startDate;
+        let daysWorked = 0;
+        if (start) {
+            const diffTime = Math.abs(new Date(end).getTime() - new Date(start).getTime());
+            daysWorked = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        }
+
+        if (!manualPayrollData.worker_id || daysWorked <= 0) {
+            toast.error("Please select a worker and valid dates.");
             return;
         }
+        
+        const serviceMonth = start ? format(new Date(start), 'MMMM yyyy') : format(new Date(), 'MMMM yyyy');
 
         setIsGenerating(true);
         try {
@@ -975,16 +1244,28 @@ export default function HR() {
             let appliedRate = 0;
             let totalCost = 0;
 
-            if (worker.preferred_payment_type === 'hourly') {
-                appliedRate = worker.hourly_rate || 0;
-                const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
-                totalCost = manualPayrollData.daysWorked * hours * appliedRate;
-            } else if (worker.preferred_payment_type === 'short_term') {
-                appliedRate = worker.short_term_daily_rate || 0;
-                totalCost = appliedRate; // Fixed Flat
+            if (manualPayrollData.dailyRateOverride) {
+                appliedRate = Number(manualPayrollData.dailyRateOverride);
+                if (worker.preferred_payment_type === 'hourly') {
+                    const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
+                    totalCost = daysWorked * hours * appliedRate;
+                } else if (worker.preferred_payment_type === 'short_term') {
+                    totalCost = appliedRate; // Fixed Flat
+                } else {
+                    totalCost = daysWorked * appliedRate; 
+                }
             } else {
-                appliedRate = worker.monthly_daily_rate || 0;
-                totalCost = manualPayrollData.daysWorked * appliedRate; 
+                if (worker.preferred_payment_type === 'hourly') {
+                    appliedRate = worker.hourly_rate || 0;
+                    const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
+                    totalCost = daysWorked * hours * appliedRate;
+                } else if (worker.preferred_payment_type === 'short_term') {
+                    appliedRate = worker.short_term_daily_rate || 0;
+                    totalCost = appliedRate; // Fixed Flat
+                } else {
+                    appliedRate = (worker.monthly_daily_rate || 0) / 30;
+                    totalCost = daysWorked * appliedRate; 
+                }
             }
 
             const advance = Number(manualPayrollData.advanceAmount) || 0;
@@ -994,8 +1275,8 @@ export default function HR() {
 
             const payrollEntry = {
                 worker: worker.name,
-                client_name: worker.assigned_client || 'No Active Client',
-                days_worked: manualPayrollData.daysWorked,
+                client_name: manualPayrollData.clientNameOverride || worker.assigned_client || 'No Active Client',
+                days_worked: daysWorked,
                 daily_rate: appliedRate,
                 deposit_received: deposit,
                 advance_amount: advance,
@@ -1003,7 +1284,7 @@ export default function HR() {
                 status: netBalance > 0 ? 'Pending Payment' : (netBalance < 0 ? 'Refund Due' : 'Settled'),
                 period_start: new Date().toISOString().slice(0, 10),
                 period_end: new Date().toISOString().slice(0, 10),
-                service_month: manualPayrollData.serviceMonth,
+                service_month: serviceMonth,
                 payroll_type: manualPayrollData.type
             };
 
@@ -1015,14 +1296,23 @@ export default function HR() {
             const mDateNow = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
             const mPayslipNo = `PS-${Date.now().toString().slice(-6)}`;
 
-            // Header
-            workerDoc.setFont('helvetica', 'bold');
-            workerDoc.setFontSize(22);
-            workerDoc.setTextColor(30, 41, 59);
-            workerDoc.text('99 CARE', 14, 25);
-            workerDoc.setFontSize(13);
-            workerDoc.setTextColor(60, 120, 216);
-            workerDoc.text('WORKER PAYSLIP', 14, 33);
+            const logoImg = await getLogo();
+            if (logoImg) {
+                workerDoc.addImage(logoImg, 'PNG', 14, 14, 38, 15);
+                workerDoc.setFont('helvetica', 'bold');
+                workerDoc.setFontSize(11);
+                workerDoc.setTextColor(60, 120, 216);
+                workerDoc.text('WORKER PAYSLIP', 14, 35);
+            } else {
+                // Header
+                workerDoc.setFont('helvetica', 'bold');
+                workerDoc.setFontSize(22);
+                workerDoc.setTextColor(30, 41, 59);
+                workerDoc.text('99 CARE', 14, 25);
+                workerDoc.setFontSize(13);
+                workerDoc.setTextColor(60, 120, 216);
+                workerDoc.text('WORKER PAYSLIP', 14, 33);
+            }
 
             // Company info right-aligned
             workerDoc.setFont('helvetica', 'normal');
@@ -1069,7 +1359,7 @@ export default function HR() {
             workerDoc.setTextColor(71, 85, 105);
             workerDoc.text(`Payslip #: ${mPayslipNo}`, 130, 56);
             workerDoc.text(`Issue Date: ${mDateNow}`, 130, 62);
-            workerDoc.text(`Service Period: ${manualPayrollData.serviceMonth}`, 130, 68);
+            workerDoc.text(`Service Period: ${serviceMonth}`, 130, 68);
 
             // Earnings table
             autoTable(workerDoc, {
@@ -1078,7 +1368,7 @@ export default function HR() {
                 headStyles: { fillColor: [60, 120, 216], textColor: 255, fontStyle: 'bold' },
                 head: [['Earning Breakdown', 'Value']],
                 body: [
-                    ['Working Days', `${manualPayrollData.daysWorked} days`],
+                    ['Working Days', `${daysWorked} days`],
                     ['Salary Per Day', `Rs. ${appliedRate.toFixed(2)}`],
                     ['Total Amount', `Rs. ${totalCost.toFixed(2)}`],
                     ['Security Deposit Adjustment', `- Rs. ${deposit.toFixed(2)}`],
@@ -1142,18 +1432,20 @@ export default function HR() {
             workerDoc.setTextColor(148, 163, 184);
             workerDoc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
 
-            workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${manualPayrollData.serviceMonth.replace(/\s+/g, '_')}.pdf`);
+            workerDoc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${serviceMonth.replace(/\s+/g, '_')}.pdf`);
 
             toast.success("Manual payslip generated and downloaded successfully");
             fetchData();
             setIsManualPayrollModalOpen(false);
             setManualPayrollData({ 
                 worker_id: '', 
-                daysWorked: 0, 
+                startDate: '',
+                endDate: '',
                 shiftHoursOverride: 0, 
-                serviceMonth: format(new Date(), 'MMMM yyyy'),
                 advanceAmount: 0,
-                type: 'payslip'
+                type: 'payslip' as 'payslip',
+                clientNameOverride: '',
+                dailyRateOverride: ''
             });
         } catch (error: any) {
             console.error(error);
@@ -1314,61 +1606,76 @@ export default function HR() {
                                 {isLoading ? (
                                      <div className="flex flex-col items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
                                 ) : (
-                                    payrollItems.filter(item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type).map((item) => (
-                                        <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
-                                            <div className="flex justify-between items-center">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center font-bold text-sm shadow-sm">
-                                                        {item.worker.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <p className="font-bold text-slate-900">{item.worker}</p>
-                                                            {item.status === 'Paid' && <span className="text-[9px] font-bold bg-[#EAFBFB] text-[#1AA6A8] px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Paid</span>}
+                                    payrollItems.filter(item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type).map((item) => {
+                                        const days = getDays(item);
+                                        const amount = days * item.daily_rate;
+                                        return (
+                                            <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center font-bold text-sm shadow-sm">
+                                                            {item.worker.charAt(0)}
                                                         </div>
-                                                        <p className="text-[10px] text-slate-500 font-medium">{item.days_worked} days @ ₹{item.daily_rate}/d • {item.month}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="text-right">
-                                                        <p className="text-sm font-bold text-[#1AA6A8]">₹{(item.days_worked * item.daily_rate).toFixed(2)}</p>
-                                                        <button onClick={() => { setEditingPayroll({ ...item }); setIsEditPayrollModalOpen(true); }} className="text-[10px] font-bold text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity">
-                                                           Adjust
-                                                        </button>
-                                                    </div>
-                                                    {item.status !== 'Paid' ? (
-                                                        <button 
-                                                            onClick={async () => {
-                                                                try {
-                                                                    const { error } = await supabase
-                                                                        .from('payroll')
-                                                                        .update({ status: 'Paid', paid_at: new Date().toISOString() })
-                                                                        .eq('id', item.id);
-                                                                    
-                                                                    if (error) throw error;
-                                                                    toast.success(`Salary marked as paid for ${item.worker}`);
-                                                                    fetchData(); // Refresh list
-                                                                } catch (err) {
-                                                                    toast.error("Failed to mark salary as paid");
-                                                                    // Fallback for demo
-                                                                    item.status = 'Paid';
-                                                                    toast.success("Demo: Salary marked as paid!");
-                                                                }
-                                                            }}
-                                                            className="p-2 rounded-lg bg-[#1AA6A8] text-white hover:bg-[#1AA6A8] transition-all shadow-sm active:scale-95"
-                                                            title="Mark as Paid"
-                                                        >
-                                                            <CheckCircle2 className="w-4 h-4" />
-                                                        </button>
-                                                    ) : (
-                                                        <div className="p-2 rounded-lg bg-slate-100 text-slate-400">
-                                                            <CheckCircle2 className="w-4 h-4" />
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="font-bold text-slate-900">{item.worker}</p>
+                                                                {item.status === 'Paid' && <span className="text-[9px] font-bold bg-[#EAFBFB] text-[#1AA6A8] px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Paid</span>}
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-500 font-medium">{days} days @ Rs. {item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'May 2026'}</p>
                                                         </div>
-                                                    )}
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-right">
+                                                            <p className="text-sm font-bold text-[#1AA6A8]">Rs. {amount.toFixed(2)}</p>
+                                                            <div className="flex gap-2 justify-end mt-0.5">
+                                                                <button 
+                                                                    onClick={() => setPreviewPayslip(item)} 
+                                                                    className="text-[10px] font-bold text-slate-500 hover:text-slate-900 transition-colors flex items-center gap-0.5"
+                                                                >
+                                                                    <Eye className="w-3 h-3" /> Preview
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleGenerateSinglePayslip(item)} 
+                                                                    className="text-[10px] font-bold text-[#1AA6A8] hover:underline flex items-center gap-0.5"
+                                                                >
+                                                                    <Download className="w-2.5 h-2.5" /> Download
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        {item.status !== 'Paid' ? (
+                                                            <button 
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const { error } = await supabase
+                                                                            .from('payroll')
+                                                                            .update({ status: 'Paid', paid_at: new Date().toISOString() })
+                                                                            .eq('id', item.id);
+                                                                        
+                                                                        if (error) throw error;
+                                                                        toast.success(`Salary marked as paid for ${item.worker}`);
+                                                                        fetchData(); // Refresh list
+                                                                    } catch (err) {
+                                                                        toast.error("Failed to mark salary as paid");
+                                                                        // Fallback for demo
+                                                                        item.status = 'Paid';
+                                                                        toast.success("Demo: Salary marked as paid!");
+                                                                    }
+                                                                }}
+                                                                className="p-2 rounded-lg bg-[#1AA6A8] text-white hover:bg-[#1AA6A8] transition-all shadow-sm active:scale-95"
+                                                                title="Mark as Paid"
+                                                            >
+                                                                <CheckCircle2 className="w-4 h-4" />
+                                                            </button>
+                                                        ) : (
+                                                            <div className="p-2 rounded-lg bg-slate-100 text-slate-400">
+                                                                <CheckCircle2 className="w-4 h-4" />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </div>
                         </div>
@@ -1879,30 +2186,25 @@ export default function HR() {
                                 </select>
                             </div>
                             
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Total Days Worked</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.5"
-                                    value={manualPayrollData.daysWorked || ''}
-                                    onChange={e => setManualPayrollData({...manualPayrollData, daysWorked: parseFloat(e.target.value) || 0})}
-                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
-                                    placeholder="e.g. 21.5"
-                                    required
-                                />
-                            </div>
-
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Service Month</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
                                     <input
-                                        type="text"
-                                        value={manualPayrollData.serviceMonth}
-                                        onChange={e => setManualPayrollData({...manualPayrollData, serviceMonth: e.target.value})}
-                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white shadow-sm"
-                                        placeholder="e.g. April 2026"
+                                        type="date"
+                                        value={manualPayrollData.startDate}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, startDate: e.target.value})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
                                         required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">End Date (optional)</label>
+                                    <input
+                                        type="date"
+                                        value={manualPayrollData.endDate}
+                                        min={manualPayrollData.startDate}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, endDate: e.target.value})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
                                     />
                                 </div>
                                 <div>
@@ -1915,7 +2217,28 @@ export default function HR() {
                                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white shadow-sm"
                                         placeholder="e.g. 2000"
                                     />
-                                    <p className="text-[9px] text-slate-400 mt-1 italic">This will be subtracted from worker salary.</p>
+                                    <p className="text-[9px] text-slate-400 mt-1 italic">This will be subtracted.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Custom Daily Rate (₹)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={manualPayrollData.dailyRateOverride}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, dailyRateOverride: e.target.value})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white shadow-sm"
+                                        placeholder="Optional override"
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Client Name</label>
+                                    <input
+                                        type="text"
+                                        value={manualPayrollData.clientNameOverride}
+                                        onChange={e => setManualPayrollData({...manualPayrollData, clientNameOverride: e.target.value})}
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white shadow-sm"
+                                        placeholder="Optional override"
+                                    />
                                 </div>
                             </div>
 
@@ -1943,7 +2266,7 @@ export default function HR() {
                             <button onClick={() => setIsManualPayrollModalOpen(false)} className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-100 transition-colors">
                                 Cancel
                             </button>
-                            <button onClick={handleManualPayrollGenerate} disabled={isGenerating || !manualPayrollData.worker_id || manualPayrollData.daysWorked <= 0} className="flex-1 px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            <button onClick={handleManualPayrollGenerate} disabled={isGenerating || !manualPayrollData.worker_id || !manualPayrollData.startDate} className="flex-1 px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                 {isGenerating ? 'Generating...' : 'Generate & Download'}
                             </button>
                         </div>
@@ -2023,6 +2346,158 @@ export default function HR() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Live Payslip Preview Modal */}
+            {previewPayslip && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 my-8">
+                        {/* Header */}
+                        <div className="flex justify-between items-center px-6 py-4 bg-slate-50 border-b border-slate-100">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <Eye className="w-5 h-5 text-primary" /> Live Payslip Invoice Preview
+                            </h3>
+                            <button 
+                                onClick={() => setPreviewPayslip(null)} 
+                                className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+                        
+                        {/* Printable Payslip Body */}
+                        <div className="p-8 space-y-6 font-[Inter] text-slate-700 bg-white">
+                            {/* Brand Header */}
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <img src="/99care-logo.svg" className="h-10 w-auto" alt="99care Logo" onError={(e) => {
+                                            // fallback to text if SVG doesn't load in HTML
+                                            e.currentTarget.style.display = 'none';
+                                        }} />
+                                        <span className="font-extrabold text-2xl tracking-tight text-[#1AA6A8]">99 CARE</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Worker Payslip Invoice</p>
+                                </div>
+                                <div className="text-right text-[10px] text-slate-500 leading-relaxed max-w-[240px]">
+                                    <p className="font-bold text-slate-800">99 CARE HOME HEALTHCARE SERVICE</p>
+                                    <p>104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT, GUJARAT, 395007</p>
+                                    <p>Mobile: +91 9016116564</p>
+                                    <p>Email: 99careforyou@gmail.com</p>
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* Info Grid */}
+                            <div className="grid grid-cols-2 gap-6 text-xs">
+                                <div>
+                                    <h4 className="font-bold text-slate-400 uppercase tracking-wider mb-2">Worker Portfolio</h4>
+                                    <p className="font-bold text-slate-900 text-sm">{previewPayslip.worker}</p>
+                                    <p className="text-slate-500 mt-1">Designation: Caregiver</p>
+                                    <p className="text-slate-500">Period: {previewPayslip.period_start} to {previewPayslip.period_end}</p>
+                                </div>
+                                <div className="text-right">
+                                    <h4 className="font-bold text-slate-400 uppercase tracking-wider mb-2">Invoice Summary</h4>
+                                    <p><span className="text-slate-500">Payslip No:</span> <span className="font-mono font-bold text-slate-900">PS-{previewPayslip.id?.slice(-6).toUpperCase()}</span></p>
+                                    <p className="mt-1"><span className="text-slate-500">Issue Date:</span> <span className="font-medium">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></p>
+                                    <p className="mt-1"><span className="text-slate-500">Client Assigned:</span> <span className="font-semibold text-primary">{previewPayslip.client_name || 'Tanishq Kachiwala'}</span></p>
+                                </div>
+                            </div>
+
+                            {/* Details Table */}
+                            <div className="border border-slate-100 rounded-xl overflow-hidden">
+                                <table className="w-full text-xs text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-100">
+                                            <th className="p-3 font-bold text-slate-600">Earnings Description</th>
+                                            <th className="p-3 font-bold text-slate-600 text-center">Days Worked</th>
+                                            <th className="p-3 font-bold text-slate-600 text-right">Daily Rate</th>
+                                            <th className="p-3 font-bold text-slate-600 text-right">Gross Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        <tr>
+                                            <td className="p-3 font-medium text-slate-800">
+                                                Professional Homecare & Caregiving Services
+                                            </td>
+                                            <td className="p-3 text-center text-slate-600">{previewPayslip.days_worked || 0}</td>
+                                            <td className="p-3 text-right text-slate-600 font-mono">Rs. {previewPayslip.daily_rate?.toFixed(2)}</td>
+                                            <td className="p-3 text-right font-bold text-slate-900 font-mono">
+                                                Rs. {((previewPayslip.days_worked || 0) * (previewPayslip.daily_rate || 0)).toFixed(2)}
+                                            </td>
+                                        </tr>
+                                        {/* Advance deduction if any */}
+                                        <tr className="bg-slate-50/50">
+                                            <td colSpan={3} className="p-3 text-right font-medium text-slate-500">Less: Security / Advance Paid</td>
+                                            <td className="p-3 text-right font-bold text-rose-500 font-mono">-Rs. {(previewPayslip.advance_paid || 0).toFixed(2)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Net Balance Sheet */}
+                            <div className="bg-[#1AA6A8]/5 rounded-2xl p-4 flex justify-between items-center border border-[#1AA6A8]/10">
+                                <div>
+                                    <p className="text-xs font-bold text-[#1AA6A8] uppercase tracking-wider">Net Amount Payable</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">Subject to standard bank transfer clearing</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-2xl font-extrabold text-[#1AA6A8] font-mono">
+                                        Rs. {Math.max(0, ((previewPayslip.days_worked || 0) * (previewPayslip.daily_rate || 0)) - (previewPayslip.advance_paid || 0)).toFixed(2)}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Bank Details */}
+                            <div className="bg-slate-50 rounded-2xl p-4 text-[10px] text-slate-500 space-y-1">
+                                <p className="font-bold text-slate-700 uppercase tracking-wider mb-1">Corporate Bank Transfer Details</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p><span className="font-medium text-slate-600">Bank Name:</span> The Sutex Co-Operative Bank Ltd.</p>
+                                        <p><span className="font-medium text-slate-600">Account Name:</span> 99 CARE HOME HEALTHCARE SERVICE</p>
+                                    </div>
+                                    <div>
+                                        <p><span className="font-medium text-slate-600">Account No:</span> 001810021002033</p>
+                                        <p><span className="font-medium text-slate-600">IFSC Code:</span> SUTB0248018 (Adajan Pal Branch)</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Signatory Footer */}
+                            <div className="flex justify-between items-end pt-4">
+                                <div className="text-[9px] text-slate-400 leading-normal">
+                                    <p className="font-bold">Important Declaration:</p>
+                                    <p>1. This is a computer-generated payslip invoice and requires no physical seal.</p>
+                                    <p>2. Subject to Surat jurisdiction rules and regulations.</p>
+                                </div>
+                                <div className="text-center font-[Inter]">
+                                    <div className="w-32 border-b border-slate-300 mx-auto mb-1 h-6"></div>
+                                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Authorized Signatory</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Action Footer */}
+                        <div className="flex gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100 shrink-0">
+                            <button 
+                                onClick={() => setPreviewPayslip(null)} 
+                                className="flex-1 py-2.5 px-4 rounded-xl font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all active:scale-95"
+                            >
+                                Close Preview
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    handleGenerateSinglePayslip(previewPayslip);
+                                    setPreviewPayslip(null);
+                                }} 
+                                className="flex-1 py-2.5 px-4 rounded-xl font-bold text-white bg-primary hover:bg-primary/95 transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-4 h-4" /> Download PDF Payslip
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
