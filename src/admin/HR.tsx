@@ -1630,129 +1630,100 @@ export default function HR() {
                                                             <p className="text-[10px] text-slate-500 font-medium">{days} days @ Rs. {item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'May 2026'}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="text-right">
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        <div className="flex items-center gap-3">
                                                             <p className="text-sm font-bold text-[#1AA6A8]">Rs. {amount.toFixed(2)}</p>
-                                                            <div className="flex gap-2 justify-end mt-0.5">
-                                                                <button 
-                                                                    onClick={() => setPreviewPayslip(item)} 
-                                                                    className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
-                                                                >
-                                                                    <Eye className="w-3 h-3" /> Preview
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => handleGenerateSinglePayslip(item)} 
-                                                                    className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
-                                                                >
-                                                                    <Download className="w-3 h-3" /> Download
-                                                                </button>
-                                                                <button 
-                                                                    onClick={async () => {
-                                                                        const workerRecord = workers.find(w => w.name === item.worker);
-                                                                        let phone = item.worker_phone || '';
-                                                                        if (!phone && workerRecord && workerRecord.phone) {
-                                                                            phone = workerRecord.phone;
-                                                                        }
-                                                                        if (phone) {
-                                                                            phone = phone.replace(/\D/g, '');
-                                                                            if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
-                                                                        }
-                                                                        if (!phone) {
-                                                                            toast.error("No phone number found for this worker. Please edit the worker profile or specify it in the manual generator.");
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        const toastId = toast.loading("Generating payslip and dispatching...");
-                                                                        try {
-                                                                            // Generate PDF Blob
-                                                                            const pdfBlob = generatePayslipBlob(item);
-                                                                            const fileName = `payslip-${item.worker.replace(/\s+/g, '-')}-${Date.now()}.pdf`;
-                                                                            
-                                                                            // Upload to Supabase Storage
-                                                                            const { data: uploadData, error: uploadError } = await supabase.storage
-                                                                                .from('payslips')
-                                                                                .upload(fileName, pdfBlob, {
-                                                                                    contentType: 'application/pdf',
-                                                                                    upsert: false
-                                                                                });
-                                                                                
-                                                                            if (uploadError) throw uploadError;
-                                                                            
-                                                                            // Get Public URL
-                                                                            const { data: { publicUrl } } = supabase.storage
-                                                                                .from('payslips')
-                                                                                .getPublicUrl(fileName);
-                                                                                
-                                                                            // Dispatch via Meta API
-                                                                            const { data, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
-                                                                                body: {
-                                                                                    phone: phone,
-                                                                                    sendInvoicePdf: true,
-                                                                                    invoicePdfUrl: publicUrl,
-                                                                                    useTemplate: true,
-                                                                                    templateName: 'worker_payslip',
-                                                                                    templateParams: [item.worker]
-                                                                                }
-                                                                            });
-                                                                            
-                                                                            if (error) throw error;
-                                                                            toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
-                                                                        } catch (err: any) {
-                                                                            console.error(err);
-                                                                            toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
-                                                                        }
-                                                                    }}
-                                                                    className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
-                                                                >
-                                                                    <Send className="w-3 h-3" /> WhatsApp
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        <button
+                                                            <button 
                                                                 onClick={async () => {
-                                                                    // Find the assignment for this worker
-                                                                    const assignment = activeAssignments.find(
-                                                                        a => a.employee_id === item.worker_id || 
-                                                                             (a.employees && a.employees.full_name === item.worker)
-                                                                    );
+                                                                    if (!confirm('Are you sure you want to delete this payslip?')) return;
+                                                                    try {
+                                                                        const { error } = await supabase
+                                                                            .from('payroll')
+                                                                            .delete()
+                                                                            .eq('id', item.id);
+                                                                        if (error) throw error;
+                                                                        toast.success("Payslip deleted successfully");
+                                                                        fetchData();
+                                                                    } catch (err: any) {
+                                                                        toast.error(err.message || "Failed to delete payslip");
+                                                                    }
+                                                                }}
+                                                                className="p-1.5 rounded-md bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-sm active:scale-95"
+                                                                title="Delete Payslip"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2 justify-end">
+                                                            <button 
+                                                                onClick={() => setPreviewPayslip(item)} 
+                                                                className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
+                                                            >
+                                                                <Eye className="w-3 h-3" /> Preview
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleGenerateSinglePayslip(item)} 
+                                                                className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
+                                                            >
+                                                                <Download className="w-3 h-3" /> Download
+                                                            </button>
+                                                            <button 
+                                                                onClick={async () => {
+                                                                    const workerRecord = workers.find(w => w.name === item.worker);
+                                                                    let phone = item.worker_phone || '';
+                                                                    if (!phone && workerRecord && workerRecord.phone) {
+                                                                        phone = workerRecord.phone;
+                                                                    }
+                                                                    if (phone) {
+                                                                        phone = phone.replace(/\D/g, '');
+                                                                        if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
+                                                                    }
+                                                                    if (!phone) {
+                                                                        toast.error("No phone number found for this worker.");
+                                                                        return;
+                                                                    }
+                                                                    
+                                                                    const toastId = toast.loading("Generating payslip and dispatching...");
+                                                                    try {
+                                                                        const pdfBlob = generatePayslipBlob(item);
+                                                                        const fileName = `payslip-${item.worker.replace(/\s+/g, '-')}-${Date.now()}.pdf`;
+                                                                        
+                                                                        const { error: uploadError } = await supabase.storage.from('payslips').upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: false });
+                                                                        if (uploadError) throw uploadError;
+                                                                        
+                                                                        const { data: { publicUrl } } = supabase.storage.from('payslips').getPublicUrl(fileName);
+                                                                        
+                                                                        const { error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                                                                            body: { phone, sendInvoicePdf: true, invoicePdfUrl: publicUrl, useTemplate: true, templateName: 'worker_payslip', templateParams: [item.worker] }
+                                                                        });
+                                                                        
+                                                                        if (error) throw error;
+                                                                        toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
+                                                                    } catch (err: any) {
+                                                                        toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
+                                                                    }
+                                                                }}
+                                                                className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
+                                                            >
+                                                                <Send className="w-3 h-3" /> WhatsApp
+                                                            </button>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    const assignment = activeAssignments.find(a => a.employee_id === item.worker_id || (a.employees && a.employees.full_name === item.worker));
                                                                     if (assignment) {
                                                                         setBillingAssignment(assignment);
                                                                     } else {
-                                                                        // Fetch on demand if not in state
-                                                                        const { data } = await supabase
-                                                                            .from('worker_assignments')
-                                                                            .select('*, employees(*), clients(*)')
-                                                                            .or(`employee_id.eq.${item.worker_id || '00000000-0000-0000-0000-000000000000'}`)
-                                                                            .maybeSingle();
+                                                                        const { data } = await supabase.from('worker_assignments').select('*, employees(*), clients(*)').or(`employee_id.eq.${item.worker_id || '00000000-0000-0000-0000-000000000000'}`).maybeSingle();
                                                                         if (data) setBillingAssignment(data);
                                                                         else toast.error('No active assignment found for this worker.');
                                                                     }
                                                                 }}
                                                                 className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
-                                                                title="Open Payslip Generator"
+                                                                title="Open Live Generator"
                                                             >
-                                                                <FileText className="w-3 h-3" /> Billing
+                                                                <FileText className="w-3 h-3" /> Generator
                                                             </button>
-                                                        <button 
-                                                            onClick={async () => {
-                                                                if (!confirm('Are you sure you want to delete this payslip?')) return;
-                                                                try {
-                                                                    const { error } = await supabase
-                                                                        .from('payroll')
-                                                                        .delete()
-                                                                        .eq('id', item.id);
-                                                                    if (error) throw error;
-                                                                    toast.success("Payslip deleted successfully");
-                                                                    fetchData();
-                                                                } catch (err: any) {
-                                                                    toast.error(err.message || "Failed to delete payslip");
-                                                                }
-                                                            }}
-                                                            className="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-sm active:scale-95"
-                                                            title="Delete Payslip"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
