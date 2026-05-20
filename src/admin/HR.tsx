@@ -1725,7 +1725,7 @@ export default function HR() {
                                                                                 .from('worker_assignments')
                                                                                 .select('*, employees(*), clients(*)')
                                                                                 .eq('employee_id', targetEmployeeId)
-                                                                                .order('created_at', { ascending: false })
+                                                                                .order('assigned_at', { ascending: false })
                                                                                 .limit(1)
                                                                                 .maybeSingle();
                                                                             if (error) {
