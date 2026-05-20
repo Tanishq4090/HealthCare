@@ -450,14 +450,13 @@ serve(async (req) => {
                             if (match && match[1]) extractedAddress = match[1].trim();
                         }
 
-                        // Build pre-fill data payload
                         const prefillData = {
-                            patient_name: consent?.patient_name || earlyLead.name || "",
+                            patient_name: consent?.patient_name || "",
                             contact_number: consent?.contact_number || purePhone || "",
                             service_category: consent?.service_category || quote?.service_category || quote?.service_name || "",
                             service_start_date: consent?.service_start_date || (quote?.start_date ? quote.start_date.split('T')[0] : ""),
                             offered_time: consent?.offered_time || quote?.shift_type || "",
-                            relative_name: consent?.relative_name || "",
+                            relative_name: consent?.relative_name || earlyLead.name || "",
                             age: consent?.age || "",
                             weight: consent?.weight || "",
                             alternate_contact_number: consent?.alternate_contact_number || "",

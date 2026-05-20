@@ -3924,7 +3924,8 @@ export default function CRM() {
                                                     .maybeSingle();
 
                                                 let flowData: any = {
-                                                    patient_name: selectedInspectorLead.name || '',
+                                                    relative_name: selectedInspectorLead.name || '',
+                                                    patient_name: '',
                                                     contact_number: (selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '').replace(/\D/g, '')
                                                 };
                                                 if (latestQuote) {
