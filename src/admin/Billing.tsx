@@ -63,9 +63,11 @@ export default function Billing() {
                     final_invoice_generated,
                     final_invoice_number,
                     hours_per_day,
+                    assignment_status,
                     clients (client_name, phone_number, id),
                     employees (id, full_name, job_title, phone, monthly_daily_rate, short_term_daily_rate, preferred_payment_type, hourly_rate, shift_hours)
                 `)
+                .neq('assignment_status', 'cancelled')
                 .order('assigned_at', { ascending: false });
 
             if (error) throw error;

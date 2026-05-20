@@ -315,23 +315,41 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       advance_paid: advanceDeduction,
     }).eq('id', assignment.id);
 
-    await supabase.from('payroll').insert([{
-      worker: emp?.full_name || 'Staff',
-      worker_id: assignment.employee_id,
-      assignment_id: assignment.id,
-      client_name: client?.client_name || 'N/A',
-      days_worked: daysWorked,
-      daily_rate: dailyRate,
-      total_amount: totalEarning,
-      deposit_received: 0,
-      advance_amount: advanceDeduction,
-      net_balance: netPayable,
-      worker_phone: emp?.phone || '',
-      payslip_type: 'worker',
-      status: netPayable > 0 ? 'Pending Payment' : 'Settled',
-      period_start: assignment.start_date,
-      period_end: assignment.end_date || new Date().toISOString(),
-    }]);
+    // Check for existing payroll entry for this assignment to prevent duplicates
+    const { data: existing } = await supabase
+      .from('payroll')
+      .select('id')
+      .eq('assignment_id', assignment.id)
+      .maybeSingle();
+
+    if (!existing) {
+      await supabase.from('payroll').insert([{
+        worker: emp?.full_name || 'Staff',
+        worker_id: assignment.employee_id,
+        assignment_id: assignment.id,
+        client_name: client?.client_name || 'N/A',
+        days_worked: daysWorked,
+        daily_rate: dailyRate,
+        total_amount: totalEarning,
+        deposit_received: 0,
+        advance_amount: advanceDeduction,
+        net_balance: netPayable,
+        worker_phone: emp?.phone || '',
+        payslip_type: 'worker',
+        status: netPayable > 0 ? 'Pending Payment' : 'Settled',
+        period_start: assignment.start_date,
+        period_end: assignment.end_date || new Date().toISOString(),
+      }]);
+    } else {
+      // Update the existing record instead
+      await supabase.from('payroll').update({
+        days_worked: daysWorked,
+        total_amount: totalEarning,
+        advance_amount: advanceDeduction,
+        net_balance: netPayable,
+        status: netPayable > 0 ? 'Pending Payment' : 'Settled',
+      }).eq('id', existing.id);
+    }
   };
 
   const handleGeneratePayslip = async () => {
@@ -391,11 +409,18 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });
       
       if (autoCloseAssignmentOnGenerate) {
-        const { error: closeError } = await supabase.from('worker_assignments').update({ assignment_status: 'completed' }).eq('id', assignment.id);
-        if (closeError) {
-          console.error('Failed to close assignment:', closeError);
-        } else {
+        const { error: closeError } = await supabase.from('worker_assignments')
+          .update({ assignment_status: 'completed' })
+          .eq('id', assignment.id);
+        
+        // Also reset the employee's status back to 'available'
+        if (!closeError) {
+          await supabase.from('employees')
+            .update({ status: 'available', assigned_client: null })
+            .eq('id', assignment.employee_id);
           toast.success('Worker duty marked as completed and closed!');
+        } else {
+          console.error('Failed to close assignment:', closeError);
         }
       }
       
