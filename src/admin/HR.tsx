@@ -1586,7 +1586,7 @@ export default function HR() {
                         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-1">Unpaid Dues</p>
-                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid' && i.status !== 'Settled').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center">
                                 <AlertTriangle className="w-5 h-5" />
@@ -1595,7 +1595,7 @@ export default function HR() {
                         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-4 shadow-md flex items-center justify-between text-white">
                             <div>
                                 <p className="text-xs text-slate-300 font-bold uppercase tracking-wider mb-1">Paid Amount</p>
-                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid' || i.status === 'Settled').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
                                 <CheckCircle2 className="w-5 h-5 text-green-400" />
@@ -1631,7 +1631,7 @@ export default function HR() {
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <p className="font-bold text-slate-900">{item.worker}</p>
-                                                                {(item.status === 'Paid' || item.status === 'Settled') && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
+                                                                {(item.status === 'Paid' || item.status === 'Settled') && days > 0 && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
                                                                 {item.status === 'Pending Payment' && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>}
                                                             </div>
                                                             {item.client_name && item.client_name !== 'N/A' && (
