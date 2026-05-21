@@ -312,6 +312,7 @@ export default function Billing() {
         const billToProcess = { ...bill, invoice_no: bill.invoice_no || `INV-M${Math.floor(Math.random() * 1000) + 100}` };
         setAgentTargetBill(billToProcess);
         if (billToProcess.isDepositMode) {
+            setInvoiceDepositAmount(billToProcess.amount ? billToProcess.amount.replace(/[^0-9.]/g, '') : '');
             setAgentDraftText(`Hello ${billToProcess.client}, your security deposit invoice has been prepared. Please review the details attached.`);
         } else {
             setAgentDraftText(generateWhatsappDraft(billToProcess, agentDraftLang));
@@ -399,6 +400,7 @@ export default function Billing() {
                 await supabase
                     .from('worker_assignments')
                     .update({
+                        deposit_amount: Number(invoiceDepositAmount) || 15000,
                         deposit_invoice_sent: true,
                         invoice_pdf_url: invoicePdfUrl
                     })
