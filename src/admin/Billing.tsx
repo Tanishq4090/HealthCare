@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Bot, Globe, QrCode, History, Search, Loader2 } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search } from 'lucide-react';
 
 const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
 );
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
-import PayslipGenerator from '../components/hr/PayslipGenerator';
+
 
 export default function Billing() {
     const [searchParams] = useSearchParams();
@@ -41,7 +41,13 @@ export default function Billing() {
     // Invoice Modal State
     const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
     const [invoiceData, setInvoiceData] = useState<any>(null);
-    const [generatingPayslipFor, setGeneratingPayslipFor] = useState<any>(null);
+
+    // Client Invoice Generator State
+    const [isClientInvoiceOpen, setIsClientInvoiceOpen] = useState(false);
+    const [clientInvoiceBill, setClientInvoiceBill] = useState<any>(null);
+    const [ciDays, setCiDays] = useState<number>(1);
+    const [ciRate, setCiRate] = useState<number>(0);
+    const [ciDeposit, setCiDeposit] = useState<number>(0);
 
     const fetchBillingData = async () => {
         setIsLoading(true);
@@ -535,8 +541,29 @@ export default function Billing() {
                                                 <FileText className="w-4 h-4" /> Locked
                                             </button>
                                         ) : bill.status === 'Draft' ? (
-                                            <button onClick={() => setGeneratingPayslipFor(bill.rawAssignment)} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
-                                                <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" /> Prepare Invoice
+                                            <button onClick={() => {
+                                                const asgn = bill.rawAssignment;
+                                                setClientInvoiceBill(bill);
+                                                setCiRate(asgn.client_billing_rate || 0);
+                                                setCiDeposit(asgn.deposit_amount || 0);
+                                                setCiDays(1);
+                                                setIsClientInvoiceOpen(true);
+                                                // Auto-fetch attendance days
+                                                if (asgn.employee_id && asgn.start_date) {
+                                                    supabase.from('attendance')
+                                                        .select('status')
+                                                        .eq('worker_id', asgn.employee_id)
+                                                        .gte('duty_date', asgn.start_date.split('T')[0])
+                                                        .then(({ data }) => {
+                                                            if (data && data.length > 0) {
+                                                                const p = data.filter((a: any) => a.status === 'Present').length;
+                                                                const h = data.filter((a: any) => a.status === 'Half Day').length;
+                                                                setCiDays(p + h * 0.5 || 1);
+                                                            }
+                                                        });
+                                                }
+                                            }} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
+                                                <FileText className="w-4 h-4 group-hover:scale-110 transition-transform" /> Prepare Invoice
                                             </button>
                                         ) : (
                                             <button onClick={() => handleAction('Record Monthly Payment', bill.client, bill.id)} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
@@ -931,9 +958,21 @@ export default function Billing() {
 
                             {/* Totals */}
                             <div className="flex justify-end mb-10">
-                                <div className="w-1/2">
-                                    <div className="flex justify-between items-center py-2 border-b border-slate-300">
-                                        <span className="font-bold text-lg text-slate-800">Total</span>
+                                <div className="w-1/2 space-y-1">
+                                    {invoiceData.totalAmount && invoiceData.totalAmount !== invoiceData.amount && (
+                                        <div className="flex justify-between items-center py-1.5 text-sm">
+                                            <span className="text-slate-600">{invoiceData.days} day{invoiceData.days !== 1 ? 's' : ''} × ₹{invoiceData.rate?.toLocaleString('en-IN')}/day</span>
+                                            <span className="font-semibold text-slate-800">₹{invoiceData.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                    )}
+                                    {invoiceData.depositCollected > 0 && (
+                                        <div className="flex justify-between items-center py-1.5 text-sm">
+                                            <span className="text-slate-600">Deposit Collected</span>
+                                            <span className="font-semibold text-emerald-600">− ₹{invoiceData.depositCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between items-center py-2 border-t border-slate-300">
+                                        <span className="font-bold text-lg text-slate-800">Net Payable</span>
                                         <span className="font-bold text-xl text-slate-900">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="flex justify-between items-center py-2 text-sm bg-slate-100 px-2 mt-1">
@@ -988,17 +1027,89 @@ export default function Billing() {
                 </div>
             )}
 
-            {/* Payslip & Invoice Generator Modal */}
-            {generatingPayslipFor && (
-                <PayslipGenerator
-                    assignment={generatingPayslipFor}
-                    onClose={() => setGeneratingPayslipFor(null)}
-                    onGenerated={() => {
-                        setGeneratingPayslipFor(null);
-                        fetchBillingData();
-                    }}
-                />
-            )}
+            {/* Client Invoice Generator Modal */}
+            {isClientInvoiceOpen && clientInvoiceBill && (() => {
+                const total = ciDays * ciRate;
+                const net = Math.max(0, total - ciDeposit);
+                return (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
+                                        <FileText className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-base font-bold text-white">Client Invoice Generator</h2>
+                                        <p className="text-xs text-slate-400">{clientInvoiceBill.client}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsClientInvoiceOpen(false)} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-5 space-y-4">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
+                                        <input type="number" min="0" step="0.5" value={ciDays} onChange={e => setCiDays(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
+                                        <input type="number" min="0" value={ciRate} onChange={e => setCiRate(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Deposit Already Collected (₹)</label>
+                                    <input type="number" min="0" value={ciDeposit} onChange={e => setCiDeposit(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                </div>
+                                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">{ciDays} day{ciDays !== 1 ? 's' : ''} × ₹{ciRate.toLocaleString('en-IN')}/day</span>
+                                        <span className="font-semibold text-slate-800">₹{total.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    {ciDeposit > 0 && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500">Deposit Collected</span>
+                                            <span className="font-semibold text-emerald-600">− ₹{ciDeposit.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
+                                        <span className="text-slate-800">Net Payable</span>
+                                        <span className="text-primary">₹{net.toLocaleString('en-IN')}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2 rounded-lg font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Cancel</button>
+                                <button
+                                    onClick={() => {
+                                        setIsClientInvoiceOpen(false);
+                                        const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
+                                        setAgentTargetBill({ ...clientInvoiceBill, invoice_no: invoiceNo });
+                                        setInvoiceData({
+                                            clientName: clientInvoiceBill.client,
+                                            phone: clientInvoiceBill.client_phone || '',
+                                            service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
+                                            amount: net,
+                                            totalAmount: total,
+                                            depositCollected: ciDeposit,
+                                            date: new Date().toISOString(),
+                                            invoiceNumber: invoiceNo,
+                                            days: ciDays,
+                                            rate: ciRate
+                                        });
+                                        setIsInvoiceOpen(true);
+                                    }}
+                                    className="flex-1 py-2 rounded-lg font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <FileText className="w-4 h-4" /> Generate Invoice
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }
