@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settin
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
+import { MOCK_WORKERS } from '../data/mockWorkers';
 
 export default function AdminLayout() {
     const location = useLocation();
@@ -13,7 +14,7 @@ export default function AdminLayout() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<{clients: any[], workers: any[]}>({ clients: [], workers: [] });
+    const [searchResults, setSearchResults] = useState<{clients: any[], workers: any[], invoices: any[]}>({ clients: [], workers: [], invoices: [] });
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
@@ -31,7 +32,7 @@ export default function AdminLayout() {
     useEffect(() => {
         const fetchResults = async () => {
             if (searchQuery.length < 2) {
-                setSearchResults({ clients: [], workers: [] });
+                setSearchResults({ clients: [], workers: [], invoices: [] });
                 setIsSearchOpen(false);
                 return;
             }
@@ -40,7 +41,7 @@ export default function AdminLayout() {
             setIsSearchOpen(true);
 
             try {
-                const [{ data: clients }, { data: workers }] = await Promise.all([
+                const [{ data: clients }, { data: workers }, { data: invoices }] = await Promise.all([
                     supabase
                         .from('crm_leads')
                         .select('id, name, phone, pipeline_stage')
@@ -50,12 +51,33 @@ export default function AdminLayout() {
                         .from('employees')
                         .select('id, full_name, contact_number, job_title')
                         .or(`full_name.ilike.%${searchQuery}%,contact_number.ilike.%${searchQuery}%`)
+                        .limit(5),
+                    supabase
+                        .from('worker_assignments')
+                        .select('id, final_invoice_number, clients(client_name)')
+                        .not('final_invoice_number', 'is', null)
+                        .ilike('final_invoice_number', `%${searchQuery}%`)
                         .limit(5)
                 ]);
 
+                const mockWorkersSearch = MOCK_WORKERS.filter(w => 
+                    w.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                    (w.phone && w.phone.includes(searchQuery))
+                ).map(w => ({
+                    id: w.id,
+                    full_name: w.name,
+                    contact_number: w.phone,
+                    job_title: w.role
+                }));
+
+                // Deduplicate mock workers against DB workers
+                const dbWorkerIds = new Set((workers || []).map(w => w.id));
+                const finalMockWorkers = mockWorkersSearch.filter(mw => !dbWorkerIds.has(mw.id));
+
                 setSearchResults({
                     clients: clients || [],
-                    workers: workers || []
+                    workers: [...(workers || []), ...finalMockWorkers].slice(0, 5),
+                    invoices: invoices || []
                 });
             } catch (error) {
                 console.error('Search error:', error);
@@ -287,7 +309,7 @@ export default function AdminLayout() {
                                         <Loader2 className="w-5 h-5 animate-spin mr-2" />
                                         <span className="text-sm font-medium">Searching...</span>
                                     </div>
-                                ) : (searchResults.clients.length === 0 && searchResults.workers.length === 0) ? (
+                                ) : (searchResults.clients.length === 0 && searchResults.workers.length === 0 && searchResults.invoices.length === 0) ? (
                                     <div className="p-4 text-center text-slate-500 text-sm font-medium">
                                         No results found for "{searchQuery}"
                                     </div>
@@ -303,7 +325,7 @@ export default function AdminLayout() {
                                                         key={client.id}
                                                         onClick={() => {
                                                             setIsSearchOpen(false);
-                                                            navigate('/admin/crm');
+                                                            navigate('/admin/crm', { state: { openLeadId: client.id } });
                                                         }}
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
                                                     >
@@ -328,7 +350,7 @@ export default function AdminLayout() {
                                                         key={worker.id}
                                                         onClick={() => {
                                                             setIsSearchOpen(false);
-                                                            navigate('/admin/hr');
+                                                            navigate('/admin/hr', { state: { searchWorker: worker.full_name } });
                                                         }}
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
                                                     >
@@ -337,6 +359,29 @@ export default function AdminLayout() {
                                                             <span>{worker.contact_number}</span>
                                                             <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                                                             <span className="text-emerald-600 font-medium">{worker.job_title}</span>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        
+                                        {searchResults.invoices.length > 0 && (
+                                            <div>
+                                                <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                                                    Invoices
+                                                </div>
+                                                {searchResults.invoices.map(invoice => (
+                                                    <button
+                                                        key={invoice.id}
+                                                        onClick={() => {
+                                                            setIsSearchOpen(false);
+                                                            navigate('/admin/billing');
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                    >
+                                                        <span className="text-sm font-semibold text-slate-900">{invoice.final_invoice_number}</span>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                            <span className="text-primary font-medium">Client: {(invoice as any).clients?.client_name || 'Unknown'}</span>
                                                         </div>
                                                     </button>
                                                 ))}
