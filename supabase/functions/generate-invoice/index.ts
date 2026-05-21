@@ -64,7 +64,7 @@ serve(async (req) => {
     }
 
     try {
-        const { lead_id, deposit_amount, service_period, invoice_number: input_invoice_number, due_date } = await req.json();
+        const { lead_id, deposit_amount, service_period, invoice_number: input_invoice_number, due_date, is_deposit } = await req.json();
         if (!lead_id) throw new Error('lead_id is required');
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -117,7 +117,7 @@ serve(async (req) => {
         
         const rawShift = extractedShift.toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() || '24';
         const shift = `${rawShift}HRS`;
-        const service      = `${shift} (${extractedService.toUpperCase()})`;
+        const service      = is_deposit ? 'Security Deposit' : `${shift} (${extractedService.toUpperCase()})`;
         
         const servicePeriod = service_period || 'As agreed';
         
@@ -195,7 +195,8 @@ serve(async (req) => {
             }
         }
         
-        page.drawText('TAX INVOICE', { x: 40, y: curY - taxInvoiceYOffset, size: 14, font: bold, color: DARK });
+        const titleText = is_deposit ? 'SECURITY DEPOSIT RECEIPT' : 'TAX INVOICE';
+        page.drawText(titleText, { x: 40, y: curY - taxInvoiceYOffset, size: 14, font: bold, color: DARK });
 
         // Company Info (Right)
         const cRightX = W - 40;

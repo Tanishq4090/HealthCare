@@ -356,7 +356,8 @@ export default function Billing() {
                         lead_id: agentTargetBill.client_id,
                         deposit_amount: invoiceDepositAmount || 15000,
                         service_period: formattedPeriod,
-                        due_date: invoiceDueDate
+                        due_date: invoiceDueDate,
+                        is_deposit: true
                     })
                 });
 
