@@ -78,7 +78,8 @@ export default function HR() {
         advanceAmount: 0,
         type: 'payslip' as 'payslip',
         clientNameOverride: '',
-        dailyRateOverride: ''
+        dailyRateOverride: '',
+        workerPhone: ''
     });
 
     // Manual Attendance State
@@ -1421,7 +1422,8 @@ export default function HR() {
                 advanceAmount: 0,
                 type: 'payslip' as 'payslip',
                 clientNameOverride: '',
-                dailyRateOverride: ''
+                dailyRateOverride: '',
+                workerPhone: ''
             });
         } catch (error: any) {
             console.error(error);
@@ -1525,7 +1527,7 @@ export default function HR() {
                                         onAssignmentCompleted={(completedAssignment) => {
                                             setAutoCloseAssignmentOnGenerate(true);
                                             setBillingAssignment(completedAssignment);
-                                            setActiveTab('Payroll');
+                                            setActiveTab('payroll');
                                         }}
                                     />
                                 ))}
@@ -1695,7 +1697,18 @@ export default function HR() {
                                                                     
                                                                     const toastId = toast.loading("Generating payslip and dispatching...");
                                                                     try {
-                                                                        const pdfBlob = generatePayslipBlob(item);
+                                                                        // Generate payslip PDF inline using jsPDF
+                                                                        const doc = new jsPDF();
+                                                                        doc.setFontSize(16);
+                                                                        doc.text('99 CARE - Worker Payslip', 14, 20);
+                                                                        doc.setFontSize(11);
+                                                                        doc.text(`Worker: ${item.worker}`, 14, 35);
+                                                                        doc.text(`Month: ${item.month || new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}`, 14, 43);
+                                                                        doc.text(`Days Worked: ${item.daysWorked || 0}`, 14, 51);
+                                                                        doc.text(`Daily Rate: Rs. ${item.dailyRate || 0}`, 14, 59);
+                                                                        doc.text(`Total Earnings: Rs. ${item.totalEarnings || 0}`, 14, 67);
+                                                                        doc.text(`Net Payable: Rs. ${item.netPayable || item.amount || 0}`, 14, 75);
+                                                                        const pdfBlob = doc.output('blob');
                                                                         const fileName = `payslip-${item.worker.replace(/\s+/g, '-')}-${Date.now()}.pdf`;
                                                                         
                                                                         const { error: uploadError } = await supabase.storage.from('payslips').upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: false });
