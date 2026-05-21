@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 
 export default function Billing() {
     const [searchParams] = useSearchParams();
+    const currentMonthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -106,13 +107,13 @@ export default function Billing() {
                 // Map to deposits
                 const mappedDeposits = activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
-                    const amountVal = leadsMap[clientId] || 15000;
+                    const depositAmt = asgn.deposit_amount || 0;
                     return {
                         id: asgn.id,
                         client_id: clientId,
                         client: (asgn as any).clients?.client_name || 'Unknown',
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                        amount: `₹${amountVal}`,
+                        amount: `₹${depositAmt}`,
                         status: asgn.deposit_invoice_sent ? "Invoice Sent" : "Pending Invoice",
                         date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                         invoice_no: "",
@@ -124,12 +125,12 @@ export default function Billing() {
                 // For monthly bills, map active assignments
                 setMonthlyBills(activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
-                    const amountVal = leadsMap[clientId] || 15000;
+                    const billingRate = asgn.client_billing_rate || 0;
                     return {
                         id: asgn.id,
                         client: (asgn as any).clients?.client_name || 'Unknown',
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                        amount: `₹${amountVal}`,
+                        amount: `₹${billingRate}/day`,
                         attendanceVerified: true,
                         status: asgn.final_invoice_generated ? "Sent" : "Draft",
                         month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
@@ -499,7 +500,7 @@ export default function Billing() {
                 /* Monthly Billing View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
                     <div className="p-5 border-b border-slate-200 bg-slate-50">
-                        <h2 className="font-semibold text-slate-900">Monthly Billing Dashboard (October 2026)</h2>
+                        <h2 className="font-semibold text-slate-900">Monthly Billing Dashboard ({currentMonthYear})</h2>
                         <p className="text-sm text-slate-500 mt-1">Invoices require explicit HR Attendance Verification before dispatch.</p>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-4">
@@ -511,7 +512,7 @@ export default function Billing() {
                                     </div>
                                     <div>
                                         <h3 className="font-bold text-slate-900">{bill.client}</h3>
-                                        <p className="text-sm font-semibold text-slate-600 mt-1">Total: {bill.amount}</p>
+                                        <p className="text-sm font-semibold text-slate-600 mt-1">Rate: {bill.amount}</p>
                                     </div>
                                 </div>
 
