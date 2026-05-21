@@ -49,8 +49,8 @@ export default function AdminLayout() {
                         .limit(5),
                     supabase
                         .from('employees')
-                        .select('id, full_name, contact_number, job_title')
-                        .or(`full_name.ilike.%${searchQuery}%,contact_number.ilike.%${searchQuery}%`)
+                        .select('id, full_name, phone, job_title')
+                        .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
                         .limit(5),
                     supabase
                         .from('worker_assignments')
@@ -66,7 +66,7 @@ export default function AdminLayout() {
                 ).map(w => ({
                     id: w.id,
                     full_name: w.name,
-                    contact_number: w.phone,
+                    phone: w.phone,
                     job_title: w.role
                 }));
 
@@ -356,7 +356,7 @@ export default function AdminLayout() {
                                                     >
                                                         <span className="text-sm font-semibold text-slate-900">{worker.full_name}</span>
                                                         <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                            <span>{worker.contact_number}</span>
+                                                            <span>{worker.phone}</span>
                                                             <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                                                             <span className="text-emerald-600 font-medium">{worker.job_title}</span>
                                                         </div>
