@@ -104,7 +104,7 @@ export default function Billing() {
             try {
                 const { data: quotes } = await supabase
                     .from('crm_quotations')
-                    .select('lead_id, complete_month_rate, start_date')
+                    .select('lead_id, complete_month_rate, start_date, deposit')
                     .order('created_at', { ascending: true });
                 if (quotes) {
                     quotes.forEach(q => {
@@ -1129,8 +1129,8 @@ export default function Billing() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2 rounded-lg font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Cancel</button>
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3 flex-wrap">
+                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Cancel</button>
                                 <button
                                     onClick={() => {
                                         setIsClientInvoiceOpen(false);
@@ -1148,11 +1148,38 @@ export default function Billing() {
                                             days: ciDays,
                                             rate: ciRate
                                         });
+                                        setAgentDraftText(generateWhatsappDraft(clientInvoiceBill, agentDraftLang));
                                         setIsInvoiceOpen(true);
                                     }}
-                                    className="flex-1 py-2 rounded-lg font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                                    className="flex-1 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2"
                                 >
-                                    <FileText className="w-4 h-4" /> Generate Invoice
+                                    <FileText className="w-4 h-4" /> Preview
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setIsClientInvoiceOpen(false);
+                                        const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
+                                        const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo };
+                                        setAgentTargetBill(targetBill);
+                                        setInvoiceData({
+                                            clientName: clientInvoiceBill.client,
+                                            phone: clientInvoiceBill.client_phone || '',
+                                            service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
+                                            amount: net,
+                                            totalAmount: total,
+                                            depositCollected: ciDeposit,
+                                            date: new Date().toISOString(),
+                                            invoiceNumber: invoiceNo,
+                                            days: ciDays,
+                                            rate: ciRate
+                                        });
+                                        const draft = generateWhatsappDraft(targetBill, agentDraftLang);
+                                        setAgentDraftText(draft);
+                                        setIsAgentModalOpen(true);
+                                    }}
+                                    className="flex-1 py-2.5 rounded-xl font-bold text-white bg-green-500 hover:bg-green-600 transition-all shadow-md flex items-center justify-center gap-2"
+                                >
+                                    <Send className="w-4 h-4" /> Send via WhatsApp
                                 </button>
                             </div>
                         </div>
