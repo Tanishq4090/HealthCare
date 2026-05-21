@@ -131,7 +131,7 @@ export default function Clients() {
             // 4. Fetch assignments to get deposit data
             const { data: assignments, error: asgnError } = await supabase
                 .from('worker_assignments')
-                .select('client_id, deposit_paid');
+                .select('client_id, deposit_amount');
             
             if (asgnError) throw asgnError;
 
@@ -153,7 +153,7 @@ export default function Clients() {
             // Map deposits by client ID
             const depositMap: Record<string, number> = {};
             (assignments || []).forEach(a => {
-                depositMap[a.client_id] = (depositMap[a.client_id] || 0) + (Number(a.deposit_paid) || 0);
+                depositMap[a.client_id] = (depositMap[a.client_id] || 0) + (Number(a.deposit_amount) || 0);
             });
 
             // 5. Map database clients to UI structure

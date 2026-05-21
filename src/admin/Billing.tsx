@@ -392,7 +392,7 @@ export default function Billing() {
                         invoicePdfUrl: invoicePdfUrl,
                         useTemplate: true,
                         templateName: 'deposit_request',
-                        templateParams: [agentTargetBill.client]
+                        templateParams: [agentTargetBill.client, String(invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '') || '')]
                     })
                 });
 

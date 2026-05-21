@@ -1711,7 +1711,7 @@ export default function CRM() {
                                         selectedWorker?.job_title || 'Care Staff',
                                         assignmentResult?.shareableUrl || ''
                                       ]
-                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there')] : undefined),
+                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there'), String(invoiceDepositAmount || '')] : undefined),
                 })
             });
 
