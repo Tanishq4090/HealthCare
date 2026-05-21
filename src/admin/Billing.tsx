@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download } from 'lucide-react';
 
 const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
@@ -49,6 +49,9 @@ export default function Billing() {
     const [ciDays, setCiDays] = useState<number>(1);
     const [ciRate, setCiRate] = useState<number>(0);
     const [ciDeposit, setCiDeposit] = useState<number>(0);
+    const [ciStartDate, setCiStartDate] = useState('');
+    const [ciEndDate, setCiEndDate] = useState('');
+    const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
 
     const fetchBillingData = async () => {
         setIsLoading(true);
@@ -97,6 +100,21 @@ export default function Billing() {
                 console.warn('Could not fetch crm_leads rates:', err);
             }
 
+            let quotesMap: Record<string, any> = {};
+            try {
+                const { data: quotes } = await supabase
+                    .from('crm_quotations')
+                    .select('lead_id, complete_month_rate, start_date')
+                    .order('created_at', { ascending: true });
+                if (quotes) {
+                    quotes.forEach(q => {
+                        quotesMap[q.lead_id] = q;
+                    });
+                }
+            } catch (err) {
+                console.warn('Could not fetch crm_quotations:', err);
+            }
+
             if (data) {
                 // Filter data to only include active assignments where the client has a corresponding active lead in the CRM
                 const activeAssignments = data.filter(asgn => {
@@ -125,7 +143,7 @@ export default function Billing() {
                 // For monthly bills, map active assignments
                 setMonthlyBills(activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
-                    const billingRate = asgn.client_billing_rate || 0;
+                    const billingRate = asgn.client_billing_rate || quotesMap[clientId]?.complete_month_rate || 0;
                     return {
                         id: asgn.id,
                         client: (asgn as any).clients?.client_name || 'Unknown',
@@ -135,7 +153,7 @@ export default function Billing() {
                         status: asgn.final_invoice_generated ? "Sent" : "Draft",
                         month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
                         invoice_no: asgn.final_invoice_number || "",
-                        rawAssignment: asgn
+                        rawAssignment: { ...asgn, _quote: quotesMap[clientId] }
                     };
                 }));
             }
@@ -545,14 +563,21 @@ export default function Billing() {
                                             <button onClick={() => {
                                                 const asgn = bill.rawAssignment;
                                                 setClientInvoiceBill(bill);
-                                                setCiRate(asgn.client_billing_rate || 0);
+                                                setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
                                                 setCiDeposit(asgn.deposit_amount || 0);
+                                                
+                                                const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
+                                                setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
+                                                setCiEndDate('');
+                                                
                                                 setCiDays(1);
+                                                setCiAttendanceVerified(true);
                                                 setIsClientInvoiceOpen(true);
+                                                
                                                 // Auto-fetch attendance days
                                                 if (asgn.employee_id && asgn.start_date) {
                                                     supabase.from('attendance')
-                                                        .select('status')
+                                                        .select('status, hr_verified')
                                                         .eq('worker_id', asgn.employee_id)
                                                         .gte('duty_date', asgn.start_date.split('T')[0])
                                                         .then(({ data }) => {
@@ -560,6 +585,10 @@ export default function Billing() {
                                                                 const p = data.filter((a: any) => a.status === 'Present').length;
                                                                 const h = data.filter((a: any) => a.status === 'Half Day').length;
                                                                 setCiDays(p + h * 0.5 || 1);
+                                                                setCiAttendanceVerified(data.some((a: any) => a.hr_verified));
+                                                            } else {
+                                                                setCiDays(0);
+                                                                setCiAttendanceVerified(false);
                                                             }
                                                         });
                                                 }
@@ -882,6 +911,9 @@ export default function Billing() {
                                 Proforma Invoice
                             </h3>
                             <div className="flex gap-2">
+                                <button onClick={() => window.print()} className="px-4 py-1.5 border border-slate-200 bg-white text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
+                                    <Download className="w-4 h-4" /> Download PDF
+                                </button>
                                 <button onClick={() => {
                                     setIsInvoiceOpen(false);
                                     
@@ -1050,6 +1082,22 @@ export default function Billing() {
                                 </button>
                             </div>
                             <div className="p-5 space-y-4">
+                                {!ciAttendanceVerified && (
+                                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 rounded-lg text-xs font-medium flex items-start gap-2">
+                                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                                        <p>Attendance is not yet marked or verified by HR for this period. Days of service may be inaccurate.</p>
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
+                                        <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
+                                        <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                    </div>
+                                </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
