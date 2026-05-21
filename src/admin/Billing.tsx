@@ -125,7 +125,7 @@ export default function Billing() {
                 // Map to deposits
                 const mappedDeposits = activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
-                    const depositAmt = asgn.deposit_amount || 0;
+                    const depositAmt = asgn.deposit_amount || quotesMap[clientId]?.deposit || 0;
                     return {
                         id: asgn.id,
                         client_id: clientId,
@@ -535,26 +535,8 @@ export default function Billing() {
                                 </div>
 
                                 <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                    {/* Verification Status */}
-                                    <div className="flex items-center gap-2 text-sm">
-                                        {bill.attendanceVerified ? (
-                                            <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-                                                <CheckCircle2 className="w-4 h-4" />
-                                                <span className="font-medium">Attendance Verified</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2 py-1 rounded">
-                                                <AlertCircle className="w-4 h-4" />
-                                                <span className="font-medium">Pending Verification</span>
-                                            </div>
-                                        )}
-                                    </div>
-
                                     {/* Action Buttons */}
                                     <div className="flex gap-2 border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4">
-                                        <button onClick={() => { setEditingBill({ ...bill }); setIsEditBillModalOpen(true); }} className="px-3 py-2 text-slate-500 hover:text-primary hover:bg-slate-50 rounded-lg transition-colors" title="Edit Bill">
-                                            <Edit3 className="w-4 h-4" />
-                                        </button>
                                         {bill.status === 'Pending Verification' ? (
                                             <button disabled className="px-4 py-2 bg-slate-100 text-slate-400 text-sm font-medium rounded-lg cursor-not-allowed flex items-center gap-2">
                                                 <FileText className="w-4 h-4" /> Locked
@@ -564,7 +546,7 @@ export default function Billing() {
                                                 const asgn = bill.rawAssignment;
                                                 setClientInvoiceBill(bill);
                                                 setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
-                                                setCiDeposit(asgn.deposit_amount || 0);
+                                                setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
                                                 
                                                 const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
                                                 setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
