@@ -141,8 +141,12 @@ export default function HR() {
             // Fetch from employees table instead of workers
             const { data: employeeData, error: employeeError } = await supabase.from('employees').select('*');
             const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*, worker_assignments(assignment_status)');
-            const { data: assignmentsData } = await supabase.from('worker_assignments').select('*, employees(*), clients(*)').eq('status', 'active');
-            if (assignmentsData) setActiveAssignments(assignmentsData);
+            // Fix: use assignment_status (not status), and fetch ALL statuses so completed duties appear
+            const { data: assignmentsData } = await supabase
+                .from('worker_assignments')
+                .select('*, employees(*), clients(*)')
+                .neq('assignment_status', 'cancelled');
+            if (assignmentsData) setActiveAssignments(assignmentsData.filter((a: any) => a.assignment_status === 'active'));
             const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage, estimated_value_monthly').order('created_at', { ascending: false });
 
             // Fetch Month-to-Date Stats for all employees
@@ -177,10 +181,46 @@ export default function HR() {
             }
             setWorkers(finalWorkers);
 
-            if (payrollError || !payrollData || payrollData.length === 0) {
+            // Build payroll items: prefer DB records, fall back to synthetic items from assignments
+            const existingPayrollAssignmentIds = new Set((payrollData || []).map((p: any) => p.assignment_id).filter(Boolean));
+            
+            const syntheticItems = (assignmentsData || [])
+                .filter((a: any) => !existingPayrollAssignmentIds.has(a.id))
+                .map((a: any) => {
+                    const emp = a.employees;
+                    const client = a.clients;
+                    const start = a.start_date ? new Date(a.start_date) : null;
+                    const end = a.end_date ? new Date(a.end_date) : new Date();
+                    const days = start ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) : 1;
+                    const dailyRate = a.worker_daily_rate || emp?.monthly_daily_rate || emp?.short_term_daily_rate || 0;
+                    return {
+                        id: `synth-${a.id}`,
+                        assignment_id: a.id,
+                        worker: emp?.full_name || 'Unknown Worker',
+                        worker_id: a.employee_id,
+                        client: client?.client_name || 'Unknown Client',
+                        daily_rate: dailyRate,
+                        days_worked: days,
+                        advance_amount: a.advance_paid || 0,
+                        status: a.assignment_status === 'completed' ? 'Pending' : 'Active',
+                        month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'May 2026',
+                        payroll_type: 'payslip',
+                        start_date: a.start_date,
+                        end_date: a.end_date || new Date().toISOString().split('T')[0],
+                        hours_per_day: a.hours_per_day || 8,
+                        worker_assignments: { assignment_status: a.assignment_status },
+                        _isSynthetic: true
+                    };
+                });
+
+            const allPayrollItems = [...(payrollData || []), ...syntheticItems];
+
+            if (!payrollError && allPayrollItems.length > 0) {
+                setPayrollItems(allPayrollItems);
+            } else if (payrollError) {
                 setPayrollItems([]);
             } else {
-                setPayrollItems(payrollData);
+                setPayrollItems([]);
             }
 
             if (leadData && leadData.length > 0) {
