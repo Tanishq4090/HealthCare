@@ -3,6 +3,7 @@ import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe,
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
 import { format } from 'date-fns';
@@ -300,6 +301,16 @@ export default function HR() {
         const matchStatus = workerStatusFilter === 'All' || w.status === workerStatusFilter;
         return matchSearch && matchStatus;
     });
+
+    const location = useLocation();
+
+    // Auto-filter worker if passed via navigation state (e.g. from Global Search)
+    useEffect(() => {
+        if (location.state?.searchWorker) {
+            setWorkerSearch(location.state.searchWorker);
+            setActiveTab('allocation');
+        }
+    }, [location.state?.searchWorker]);
 
 
 

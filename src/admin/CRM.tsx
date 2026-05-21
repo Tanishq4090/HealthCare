@@ -7,6 +7,7 @@ import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
 import { SendQuotationModal } from './components/SendQuotationModal';
+import { useLocation } from 'react-router-dom';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -622,6 +623,19 @@ export default function CRM() {
             setIsLoadingActivity(false);
         }
     };
+
+    const location = useLocation();
+
+    // Auto-open lead if passed via navigation state (e.g. from Global Search)
+    useEffect(() => {
+        if (location.state?.openLeadId && leads.length > 0) {
+            const lead = leads.find(l => l.id === location.state.openLeadId);
+            if (lead && (!selectedInspectorLead || selectedInspectorLead.id !== lead.id)) {
+                setSelectedInspectorLead(lead);
+                fetchLeadActivity(lead.id);
+            }
+        }
+    }, [location.state?.openLeadId, leads]);
 
     // ── Activity: Log a new event ──────────────────────────────────────────
     const logActivity = async (leadId: string, eventType: string, description: string, metadata: any = {}) => {
