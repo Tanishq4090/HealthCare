@@ -4,7 +4,6 @@ import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settin
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
-import { MOCK_WORKERS } from '../data/mockWorkers';
 
 export default function AdminLayout() {
     const location = useLocation();
@@ -17,6 +16,7 @@ export default function AdminLayout() {
     const [searchResults, setSearchResults] = useState<{clients: any[], workers: any[], invoices: any[]}>({ clients: [], workers: [], invoices: [] });
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isInputFocused, setIsInputFocused] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -38,7 +38,7 @@ export default function AdminLayout() {
             }
 
             setIsSearching(true);
-            setIsSearchOpen(true);
+            if (isInputFocused) setIsSearchOpen(true);
 
             try {
                 const [{ data: clients }, { data: workers }, { data: invoices }] = await Promise.all([
@@ -60,23 +60,9 @@ export default function AdminLayout() {
                         .limit(5)
                 ]);
 
-                const mockWorkersSearch = MOCK_WORKERS.filter(w => 
-                    w.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                    (w.phone && w.phone.includes(searchQuery))
-                ).map(w => ({
-                    id: w.id,
-                    full_name: w.name,
-                    phone: w.phone,
-                    job_title: w.role
-                }));
-
-                // Deduplicate mock workers against DB workers
-                const dbWorkerIds = new Set((workers || []).map(w => w.id));
-                const finalMockWorkers = mockWorkersSearch.filter(mw => !dbWorkerIds.has(mw.id));
-
                 setSearchResults({
                     clients: clients || [],
-                    workers: [...(workers || []), ...finalMockWorkers].slice(0, 5),
+                    workers: workers || [],
                     invoices: invoices || []
                 });
             } catch (error) {
@@ -88,7 +74,7 @@ export default function AdminLayout() {
 
         const debounceTimer = setTimeout(fetchResults, 300);
         return () => clearTimeout(debounceTimer);
-    }, [searchQuery]);
+    }, [searchQuery, isInputFocused]);
 
     // Navigation items linked to their required module (null means always visible)
     const navigation = [
@@ -296,7 +282,15 @@ export default function AdminLayout() {
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={() => {
+                                setIsInputFocused(true);
                                 if (searchQuery.length >= 2) setIsSearchOpen(true);
+                            }}
+                            onBlur={() => {
+                                // Small delay so clicks on results register before closing
+                                setTimeout(() => {
+                                    setIsInputFocused(false);
+                                    setIsSearchOpen(false);
+                                }, 150);
                             }}
                             placeholder="Search clients, workers, or invoices..."
                             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
