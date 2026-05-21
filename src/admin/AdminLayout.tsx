@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
 
@@ -10,6 +11,62 @@ export default function AdminLayout() {
     const { user, logout, hasAccess } = useAuth();
     const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<{clients: any[], workers: any[]}>({ clients: [], workers: [] });
+    const [isSearching, setIsSearching] = useState(false);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const searchRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setIsSearchOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    useEffect(() => {
+        const fetchResults = async () => {
+            if (searchQuery.length < 2) {
+                setSearchResults({ clients: [], workers: [] });
+                setIsSearchOpen(false);
+                return;
+            }
+
+            setIsSearching(true);
+            setIsSearchOpen(true);
+
+            try {
+                const [{ data: clients }, { data: workers }] = await Promise.all([
+                    supabase
+                        .from('crm_leads')
+                        .select('id, name, phone, pipeline_stage')
+                        .or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
+                        .limit(5),
+                    supabase
+                        .from('employees')
+                        .select('id, full_name, contact_number, job_title')
+                        .or(`full_name.ilike.%${searchQuery}%,contact_number.ilike.%${searchQuery}%`)
+                        .limit(5)
+                ]);
+
+                setSearchResults({
+                    clients: clients || [],
+                    workers: workers || []
+                });
+            } catch (error) {
+                console.error('Search error:', error);
+            } finally {
+                setIsSearching(false);
+            }
+        };
+
+        const debounceTimer = setTimeout(fetchResults, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [searchQuery]);
 
     // Navigation items linked to their required module (null means always visible)
     const navigation = [
@@ -210,13 +267,85 @@ export default function AdminLayout() {
                     )}
 
                     {/* Global Search */}
-                    <div className="hidden sm:flex flex-1 max-w-lg mx-auto lg:mx-0 relative">
+                    <div ref={searchRef} className="hidden sm:flex flex-1 max-w-lg mx-auto lg:mx-0 relative z-[60]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                         <input
                             type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onFocus={() => {
+                                if (searchQuery.length >= 2) setIsSearchOpen(true);
+                            }}
                             placeholder="Search clients, workers, or invoices..."
                             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                         />
+                        
+                        {isSearchOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 max-h-[400px] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                {isSearching ? (
+                                    <div className="p-4 flex items-center justify-center text-slate-500">
+                                        <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                                        <span className="text-sm font-medium">Searching...</span>
+                                    </div>
+                                ) : (searchResults.clients.length === 0 && searchResults.workers.length === 0) ? (
+                                    <div className="p-4 text-center text-slate-500 text-sm font-medium">
+                                        No results found for "{searchQuery}"
+                                    </div>
+                                ) : (
+                                    <div className="py-2">
+                                        {searchResults.clients.length > 0 && (
+                                            <div className="mb-2">
+                                                <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                                                    Clients & Leads
+                                                </div>
+                                                {searchResults.clients.map(client => (
+                                                    <button
+                                                        key={client.id}
+                                                        onClick={() => {
+                                                            setIsSearchOpen(false);
+                                                            navigate('/admin/crm');
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                    >
+                                                        <span className="text-sm font-semibold text-slate-900">{client.name}</span>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                            <span>{client.phone}</span>
+                                                            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                                            <span className="text-primary font-medium">{client.pipeline_stage}</span>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        
+                                        {searchResults.workers.length > 0 && (
+                                            <div>
+                                                <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                                                    Care Workers
+                                                </div>
+                                                {searchResults.workers.map(worker => (
+                                                    <button
+                                                        key={worker.id}
+                                                        onClick={() => {
+                                                            setIsSearchOpen(false);
+                                                            navigate('/admin/hr');
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                    >
+                                                        <span className="text-sm font-semibold text-slate-900">{worker.full_name}</span>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                            <span>{worker.contact_number}</span>
+                                                            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                                            <span className="text-emerald-600 font-medium">{worker.job_title}</span>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Right actions */}
