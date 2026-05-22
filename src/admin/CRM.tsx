@@ -7,7 +7,7 @@ import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
 import { SendQuotationModal } from './components/SendQuotationModal';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -624,6 +624,7 @@ export default function CRM() {
         }
     };
 
+    const navigate = useNavigate();
     const location = useLocation();
 
     // Auto-open lead if passed via navigation state (e.g. from Global Search)
@@ -4068,7 +4069,10 @@ export default function CRM() {
 
                             {selectedInspectorLead.pipeline_stage === 'Active Client' && (
                                 <button
-                                    onClick={() => { openAgentModal(selectedInspectorLead, 'billing'); }}
+                                    onClick={() => {
+                                        // Navigate to Finance > Monthly Billing tab, pre-selecting this client
+                                        navigate(`/admin/billing?tab=monthly&clientId=${selectedInspectorLead.id}`);
+                                    }}
                                     className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                 >
                                     <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
