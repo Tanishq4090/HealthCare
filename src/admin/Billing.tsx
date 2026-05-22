@@ -123,6 +123,20 @@ export default function Billing() {
                     return clientId && activeLeadIds.has(clientId);
                 });
 
+                // Fetch paid service clients BEFORE building state so status is correct on first render
+                const paidClients = new Set<string>();
+                try {
+                    const { data: servicePayments } = await supabase
+                        .from('payments')
+                        .select('client_name')
+                        .eq('payment_type', 'service');
+                    if (servicePayments) {
+                        servicePayments.forEach((p: any) => { if (p.client_name) paidClients.add(p.client_name); });
+                    }
+                } catch (err) {
+                    console.warn('Could not fetch service payments:', err);
+                }
+
                 // Map to deposits
                 const mappedDeposits = activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
@@ -140,14 +154,20 @@ export default function Billing() {
                     };
                 });
                 setDeposits(mappedDeposits);
-                
-                // For monthly bills, map active assignments
+
+                // Build monthly bills with correct status in one pass — no second update needed
                 setMonthlyBills(activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
                     const clientName = (asgn as any).clients?.client_name || 'Unknown';
                     const billingRate = asgn.client_billing_rate || quotesMap[clientId]?.complete_month_rate || 0;
-                    // Determine status: Paid > Sent > Draft
-                    let status = asgn.final_invoice_generated ? "Sent" : "Draft";
+                    let status: string;
+                    if (paidClients.has(clientName)) {
+                        status = 'Paid';
+                    } else if (asgn.final_invoice_generated) {
+                        status = 'Sent';
+                    } else {
+                        status = 'Draft';
+                    }
                     return {
                         id: asgn.id,
                         client_id: clientId,
@@ -162,18 +182,6 @@ export default function Billing() {
                         rawAssignment: { ...asgn, _quote: quotesMap[clientId] }
                     };
                 }));
-
-                // Mark bills as Paid if a service payment exists for that client
-                const { data: servicePayments } = await supabase
-                    .from('payments')
-                    .select('client_name')
-                    .eq('payment_type', 'service');
-                if (servicePayments && servicePayments.length > 0) {
-                    const paidClients = new Set(servicePayments.map((p: any) => p.client_name));
-                    setMonthlyBills(prev => prev.map(b =>
-                        paidClients.has(b.client) ? { ...b, status: 'Paid' } : b
-                    ));
-                }
             }
         } catch (err: any) {
             console.error('Error fetching billing data:', err);
