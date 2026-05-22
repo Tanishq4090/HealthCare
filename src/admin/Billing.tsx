@@ -147,6 +147,7 @@ export default function Billing() {
                     const billingRate = asgn.client_billing_rate || quotesMap[clientId]?.complete_month_rate || 0;
                     return {
                         id: asgn.id,
+                        client_id: clientId,
                         client: (asgn as any).clients?.client_name || 'Unknown',
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
                         amount: `₹${billingRate}/day`,

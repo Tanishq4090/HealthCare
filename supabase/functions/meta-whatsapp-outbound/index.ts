@@ -250,6 +250,36 @@ serve(async (req) => {
     console.log(`[Meta] Dispatching to ${digits} using template: ${templateName || 'None'}`);
     console.log(`[Meta] Payload: ${JSON.stringify(metaBody, null, 2)}`);
 
+    // If PDF invoice is requested, send it FIRST so it appears above the template message
+    const { sendInvoicePdf, invoicePdfUrl } = payload;
+    if (sendInvoicePdf && invoicePdfUrl) {
+      console.log(`[Meta] Sending PDF invoice FIRST to ${digits}. URL: ${invoicePdfUrl}`);
+      const docBody = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: digits,
+        type: "document",
+        document: {
+          link: invoicePdfUrl,
+          filename: "99Care_Invoice.pdf",
+          caption: "📄 Your invoice from 99 Care is attached below."
+        }
+      };
+      const docResponse = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${META_SYSTEM_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(docBody),
+      });
+      const docResText = await docResponse.text();
+      console.log(`[Meta] PDF Doc Response Status: ${docResponse.status}`);
+      console.log(`[Meta] PDF Doc Response Body: ${docResText}`);
+      // Small delay so PDF arrives before the template
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
     const response = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
       method: "POST",
       headers: {
@@ -262,35 +292,6 @@ serve(async (req) => {
     const resText = await response.text();
     console.log(`[Meta] Response Status: ${response.status}`);
     console.log(`[Meta] Response Body: ${resText}`);
-
-    // If PDF invoice is requested, send it as a follow-up document message
-    const { sendInvoicePdf, invoicePdfUrl } = payload;
-    if (sendInvoicePdf && invoicePdfUrl) {
-      console.log(`[Meta] Dispatching PDF Invoice document to ${digits}...`);
-      const docBody = {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: digits,
-        type: "document",
-        document: {
-          link: invoicePdfUrl,
-          filename: "99Care_Invoice.pdf",
-          caption: "📄 Your invoice is attached. Please review and complete the payment. 🙏"
-        }
-      };
-
-      const docResponse = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${META_SYSTEM_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(docBody),
-      });
-
-      console.log(`[Meta] PDF Doc Response Status: ${docResponse.status}`);
-      console.log(`[Meta] PDF Doc Response Body: ${await docResponse.text()}`);
-    }
 
     let metaData: any = {};
     try { metaData = JSON.parse(resText); } catch(e) {}
