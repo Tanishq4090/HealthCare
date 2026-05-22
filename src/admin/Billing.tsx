@@ -202,6 +202,10 @@ export default function Billing() {
     };
 
     useEffect(() => {
+        // Close any open modals when switching tabs
+        setIsClientInvoiceOpen(false);
+        setClientInvoiceBill(null);
+        setIsAgentModalOpen(false);
         if (activeTab === 'history') {
             fetchPayments();
         } else {
@@ -1236,7 +1240,7 @@ export default function Billing() {
                                         <p className="text-xs text-slate-400">{clientInvoiceBill.client}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setIsClientInvoiceOpen(false)} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                                <button onClick={() => { setIsClientInvoiceOpen(false); setClientInvoiceBill(null); }} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
@@ -1289,7 +1293,7 @@ export default function Billing() {
                                 </div>
                             </div>
                             <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3 rounded-b-2xl">
-                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center">Cancel</button>
+                                <button onClick={() => { setIsClientInvoiceOpen(false); setClientInvoiceBill(null); }} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center">Cancel</button>
                                 <div className="flex gap-3 flex-1 sm:flex-none w-full sm:w-auto">
                                     <button
                                         onClick={() => {
