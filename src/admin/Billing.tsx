@@ -155,6 +155,7 @@ export default function Billing() {
                         status: asgn.final_invoice_generated ? "Sent" : "Draft",
                         month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
                         invoice_no: asgn.final_invoice_number || "",
+                        invoice_pdf_url: asgn.invoice_pdf_url || "",
                         rawAssignment: { ...asgn, _quote: quotesMap[clientId] }
                     };
                 }));
@@ -227,7 +228,8 @@ export default function Billing() {
                     client_name: deposit.client,
                     recorded_by: 'admin',
                     transaction_ref: `${depositMethod.toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-                    payment_date: new Date().toISOString()
+                    payment_date: new Date().toISOString(),
+                    payment_type: 'deposit'
                 }]);
 
                 if (payError) throw payError;
@@ -268,7 +270,8 @@ export default function Billing() {
                     client_name: clientName,
                     recorded_by: 'admin',
                     transaction_ref: txnId,
-                    payment_date: new Date().toISOString()
+                    payment_date: new Date().toISOString(),
+                    payment_type: 'service'
                 }]);
 
                 if (payError) throw payError;
@@ -475,7 +478,15 @@ export default function Billing() {
             });
             const waData = await waResp.json();
             if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
-            setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent' } : b));
+            // 3. Persist to DB so it survives page reload
+            await supabase
+                .from('worker_assignments')
+                .update({
+                    final_invoice_generated: true,
+                    invoice_pdf_url: invoicePdfUrl,
+                })
+                .eq('id', agentTargetBill.id);
+            setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent', invoice_pdf_url: invoicePdfUrl } : b));
             toast.success(`Invoice sent to ${agentTargetBill.client} on WhatsApp! ✅`, { id: billToastId, duration: 4000 });
         } catch (err: any) {
             toast.error(err.message || 'Failed to send invoice', { id: billToastId });
@@ -595,42 +606,44 @@ export default function Billing() {
                                             <button disabled className="px-4 py-2 bg-slate-100 text-slate-400 text-sm font-medium rounded-lg cursor-not-allowed flex items-center gap-2">
                                                 <FileText className="w-4 h-4" /> Locked
                                             </button>
-                                        ) : bill.status === 'Draft' ? (
-                                            <button onClick={() => {
-                                                const asgn = bill.rawAssignment;
-                                                setClientInvoiceBill(bill);
-                                                setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
-                                                setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
-                                                
-                                                const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
-                                                setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-                                                setCiEndDate('');
-                                                
-                                                setCiDays(1);
-                                                setCiAttendanceVerified(true);
-                                                setIsClientInvoiceOpen(true);
-                                                
-                                                // Auto-fetch attendance days
-                                                if (asgn.employee_id && asgn.start_date) {
-                                                    supabase.from('attendance')
-                                                        .select('status, is_half_day')
-                                                        .eq('worker_id', asgn.employee_id)
-                                                        .gte('duty_date', asgn.start_date.split('T')[0])
-                                                        .then(({ data }) => {
-                                                            if (data && data.length > 0) {
-                                                                const p = data.filter((a: any) => a.status === 'Present').length;
-                                                                const h = data.filter((a: any) => a.is_half_day).length;
-                                                                setCiDays(p + h * 0.5 || 1);
-                                                                setCiAttendanceVerified(true);
-                                                            } else {
-                                                                setCiDays(0);
-                                                                setCiAttendanceVerified(false);
-                                                            }
-                                                        });
-                                                }
-                                            }} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
-                                                <FileText className="w-4 h-4 group-hover:scale-110 transition-transform" /> Prepare Invoice
-                                            </button>
+                                        ) : bill.status === 'Sent' ? (
+                                            <div className="flex gap-2 flex-wrap">
+                                                {bill.invoice_pdf_url && (
+                                                    <button onClick={() => window.open(bill.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+                                                        <FileText className="w-4 h-4 text-primary" /> View PDF
+                                                    </button>
+                                                )}
+                                                <button onClick={() => {
+                                                    const asgn = bill.rawAssignment;
+                                                    setClientInvoiceBill(bill);
+                                                    setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
+                                                    setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
+                                                    const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
+                                                    setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
+                                                    setCiEndDate('');
+                                                    setCiDays(1);
+                                                    setCiAttendanceVerified(true);
+                                                    setIsClientInvoiceOpen(true);
+                                                    if (asgn.employee_id && asgn.start_date) {
+                                                        supabase.from('attendance')
+                                                            .select('status, is_half_day')
+                                                            .eq('worker_id', asgn.employee_id)
+                                                            .gte('duty_date', asgn.start_date.split('T')[0])
+                                                            .then(({ data }) => {
+                                                                if (data && data.length > 0) {
+                                                                    const p = data.filter((a: any) => a.status === 'Present').length;
+                                                                    const h = data.filter((a: any) => a.is_half_day).length;
+                                                                    setCiDays(p + h * 0.5 || 1);
+                                                                }
+                                                            });
+                                                    }
+                                                }} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
+                                                    <Send className="w-4 h-4" /> Resend
+                                                </button>
+                                                <button onClick={() => handleAction('Record Monthly Payment', bill.client, bill.id)} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+                                                    <RupeeIcon className="w-4 h-4 text-emerald-500 text-base" /> Record Payment
+                                                </button>
+                                            </div>
                                         ) : (
                                             <button onClick={() => handleAction('Record Monthly Payment', bill.client, bill.id)} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
                                                 <RupeeIcon className="w-4 h-4 text-emerald-500 text-base" /> Record Payment
@@ -674,48 +687,85 @@ export default function Billing() {
                                 <h3 className="text-lg font-bold text-slate-900 mb-1">No Payments Recorded</h3>
                                 <p className="text-slate-500 max-w-xs">Use the "Record Payment" buttons in the other tabs to log collections here.</p>
                             </div>
-                        ) : (
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
-                                        <th className="py-3 px-6">Date</th>
-                                        <th className="py-3 px-6">Client</th>
-                                        <th className="py-3 px-6">Reference ID</th>
-                                        <th className="py-3 px-6">Amount</th>
-                                        <th className="py-3 px-6 text-right">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {payments.map(payment => (
-                                        <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="py-4 px-6 text-sm text-slate-600">
-                                                {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                                                        {(payment.client_name || '?').charAt(0)}
-                                                    </div>
-                                                    <span className="text-sm font-semibold text-slate-900">{payment.client_name || <span className="text-slate-400 italic">Unknown Client</span>}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
-                                            </td>
-                                            <td className="py-4 px-6 text-right">
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                                    Success
-                                                </span>
-                                            </td>
+                        ) : (() => {
+                            const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH')));
+                            const servicePayments = payments.filter(p => p.payment_type === 'service' || (!p.payment_type && p.transaction_ref?.startsWith('TXN')));
+
+                            const PaymentTable = ({ rows }: { rows: any[] }) => (
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                                            <th className="py-3 px-6">Date</th>
+                                            <th className="py-3 px-6">Client</th>
+                                            <th className="py-3 px-6">Reference ID</th>
+                                            <th className="py-3 px-6">Amount</th>
+                                            <th className="py-3 px-6 text-right">Status</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {rows.map(payment => (
+                                            <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="py-4 px-6 text-sm text-slate-600">
+                                                    {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                            {(payment.client_name || '?').charAt(0)}
+                                                        </div>
+                                                        <span className="text-sm font-semibold text-slate-900">{payment.client_name || <span className="text-slate-400 italic">Unknown Client</span>}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
+                                                </td>
+                                                <td className="py-4 px-6 text-right">
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                                        Collected
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            );
+
+                            return (
+                                <div className="divide-y divide-slate-100">
+                                    {/* Deposit Collections */}
+                                    <div>
+                                        <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>
+                                            <span className="text-xs font-bold text-blue-700 uppercase tracking-widest">Client Deposit Invoice History</span>
+                                            <span className="ml-auto text-xs font-semibold text-blue-500">{depositPayments.length} record{depositPayments.length !== 1 ? 's' : ''}</span>
+                                        </div>
+                                        {depositPayments.length === 0 ? (
+                                            <p className="text-sm text-slate-400 italic px-6 py-4">No deposit collections recorded yet.</p>
+                                        ) : (
+                                            <PaymentTable rows={depositPayments} />
+                                        )}
+                                    </div>
+
+                                    {/* Service Invoice Collections */}
+                                    <div>
+                                        <div className="px-6 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                                            <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Client Service Invoice History</span>
+                                            <span className="ml-auto text-xs font-semibold text-emerald-500">{servicePayments.length} record{servicePayments.length !== 1 ? 's' : ''}</span>
+                                        </div>
+                                        {servicePayments.length === 0 ? (
+                                            <p className="text-sm text-slate-400 italic px-6 py-4">No service invoice collections recorded yet.</p>
+                                        ) : (
+                                            <PaymentTable rows={servicePayments} />
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
