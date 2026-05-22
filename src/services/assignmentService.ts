@@ -171,7 +171,7 @@ export async function assignWorkerToClient(
       notes:             notes?.trim() ?? null,
       deposit_paid:      depositPaid,
       start_date:        billingData?.startDate || new Date().toISOString(),
-      end_date:          billingData?.endDate || null,
+      end_date:          billingData?.endDate || (billingData?.serviceType === 'one_day' ? billingData?.startDate : null),
       service_type:      billingData?.serviceType || 'one_day',
       hours_per_day:     billingData?.hoursPerDay || 0,
       total_bill_amount: billingData?.totalBillAmount || 0,

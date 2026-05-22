@@ -1074,7 +1074,7 @@ export default function CRM() {
             // Fetch leads directly — assigned_worker_name is stored on the lead row itself
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*')
+                .select('*, crm_quotations(start_date, duration, created_at)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -2142,13 +2142,25 @@ export default function CRM() {
         count: leads.filter(l => l.pipeline_stage === stage).length,
         items: leads.filter(l => l.pipeline_stage === stage).map(l => {
             const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
+            
+            // Extract latest quote dates
+            let plannedStart = null;
+            let plannedDuration = null;
+            if (l.crm_quotations && l.crm_quotations.length > 0) {
+                const latestQuote = [...l.crm_quotations].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                plannedStart = latestQuote.start_date;
+                plannedDuration = latestQuote.duration;
+            }
+
             return {
                 ...l,
                 time: new Date(l.created_at).toLocaleDateString(),
                 valueAmount: l.estimated_value_monthly,
                 value: l.estimated_value_monthly ? "₹" + l.estimated_value_monthly + "/mo" : "₹0/mo",
                 priority: l.priority || 'medium',
-                isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false
+                isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false,
+                plannedStart,
+                plannedDuration
             };
         })
     }));
@@ -2647,6 +2659,17 @@ export default function CRM() {
                                                                              <Globe className="w-3 h-3 text-primary shrink-0" />
                                                                              <span className="text-[10px] font-medium text-slate-600 truncate">
                                                                                  {serviceLocation}
+                                                                             </span>
+                                                                         </div>
+                                                                     )}
+                                                                     {(item.plannedStart || item.plannedDuration) && (
+                                                                         <div className="flex items-center gap-2 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100 mt-0.5">
+                                                                             <svg className="w-3 h-3 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                                             </svg>
+                                                                             <span className="text-[10px] font-bold text-indigo-700 truncate tracking-wide">
+                                                                                 {item.plannedStart ? new Date(item.plannedStart).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'TBD'} 
+                                                                                 {item.plannedDuration ? ` • ${item.plannedDuration}` : ''}
                                                                              </span>
                                                                          </div>
                                                                      )}
@@ -3660,6 +3683,30 @@ export default function CRM() {
                             ))}
                         </select>
                     </div>
+
+                    {/* ── Service Timeline ────────────────────────────── */}
+                    {(selectedInspectorLead.plannedStart || selectedInspectorLead.plannedDuration) && (
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Service Timeline</p>
+                            <div className="bg-indigo-50 rounded-xl border border-indigo-100 p-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 border border-indigo-100 shadow-sm">
+                                        <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <p className="text-sm font-bold text-slate-900">
+                                            {selectedInspectorLead.plannedStart ? new Date(selectedInspectorLead.plannedStart).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'TBD'}
+                                        </p>
+                                        <p className="text-xs font-semibold text-indigo-600 mt-0.5">
+                                            {selectedInspectorLead.plannedDuration ? `Duration: ${selectedInspectorLead.plannedDuration}` : 'Ongoing'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* ── Contact Details ────────────────────────────── */}
                     <div>

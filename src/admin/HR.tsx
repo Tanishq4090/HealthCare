@@ -144,7 +144,7 @@ export default function HR() {
             // Fix: use assignment_status (not status), and fetch ALL statuses so completed duties appear
             const { data: assignmentsData } = await supabase
                 .from('worker_assignments')
-                .select('*, employees(*), clients(*)')
+                .select('*, employees(*), clients(*), service_type, client_id')
                 .neq('assignment_status', 'cancelled');
             if (assignmentsData) setActiveAssignments(assignmentsData.filter((a: any) => a.assignment_status === 'active'));
             const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage, estimated_value_monthly').order('created_at', { ascending: false });
