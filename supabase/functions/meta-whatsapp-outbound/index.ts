@@ -275,7 +275,7 @@ serve(async (req) => {
         document: {
           link: invoicePdfUrl,
           filename: "99Care_Invoice.pdf",
-          caption: "📄 Your deposit invoice is attached. Please review and complete the payment. 🙏"
+          caption: "📄 Your invoice is attached. Please review and complete the payment. 🙏"
         }
       };
 

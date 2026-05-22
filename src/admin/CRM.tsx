@@ -1732,7 +1732,8 @@ export default function CRM() {
                         lead_id: agentTargetLead?.id,
                         deposit_amount: invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000,
                         service_period: formattedPeriod,
-                        due_date: invoiceDueDate
+                        due_date: invoiceDueDate,
+                        is_deposit: agentTargetAction === 'deposit'
                     })
                 });
 
@@ -1759,13 +1760,12 @@ export default function CRM() {
                     leadId: agentTargetLead?.id,
                     sendInvoicePdf: agentTargetAction === 'deposit' || agentTargetAction === 'billing',
                     invoicePdfUrl: invoicePdfUrl,
-                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'billing' || agentTargetAction === 'staff'),
+                    useTemplate: agentTargetAction !== 'custom' && (agentTargetAction === 'inquiry' || agentTargetAction === 'quotation' || agentTargetAction === 'consent' || agentTargetAction === 'deposit' || agentTargetAction === 'staff'),
                     templateName: agentTargetAction === 'inquiry' ? 'post_call_intake' 
                                   : (agentTargetAction === 'quotation' ? 'quote_client_v2' 
                                   : (agentTargetAction === 'consent' ? 'consent_form' 
                                   : (agentTargetAction === 'deposit' ? 'deposit_request' 
-                                  : (agentTargetAction === 'billing' ? 'deposit_request' 
-                                  : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined))))),
+                                  : (agentTargetAction === 'staff' ? 'staff_assignment' : undefined)))),
                     templateParams: agentTargetAction === 'quotation' 
                                     ? [finalLogMessage.replace(/\n+/g, ' | ')] 
                                     : agentTargetAction === 'staff'
