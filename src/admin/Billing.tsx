@@ -144,21 +144,36 @@ export default function Billing() {
                 // For monthly bills, map active assignments
                 setMonthlyBills(activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
+                    const clientName = (asgn as any).clients?.client_name || 'Unknown';
                     const billingRate = asgn.client_billing_rate || quotesMap[clientId]?.complete_month_rate || 0;
+                    // Determine status: Paid > Sent > Draft
+                    let status = asgn.final_invoice_generated ? "Sent" : "Draft";
                     return {
                         id: asgn.id,
                         client_id: clientId,
-                        client: (asgn as any).clients?.client_name || 'Unknown',
+                        client: clientName,
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
                         amount: `₹${billingRate}/day`,
                         attendanceVerified: true,
-                        status: asgn.final_invoice_generated ? "Sent" : "Draft",
+                        status,
                         month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
                         invoice_no: asgn.final_invoice_number || "",
                         invoice_pdf_url: asgn.invoice_pdf_url || "",
                         rawAssignment: { ...asgn, _quote: quotesMap[clientId] }
                     };
                 }));
+
+                // Mark bills as Paid if a service payment exists for that client
+                const { data: servicePayments } = await supabase
+                    .from('payments')
+                    .select('client_name')
+                    .eq('payment_type', 'service');
+                if (servicePayments && servicePayments.length > 0) {
+                    const paidClients = new Set(servicePayments.map((p: any) => p.client_name));
+                    setMonthlyBills(prev => prev.map(b =>
+                        paidClients.has(b.client) ? { ...b, status: 'Paid' } : b
+                    ));
+                }
             }
         } catch (err: any) {
             console.error('Error fetching billing data:', err);
@@ -259,6 +274,20 @@ export default function Billing() {
         if (action === 'Record Monthly Payment') {
             const bill = monthlyBills.find(b => b.id === id);
             if (!bill) return;
+
+            // Guard: check if already paid to prevent double recording
+            const { data: existing } = await supabase
+                .from('payments')
+                .select('id')
+                .eq('client_name', clientName)
+                .eq('payment_type', 'service')
+                .limit(1);
+            
+            if (existing && existing.length > 0) {
+                toast.error('Payment already recorded for this client.');
+                setMonthlyBills(prev => prev.map(b => b.id === id ? { ...b, status: 'Paid' } : b));
+                return;
+            }
 
             setIsLoading(true);
             try {
@@ -606,6 +635,17 @@ export default function Billing() {
                                             <button disabled className="px-4 py-2 bg-slate-100 text-slate-400 text-sm font-medium rounded-lg cursor-not-allowed flex items-center gap-2">
                                                 <FileText className="w-4 h-4" /> Locked
                                             </button>
+                                        ) : bill.status === 'Paid' ? (
+                                            <div className="flex items-center gap-2">
+                                                {bill.invoice_pdf_url && (
+                                                    <button onClick={() => window.open(bill.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+                                                        <FileText className="w-4 h-4 text-primary" /> View PDF
+                                                    </button>
+                                                )}
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-emerald-100 text-emerald-700">
+                                                    <CheckCircle2 className="w-4 h-4" /> Paid
+                                                </span>
+                                            </div>
                                         ) : bill.status === 'Sent' ? (
                                             <div className="flex gap-2 flex-wrap">
                                                 {bill.invoice_pdf_url && (
