@@ -185,20 +185,37 @@ export default function HR() {
             const existingPayrollAssignmentIds = new Set((payrollData || []).map((p: any) => p.assignment_id).filter(Boolean));
             
             const syntheticItems = (assignmentsData || [])
-                .filter((a: any) => !existingPayrollAssignmentIds.has(a.id))
+                // Exclude assignments without an employee and those already represented in payroll
+                // Also, exclude unassigned workers and non-active assignments
+                .filter((a: any) => {
+                    // Only process active assignments for synthetic items to prevent ghost entries from historical data
+                    if (a.assignment_status !== 'active') return false;
+                    if (!a.employee_id || existingPayrollAssignmentIds.has(a.id)) return false;
+                    const emp = a.employees;
+                    if (!emp || emp.status === 'available') return false; // Hide unassigned workers from synthetic payroll
+                    return true;
+                })
                 .map((a: any) => {
                     const emp = a.employees;
-                    const client = a.clients;
+                    const clientObj = a.clients;
                     const start = a.start_date ? new Date(a.start_date) : null;
                     const end = a.end_date ? new Date(a.end_date) : new Date();
                     const days = start ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) : 1;
-                    const dailyRate = a.worker_daily_rate || emp?.monthly_daily_rate || emp?.short_term_daily_rate || 0;
+                    
+                    // Compute daily rate: use strictly derived monthly rate first, then short_term, then explicitly set daily rate
+                    const monthlySalary = emp?.monthly_daily_rate;
+                    const dailyRate = (monthlySalary && monthlySalary > 0) ? Math.round(monthlySalary / 30) : (emp?.short_term_daily_rate || a.worker_daily_rate || 0);
+                    
+                    // Determine client name
+                    const clientName = clientObj?.client_name || emp?.assigned_client || 'Unassigned';
+                    
                     return {
                         id: `synth-${a.id}`,
                         assignment_id: a.id,
                         worker: emp?.full_name || 'Unknown Worker',
                         worker_id: a.employee_id,
-                        client: client?.client_name || 'Unknown Client',
+                        client_name: clientName,
+                        client: clientName, // Fallback for any legacy code expecting client
                         daily_rate: dailyRate,
                         days_worked: days,
                         advance_amount: a.advance_paid || 0,
@@ -213,10 +230,39 @@ export default function HR() {
                     };
                 });
 
-            const allPayrollItems = [...(payrollData || []), ...syntheticItems];
+            // Filter existing DB payroll rows: keep only entries with a matching worker in the current workforce
+            const validDbPayroll = (payrollData || []).filter((p: any) => {
+                // Ensure the worker is in the current workforce and the item has a client
+                const pClient = p.client_name || p.client;
+                return p.worker && pClient && finalWorkers.some((w: any) => w.name === p.worker || w.full_name === p.worker);
+            });
 
-            if (!payrollError && allPayrollItems.length > 0) {
-                setPayrollItems(allPayrollItems);
+            // Deduplicate across DB and synthetic: DB entries take precedence
+            const seenKeys = new Set<string>();
+            const dedupedPayroll: any[] = [];
+            
+            // Add DB rows first
+            for (const dbItem of validDbPayroll) {
+                const dbClient = dbItem.client_name || dbItem.client;
+                const key = `${dbItem.worker}|${dbClient}`;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    dedupedPayroll.push(dbItem);
+                }
+            }
+            
+            // Then add synthetic items if key not already present
+            for (const synthItem of syntheticItems) {
+                const synthClient = synthItem.client_name || synthItem.client;
+                const key = `${synthItem.worker}|${synthClient}`;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    dedupedPayroll.push(synthItem);
+                }
+            }
+
+            if (!payrollError && dedupedPayroll.length > 0) {
+                setPayrollItems(dedupedPayroll);
             } else if (payrollError) {
                 setPayrollItems([]);
             } else {

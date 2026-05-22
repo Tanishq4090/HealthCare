@@ -65,6 +65,7 @@ export default function Billing() {
                     start_date,
                     end_date,
                     deposit_amount,
+                    deposit_paid,
                     advance_paid,
                     client_billing_rate,
                     deposit_invoice_sent,
@@ -132,7 +133,7 @@ export default function Billing() {
                         client: (asgn as any).clients?.client_name || 'Unknown',
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
                         amount: `₹${depositAmt}`,
-                        status: asgn.deposit_invoice_sent ? "Invoice Sent" : "Pending Invoice",
+                        status: ((asgn as any).deposit_paid && (asgn as any).deposit_paid > 0) ? "Paid" : (asgn.deposit_invoice_sent ? "Invoice Sent" : "Pending Invoice"),
                         date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                         invoice_no: "",
                         invoice_pdf_url: asgn.invoice_pdf_url
@@ -215,10 +216,12 @@ export default function Billing() {
             if (!deposit) return;
 
             setIsLoading(true);
+            const depositAmount = parseFloat(deposit.amount.replace(/[^\d.-]/g, ''));
             try {
                 // 1. Record in Payments table
                 const { error: payError } = await supabase.from('payments').insert([{
-                    amount: parseFloat(deposit.amount.replace(/[^\d.-]/g, '')),
+                    amount: depositAmount,
+                    client_name: deposit.client,
                     recorded_by: 'admin',
                     transaction_ref: `${depositMethod.toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
                     payment_date: new Date().toISOString()
@@ -226,7 +229,15 @@ export default function Billing() {
 
                 if (payError) throw payError;
 
-                // 2. Update local UI (Mock update)
+                // 2. Persist paid status to worker_assignments so it survives page reload
+                const { error: assignError } = await supabase
+                    .from('worker_assignments')
+                    .update({ deposit_paid: depositAmount })
+                    .eq('id', activeDepositId);
+
+                if (assignError) throw assignError;
+
+                // 3. Update local UI immediately
                 setDeposits(prev => prev.map(d => d.id === activeDepositId ? { ...d, status: 'Paid' } : d));
                 toast.success(`Deposit marked as paid via ${depositMethod}. Recorded in Collection History.`);
             } catch (err: any) {
@@ -251,6 +262,7 @@ export default function Billing() {
                 // 1. Record in Payments table
                 const { error: payError } = await supabase.from('payments').insert([{
                     amount: parseFloat(bill.amount.replace(/[^\d.-]/g, '')),
+                    client_name: clientName,
                     recorded_by: 'admin',
                     transaction_ref: txnId,
                     payment_date: new Date().toISOString()
@@ -628,9 +640,9 @@ export default function Billing() {
                                 <thead>
                                     <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
                                         <th className="py-3 px-6">Date</th>
+                                        <th className="py-3 px-6">Client</th>
                                         <th className="py-3 px-6">Reference ID</th>
                                         <th className="py-3 px-6">Amount</th>
-                                        <th className="py-3 px-6">Verified By</th>
                                         <th className="py-3 px-6 text-right">Status</th>
                                     </tr>
                                 </thead>
@@ -641,16 +653,18 @@ export default function Billing() {
                                                 {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                                             </td>
                                             <td className="py-4 px-6">
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
-                                                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Invoice: {payment.invoice_id ? 'INV-LINKED' : 'DIRECT-REC'}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                        {(payment.client_name || '?').charAt(0)}
+                                                    </div>
+                                                    <span className="text-sm font-semibold text-slate-900">{payment.client_name || <span className="text-slate-400 italic">Unknown Client</span>}</span>
                                                 </div>
                                             </td>
                                             <td className="py-4 px-6">
-                                                <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
+                                                <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
                                             </td>
-                                            <td className="py-4 px-6 text-sm text-slate-600 capitalize">
-                                                {payment.recorded_by}
+                                            <td className="py-4 px-6">
+                                                <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
                                             </td>
                                             <td className="py-4 px-6 text-right">
                                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
@@ -1114,58 +1128,60 @@ export default function Billing() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3 flex-wrap">
-                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Cancel</button>
-                                <button
-                                    onClick={() => {
-                                        setIsClientInvoiceOpen(false);
-                                        const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
-                                        setAgentTargetBill({ ...clientInvoiceBill, invoice_no: invoiceNo });
-                                        setInvoiceData({
-                                            clientName: clientInvoiceBill.client,
-                                            phone: clientInvoiceBill.client_phone || '',
-                                            service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
-                                            amount: net,
-                                            totalAmount: total,
-                                            depositCollected: ciDeposit,
-                                            date: new Date().toISOString(),
-                                            invoiceNumber: invoiceNo,
-                                            days: ciDays,
-                                            rate: ciRate
-                                        });
-                                        setAgentDraftText(generateWhatsappDraft(clientInvoiceBill, agentDraftLang));
-                                        setIsInvoiceOpen(true);
-                                    }}
-                                    className="flex-1 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2"
-                                >
-                                    <FileText className="w-4 h-4" /> Preview
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setIsClientInvoiceOpen(false);
-                                        const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
-                                        const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo };
-                                        setAgentTargetBill(targetBill);
-                                        setInvoiceData({
-                                            clientName: clientInvoiceBill.client,
-                                            phone: clientInvoiceBill.client_phone || '',
-                                            service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
-                                            amount: net,
-                                            totalAmount: total,
-                                            depositCollected: ciDeposit,
-                                            date: new Date().toISOString(),
-                                            invoiceNumber: invoiceNo,
-                                            days: ciDays,
-                                            rate: ciRate
-                                        });
-                                        const draft = generateWhatsappDraft(targetBill, agentDraftLang);
-                                        setAgentDraftText(draft);
-                                        setIsAgentModalOpen(true);
-                                    }}
-                                    className="flex-1 py-2.5 rounded-xl font-bold text-white bg-green-500 hover:bg-green-600 transition-all shadow-md flex items-center justify-center gap-2"
-                                >
-                                    <Send className="w-4 h-4" /> Send via WhatsApp
-                                </button>
+                            <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3 rounded-b-2xl">
+                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center">Cancel</button>
+                                <div className="flex gap-3 flex-1 sm:flex-none w-full sm:w-auto">
+                                    <button
+                                        onClick={() => {
+                                            setIsClientInvoiceOpen(false);
+                                            const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
+                                            setAgentTargetBill({ ...clientInvoiceBill, invoice_no: invoiceNo });
+                                            setInvoiceData({
+                                                clientName: clientInvoiceBill.client,
+                                                phone: clientInvoiceBill.client_phone || '',
+                                                service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
+                                                amount: net,
+                                                totalAmount: total,
+                                                depositCollected: ciDeposit,
+                                                date: new Date().toISOString(),
+                                                invoiceNumber: invoiceNo,
+                                                days: ciDays,
+                                                rate: ciRate
+                                            });
+                                            setAgentDraftText(generateWhatsappDraft(clientInvoiceBill, agentDraftLang));
+                                            setIsInvoiceOpen(true);
+                                        }}
+                                        className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
+                                    >
+                                        <FileText className="w-4 h-4" /> Preview
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setIsClientInvoiceOpen(false);
+                                            const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
+                                            const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo };
+                                            setAgentTargetBill(targetBill);
+                                            setInvoiceData({
+                                                clientName: clientInvoiceBill.client,
+                                                phone: clientInvoiceBill.client_phone || '',
+                                                service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
+                                                amount: net,
+                                                totalAmount: total,
+                                                depositCollected: ciDeposit,
+                                                date: new Date().toISOString(),
+                                                invoiceNumber: invoiceNo,
+                                                days: ciDays,
+                                                rate: ciRate
+                                            });
+                                            const draft = generateWhatsappDraft(targetBill, agentDraftLang);
+                                            setAgentDraftText(draft);
+                                            setIsAgentModalOpen(true);
+                                        }}
+                                        className="flex-[1.5] sm:flex-none px-5 py-2.5 rounded-xl font-bold text-white bg-[#25D366] hover:bg-[#1ebd5a] transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
+                                    >
+                                        <Send className="w-4 h-4" /> Send WhatsApp
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
