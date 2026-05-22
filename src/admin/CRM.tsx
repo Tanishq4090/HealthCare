@@ -308,6 +308,7 @@ export default function CRM() {
     const [ciStartDate, setCiStartDate] = useState('');
     const [ciEndDate, setCiEndDate] = useState('');
     const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
+    const [ciLeadId, setCiLeadId] = useState('');
     const [addLeadConfirmDuplicate, setAddLeadConfirmDuplicate] = useState(false);
 
     // Staff Picker State
@@ -1331,6 +1332,7 @@ export default function CRM() {
 
     const openClientInvoiceGenerator = async (lead: any) => {
         setClientInvoiceLead(lead);
+        setCiLeadId(lead.id || '');
         const { data: asgn } = await supabase
             .from('worker_assignments')
             .select('*')
@@ -4484,10 +4486,12 @@ export default function CRM() {
                                                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-                                                    body: JSON.stringify({ lead_id: lead.id, deposit_amount: net, service_period: formattedPeriod, is_deposit: false })
+                                                    body: JSON.stringify({ lead_id: ciLeadId || lead.id, deposit_amount: net, service_period: formattedPeriod, is_deposit: false })
                                                 });
                                                 if (!invResp.ok) throw new Error(await invResp.text());
-                                                const { public_url: invoicePdfUrl } = await invResp.json();
+                                                const invData = await invResp.json();
+                                                if (invData.error) throw new Error(invData.error);
+                                                const invoicePdfUrl = invData.public_url;
                                                 toast.loading('Sending invoice via WhatsApp...', { id: toastId });
                                                 // 2. Send template message with QR header + PDF follow-up
                                                 let phoneDigits = lead.whatsapp_number || lead.phone || '';
