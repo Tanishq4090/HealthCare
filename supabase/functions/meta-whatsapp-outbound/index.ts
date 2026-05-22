@@ -114,7 +114,7 @@ serve(async (req) => {
         return new Response('ok', { status: 200, headers: corsHeaders });
     }
 
-    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId, flowData } = payload;
+    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId, flowData, sendInvoicePdf, invoicePdfUrl } = payload;
     const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
     const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 
@@ -250,33 +250,45 @@ serve(async (req) => {
     console.log(`[Meta] Dispatching to ${digits} using template: ${templateName || 'None'}`);
     console.log(`[Meta] Payload: ${JSON.stringify(metaBody, null, 2)}`);
 
-    // If PDF invoice is requested, send it FIRST so it appears above the template message
-    const { sendInvoicePdf, invoicePdfUrl } = payload;
+    // If PDF invoice is requested, send client_invoice_pdf template FIRST (has document header)
     if (sendInvoicePdf && invoicePdfUrl) {
-      console.log(`[Meta] Sending PDF invoice FIRST to ${digits}. URL: ${invoicePdfUrl}`);
-      const docBody = {
+      console.log(`[Meta] Sending client_invoice_pdf template to ${digits}. URL: ${invoicePdfUrl}`);
+      const pdfTemplateBody = {
         messaging_product: "whatsapp",
         recipient_type: "individual",
         to: digits,
-        type: "document",
-        document: {
-          link: invoicePdfUrl,
-          filename: "99Care_Invoice.pdf",
-          caption: "📄 Your invoice from 99 Care is attached below."
+        type: "template",
+        template: {
+          name: "client_invoice_pdf",
+          language: { code: "en" },
+          components: [
+            {
+              type: "header",
+              parameters: [
+                {
+                  type: "document",
+                  document: {
+                    link: invoicePdfUrl,
+                    filename: "99Care_Invoice.pdf"
+                  }
+                }
+              ]
+            }
+          ]
         }
       };
-      const docResponse = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
+      const pdfResp = await fetch(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${META_SYSTEM_TOKEN}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(docBody),
+        body: JSON.stringify(pdfTemplateBody),
       });
-      const docResText = await docResponse.text();
-      console.log(`[Meta] PDF Doc Response Status: ${docResponse.status}`);
-      console.log(`[Meta] PDF Doc Response Body: ${docResText}`);
-      // Small delay so PDF arrives before the template
+      const pdfResText = await pdfResp.text();
+      console.log(`[Meta] PDF Template Response Status: ${pdfResp.status}`);
+      console.log(`[Meta] PDF Template Response Body: ${pdfResText}`);
+      // Small delay so PDF template arrives before the payment template
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 

@@ -450,8 +450,12 @@ export default function Billing() {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
                 body: JSON.stringify({ lead_id: agentTargetBill.client_id, deposit_amount: billAmount, service_period: formattedPeriod, due_date: invoiceDueDate, is_deposit: false })
             });
-            if (!invResp.ok) throw new Error(await invResp.text());
-            const { public_url: invoicePdfUrl } = await invResp.json();
+            const invRespText = await invResp.text();
+            if (!invResp.ok) throw new Error(invRespText);
+            const invData = JSON.parse(invRespText);
+            if (invData.error) throw new Error(`Invoice generation failed: ${invData.error}`);
+            const invoicePdfUrl = invData.public_url;
+            if (!invoicePdfUrl) throw new Error('Invoice generated but no PDF URL returned');
             toast.loading('Sending via WhatsApp...', { id: billToastId });
             // 2. Send client_monthly_invoice template
             let phoneDigits = agentTargetBill.client_phone?.replace(/\D/g, '') || '917575041313';
