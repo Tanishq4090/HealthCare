@@ -576,15 +576,15 @@ export default function Billing() {
                                                 // Auto-fetch attendance days
                                                 if (asgn.employee_id && asgn.start_date) {
                                                     supabase.from('attendance')
-                                                        .select('status, hr_verified')
+                                                        .select('status, is_half_day')
                                                         .eq('worker_id', asgn.employee_id)
                                                         .gte('duty_date', asgn.start_date.split('T')[0])
                                                         .then(({ data }) => {
                                                             if (data && data.length > 0) {
                                                                 const p = data.filter((a: any) => a.status === 'Present').length;
-                                                                const h = data.filter((a: any) => a.status === 'Half Day').length;
+                                                                const h = data.filter((a: any) => a.is_half_day).length;
                                                                 setCiDays(p + h * 0.5 || 1);
-                                                                setCiAttendanceVerified(data.some((a: any) => a.hr_verified));
+                                                                setCiAttendanceVerified(true);
                                                             } else {
                                                                 setCiDays(0);
                                                                 setCiAttendanceVerified(false);

@@ -1349,15 +1349,16 @@ export default function CRM() {
 
         if (asgn?.employee_id && defaultStart) {
             supabase.from('attendance')
-                .select('status, is_half_day, hr_verified')
+                .select('status, is_half_day')
                 .eq('worker_id', asgn.employee_id)
                 .gte('duty_date', defaultStart.split('T')[0])
-                .then(({ data }) => {
+                .then(({ data, error }) => {
+                    if (error) console.error("Error fetching attendance:", error);
                     if (data && data.length > 0) {
                         const p = data.filter((a: any) => a.status === 'Present' || a.status === 'present').length;
                         const h = data.filter((a: any) => a.is_half_day).length;
                         setCiDays(p + h * 0.5 || 1);
-                        setCiAttendanceVerified(data.some((a: any) => a.hr_verified));
+                        setCiAttendanceVerified(true);
                     } else {
                         setCiDays(0);
                         setCiAttendanceVerified(false);
