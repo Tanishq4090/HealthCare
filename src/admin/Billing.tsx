@@ -192,42 +192,7 @@ export default function Billing() {
         }
     }, [activeTab]);
 
-    // Auto-open client invoice generator when navigated from CRM "Send Monthly Bill"
-    useEffect(() => {
-        const clientId = searchParams.get('clientId');
-        if (!clientId || monthlyBills.length === 0) return;
 
-        const bill = monthlyBills.find((b: any) => b.rawAssignment?.clients?.id === clientId || b.client_id === clientId);
-        if (!bill) return;
-
-        // Open invoice generator for this bill
-        const asgn = bill.rawAssignment;
-        setClientInvoiceBill(bill);
-        setCiRate(asgn?.client_billing_rate || asgn?._quote?.complete_month_rate || 0);
-        setCiDeposit(asgn?.deposit_amount || asgn?._quote?.deposit || 0);
-        const defaultStart = asgn?.start_date || asgn?._quote?.start_date || '';
-        setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-        setCiEndDate(asgn?.end_date ? asgn.end_date.split('T')[0] : '');
-        setCiDays(1);
-        setCiAttendanceVerified(true);
-        setIsClientInvoiceOpen(true);
-        setActiveTab('monthly');
-
-        // Auto-fetch attendance
-        if (asgn?.employee_id && asgn?.start_date) {
-            supabase.from('attendance')
-                .select('status, is_half_day')
-                .eq('worker_id', asgn.employee_id)
-                .gte('duty_date', asgn.start_date.split('T')[0])
-                .then(({ data }) => {
-                    if (data && data.length > 0) {
-                        const p = data.filter((a: any) => a.status === 'Present' || a.status === 'present').length;
-                        const h = data.filter((a: any) => a.is_half_day).length;
-                        setCiDays(p + h * 0.5 || 1);
-                    }
-                });
-        }
-    }, [monthlyBills, searchParams]);
 
     const handleGenerateDepositInvoice = async (id: string, clientName: string) => {
         const fakeInvoiceNo = `INV-D${Math.floor(Math.random() * 1000) + 500}`;

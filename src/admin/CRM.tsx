@@ -298,6 +298,16 @@ export default function CRM() {
     const [addLeadPhone, setAddLeadPhone] = useState('');
     const [addLeadDuplicateWarning, setAddLeadDuplicateWarning] = useState<any>(null);
     const [addLeadCheckingDuplicate, setAddLeadCheckingDuplicate] = useState(false);
+
+    // Client Invoice Generator State (CRM Pipeline)
+    const [isClientInvoiceOpen, setIsClientInvoiceOpen] = useState(false);
+    const [clientInvoiceLead, setClientInvoiceLead] = useState<any>(null);
+    const [ciDays, setCiDays] = useState<number>(1);
+    const [ciRate, setCiRate] = useState<number>(0);
+    const [ciDeposit, setCiDeposit] = useState<number>(0);
+    const [ciStartDate, setCiStartDate] = useState('');
+    const [ciEndDate, setCiEndDate] = useState('');
+    const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
     const [addLeadConfirmDuplicate, setAddLeadConfirmDuplicate] = useState(false);
 
     // Staff Picker State
@@ -1316,6 +1326,43 @@ export default function CRM() {
                 `Failed to create assignment: ${err.message}`, 
                 { id: toastId }
             );
+        }
+    };
+
+    const openClientInvoiceGenerator = async (lead: any) => {
+        setClientInvoiceLead(lead);
+        const { data: asgn } = await supabase
+            .from('worker_assignments')
+            .select('*')
+            .eq('client_id', lead.id)
+            .eq('assignment_status', 'active')
+            .maybeSingle();
+
+        setCiRate(asgn?.client_billing_rate || parseInt(lead.quoted_monthly_rate?.replace(/[^0-9]/g, '') || '0') || 0);
+        setCiDeposit(asgn?.deposit_amount || 0);
+        const defaultStart = asgn?.start_date || '';
+        setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
+        setCiEndDate(asgn?.end_date ? asgn.end_date.split('T')[0] : '');
+        setCiDays(1);
+        setCiAttendanceVerified(true);
+        setIsClientInvoiceOpen(true);
+
+        if (asgn?.employee_id && defaultStart) {
+            supabase.from('attendance')
+                .select('status, is_half_day, hr_verified')
+                .eq('worker_id', asgn.employee_id)
+                .gte('duty_date', defaultStart.split('T')[0])
+                .then(({ data }) => {
+                    if (data && data.length > 0) {
+                        const p = data.filter((a: any) => a.status === 'Present' || a.status === 'present').length;
+                        const h = data.filter((a: any) => a.is_half_day).length;
+                        setCiDays(p + h * 0.5 || 1);
+                        setCiAttendanceVerified(data.some((a: any) => a.hr_verified));
+                    } else {
+                        setCiDays(0);
+                        setCiAttendanceVerified(false);
+                    }
+                });
         }
     };
 
@@ -4070,8 +4117,7 @@ export default function CRM() {
                             {selectedInspectorLead.pipeline_stage === 'Active Client' && (
                                 <button
                                     onClick={() => {
-                                        // Navigate to Finance > Monthly Billing tab, pre-selecting this client
-                                        navigate(`/admin/billing?tab=monthly&clientId=${selectedInspectorLead.id}`);
+                                        openClientInvoiceGenerator(selectedInspectorLead);
                                     }}
                                     className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                 >
@@ -4342,6 +4388,97 @@ export default function CRM() {
                     </div>
                 </div>
             )}
+
+            {/* Client Invoice Generator Modal */}
+            {isClientInvoiceOpen && clientInvoiceLead && (() => {
+                const total = ciDays * ciRate;
+                const net = Math.max(0, total - ciDeposit);
+                return (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+                        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
+                                        <FileText className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-base font-bold text-white">Client Invoice Generator</h2>
+                                        <p className="text-xs text-slate-400">{clientInvoiceLead.name}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsClientInvoiceOpen(false)} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-5 space-y-4">
+                                {!ciAttendanceVerified && (
+                                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 rounded-lg text-xs font-medium flex items-start gap-2">
+                                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                                        <p>Attendance is not yet marked or verified by HR for this period. Days of service may be inaccurate.</p>
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
+                                        <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
+                                        <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
+                                        <input type="number" min="0" step="0.5" value={ciDays} onChange={e => setCiDays(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
+                                        <input type="number" min="0" value={ciRate} onChange={e => setCiRate(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Deposit Already Collected (₹)</label>
+                                    <input type="number" min="0" value={ciDeposit} onChange={e => setCiDeposit(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                </div>
+                                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">{ciDays} day{ciDays !== 1 ? 's' : ''} × ₹{ciRate.toLocaleString('en-IN')}/day</span>
+                                        <span className="font-semibold text-slate-800">₹{total.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    {ciDeposit > 0 && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500">Deposit Collected</span>
+                                            <span className="font-semibold text-emerald-600">− ₹{ciDeposit.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
+                                        <span className="text-slate-800">Net Payable</span>
+                                        <span className="text-[#1AA6A8]">₹{net.toLocaleString('en-IN')}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3 rounded-b-2xl">
+                                <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center">Cancel</button>
+                                <div className="flex gap-3 flex-1 sm:flex-none w-full sm:w-auto">
+                                    <button
+                                        onClick={() => {
+                                            setIsClientInvoiceOpen(false);
+                                            setInvoiceDepositAmount(net.toString());
+                                            setInvoiceStartDate(ciStartDate);
+                                            setInvoiceEndDate(ciEndDate);
+                                            openAgentModal(clientInvoiceLead, 'billing');
+                                        }}
+                                        className="flex-[1.5] sm:flex-none px-5 py-2.5 rounded-xl font-bold text-white bg-[#25D366] hover:bg-[#1ebd5a] transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
+                                    >
+                                        <Send className="w-4 h-4" /> Send WhatsApp
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }
