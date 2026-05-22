@@ -4463,16 +4463,59 @@ export default function CRM() {
                                 <button onClick={() => setIsClientInvoiceOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center">Cancel</button>
                                 <div className="flex gap-3 flex-1 sm:flex-none w-full sm:w-auto">
                                     <button
-                                        onClick={() => {
+                                        onClick={async () => {
+                                            const total = ciDays * ciRate;
+                                            const net = Math.max(0, total - ciDeposit);
+                                            const lead = clientInvoiceLead;
                                             setIsClientInvoiceOpen(false);
-                                            setInvoiceDepositAmount(net.toString());
-                                            setInvoiceStartDate(ciStartDate);
-                                            setInvoiceEndDate(ciEndDate);
-                                            openAgentModal(clientInvoiceLead, 'billing');
+                                            const toastId = toast.loading(`Generating invoice for ${lead.name}...`);
+                                            try {
+                                                const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+                                                const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+                                                const formatDateStr = (ds: string) => {
+                                                    if (!ds) return '';
+                                                    const [y, m, d] = ds.split('-');
+                                                    return `${d}/${m}/${y}`;
+                                                };
+                                                const formattedPeriod = (ciStartDate && ciEndDate)
+                                                    ? `${formatDateStr(ciStartDate)} To ${formatDateStr(ciEndDate)}`
+                                                    : 'As agreed';
+                                                // 1. Generate PDF
+                                                const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                                                    body: JSON.stringify({ lead_id: lead.id, deposit_amount: net, service_period: formattedPeriod, is_deposit: false })
+                                                });
+                                                if (!invResp.ok) throw new Error(await invResp.text());
+                                                const { public_url: invoicePdfUrl } = await invResp.json();
+                                                toast.loading('Sending invoice via WhatsApp...', { id: toastId });
+                                                // 2. Send template message with QR header + PDF follow-up
+                                                let phoneDigits = lead.whatsapp_number || lead.phone || '';
+                                                phoneDigits = phoneDigits.replace(/\D/g, '');
+                                                if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+                                                const waResp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+                                                    body: JSON.stringify({
+                                                        phone: phoneDigits,
+                                                        leadId: lead.id,
+                                                        useTemplate: true,
+                                                        templateName: 'client_monthly_invoice',
+                                                        templateParams: [lead.name || 'there', String(net)],
+                                                        sendInvoicePdf: true,
+                                                        invoicePdfUrl: invoicePdfUrl,
+                                                    })
+                                                });
+                                                const waData = await waResp.json();
+                                                if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
+                                                toast.success(`Invoice sent to ${lead.name} on WhatsApp! ✅`, { id: toastId, duration: 4000 });
+                                            } catch (err: any) {
+                                                toast.error(err.message || 'Failed to send invoice', { id: toastId });
+                                            }
                                         }}
                                         className="flex-[1.5] sm:flex-none px-5 py-2.5 rounded-xl font-bold text-white bg-[#25D366] hover:bg-[#1ebd5a] transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
                                     >
-                                        <Send className="w-4 h-4" /> Send WhatsApp
+                                        <Send className="w-4 h-4" /> Send Invoice on WhatsApp
                                     </button>
                                 </div>
                             </div>

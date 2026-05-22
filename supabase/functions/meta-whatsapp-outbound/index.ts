@@ -172,7 +172,7 @@ serve(async (req) => {
 
       const components: any[] = [];
       
-      if (templateName === "deposit_request") {
+      if (templateName === "deposit_request" || templateName === "client_monthly_invoice") {
           components.push({
             type: "header",
             parameters: [

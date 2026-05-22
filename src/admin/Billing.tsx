@@ -432,17 +432,49 @@ export default function Billing() {
             return;
         }
 
-        // Launch real WhatsApp Web intent with drafted text for Monthly Billing
-        let phoneDigits = '917575041313'; 
-        if (agentTargetBill?.client_phone) {
-            phoneDigits = agentTargetBill.client_phone.replace(/\D/g, ''); 
-        }
-        const waUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(agentDraftText)}`;
-        window.open(waUrl, '_blank');
-
-        setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent', invoice_no: agentTargetBill.invoice_no } : b));
+        // Monthly Billing: Generate PDF + send client_monthly_invoice template
         setIsAgentModalOpen(false);
-        toast.success(`WhatsApp Invoice intent opened for ${agentTargetBill.client}! 📱✅`);
+        const billToastId = toast.loading(`Generating invoice for ${agentTargetBill.client}...`);
+        try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const formatDateStr = (ds: string) => { if (!ds) return ''; const [y, m, d] = ds.split('-'); return `${d}/${m}/${y}`; };
+            const formattedPeriod = (invoiceStartDate && invoiceEndDate)
+                ? `${formatDateStr(invoiceStartDate)} To ${formatDateStr(invoiceEndDate)}`
+                : 'As agreed';
+            const billAmount = invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '') || '0';
+            // 1. Generate PDF
+            const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                body: JSON.stringify({ lead_id: agentTargetBill.client_id, deposit_amount: billAmount, service_period: formattedPeriod, due_date: invoiceDueDate, is_deposit: false })
+            });
+            if (!invResp.ok) throw new Error(await invResp.text());
+            const { public_url: invoicePdfUrl } = await invResp.json();
+            toast.loading('Sending via WhatsApp...', { id: billToastId });
+            // 2. Send client_monthly_invoice template
+            let phoneDigits = agentTargetBill.client_phone?.replace(/\D/g, '') || '917575041313';
+            if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+            const waResp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+                body: JSON.stringify({
+                    phone: phoneDigits,
+                    leadId: agentTargetBill.client_id,
+                    useTemplate: true,
+                    templateName: 'client_monthly_invoice',
+                    templateParams: [agentTargetBill.client || 'there', String(billAmount)],
+                    sendInvoicePdf: true,
+                    invoicePdfUrl: invoicePdfUrl,
+                })
+            });
+            const waData = await waResp.json();
+            if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
+            setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent' } : b));
+            toast.success(`Invoice sent to ${agentTargetBill.client} on WhatsApp! ✅`, { id: billToastId, duration: 4000 });
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to send invoice', { id: billToastId });
+        }
     };
 
     return (
@@ -842,40 +874,16 @@ export default function Billing() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex items-center justify-between">
-                                    <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                        <Globe className="w-4 h-4 text-primary" /> Target Language
-                                    </label>
-                                    <div className="flex bg-slate-100 rounded-lg p-1">
-                                        {['English', 'Hindi', 'Hinglish'].map(lang => (
-                                            <button
-                                                key={lang}
-                                                onClick={() => setAgentDraftLang(lang as any)}
-                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${agentDraftLang === lang ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                            >
-                                                {lang}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                            {!agentTargetBill?.isDepositMode && (
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                                        <Edit3 className="w-4 h-4 text-primary" /> Edit Generated Draft
-                                    </label>
-                                    <div className="relative">
-                                        <textarea
-                                            value={agentDraftText}
-                                            onChange={(e) => setAgentDraftText(e.target.value)}
-                                            className="w-full h-32 px-4 py-3 rounded-xl border border-emerald-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-emerald-50 text-emerald-900 resize-none font-medium leading-relaxed"
-                                        />
-                                        <div className="absolute bottom-3 right-3 flex gap-1">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-75"></span>
-                                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse delay-150"></span>
-                                        </div>
-                                    </div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">Template Preview (client_monthly_invoice)</p>
+                                    <p className="text-sm text-slate-700 leading-relaxed">
+                                        Hello <strong>{agentTargetBill.client}</strong>,<br/><br/>
+                                        Your monthly service invoice of <strong>₹{invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '') || '0'}</strong> has been generated by 99 Care.<br/><br/>
+                                        📄 Your detailed invoice PDF is attached to this message.<br/><br/>
+                                        💳 Scan the QR code or use the bank details to pay.<br/><br/>
+                                        Thank you for trusting us! 🙏
+                                    </p>
+                                    <p className="text-[10px] text-slate-400 mt-1 italic">This message is sent via WhatsApp template and cannot be edited.</p>
                                 </div>
                             )}
 
