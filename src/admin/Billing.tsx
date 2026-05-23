@@ -804,78 +804,72 @@ export default function Billing() {
                             const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH')));
                             const servicePayments = payments.filter(p => p.payment_type === 'service' || (!p.payment_type && p.transaction_ref?.startsWith('TXN')));
 
-                            const PaymentTable = ({ rows }: { rows: any[] }) => (
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
-                                            <th className="py-3 px-6">Date</th>
-                                            <th className="py-3 px-6">Client</th>
-                                            <th className="py-3 px-6">Reference ID</th>
-                                            <th className="py-3 px-6">Amount</th>
-                                            <th className="py-3 px-6 text-right">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {rows.map(payment => (
-                                            <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="py-4 px-6 text-sm text-slate-600">
-                                                    {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                </td>
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                                                            {(payment.client_name || '?').charAt(0)}
-                                                        </div>
-                                                        <span className="text-sm font-semibold text-slate-900">{payment.client_name || <span className="text-slate-400 italic">Unknown Client</span>}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-4 px-6">
-                                                    <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
-                                                </td>
-                                                <td className="py-4 px-6">
-                                                    <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
-                                                </td>
-                                                <td className="py-4 px-6 text-right">
-                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                                        Collected
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            const PaymentCard = ({ rows, title, color }: { rows: any[], title: string, color: 'blue' | 'emerald' }) => (
+                                <div className={`flex-1 min-w-0 rounded-xl border overflow-hidden ${color === 'blue' ? 'border-blue-100' : 'border-emerald-100'}`}>
+                                    {/* Section header */}
+                                    <div className={`px-4 py-3 flex items-center gap-2 ${color === 'blue' ? 'bg-blue-50 border-b border-blue-100' : 'bg-emerald-50 border-b border-emerald-100'}`}>
+                                        <span className={`w-2 h-2 rounded-full inline-block ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
+                                        <span className={`text-xs font-bold uppercase tracking-widest ${color === 'blue' ? 'text-blue-700' : 'text-emerald-700'}`}>{title}</span>
+                                        <span className={`ml-auto text-xs font-semibold ${color === 'blue' ? 'text-blue-500' : 'text-emerald-500'}`}>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    {rows.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-10 text-center px-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 ${color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
+                                                <RupeeIcon className={`text-lg ${color === 'blue' ? 'text-blue-300' : 'text-emerald-300'}`} />
+                                            </div>
+                                            <p className="text-sm text-slate-400 italic">No records yet.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                                                        <th className="py-2.5 px-4">Date</th>
+                                                        <th className="py-2.5 px-4">Client</th>
+                                                        <th className="py-2.5 px-4">Ref ID</th>
+                                                        <th className="py-2.5 px-4">Amount</th>
+                                                        <th className="py-2.5 px-4 text-right">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {rows.map(payment => (
+                                                        <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">
+                                                                {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                            </td>
+                                                            <td className="py-3 px-4">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                                        {(payment.client_name || '?').charAt(0)}
+                                                                    </div>
+                                                                    <span className="text-sm font-semibold text-slate-900 truncate max-w-[100px]">{payment.client_name || <span className="text-slate-400 italic">Unknown</span>}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-3 px-4">
+                                                                <span className="text-xs font-bold text-slate-700 font-mono">{payment.transaction_ref}</span>
+                                                            </td>
+                                                            <td className="py-3 px-4">
+                                                                <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
+                                                            </td>
+                                                            <td className="py-3 px-4 text-right">
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                                                    <CheckCircle2 className="w-3 h-3" />
+                                                                    Collected
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
                             );
 
                             return (
-                                <div className="divide-y divide-slate-100">
-                                    {/* Deposit Collections */}
-                                    <div>
-                                        <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
-                                            <span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>
-                                            <span className="text-xs font-bold text-blue-700 uppercase tracking-widest">Client Deposit Invoice History</span>
-                                            <span className="ml-auto text-xs font-semibold text-blue-500">{depositPayments.length} record{depositPayments.length !== 1 ? 's' : ''}</span>
-                                        </div>
-                                        {depositPayments.length === 0 ? (
-                                            <p className="text-sm text-slate-400 italic px-6 py-4">No deposit collections recorded yet.</p>
-                                        ) : (
-                                            <PaymentTable rows={depositPayments} />
-                                        )}
-                                    </div>
-
-                                    {/* Service Invoice Collections */}
-                                    <div>
-                                        <div className="px-6 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                                            <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Client Service Invoice History</span>
-                                            <span className="ml-auto text-xs font-semibold text-emerald-500">{servicePayments.length} record{servicePayments.length !== 1 ? 's' : ''}</span>
-                                        </div>
-                                        {servicePayments.length === 0 ? (
-                                            <p className="text-sm text-slate-400 italic px-6 py-4">No service invoice collections recorded yet.</p>
-                                        ) : (
-                                            <PaymentTable rows={servicePayments} />
-                                        )}
-                                    </div>
+                                <div className="p-4 flex flex-col lg:flex-row gap-4 h-full">
+                                    <PaymentCard rows={depositPayments} title="Client Deposit Invoice History" color="blue" />
+                                    <PaymentCard rows={servicePayments} title="Client Service Invoice History" color="emerald" />
                                 </div>
                             );
                         })()}
