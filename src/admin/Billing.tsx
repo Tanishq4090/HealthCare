@@ -14,6 +14,10 @@ export default function Billing() {
     const currentMonthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
     const [historySubTab, setHistorySubTab] = useState<'deposit' | 'service'>('deposit');
+    const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -772,25 +776,34 @@ export default function Billing() {
             ) : (
                 /* Collection History View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
                         <div className="flex items-center gap-2">
                             <History className="w-5 h-5 text-primary" />
                             <h2 className="font-semibold text-slate-900">Recorded Collection Log</h2>
                         </div>
-                        {/* Sub-tab switcher */}
-                        <div className="flex items-center p-1 bg-white border border-slate-200 rounded-lg shrink-0">
-                            <button
-                                onClick={() => setHistorySubTab('deposit')}
-                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'deposit' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                            >
-                                Deposit Invoice History
-                            </button>
-                            <button
-                                onClick={() => setHistorySubTab('service')}
-                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'service' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                            >
-                                Service Invoice History
-                            </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Month picker */}
+                            <input
+                                type="month"
+                                value={selectedMonth}
+                                onChange={e => setSelectedMonth(e.target.value)}
+                                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                            />
+                            {/* Sub-tab switcher */}
+                            <div className="flex items-center p-1 bg-white border border-slate-200 rounded-lg shrink-0">
+                                <button
+                                    onClick={() => setHistorySubTab('deposit')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'deposit' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    Deposit Invoice
+                                </button>
+                                <button
+                                    onClick={() => setHistorySubTab('service')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'service' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    Service Invoice
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -811,32 +824,78 @@ export default function Billing() {
                         ) : (() => {
                             const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH')));
                             const servicePayments = payments.filter(p => p.payment_type === 'service' || (!p.payment_type && p.transaction_ref?.startsWith('TXN')));
-                            const rows = historySubTab === 'deposit' ? depositPayments : servicePayments;
+
+                            // Filter by selected month
+                            const filterByMonth = (rows: any[]) => rows.filter(p => {
+                                const d = new Date(p.payment_date);
+                                const rowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                                return rowMonth === selectedMonth;
+                            });
+
+                            const rows = filterByMonth(historySubTab === 'deposit' ? depositPayments : servicePayments);
                             const color = historySubTab === 'deposit' ? 'blue' : 'emerald';
+
+                            // Build list of available months from all payments for the nav
+                            const allRows = historySubTab === 'deposit' ? depositPayments : servicePayments;
+                            const availableMonths = [...new Set(allRows.map(p => {
+                                const d = new Date(p.payment_date);
+                                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            }))].sort((a, b) => b.localeCompare(a));
+
+                            const monthLabel = (m: string) => {
+                                const [y, mo] = m.split('-');
+                                return new Date(Number(y), Number(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                            };
+
+                            // Total for selected month
+                            const monthTotal = rows.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
                             return (
                                 <div>
-                                    {/* Record count bar */}
-                                    <div className={`px-6 py-2.5 flex items-center gap-2 border-b ${color === 'blue' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <span className={`w-2 h-2 rounded-full inline-block ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
+                                    {/* Record count bar with month summary */}
+                                    <div className={`px-6 py-3 flex items-center gap-3 border-b flex-wrap ${color === 'blue' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
                                         <span className={`text-xs font-bold uppercase tracking-widest ${color === 'blue' ? 'text-blue-700' : 'text-emerald-700'}`}>
-                                            {historySubTab === 'deposit' ? 'Client Deposit Invoice History' : 'Client Service Invoice History'}
+                                            {historySubTab === 'deposit' ? 'Deposit Invoice History' : 'Service Invoice History'}
                                         </span>
-                                        <span className={`ml-auto text-xs font-semibold ${color === 'blue' ? 'text-blue-500' : 'text-emerald-500'}`}>
-                                            {rows.length} record{rows.length !== 1 ? 's' : ''}
+                                        <span className="text-xs text-slate-500 font-medium">— {monthLabel(selectedMonth)}</span>
+                                        <span className={`ml-auto flex items-center gap-3 text-xs font-semibold ${color === 'blue' ? 'text-blue-600' : 'text-emerald-600'}`}>
+                                            <span>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
+                                            {rows.length > 0 && <span className="font-bold">₹{monthTotal.toLocaleString('en-IN')}</span>}
                                         </span>
                                     </div>
+
+                                    {/* Quick month navigation pills */}
+                                    {availableMonths.length > 1 && (
+                                        <div className="px-6 py-2 flex items-center gap-2 flex-wrap border-b border-slate-100 bg-slate-50/50">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Jump to:</span>
+                                            {availableMonths.map(m => (
+                                                <button
+                                                    key={m}
+                                                    onClick={() => setSelectedMonth(m)}
+                                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${selectedMonth === m
+                                                        ? (color === 'blue' ? 'bg-blue-500 text-white' : 'bg-emerald-500 text-white')
+                                                        : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    {monthLabel(m)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
 
                                     {rows.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center py-20 text-center">
                                             <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
                                                 <RupeeIcon className={`text-2xl ${color === 'blue' ? 'text-blue-300' : 'text-emerald-300'}`} />
                                             </div>
-                                            <h3 className="text-base font-bold text-slate-900 mb-1">No Records Yet</h3>
+                                            <h3 className="text-base font-bold text-slate-900 mb-1">No Records for {monthLabel(selectedMonth)}</h3>
                                             <p className="text-slate-500 text-sm max-w-xs">
-                                                {historySubTab === 'deposit'
-                                                    ? 'Record a deposit collection from the Deposit Entries tab.'
-                                                    : 'Record a service payment from the Monthly Billing tab.'}
+                                                {availableMonths.length > 0
+                                                    ? 'Try selecting a different month above.'
+                                                    : historySubTab === 'deposit'
+                                                        ? 'Record a deposit collection from the Deposit Entries tab.'
+                                                        : 'Record a service payment from the Monthly Billing tab.'}
                                             </p>
                                         </div>
                                     ) : (
