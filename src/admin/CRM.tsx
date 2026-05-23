@@ -82,7 +82,7 @@ const VoicePlayer = ({ src }: { src: string }) => {
 };
 
 export default function CRM() {
-    const [activeTab, setActiveTab] = useState<'pipeline' | 'clients' | 'automations' | 'voice'>(() => {
+    const [activeTab, setActiveTab] = useState<'pipeline' | 'clients' | 'automations' | 'voice' | 'trash'>(() => {
         return (localStorage.getItem('crmActiveTab') as any) || 'pipeline';
     });
 
@@ -90,6 +90,10 @@ export default function CRM() {
         localStorage.setItem('crmActiveTab', activeTab);
     }, [activeTab]);
     const [leads, setLeads] = useState<any[]>([]);
+    const [trashedLeads, setTrashedLeads] = useState<any[]>([]);
+    const [isLoadingTrash, setIsLoadingTrash] = useState(false);
+    // Delete choice modal state
+    const [deleteChoiceModal, setDeleteChoiceModal] = useState<{ id: string; name: string } | null>(null);
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -963,6 +967,9 @@ export default function CRM() {
         if (activeTab === 'voice') {
             fetchVoiceData();
         }
+        if (activeTab === 'trash') {
+            fetchTrashedLeads();
+        }
     }, [activeTab]);
     // -------------------------
 
@@ -1097,6 +1104,7 @@ export default function CRM() {
             const { data, error } = await supabase
                 .from('crm_leads')
                 .select('*, crm_quotations(start_date, duration, created_at)')
+                .is('deleted_at', null)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -1106,6 +1114,31 @@ export default function CRM() {
             toast.error('Failed to load CRM leads. Please refresh the page.');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const fetchTrashedLeads = async () => {
+        setIsLoadingTrash(true);
+        try {
+            const { data, error } = await supabase
+                .from('crm_leads')
+                .select('*')
+                .not('deleted_at', 'is', null)
+                .order('deleted_at', { ascending: false });
+            if (error) throw error;
+            // Auto-clear leads trashed more than 30 days ago
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+            const expired = (data || []).filter((l: any) => l.deleted_at < thirtyDaysAgo);
+            if (expired.length > 0) {
+                await Promise.all(expired.map((l: any) =>
+                    supabase.rpc('delete_crm_lead_robust', { target_lead_id: l.id })
+                ));
+            }
+            setTrashedLeads((data || []).filter((l: any) => l.deleted_at >= thirtyDaysAgo));
+        } catch (err: any) {
+            console.error('Error fetching trash:', err);
+        } finally {
+            setIsLoadingTrash(false);
         }
     };
 
@@ -2041,43 +2074,80 @@ export default function CRM() {
     };
 
     const handleDeleteLead = async (leadId: string, leadName: string) => {
-        if (!window.confirm(`Are you sure you want to delete "${leadName}"? This action cannot be undone.`)) return;
+        // Show choice modal instead of window.confirm
+        setDeleteChoiceModal({ id: leadId, name: leadName });
+        setSelectedInspectorLead(null);
+    };
 
-        // Remove from UI immediately
-        // If mock lead (short ID), skip Supabase and just update state
+    const handleMoveToTrash = async (leadId: string, leadName: string) => {
+        setDeleteChoiceModal(null);
         if (leadId.length < 10) {
             setLeads(prev => prev.filter(l => l.id !== leadId));
-            toast.success(`Lead "${leadName}" removed from view.`);
+            toast.success(`Lead "${leadName}" removed.`);
             return;
         }
-
-        const toastId = toast.loading(`Performing deep deletion for "${leadName}"...`);
-
+        const toastId = toast.loading(`Moving "${leadName}" to Trash...`);
         try {
-            console.log(`[CRM] Invoking robust deep-delete RPC for lead: ${leadId}`);
-            
-            // Call the database function to handle all cascading deletions and status updates
-            const { data, error: rpcError } = await supabase.rpc('delete_crm_lead_robust', { 
-                target_lead_id: leadId 
-            });
-
-            // The RPC v3.0 returns a JSON object with 'success' and 'error' keys
-            if (rpcError) {
-                throw new Error(rpcError.message || "Server-side deletion failed");
-            }
-
-            if (data && data.success === false) {
-                throw new Error(data.error || "Deep deletion was blocked by the database.");
-            }
-            
-            // ONLY remove from state if the DB confirmed success
+            const { error } = await supabase
+                .from('crm_leads')
+                .update({ deleted_at: new Date().toISOString() })
+                .eq('id', leadId);
+            if (error) throw error;
             setLeads(prev => prev.filter(l => l.id !== leadId));
-            toast.success(`Lead "${leadName}" deleted permanently.`, { id: toastId });
-            console.log(`[CRM] Lead ${leadId} deleted permanently via RPC.`, data);
+            toast.success(`"${leadName}" moved to Trash. Recoverable for 30 days.`, { id: toastId });
         } catch (err: any) {
-            console.error('Failed to delete lead:', err);
+            toast.error(`Failed to trash lead: ${err.message}`, { id: toastId });
+        }
+    };
+
+    const handleDeletePermanently = async (leadId: string, leadName: string) => {
+        setDeleteChoiceModal(null);
+        if (leadId.length < 10) {
+            setLeads(prev => prev.filter(l => l.id !== leadId));
+            setTrashedLeads(prev => prev.filter(l => l.id !== leadId));
+            toast.success(`Lead "${leadName}" deleted permanently.`);
+            return;
+        }
+        const toastId = toast.loading(`Permanently deleting "${leadName}"...`);
+        try {
+            const { data, error: rpcError } = await supabase.rpc('delete_crm_lead_robust', { target_lead_id: leadId });
+            if (rpcError) throw new Error(rpcError.message);
+            if (data && data.success === false) throw new Error(data.error || 'Deletion blocked by database.');
+            setLeads(prev => prev.filter(l => l.id !== leadId));
+            setTrashedLeads(prev => prev.filter(l => l.id !== leadId));
+            toast.success(`"${leadName}" deleted permanently.`, { id: toastId });
+        } catch (err: any) {
             toast.error(`Deletion Failed: ${err.message}`, { id: toastId, duration: 6000 });
-            // No need to fetchLeads() here because we didn't remove it from state optimistically anymore
+        }
+    };
+
+    const handleRestoreLead = async (lead: any) => {
+        const toastId = toast.loading(`Restoring "${lead.name}"...`);
+        try {
+            const { error } = await supabase
+                .from('crm_leads')
+                .update({ deleted_at: null })
+                .eq('id', lead.id);
+            if (error) throw error;
+            setTrashedLeads(prev => prev.filter(l => l.id !== lead.id));
+            setLeads(prev => [{ ...lead, deleted_at: null }, ...prev]);
+            toast.success(`"${lead.name}" restored to ${lead.pipeline_stage}.`, { id: toastId });
+        } catch (err: any) {
+            toast.error(`Restore failed: ${err.message}`, { id: toastId });
+        }
+    };
+
+    const handleEmptyTrash = async () => {
+        if (trashedLeads.length === 0) return;
+        const toastId = toast.loading(`Permanently deleting ${trashedLeads.length} lead(s)...`);
+        try {
+            await Promise.all(trashedLeads.map(l =>
+                supabase.rpc('delete_crm_lead_robust', { target_lead_id: l.id })
+            ));
+            setTrashedLeads([]);
+            toast.success('Trash emptied. All leads permanently deleted.', { id: toastId });
+        } catch (err: any) {
+            toast.error(`Failed to empty trash: ${err.message}`, { id: toastId });
         }
     };
 
@@ -2516,6 +2586,16 @@ export default function CRM() {
                             className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'voice' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
                             Voice AI
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('trash')}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'trash' ? 'bg-white text-red-500 shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Trash
+                            {trashedLeads.length > 0 && (
+                                <span className="bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{trashedLeads.length}</span>
+                            )}
                         </button>
                     </div>
                 </div>
@@ -3069,6 +3149,102 @@ export default function CRM() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+            {activeTab === 'trash' && (
+                /* Trash Can View */
+                <div className="flex-1 flex flex-col gap-4">
+                    {/* Header */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <div className="flex items-center gap-2 mb-1">
+                                <Trash2 className="w-5 h-5 text-red-400" />
+                                <h2 className="text-lg font-bold text-slate-900">Trash</h2>
+                                {trashedLeads.length > 0 && (
+                                    <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">{trashedLeads.length}</span>
+                                )}
+                            </div>
+                            <p className="text-sm text-slate-500">Leads are automatically deleted after 30 days. Restore to recover all data.</p>
+                        </div>
+                        {trashedLeads.length > 0 && (
+                            <button
+                                onClick={() => {
+                                    toast(`Permanently delete all ${trashedLeads.length} lead(s) in trash?`, {
+                                        action: { label: 'Empty Trash', onClick: handleEmptyTrash },
+                                        cancel: { label: 'Cancel', onClick: () => {} },
+                                        duration: 8000,
+                                    });
+                                }}
+                                className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 text-sm font-bold rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2 shrink-0"
+                            >
+                                <Trash2 className="w-4 h-4" /> Empty Trash
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Trash list */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
+                        {isLoadingTrash ? (
+                            <div className="flex flex-col items-center justify-center py-20">
+                                <Loader2 className="w-8 h-8 text-red-400 animate-spin mb-4" />
+                                <span className="text-slate-500 font-medium">Loading trash...</span>
+                            </div>
+                        ) : trashedLeads.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-center">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                    <Trash2 className="w-8 h-8 text-slate-300" />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">Trash is Empty</h3>
+                                <p className="text-slate-500 text-sm max-w-xs">Deleted leads will appear here for 30 days before being permanently removed.</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-slate-100">
+                                {trashedLeads.map(lead => {
+                                    const deletedAt = new Date(lead.deleted_at);
+                                    const expiresAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+                                    const daysLeft = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                                    return (
+                                        <div key={lead.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-red-50 text-red-400 flex items-center justify-center font-bold text-sm shrink-0">
+                                                    {(lead.name || '?').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-900">{lead.name}</p>
+                                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                        <span className="text-xs text-slate-500">{lead.phone || lead.whatsapp_number || 'No phone'}</span>
+                                                        <span className="w-1 h-1 rounded-full bg-slate-300 inline-block"></span>
+                                                        <span className="text-xs font-medium text-slate-600">{lead.pipeline_stage}</span>
+                                                        <span className="w-1 h-1 rounded-full bg-slate-300 inline-block"></span>
+                                                        <span className={`text-xs font-semibold ${daysLeft <= 3 ? 'text-red-500' : 'text-slate-400'}`}>
+                                                            {daysLeft <= 0 ? 'Expires today' : `${daysLeft}d left`}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-400 mt-0.5">
+                                                        Deleted {deletedAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <button
+                                                    onClick={() => handleRestoreLead(lead)}
+                                                    className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" /> Restore
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeletePermanently(lead.id, lead.name)}
+                                                    className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-100 text-xs font-bold rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -4159,18 +4335,60 @@ export default function CRM() {
                 {/* Inspector Footer Actions */}
                 <div className="p-5 border-t border-slate-100 bg-slate-50/50 mt-auto">
                     <button
-                        onClick={() => { 
-                            handleDeleteLead(selectedInspectorLead.id, selectedInspectorLead.name);
-                            setSelectedInspectorLead(null);
-                        }}
+                        onClick={() => handleDeleteLead(selectedInspectorLead.id, selectedInspectorLead.name)}
                         className="w-full bg-red-50 hover:bg-red-500 hover:text-white border border-red-100 text-red-600 font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
                     >
                         <Trash2 className="w-4 h-4" />
-                        Delete Lead Permanently
+                        Delete Lead
                     </button>
                 </div>
             </div>
         )}
+
+            {/* Delete Choice Modal */}
+            {deleteChoiceModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+                            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center shrink-0">
+                                <Trash2 className="w-5 h-5 text-red-500" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900">Delete "{deleteChoiceModal.name}"?</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Choose how to delete this lead</p>
+                            </div>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <button
+                                onClick={() => handleMoveToTrash(deleteChoiceModal.id, deleteChoiceModal.name)}
+                                className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors text-left"
+                            >
+                                <Trash2 className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-bold text-amber-800 text-sm">Move to Trash</p>
+                                    <p className="text-xs text-amber-600 mt-0.5">Recoverable for 30 days. All data preserved.</p>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => handleDeletePermanently(deleteChoiceModal.id, deleteChoiceModal.name)}
+                                className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 transition-colors text-left"
+                            >
+                                <Trash2 className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-bold text-red-700 text-sm">Delete Permanently</p>
+                                    <p className="text-xs text-red-500 mt-0.5">Cannot be undone. All data will be lost.</p>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setDeleteChoiceModal(null)}
+                                className="w-full py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Service Period Modal */}
             {isServicePeriodOpen && selectedWorker && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
