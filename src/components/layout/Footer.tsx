@@ -56,24 +56,26 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Col 3: Nursing Services */}
+          {/* Col 3: Our Services */}
           <div>
-            <h4 className="font-bold text-white mb-6 uppercase tracking-wider text-sm">Nursing Services</h4>
+            <h4 className="font-bold text-white mb-6 uppercase tracking-wider text-sm">Our Services</h4>
             <div className="flex flex-col gap-4 text-sm">
-              <Link to="/services/wound-care" className="text-gray-400 hover:text-white transition-colors w-fit">Wound Care</Link>
-              <Link to="/services/respiratory-care-at-home" className="text-gray-400 hover:text-white transition-colors w-fit">Respiratory Care</Link>
-              <Link to="/services/injection-at-home" className="text-gray-400 hover:text-white transition-colors w-fit">Injection at Home</Link>
-              <Link to="/services/nursing-services-on-demand" className="text-gray-400 hover:text-white transition-colors w-fit">Nursing On-Demand</Link>
+              <Link to="/services/nursing-services-on-demand" className="text-gray-400 hover:text-white transition-colors w-fit">Nursing Care</Link>
+              <Link to="/services/maternity-care" className="text-gray-400 hover:text-white transition-colors w-fit">Maternity Care</Link>
+              <Link to="/services/new-born-baby-care" className="text-gray-400 hover:text-white transition-colors w-fit">New Born Baby Care</Link>
+              <Link to="/services/maternity-care" className="text-gray-400 hover:text-white transition-colors w-fit">Japa Care (Post-Delivery)</Link>
+              <Link to="/services/old-age-person-care" className="text-gray-400 hover:text-white transition-colors w-fit">Old Age Care</Link>
             </div>
           </div>
 
-          {/* Col 4: Caretaker Services */}
+          {/* Col 4: Contact */}
           <div>
-            <h4 className="font-bold text-white mb-6 uppercase tracking-wider text-sm">Caretaker Services</h4>
-            <div className="flex flex-col gap-4 text-sm">
-              <Link to="/services/maternity-care" className="text-gray-400 hover:text-white transition-colors w-fit">Maternity Care</Link>
-              <Link to="/services/new-born-baby-care" className="text-gray-400 hover:text-white transition-colors w-fit">Newborn Baby Care</Link>
-              <Link to="/services/old-age-person-care" className="text-gray-400 hover:text-white transition-colors w-fit">Old Age Person Care</Link>
+            <h4 className="font-bold text-white mb-6 uppercase tracking-wider text-sm">Contact Us</h4>
+            <div className="flex flex-col gap-4 text-sm text-gray-400">
+              <p>📞 +91 9016116564</p>
+              <p>📧 99careforyou@gmail.com</p>
+              <p>📍 104, Fortune Mall, Galaxy Circle, Adajan, Surat</p>
+              <Link to="/appointment" className="text-[#1AA6A8] hover:text-white transition-colors font-semibold">Book Appointment →</Link>
             </div>
           </div>
 

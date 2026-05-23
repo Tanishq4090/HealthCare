@@ -7,8 +7,46 @@ console.log("[CRM] Routes module loaded");
 const crmConfig = {
   serviceCategories: [
     {
-      id: "baby_care",
-      name: "Baby Care",
+      id: "nursing_care",
+      name: "Nursing Care",
+      questions: [
+        "Patient Name",
+        "City",
+        "Area in Surat",
+        "Service for whom?",
+        "Relation with patient",
+        "Gender (Male/Female)",
+        "Age & Weight",
+        "Condition/Disease details",
+        "Service type (Day/Night/24h)",
+        "Staff type (Proper Nursing / Caretaker / Both)",
+        "Language preferred (Gujarati/Hindi/Marathi/English)",
+        "Age of staff needed",
+        "Start date",
+        "Special requirements"
+      ]
+    },
+    {
+      id: "maternity_care",
+      name: "Maternity Care",
+      questions: [
+        "Patient Name (Mother's name)",
+        "City",
+        "Area in Surat",
+        "Expected delivery date or delivery done?",
+        "Single or Twins?",
+        "Any medical complications?",
+        "Service type (Day/Night/24h)",
+        "Work details for mother",
+        "Language preferred (Gujarati/Hindi/Marathi/English)",
+        "Age of caretaker needed",
+        "Start date",
+        "Special requirements"
+      ]
+    },
+    {
+      id: "new_born_baby_care",
+      name: "New Born Baby Care",
       questions: [
         "Patient Name (Maa ka naam)",
         "City",
@@ -25,52 +63,12 @@ const crmConfig = {
       ]
     },
     {
-      id: "old_age_care",
-      name: "Old Age Care",
-      questions: [
-        "Patient Name",
-        "City",
-        "Area",
-        "Service for whom?",
-        "Relation with patient",
-        "Gender (Male/Female)",
-        "Age & Weight",
-        "Condition/Disease details",
-        "Service type (Day/Night/24h)",
-        "Work details",
-        "Language preferred",
-        "Age of staff needed",
-        "Start date",
-        "Special requirements"
-      ]
-    },
-    {
-      id: "nursing_care",
-      name: "Nursing Care",
-      questions: [
-        "Patient Name",
-        "City",
-        "Area",
-        "Service for whom?",
-        "Relation",
-        "Gender (Male/Female)",
-        "Age & Weight",
-        "Condition details",
-        "Service type (Day/Night/24h)",
-        "Staff type (Proper Nursing / Caretaker / Both)",
-        "Language preferred",
-        "Age of staff needed",
-        "Start date",
-        "Special requirements"
-      ]
-    },
-    {
       id: "japa_care",
-      name: "Japa Care",
+      name: "Japa Care (Post-Delivery)",
       questions: [
         "Name",
         "City",
-        "Area",
+        "Area in Surat",
         "Service for whom?",
         "Relation",
         "Only Baby or Mother+Baby?",
@@ -79,46 +77,29 @@ const crmConfig = {
         "Duration needed (Days/Months)",
         "Service type (Day/Night/24h)",
         "Work details",
-        "Language preferred",
+        "Language preferred (Gujarati/Hindi/Marathi/English)",
         "Age of staff needed",
         "Start date",
         "Special requirements"
       ]
     },
     {
-      id: "physiotherapy",
-      name: "Physiotherapy",
+      id: "old_age_care",
+      name: "Old Age Care",
       questions: [
-        "Name",
+        "Patient Name",
         "City",
-        "Area",
+        "Area in Surat",
         "Service for whom?",
-        "Relation",
+        "Relation with patient",
         "Gender (Male/Female)",
         "Age & Weight",
-        "Condition details",
-        "Preferred timing for physio",
+        "Condition/Disease details",
+        "Service type (Day/Night/24h)",
+        "Work details",
+        "Language preferred (Gujarati/Hindi/Marathi/English)",
+        "Age of staff needed",
         "Start date",
-        "Special requirements"
-      ]
-    },
-    {
-      id: "on_call_nursing",
-      name: "On Call Nursing",
-      questions: [
-        "Name",
-        "City",
-        "Area",
-        "Service for whom?",
-        "Relation",
-        "Gender (Male/Female)",
-        "Injection type?",
-        "Doctor consultation file available?",
-        "Photo of injection/file",
-        "Start date",
-        "Duration needed (Days)",
-        "Frequency (1x/2x per day)",
-        "Timing (Morning/Afternoon/Night)",
         "Special requirements"
       ]
     }

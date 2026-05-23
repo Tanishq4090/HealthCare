@@ -9,13 +9,11 @@ import { GradientButton } from '@/components/ui/gradient-button';
 import { TubelightNavbar } from '@/components/ui/tubelight-navbar';
 
 const SERVICES = [
-  { name: 'Wound Care', path: '/services/wound-care' },
-  { name: 'Respiratory Care', path: '/services/respiratory-care-at-home' },
-  { name: 'Injection at Home', path: '/services/injection-at-home' },
-  { name: 'Nursing On-Demand', path: '/services/nursing-services-on-demand' },
+  { name: 'Nursing Care', path: '/services/nursing-services-on-demand' },
   { name: 'Maternity Care', path: '/services/maternity-care' },
-  { name: 'Newborn Baby Care', path: '/services/new-born-baby-care' },
-  { name: 'Old Age Person Care', path: '/services/old-age-person-care' },
+  { name: 'New Born Baby Care', path: '/services/new-born-baby-care' },
+  { name: 'Japa Care (Post-Delivery)', path: '/services/maternity-care' },
+  { name: 'Old Age Care', path: '/services/old-age-person-care' },
 ];
 
 export default function Navbar() {

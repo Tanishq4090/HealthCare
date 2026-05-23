@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar as CalendarIcon, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { CARE_SERVICES } from '../../constants/services';
 
 interface SendQuotationModalProps {
     isOpen: boolean;
@@ -16,7 +17,7 @@ const inclusionsOptions = [
 
 export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, onClose, lead, onDispatch }) => {
     const [serviceName, setServiceName] = useState('');
-    const [serviceCategory, setServiceCategory] = useState('Home nursing');
+    const [serviceCategory, setServiceCategory] = useState('Nursing Care');
     const [recipientCondition, setRecipientCondition] = useState('');
     const [hoursPerDay, setHoursPerDay] = useState('');
     const [daysPerWeek, setDaysPerWeek] = useState('');
@@ -55,10 +56,11 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                     setServiceName(sName);
                     // Guess category
                     const nameLower = sName.toLowerCase();
-                    if (nameLower.includes('baby') || nameLower.includes('mother') || nameLower.includes('new born')) setServiceCategory('Mother & baby');
-                    else if (nameLower.includes('elder') || nameLower.includes('old age')) setServiceCategory('Elder care');
-                    else if (nameLower.includes('post-op') || nameLower.includes('surgery')) setServiceCategory('Post-op care');
-                    else if (nameLower.includes('physio')) setServiceCategory('Physiotherapy');
+                    if (nameLower.includes('baby') || nameLower.includes('new born')) setServiceCategory('New Born Baby Care');
+                    else if (nameLower.includes('japa') || nameLower.includes('post-delivery') || nameLower.includes('mother')) setServiceCategory('Japa Care (Post-Delivery)');
+                    else if (nameLower.includes('maternity')) setServiceCategory('Maternity Care');
+                    else if (nameLower.includes('elder') || nameLower.includes('old age')) setServiceCategory('Old Age Care');
+                    else setServiceCategory('Nursing Care');
                 }
                 
                 const shiftMatch = lead.notes.match(/Shift:\s*(.+)/i);
@@ -188,7 +190,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-2">Service category *</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {['Home nursing', 'Elder care', 'Post-op care', 'Physiotherapy', 'Mother & baby', 'Other'].map(cat => (
+                                    {CARE_SERVICES.map(cat => (
                                         <button
                                             key={cat}
                                             onClick={() => setServiceCategory(cat)}

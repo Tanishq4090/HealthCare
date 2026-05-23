@@ -20,14 +20,10 @@ export default function TermsPage() {
       title: "2. Services Offered",
       content: [
         "Nursing Care",
-        "Trained Attendant Care",
-        "Doctor on Call",
-        "Physiotherapy",
-        "Pathology Sample Collection",
-        "Pharmacy Delivery",
-        "Medical Equipment (rental & purchase, installation, monitoring)",
-        "Critical Care at Home (including ICU setups)",
-        "Elderly Care (special plans for dementia, Alzheimer’s, chronic ailments)"
+        "Maternity Care",
+        "New Born Baby Care",
+        "Japa Care (Post-Delivery)",
+        "Old Age Care"
       ]
     },
     {
