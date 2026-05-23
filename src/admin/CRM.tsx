@@ -1107,7 +1107,19 @@ export default function CRM() {
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (error) {
+                // If deleted_at column doesn't exist yet, fall back to fetching all leads
+                if (error.message?.includes('deleted_at') || error.code === '42703') {
+                    const { data: fallback, error: fallbackError } = await supabase
+                        .from('crm_leads')
+                        .select('*, crm_quotations(start_date, duration, created_at)')
+                        .order('created_at', { ascending: false });
+                    if (fallbackError) throw fallbackError;
+                    setLeads(fallback || []);
+                    return;
+                }
+                throw error;
+            }
             setLeads(data || []);
         } catch (err: any) {
             console.error('Error fetching leads:', err);
