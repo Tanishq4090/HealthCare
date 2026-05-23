@@ -782,13 +782,37 @@ export default function Billing() {
                             <h2 className="font-semibold text-slate-900">Recorded Collection Log</h2>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
-                            {/* Month picker */}
-                            <input
-                                type="month"
-                                value={selectedMonth}
-                                onChange={e => setSelectedMonth(e.target.value)}
-                                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                            />
+                            {/* Month navigator with left/right arrows */}
+                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden">
+                                <button
+                                    onClick={() => {
+                                        const [y, m] = selectedMonth.split('-').map(Number);
+                                        const prev = new Date(y, m - 2);
+                                        setSelectedMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+                                    }}
+                                    className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-bold"
+                                >
+                                    ‹
+                                </button>
+                                <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[110px] text-center border-x border-slate-200">
+                                    {new Date(Number(selectedMonth.split('-')[0]), Number(selectedMonth.split('-')[1]) - 1)
+                                        .toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        const [y, m] = selectedMonth.split('-').map(Number);
+                                        const next = new Date(y, m);
+                                        const now = new Date();
+                                        const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                                        const nextKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+                                        if (nextKey <= nowKey) setSelectedMonth(nextKey);
+                                    }}
+                                    className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-bold disabled:opacity-30"
+                                    disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; })()}
+                                >
+                                    ›
+                                </button>
+                            </div>
                             {/* Sub-tab switcher */}
                             <div className="flex items-center p-1 bg-white border border-slate-200 rounded-lg shrink-0">
                                 <button
