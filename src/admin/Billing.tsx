@@ -590,7 +590,7 @@ export default function Billing() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3 flex-wrap">
                                     <span className={`px-3 py-1 text-xs font-semibold rounded-full ${dep.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' :
                                         dep.status === 'Invoice Sent' ? 'bg-amber-100 text-amber-700' :
                                             'bg-slate-100 text-slate-700'
@@ -603,16 +603,22 @@ export default function Billing() {
                                             <FileText className="w-4 h-4" /> Prepare Invoice
                                         </button>
                                     )}
-                                    {dep.status === 'Invoice Sent' && (
+
+                                    {(dep.status === 'Invoice Sent' || dep.status === 'Paid') && (
                                         <>
                                             {dep.invoice_pdf_url && (
-                                                <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-4 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
+                                                <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
                                                     <FileText className="w-4 h-4 text-primary" /> View PDF
                                                 </button>
                                             )}
-                                            <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2">
-                                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
+                                            <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
+                                                <Send className="w-4 h-4" /> Resend Invoice
                                             </button>
+                                            {dep.status === 'Invoice Sent' && (
+                                                <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>
