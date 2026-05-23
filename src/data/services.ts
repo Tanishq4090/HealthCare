@@ -254,3 +254,15 @@ export const services: Service[] = [
 export const getNursingServices = () => services.filter(s => s.category === 'nursing')
 export const getCaretakerServices = () => services.filter(s => s.category === 'caretaker')
 export const getServiceBySlug = (slug: string) => services.find(s => s.slug === slug)
+
+/**
+ * Canonical 5 services used in appointment booking, dropdowns, and forms.
+ * Maps to existing service page slugs where available.
+ */
+export const APPOINTMENT_SERVICES = [
+  { slug: 'nursing-services-on-demand', title: 'Nursing Care' },
+  { slug: 'maternity-care',             title: 'Maternity Care' },
+  { slug: 'new-born-baby-care',         title: 'New Born Baby Care' },
+  { slug: 'maternity-care',             title: 'Japa Care (Post-Delivery)' },
+  { slug: 'old-age-person-care',        title: 'Old Age Care' },
+];

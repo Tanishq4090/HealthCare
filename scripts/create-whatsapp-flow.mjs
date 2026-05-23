@@ -60,14 +60,11 @@ const FLOW_JSON = {
                 name: "service",
                 required: true,
                 "data-source": [
-                  { id: "Old Age Care", title: "Old Age Care" },
                   { id: "Nursing Care", title: "Nursing Care" },
-                  { id: "Japa Care", title: "Japa Care (Post-Delivery)" },
-                  { id: "Baby Care", title: "Baby Care / Newborn" },
-                  { id: "Physiotherapy", title: "Physiotherapy" },
-                  { id: "Doctor Visit at Home", title: "Doctor Visit at Home" },
-                  { id: "Medicine Delivery", title: "Medicine Delivery" },
-                  { id: "Medical Equipment Rent", title: "Medical Equipment Rent" }
+                  { id: "Maternity Care", title: "Maternity Care" },
+                  { id: "New Born Baby Care", title: "New Born Baby Care" },
+                  { id: "Japa Care (Post-Delivery)", title: "Japa Care (Post-Delivery)" },
+                  { id: "Old Age Care", title: "Old Age Care" }
                 ]
               },
               {

@@ -20,7 +20,7 @@ import { CalendarScheduler } from '@/components/ui/calendar-scheduler';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { SEOMeta } from '@/components/SEOMeta';
 import { cn } from '@/lib/utils';
-import { services } from '@/data/services';
+import { APPOINTMENT_SERVICES } from '@/data/services';
 import { supabase } from '@/lib/supabase';
 
 const formSchema = z.object({
@@ -201,8 +201,8 @@ export default function AppointmentPage() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800">
-                              {services.map((item) => (
-                                <SelectItem key={item.slug} value={item.slug} className="text-gray-700 dark:text-gray-300 focus:bg-gray-50 dark:focus:bg-slate-800">{item.title}</SelectItem>
+                              {APPOINTMENT_SERVICES.map((item) => (
+                                <SelectItem key={item.slug + item.title} value={item.slug} className="text-gray-700 dark:text-gray-300 focus:bg-gray-50 dark:focus:bg-slate-800">{item.title}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
