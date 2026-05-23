@@ -98,15 +98,18 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // 1. Fetch IDs of leads that are in the "Active Client" stages
+            // 1. Fetch leads in client stages WITH their pipeline_stage
             const { data: leads, error: leadsError } = await supabase
                 .from('crm_leads')
-                .select('id')
+                .select('id, pipeline_stage')
                 .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']);
 
             if (leadsError) throw leadsError;
 
             const clientIds = (leads || []).map(l => l.id);
+            // Build a map of lead_id -> pipeline_stage for status badge
+            const stageMap: Record<string, string> = {};
+            (leads || []).forEach(l => { stageMap[l.id] = l.pipeline_stage; });
 
             // 2. Fetch records from the clients table for these lead IDs
             let clientData = [];
@@ -163,7 +166,7 @@ export default function Clients() {
                 phone: c.phone_number,
                 email: c.email || '-',
                 contact: c.client_name,
-                status: 'Active',
+                status: stageMap[c.id] || 'Active',
                 workerCount: workerMap[c.client_name]?.workerCount || 0,
                 activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
                 lifetimeValue: '₹0',
@@ -225,8 +228,16 @@ export default function Clients() {
                                             </p>
                                         </div>
                                     </div>
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                                        {client.status}
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                        client.status === 'Closed Won' ? 'bg-emerald-100 text-emerald-700' :
+                                        client.status === 'Monthly Billing' ? 'bg-blue-100 text-blue-700' :
+                                        client.status === 'Active Client' ? 'bg-teal-100 text-teal-700' :
+                                        'bg-slate-100 text-slate-600'
+                                    }`}>
+                                        {client.status === 'Closed Won' ? 'Closed' :
+                                         client.status === 'Monthly Billing' ? 'Billing' :
+                                         client.status === 'Active Client' ? 'Active' :
+                                         client.status}
                                     </span>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
