@@ -94,6 +94,9 @@ export default function CRM() {
     const [isLoadingTrash, setIsLoadingTrash] = useState(false);
     // Delete choice modal state
     const [deleteChoiceModal, setDeleteChoiceModal] = useState<{ id: string; name: string } | null>(null);
+    // Reviews state
+    const [reviews, setReviews] = useState<any[]>([]);
+    const [isLoadingReviews, setIsLoadingReviews] = useState(false);
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -970,7 +973,28 @@ export default function CRM() {
         if (activeTab === 'trash') {
             fetchTrashedLeads();
         }
+        if (activeTab === 'automations') {
+            fetchReviews();
+        }
     }, [activeTab]);
+
+    const fetchReviews = async () => {
+        setIsLoadingReviews(true);
+        try {
+            const { data, error } = await supabase
+                .from('reviews')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(20);
+            if (error) throw error;
+            setReviews(data || []);
+        } catch (err: any) {
+            console.warn('Reviews table not available:', err.message);
+            setReviews([]);
+        } finally {
+            setIsLoadingReviews(false);
+        }
+    };
     // -------------------------
 
     const toggleWorkflow = async (key: keyof typeof workflows) => {
@@ -2149,6 +2173,35 @@ export default function CRM() {
         }
     };
 
+    const sendReviewRequest = async (lead: any) => {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const toastId = toast.loading(`Sending review request to ${lead.name}...`);
+        try {
+            let phoneDigits = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '');
+            if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+            if (!phoneDigits) throw new Error('No phone number on file for this client.');
+
+            const resp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+                body: JSON.stringify({
+                    phone: phoneDigits,
+                    leadId: lead.id,
+                    useTemplate: true,
+                    templateName: 'client_review_request',
+                    templateParams: [lead.name?.split(' ')[0] || 'there'],
+                })
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'WhatsApp dispatch failed');
+            await logActivity(lead.id, 'review_requested', `Review request sent to ${lead.name}`);
+            toast.success(`Review request sent to ${lead.name}! ✅`, { id: toastId, duration: 4000 });
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to send review request', { id: toastId });
+        }
+    };
+
     const handleEmptyTrash = async () => {
         if (trashedLeads.length === 0) return;
         const toastId = toast.loading(`Permanently deleting ${trashedLeads.length} lead(s)...`);
@@ -3290,7 +3343,8 @@ export default function CRM() {
             )}
             {activeTab === 'automations' && (
                 /* AI Automations View */
-                <div className="flex-1 grid lg:grid-cols-2 gap-6 pb-4">
+                <div className="flex-1 flex flex-col gap-6 pb-4 overflow-y-auto">
+                    <div className="grid lg:grid-cols-2 gap-6">
                     {/* Active Workflows */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
                         <div className="p-5 border-b border-slate-100">
@@ -3380,6 +3434,59 @@ export default function CRM() {
                             <div className="text-center pt-4">
                                 <button className="text-sm font-medium text-primary hover:text-primary/80 transition-colors">View All Logs</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                    {/* Recent Reviews Panel */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                    <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+                                    Recent Reviews
+                                </h2>
+                                <p className="text-sm text-slate-500 mt-1">Client feedback collected via WhatsApp.</p>
+                            </div>
+                            <button onClick={fetchReviews} className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">Refresh</button>
+                        </div>
+                        <div className="p-5 flex-1 overflow-y-auto">
+                            {isLoadingReviews ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                                </div>
+                            ) : reviews.length === 0 ? (
+                                <div className="text-center py-10">
+                                    <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <Star className="w-6 h-6 text-amber-300" />
+                                    </div>
+                                    <p className="text-sm text-slate-400 font-medium">No reviews yet.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Send a review request from a client's inspector panel.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {reviews.map(review => (
+                                        <div key={review.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50">
+                                            <div className="flex items-start justify-between gap-2 mb-2">
+                                                <div>
+                                                    <p className="font-bold text-slate-900 text-sm">{review.client_name}</p>
+                                                    <p className="text-xs text-slate-400">{new Date(review.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                                                </div>
+                                                {review.rating && (
+                                                    <div className="flex items-center gap-0.5 shrink-0">
+                                                        {[1,2,3,4,5].map(s => (
+                                                            <Star key={s} className={`w-3.5 h-3.5 ${s <= review.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}`} />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {review.review_text && (
+                                                <p className="text-sm text-slate-600 leading-relaxed">"{review.review_text}"</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -4373,10 +4480,20 @@ export default function CRM() {
                 </div>
                 
                 {/* Inspector Footer Actions */}
-                <div className="p-5 border-t border-slate-100 bg-slate-50/50 mt-auto">
+                <div className="p-5 border-t border-slate-100 bg-slate-50/50 mt-auto space-y-2">
+                    {/* Review request — only for active/billing clients */}
+                    {['Active Client', 'Monthly Billing', 'Closed Won'].includes(selectedInspectorLead.pipeline_stage) && (
+                        <button
+                            onClick={() => sendReviewRequest(selectedInspectorLead)}
+                            className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-200 text-amber-700 font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+                        >
+                            <Star className="w-4 h-4" />
+                            Send Review Request
+                        </button>
+                    )}
                     <button
                         onClick={() => handleDeleteLead(selectedInspectorLead.id, selectedInspectorLead.name)}
-                        className="w-full bg-red-50 hover:bg-red-500 hover:text-white border border-red-100 text-red-600 font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+                        className="w-full bg-red-50 hover:bg-red-500 hover:text-white border border-red-100 text-red-600 font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
                     >
                         <Trash2 className="w-4 h-4" />
                         Delete Lead
