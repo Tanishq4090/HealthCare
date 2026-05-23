@@ -13,6 +13,7 @@ export default function Billing() {
     const [searchParams] = useSearchParams();
     const currentMonthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
+    const [historySubTab, setHistorySubTab] = useState<'deposit' | 'service'>('deposit');
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -776,13 +777,20 @@ export default function Billing() {
                             <History className="w-5 h-5 text-primary" />
                             <h2 className="font-semibold text-slate-900">Recorded Collection Log</h2>
                         </div>
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input
-                                type="text"
-                                placeholder="Search transactions..."
-                                className="pl-9 pr-4 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all w-full sm:w-64"
-                            />
+                        {/* Sub-tab switcher */}
+                        <div className="flex items-center p-1 bg-white border border-slate-200 rounded-lg shrink-0">
+                            <button
+                                onClick={() => setHistorySubTab('deposit')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'deposit' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                            >
+                                Deposit Invoice History
+                            </button>
+                            <button
+                                onClick={() => setHistorySubTab('service')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'service' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                            >
+                                Service Invoice History
+                            </button>
                         </div>
                     </div>
 
@@ -803,73 +811,76 @@ export default function Billing() {
                         ) : (() => {
                             const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH')));
                             const servicePayments = payments.filter(p => p.payment_type === 'service' || (!p.payment_type && p.transaction_ref?.startsWith('TXN')));
-
-                            const PaymentCard = ({ rows, title, color }: { rows: any[], title: string, color: 'blue' | 'emerald' }) => (
-                                <div className={`flex-1 min-w-0 rounded-xl border overflow-hidden ${color === 'blue' ? 'border-blue-100' : 'border-emerald-100'}`}>
-                                    {/* Section header */}
-                                    <div className={`px-4 py-3 flex items-center gap-2 ${color === 'blue' ? 'bg-blue-50 border-b border-blue-100' : 'bg-emerald-50 border-b border-emerald-100'}`}>
-                                        <span className={`w-2 h-2 rounded-full inline-block ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
-                                        <span className={`text-xs font-bold uppercase tracking-widest ${color === 'blue' ? 'text-blue-700' : 'text-emerald-700'}`}>{title}</span>
-                                        <span className={`ml-auto text-xs font-semibold ${color === 'blue' ? 'text-blue-500' : 'text-emerald-500'}`}>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
-                                    </div>
-                                    {rows.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 ${color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
-                                                <RupeeIcon className={`text-lg ${color === 'blue' ? 'text-blue-300' : 'text-emerald-300'}`} />
-                                            </div>
-                                            <p className="text-sm text-slate-400 italic">No records yet.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left border-collapse">
-                                                <thead>
-                                                    <tr className="border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
-                                                        <th className="py-2.5 px-4">Date</th>
-                                                        <th className="py-2.5 px-4">Client</th>
-                                                        <th className="py-2.5 px-4">Ref ID</th>
-                                                        <th className="py-2.5 px-4">Amount</th>
-                                                        <th className="py-2.5 px-4 text-right">Status</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-50">
-                                                    {rows.map(payment => (
-                                                        <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
-                                                            <td className="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">
-                                                                {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                            </td>
-                                                            <td className="py-3 px-4">
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                                                                        {(payment.client_name || '?').charAt(0)}
-                                                                    </div>
-                                                                    <span className="text-sm font-semibold text-slate-900 truncate max-w-[100px]">{payment.client_name || <span className="text-slate-400 italic">Unknown</span>}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="py-3 px-4">
-                                                                <span className="text-xs font-bold text-slate-700 font-mono">{payment.transaction_ref}</span>
-                                                            </td>
-                                                            <td className="py-3 px-4">
-                                                                <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
-                                                            </td>
-                                                            <td className="py-3 px-4 text-right">
-                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                                                                    <CheckCircle2 className="w-3 h-3" />
-                                                                    Collected
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-                            );
+                            const rows = historySubTab === 'deposit' ? depositPayments : servicePayments;
+                            const color = historySubTab === 'deposit' ? 'blue' : 'emerald';
 
                             return (
-                                <div className="p-4 flex flex-col lg:flex-row gap-4 h-full">
-                                    <PaymentCard rows={depositPayments} title="Client Deposit Invoice History" color="blue" />
-                                    <PaymentCard rows={servicePayments} title="Client Service Invoice History" color="emerald" />
+                                <div>
+                                    {/* Record count bar */}
+                                    <div className={`px-6 py-2.5 flex items-center gap-2 border-b ${color === 'blue' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <span className={`w-2 h-2 rounded-full inline-block ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
+                                        <span className={`text-xs font-bold uppercase tracking-widest ${color === 'blue' ? 'text-blue-700' : 'text-emerald-700'}`}>
+                                            {historySubTab === 'deposit' ? 'Client Deposit Invoice History' : 'Client Service Invoice History'}
+                                        </span>
+                                        <span className={`ml-auto text-xs font-semibold ${color === 'blue' ? 'text-blue-500' : 'text-emerald-500'}`}>
+                                            {rows.length} record{rows.length !== 1 ? 's' : ''}
+                                        </span>
+                                    </div>
+
+                                    {rows.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                                            <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
+                                                <RupeeIcon className={`text-2xl ${color === 'blue' ? 'text-blue-300' : 'text-emerald-300'}`} />
+                                            </div>
+                                            <h3 className="text-base font-bold text-slate-900 mb-1">No Records Yet</h3>
+                                            <p className="text-slate-500 text-sm max-w-xs">
+                                                {historySubTab === 'deposit'
+                                                    ? 'Record a deposit collection from the Deposit Entries tab.'
+                                                    : 'Record a service payment from the Monthly Billing tab.'}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                                                    <th className="py-3 px-6">Date</th>
+                                                    <th className="py-3 px-6">Client</th>
+                                                    <th className="py-3 px-6">Reference ID</th>
+                                                    <th className="py-3 px-6">Amount</th>
+                                                    <th className="py-3 px-6 text-right">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {rows.map(payment => (
+                                                    <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                                                        <td className="py-4 px-6 text-sm text-slate-600">
+                                                            {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                        </td>
+                                                        <td className="py-4 px-6">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                                    {(payment.client_name || '?').charAt(0)}
+                                                                </div>
+                                                                <span className="text-sm font-semibold text-slate-900">{payment.client_name || <span className="text-slate-400 italic">Unknown Client</span>}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-6">
+                                                            <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
+                                                        </td>
+                                                        <td className="py-4 px-6">
+                                                            <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
+                                                        </td>
+                                                        <td className="py-4 px-6 text-right">
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                                Collected
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
                                 </div>
                             );
                         })()}
