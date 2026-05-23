@@ -2394,14 +2394,42 @@ export default function CRM() {
     };
 
     const convertToClient = async (leadId: string, leadName: string) => {
-        if (window.confirm(`Are you sure you want to convert ${leadName} to a permanent Client Master entry?`)) {
-            // Optimistic behavior: remove from pipeline view for snappiness
-            setLeads(prev => prev.filter(l => l.id !== leadId));
+        if (!window.confirm(`Convert "${leadName}" to a Client Master entry?\n\nThis will:\n• Create a permanent client record\n• Move the lead to Closed Won\n• Keep the full history`)) return;
 
-            // Add to log
-            fetchDeliveryLogs();
+        const toastId = toast.loading(`Converting ${leadName} to Client Master...`);
+        try {
+            const lead = leads.find(l => l.id === leadId);
 
-            toast.success(`${leadName} has been converted successfully!`);
+            // 1. Create entry in clients table (used by Billing, HR assignments)
+            const { error: clientError } = await supabase.from('clients').insert([{
+                id: leadId, // Use same UUID so worker_assignments can link by client_id
+                client_name: leadName,
+                phone_number: lead?.phone || lead?.whatsapp_number || null,
+                email: lead?.email || null,
+            }]);
+
+            // Ignore duplicate key error — client may already exist
+            if (clientError && !clientError.message.includes('duplicate') && !clientError.message.includes('unique')) {
+                throw new Error(clientError.message);
+            }
+
+            // 2. Move lead to Closed Won
+            const { error: stageError } = await supabase
+                .from('crm_leads')
+                .update({ pipeline_stage: 'Closed Won' })
+                .eq('id', leadId);
+            if (stageError) throw new Error(stageError.message);
+
+            // 3. Log the conversion
+            await logActivity(leadId, 'converted_to_client', `${leadName} converted to Client Master`, { lead_id: leadId });
+
+            // 4. Update local state
+            setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipeline_stage: 'Closed Won' } : l));
+
+            toast.success(`${leadName} is now a Client Master! ✅`, { id: toastId, duration: 4000 });
+        } catch (err: any) {
+            console.error('Conversion failed:', err);
+            toast.error(`Conversion failed: ${err.message}`, { id: toastId });
         }
     };
 

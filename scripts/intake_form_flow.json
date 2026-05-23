@@ -1,0 +1,338 @@
+{
+  "version": "5.1",
+  "routing_model": {
+    "SERVICE_SCREEN": ["LOCATION_COUNTRY"],
+    "LOCATION_COUNTRY": ["LOCATION_STATE"],
+    "LOCATION_STATE": ["LOCATION_CITY"],
+    "LOCATION_CITY": ["SERVICE_DETAILS"]
+  },
+  "screens": [
+
+    {
+      "id": "SERVICE_SCREEN",
+      "title": "Service & Details",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "service_form",
+            "children": [
+              { "type": "TextHeading", "text": "What service do you need?" },
+              {
+                "type": "Dropdown",
+                "label": "Service Required",
+                "name": "service",
+                "required": true,
+                "data-source": [
+                  { "id": "Nursing Care", "title": "Nursing Care" },
+                  { "id": "Maternity Care", "title": "Maternity Care" },
+                  { "id": "New Born Baby Care", "title": "New Born Baby Care" },
+                  { "id": "Japa Care (Post-Delivery)", "title": "Japa Care (Post-Delivery)" },
+                  { "id": "Old Age Care", "title": "Old Age Care" }
+                ]
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "label": "Shift Type",
+                "name": "shift_type",
+                "required": true,
+                "data-source": [
+                  { "id": "10-Hour Shift", "title": "10-Hour Shift" },
+                  { "id": "24-Hour Shift", "title": "24-Hour Shift" }
+                ]
+              },
+              { "type": "TextHeading", "text": "Your Details" },
+              {
+                "type": "TextInput",
+                "label": "Your Full Name",
+                "name": "name",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "e.g. Rajesh Patel"
+              },
+              {
+                "type": "TextInput",
+                "label": "Who is the care for?",
+                "name": "care_for",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "e.g. Mother, Father, Spouse, Self"
+              },
+              {
+                "type": "Footer",
+                "label": "Next: Location",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "LOCATION_COUNTRY" },
+                  "payload": {
+                    "service": "${form.service}",
+                    "shift_type": "${form.shift_type}",
+                    "name": "${form.name}",
+                    "care_for": "${form.care_for}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "LOCATION_COUNTRY",
+      "title": "Select Country",
+      "data": {
+        "service": { "type": "string", "__example__": "Nursing Care" },
+        "shift_type": { "type": "string", "__example__": "10-Hour Shift" },
+        "name": { "type": "string", "__example__": "Rajesh Patel" },
+        "care_for": { "type": "string", "__example__": "Mother" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "country_form",
+            "children": [
+              { "type": "TextHeading", "text": "Where are you located?" },
+              {
+                "type": "Dropdown",
+                "label": "Country",
+                "name": "country",
+                "required": true,
+                "data-source": [
+                  { "id": "India", "title": "India" },
+                  { "id": "USA", "title": "USA" },
+                  { "id": "UK", "title": "UK" },
+                  { "id": "Canada", "title": "Canada" },
+                  { "id": "Australia", "title": "Australia" },
+                  { "id": "Other", "title": "Other" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Next: State",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "LOCATION_STATE" },
+                  "payload": {
+                    "service": "${data.service}",
+                    "shift_type": "${data.shift_type}",
+                    "name": "${data.name}",
+                    "care_for": "${data.care_for}",
+                    "country": "${form.country}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "LOCATION_STATE",
+      "title": "Select State",
+      "data": {
+        "service": { "type": "string", "__example__": "Nursing Care" },
+        "shift_type": { "type": "string", "__example__": "10-Hour Shift" },
+        "name": { "type": "string", "__example__": "Rajesh Patel" },
+        "care_for": { "type": "string", "__example__": "Mother" },
+        "country": { "type": "string", "__example__": "India" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "state_form",
+            "children": [
+              { "type": "TextBody", "text": "Country: ${data.country}" },
+              {
+                "type": "Dropdown",
+                "label": "State / Province",
+                "name": "state",
+                "required": true,
+                "data-source": [
+                  { "id": "Gujarat", "title": "Gujarat" },
+                  { "id": "Maharashtra", "title": "Maharashtra" },
+                  { "id": "Rajasthan", "title": "Rajasthan" },
+                  { "id": "Delhi", "title": "Delhi" },
+                  { "id": "Karnataka", "title": "Karnataka" },
+                  { "id": "Tamil Nadu", "title": "Tamil Nadu" },
+                  { "id": "Uttar Pradesh", "title": "Uttar Pradesh" },
+                  { "id": "West Bengal", "title": "West Bengal" },
+                  { "id": "Madhya Pradesh", "title": "Madhya Pradesh" },
+                  { "id": "Punjab", "title": "Punjab" },
+                  { "id": "Haryana", "title": "Haryana" },
+                  { "id": "Telangana", "title": "Telangana" },
+                  { "id": "Andhra Pradesh", "title": "Andhra Pradesh" },
+                  { "id": "Kerala", "title": "Kerala" },
+                  { "id": "Other", "title": "Other" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Next: City",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "LOCATION_CITY" },
+                  "payload": {
+                    "service": "${data.service}",
+                    "shift_type": "${data.shift_type}",
+                    "name": "${data.name}",
+                    "care_for": "${data.care_for}",
+                    "country": "${data.country}",
+                    "state": "${form.state}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "LOCATION_CITY",
+      "title": "Select City",
+      "data": {
+        "service": { "type": "string", "__example__": "Nursing Care" },
+        "shift_type": { "type": "string", "__example__": "10-Hour Shift" },
+        "name": { "type": "string", "__example__": "Rajesh Patel" },
+        "care_for": { "type": "string", "__example__": "Mother" },
+        "country": { "type": "string", "__example__": "India" },
+        "state": { "type": "string", "__example__": "Gujarat" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "city_form",
+            "children": [
+              { "type": "TextBody", "text": "State: ${data.state}" },
+              {
+                "type": "Dropdown",
+                "label": "City",
+                "name": "city",
+                "required": true,
+                "data-source": [
+                  { "id": "Surat", "title": "Surat" },
+                  { "id": "Ahmedabad", "title": "Ahmedabad" },
+                  { "id": "Vadodara", "title": "Vadodara" },
+                  { "id": "Rajkot", "title": "Rajkot" },
+                  { "id": "Gandhinagar", "title": "Gandhinagar" },
+                  { "id": "Mumbai", "title": "Mumbai" },
+                  { "id": "Pune", "title": "Pune" },
+                  { "id": "Nagpur", "title": "Nagpur" },
+                  { "id": "Bangalore", "title": "Bangalore" },
+                  { "id": "Hyderabad", "title": "Hyderabad" },
+                  { "id": "Chennai", "title": "Chennai" },
+                  { "id": "Kolkata", "title": "Kolkata" },
+                  { "id": "Delhi", "title": "Delhi" },
+                  { "id": "Jaipur", "title": "Jaipur" },
+                  { "id": "Lucknow", "title": "Lucknow" },
+                  { "id": "Other", "title": "Other" }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "area",
+                "input-type": "text",
+                "label": "Area / Locality / Pincode",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Next: Service Dates",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "SERVICE_DETAILS" },
+                  "payload": {
+                    "service": "${data.service}",
+                    "shift_type": "${data.shift_type}",
+                    "name": "${data.name}",
+                    "care_for": "${data.care_for}",
+                    "country": "${data.country}",
+                    "state": "${data.state}",
+                    "city": "${form.city}",
+                    "area": "${form.area}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "SERVICE_DETAILS",
+      "title": "Service Dates",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "service": { "type": "string", "__example__": "Nursing Care" },
+        "shift_type": { "type": "string", "__example__": "10-Hour Shift" },
+        "name": { "type": "string", "__example__": "Rajesh Patel" },
+        "care_for": { "type": "string", "__example__": "Mother" },
+        "country": { "type": "string", "__example__": "India" },
+        "state": { "type": "string", "__example__": "Gujarat" },
+        "city": { "type": "string", "__example__": "Surat" },
+        "area": { "type": "string", "__example__": "Adajan" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "dates_form",
+            "children": [
+              { "type": "TextHeading", "text": "When do you need the service?" },
+              { "type": "TextBody", "text": "Service: ${data.service} | ${data.shift_type}" },
+              {
+                "type": "TextInput",
+                "name": "start_date",
+                "label": "Service Start Date",
+                "input-type": "text",
+                "required": true,
+                "helper-text": "e.g. 25 May 2026"
+              },
+              {
+                "type": "TextInput",
+                "name": "end_date",
+                "label": "Service End Date (optional)",
+                "input-type": "text",
+                "required": false,
+                "helper-text": "e.g. 25 June 2026"
+              },
+              {
+                "type": "Footer",
+                "label": "Submit Enquiry",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "name": "${data.name}",
+                    "service": "${data.service}",
+                    "shift_type": "${data.shift_type}",
+                    "care_for": "${data.care_for}",
+                    "country": "${data.country}",
+                    "state": "${data.state}",
+                    "city": "${data.city}",
+                    "area": "${data.area}",
+                    "start_date": "${form.start_date}",
+                    "end_date": "${form.end_date}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+  ]
+}
