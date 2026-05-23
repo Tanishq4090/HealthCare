@@ -1867,7 +1867,8 @@ export default function CRM() {
                             .eq('client_id', agentTargetLead.id)
                             .eq('assignment_status', 'active');
                     }
-                    toast.success(`Billing Invoice dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
+                    await handleMoveLead(agentTargetLead.id, 'Monthly Billing');
+                    toast.success(`Billing Invoice dispatched! Moved ${agentTargetLead.name} to Monthly Billing.`, { id: toastId, duration: 4000 });
                 }
                 // Default acknowledgment
                 else {
@@ -4512,7 +4513,12 @@ export default function CRM() {
                                                 });
                                                 const waData = await waResp.json();
                                                 if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
-                                                toast.success(`Invoice sent to ${lead.name} on WhatsApp! ✅`, { id: toastId, duration: 4000 });
+                                                // Move lead to Monthly Billing stage
+                                                await supabase
+                                                    .from('crm_leads')
+                                                    .update({ pipeline_stage: 'Monthly Billing' })
+                                                    .eq('id', ciLeadId || lead.id);
+                                                toast.success(`Invoice sent to ${lead.name} on WhatsApp! ✅ Moved to Monthly Billing.`, { id: toastId, duration: 4000 });
                                             } catch (err: any) {
                                                 toast.error(err.message || 'Failed to send invoice', { id: toastId });
                                             }

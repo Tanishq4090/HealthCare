@@ -527,6 +527,13 @@ export default function Billing() {
                     invoice_pdf_url: invoicePdfUrl,
                 })
                 .eq('id', agentTargetBill.id);
+            // 4. Move lead to Monthly Billing stage in CRM
+            if (agentTargetBill.client_id) {
+                await supabase
+                    .from('crm_leads')
+                    .update({ pipeline_stage: 'Monthly Billing' })
+                    .eq('id', agentTargetBill.client_id);
+            }
             setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent', invoice_pdf_url: invoicePdfUrl } : b));
             toast.success(`Invoice sent to ${agentTargetBill.client} on WhatsApp! ✅`, { id: billToastId, duration: 4000 });
         } catch (err: any) {
