@@ -409,16 +409,15 @@ export default function CRM() {
     });
 
     useEffect(() => {
-        localStorage.setItem('whatsappTemplates', JSON.stringify(whatsappTemplates));
-        
-        // Safe Cloud Sync
+        // Sync templates to DB only — do not write to localStorage
+        // localStorage is vulnerable to browser extensions and XSS
         const syncToCloud = async () => {
             try {
                 await supabase.from('automation_settings').upsert({ 
                     id: 'global', 
                     whatsapp_templates: whatsappTemplates 
                 }, { onConflict: 'id' });
-            } catch (e) { /* Fallback to local only if column doesn't exist */ }
+            } catch (e) { console.warn('Template cloud sync failed:', e); }
         };
         syncToCloud();
     }, [whatsappTemplates]);
@@ -622,13 +621,15 @@ export default function CRM() {
     const fetchLeadActivity = async (leadId: string) => {
         setIsLoadingActivity(true);
         try {
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('crm_lead_activity')
                 .select('*')
                 .eq('lead_id', leadId)
                 .order('created_at', { ascending: true });
+            if (error) throw error;
             setInspectorActivity(data || []);
-        } catch (e) {
+        } catch (e: any) {
+            console.error('Failed to load lead activity:', e.message);
             setInspectorActivity([]);
         } finally {
             setIsLoadingActivity(false);
@@ -667,10 +668,17 @@ export default function CRM() {
 
     // ── Inspector: Save a field (email or service_interest) ───────────────
     const saveInspectorField = async (leadId: string, field: string, value: string) => {
+        // Optimistic update
         setSelectedInspectorLead((prev: any) => prev ? { ...prev, [field]: value } : null);
         setLeads(prev => prev.map(l => l.id === leadId ? { ...l, [field]: value } : l));
         if (leadId.length >= 10) {
-            await supabase.from('crm_leads').update({ [field]: value }).eq('id', leadId);
+            const { error } = await supabase.from('crm_leads').update({ [field]: value }).eq('id', leadId);
+            if (error) {
+                console.error('saveInspectorField failed:', error.message);
+                toast.error('Failed to save field. Please try again.');
+                // Revert optimistic update
+                fetchLeads();
+            }
         }
     };
 
@@ -1002,10 +1010,13 @@ export default function CRM() {
             return;
         }
 
-        const confirmed = window.confirm(
-            `Send WhatsApp greeting to ${newInquiryLeads.length} lead(s) in "New Inquiry"?\n\n` +
-            newInquiryLeads.map(l => `• ${l.name}`).join('\n')
-        );
+        const confirmed = await new Promise<boolean>(resolve => {
+            toast(`Send WhatsApp greeting to ${newInquiryLeads.length} lead(s)?\n${newInquiryLeads.map(l => `• ${l.name}`).join(', ')}`, {
+                action: { label: 'Send', onClick: () => resolve(true) },
+                cancel: { label: 'Cancel', onClick: () => resolve(false) },
+                duration: 10000,
+            });
+        });
         if (!confirmed) return;
 
         setIsSimulatingInquiry(true);
@@ -1083,7 +1094,6 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            // Fetch leads directly — assigned_worker_name is stored on the lead row itself
             const { data, error } = await supabase
                 .from('crm_leads')
                 .select('*, crm_quotations(start_date, duration, created_at)')
@@ -1091,9 +1101,9 @@ export default function CRM() {
 
             if (error) throw error;
             setLeads(data || []);
-            
         } catch (err: any) {
             console.error('Error fetching leads:', err);
+            toast.error('Failed to load CRM leads. Please refresh the page.');
         } finally {
             setIsLoading(false);
         }
@@ -1449,7 +1459,6 @@ export default function CRM() {
             }
         };
         setWhatsappTemplates(updated);
-        localStorage.setItem('whatsappTemplates', JSON.stringify(updated));
 
         setIsEditingTemplate(false);
         toast.success("Default template saved successfully!");

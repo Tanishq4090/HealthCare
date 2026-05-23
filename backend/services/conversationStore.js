@@ -1,27 +1,33 @@
 /**
  * conversationStore.js
  * In-memory store for WhatsApp CRM conversations.
- * Replaces the need for a database in this prototype.
+ * Hard-capped at MAX_CONVERSATIONS to prevent memory exhaustion DoS.
  */
 
 const conversations = new Map();
+const MAX_CONVERSATIONS = 5000; // Hard cap — prevents memory exhaustion
 
 /**
  * Creates or retrieves a conversation for a given phone number.
  */
 export function getOrCreate(phone) {
     if (!conversations.has(phone)) {
+        // Enforce size cap — evict oldest conversation if at limit
+        if (conversations.size >= MAX_CONVERSATIONS) {
+            const oldestKey = conversations.keys().next().value;
+            conversations.delete(oldestKey);
+        }
         conversations.set(phone, {
             id: "conv_" + Date.now() + Math.floor(Math.random() * 1000),
             phone,
-            name: phone, // Defaults to phone until we get a profile name
+            name: phone,
             leadId: null,
             leadStage: "New Lead",
             lastMessage: "",
             lastMessageTime: new Date().toISOString(),
             unread: 0,
-            aiEnabled: true, // Auto-reply with Gemini by default
-            aiResponseCount: 0, // Track AI replies for cost control
+            aiEnabled: true,
+            aiResponseCount: 0,
             messages: []
         });
     }

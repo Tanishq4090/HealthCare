@@ -56,64 +56,56 @@ export default function Billing() {
     const fetchBillingData = async () => {
         setIsLoading(true);
         try {
-            // Fetch worker assignments joined with clients and employees
-            const { data, error } = await supabase
-                .from('worker_assignments')
-                .select(`
-                    id,
-                    employee_id,
-                    start_date,
-                    end_date,
-                    deposit_amount,
-                    deposit_paid,
-                    advance_paid,
-                    client_billing_rate,
-                    deposit_invoice_sent,
-                    invoice_pdf_url,
-                    assigned_at,
-                    final_invoice_generated,
-                    final_invoice_number,
-                    hours_per_day,
-                    assignment_status,
-                    clients (client_name, phone_number, id),
-                    employees (id, full_name, job_title, phone, monthly_daily_rate, short_term_daily_rate, preferred_payment_type, hourly_rate, shift_hours)
-                `)
-                .neq('assignment_status', 'cancelled')
-                .order('assigned_at', { ascending: false });
+            // Run all 4 queries in parallel for ~3x faster load
+            const [assignmentsResult, leadsResult, quotesResult, servicePaymentsResult] = await Promise.all([
+                supabase
+                    .from('worker_assignments')
+                    .select(`
+                        id,
+                        employee_id,
+                        start_date,
+                        end_date,
+                        deposit_amount,
+                        deposit_paid,
+                        advance_paid,
+                        client_billing_rate,
+                        deposit_invoice_sent,
+                        invoice_pdf_url,
+                        assigned_at,
+                        final_invoice_generated,
+                        final_invoice_number,
+                        hours_per_day,
+                        assignment_status,
+                        clients (client_name, phone_number, id),
+                        employees (id, full_name, job_title, phone, monthly_daily_rate, short_term_daily_rate, preferred_payment_type, hourly_rate, shift_hours)
+                    `)
+                    .neq('assignment_status', 'cancelled')
+                    .order('assigned_at', { ascending: false }),
+                supabase.from('crm_leads').select('id, estimated_value_monthly'),
+                supabase.from('crm_quotations').select('lead_id, complete_month_rate, start_date, deposit').order('created_at', { ascending: true }),
+                supabase.from('payments').select('client_name').eq('payment_type', 'service'),
+            ]);
 
+            const { data, error } = assignmentsResult;
             if (error) throw error;
 
             let leadsMap: Record<string, number> = {};
             let activeLeadIds = new Set<string>();
-            try {
-                const { data: leads } = await supabase
-                    .from('crm_leads')
-                    .select('id, estimated_value_monthly');
-                if (leads) {
-                    leads.forEach(l => {
-                        activeLeadIds.add(l.id);
-                        if (l.estimated_value_monthly) {
-                            leadsMap[l.id] = l.estimated_value_monthly;
-                        }
-                    });
-                }
-            } catch (err) {
-                console.warn('Could not fetch crm_leads rates:', err);
+            if (leadsResult.data) {
+                leadsResult.data.forEach((l: any) => {
+                    activeLeadIds.add(l.id);
+                    if (l.estimated_value_monthly) leadsMap[l.id] = l.estimated_value_monthly;
+                });
             }
 
             let quotesMap: Record<string, any> = {};
-            try {
-                const { data: quotes } = await supabase
-                    .from('crm_quotations')
-                    .select('lead_id, complete_month_rate, start_date, deposit')
-                    .order('created_at', { ascending: true });
-                if (quotes) {
-                    quotes.forEach(q => {
-                        quotesMap[q.lead_id] = q;
-                    });
-                }
-            } catch (err) {
-                console.warn('Could not fetch crm_quotations:', err);
+            if (quotesResult.data) {
+                quotesResult.data.forEach((q: any) => { quotesMap[q.lead_id] = q; });
+            }
+
+            const paidClients = new Set<string>();
+            if (servicePaymentsResult.data) {
+                servicePaymentsResult.data.forEach((p: any) => { if (p.client_name) paidClients.add(p.client_name); });
             }
 
             if (data) {
@@ -244,7 +236,7 @@ export default function Billing() {
                     amount: depositAmount,
                     client_name: deposit.client,
                     recorded_by: 'admin',
-                    transaction_ref: `${depositMethod.toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+                    transaction_ref: `${depositMethod.toUpperCase()}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`,
                     payment_date: new Date().toISOString(),
                     payment_type: 'deposit'
                 }]);
@@ -293,7 +285,7 @@ export default function Billing() {
 
             setIsLoading(true);
             try {
-                const txnId = `TXN-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+                const txnId = `TXN-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
                 
                 // 1. Record in Payments table
                 const { error: payError } = await supabase.from('payments').insert([{
@@ -429,11 +421,12 @@ export default function Billing() {
                 
                 toast.loading("Sending via WhatsApp...", { id: toastId });
 
-                let phoneDigits = '917575041313'; 
+                let phoneDigits = '';
                 if (agentTargetBill.client_phone) {
                     phoneDigits = agentTargetBill.client_phone.replace(/\D/g, '');
                     if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
                 }
+                if (!phoneDigits) throw new Error(`No phone number on file for ${agentTargetBill.client}. Please update the client's contact details.`);
 
                 const waResp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                     method: 'POST',
@@ -501,8 +494,9 @@ export default function Billing() {
             if (!invoicePdfUrl) throw new Error('Invoice generated but no PDF URL returned');
             toast.loading('Sending via WhatsApp...', { id: billToastId });
             // 2. Send client_monthly_invoice template
-            let phoneDigits = agentTargetBill.client_phone?.replace(/\D/g, '') || '917575041313';
+            let phoneDigits = agentTargetBill.client_phone?.replace(/\D/g, '') || '';
             if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+            if (!phoneDigits) throw new Error(`No phone number on file for ${agentTargetBill.client}. Please update the client's contact details.`);
             const waResp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
