@@ -60,3 +60,17 @@ export const getAllAttendance = async () => {
   if (error) throw error;
   return data;
 };
+
+/**
+ * Batch upsert attendance records in a single DB call.
+ * Uses Supabase upsert with onConflict to handle existing records atomically.
+ * This replaces the loop-based approach to prevent partial writes on crash.
+ */
+export const batchUpsertAttendance = async (payloads) => {
+  const { data, error } = await supabase
+    .from('attendance')
+    .upsert(payloads, { onConflict: 'worker_id,duty_date' })
+    .select();
+  if (error) throw error;
+  return data;
+};

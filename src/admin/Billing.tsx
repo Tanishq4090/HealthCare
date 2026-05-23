@@ -224,20 +224,10 @@ export default function Billing() {
 
 
     const handleGenerateDepositInvoice = async (id: string, clientName: string) => {
-        const fakeInvoiceNo = `INV-D${Math.floor(Math.random() * 1000) + 500}`;
-        
-        const { error } = await supabase
-            .from('worker_assignments')
-            .select('id') // Dummy call to avoid broken chain
-            .eq('id', id);
-
-        if (error) {
-            toast.error("Failed to update invoice in database");
-            return;
-        }
-
-        fetchBillingData();
-        toast.success(`System auto-generated Deposit Invoice ${fakeInvoiceNo}. PDF emailed automatically to ${clientName}!`);
+        // This function is no longer used — deposit invoices are generated
+        // via the "Prepare Invoice" button which opens the AI WhatsApp Agent modal.
+        // Keeping as a no-op to avoid breaking any lingering references.
+        console.warn('[Billing] handleGenerateDepositInvoice called but is deprecated. Use openAgentModal instead.');
     };
 
     const handleCollectDeposit = async (e: React.FormEvent) => {
@@ -328,12 +318,21 @@ export default function Billing() {
         }
     };
 
-    const handleSaveBill = (e: React.FormEvent) => {
+    const handleSaveBill = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (editingBill) {
+        if (!editingBill) return;
+        try {
+            const { error } = await supabase
+                .from('worker_assignments')
+                .update({ client_billing_rate: parseFloat(editingBill.amount.replace(/[^\d.-]/g, '')) || 0 })
+                .eq('id', editingBill.id);
+            if (error) throw error;
             setMonthlyBills(prev => prev.map(b => b.id === editingBill.id ? editingBill : b));
             toast.success(`Bill for ${editingBill.client} updated successfully.`);
             setIsEditBillModalOpen(false);
+        } catch (err: any) {
+            console.error('Error saving bill:', err);
+            toast.error('Failed to save bill changes to database.');
         }
     };
 

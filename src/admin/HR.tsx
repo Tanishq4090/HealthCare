@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
-import { MOCK_WORKERS, MOCK_PAYROLL } from '../data/mockWorkers';
+import { MOCK_PAYROLL } from '../data/mockWorkers';
 import { format } from 'date-fns';
 import WorkerAllocation from '../components/hr/WorkerAllocation';
 import AssignmentAttendancePanel from '../components/hr/AssignmentAttendancePanel';
@@ -615,21 +615,31 @@ export default function HR() {
             // 4. If admin manually sets status to 'Active' (bypassing WhatsApp confirm): advance lead to 'Active Client'
 
             if (newClient && (modalMode === 'add' || clientChanged || formData.assigned_client !== originalWorkerData?.assigned_client)) {
-                // Advance new client lead to Staff Assigned (only from earlier stages)
-                await supabase.from('crm_leads')
-                    .update({ pipeline_stage: 'Staff Assigned' })
-                    .eq('name', newClient)
-                    .in('pipeline_stage', ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted']);
-                toast.success(`Pipeline: ${newClient} advanced to Staff Assigned`);
+                // Look up lead ID by name to avoid updating wrong lead if names match
+                const matchedLead = pipelineLeads.find((l: any) =>
+                    l.name?.toLowerCase().trim() === newClient.toLowerCase().trim()
+                );
+                if (matchedLead?.id) {
+                    await supabase.from('crm_leads')
+                        .update({ pipeline_stage: 'Staff Assigned' })
+                        .eq('id', matchedLead.id)
+                        .in('pipeline_stage', ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted']);
+                    toast.success(`Pipeline: ${newClient} advanced to Staff Assigned`);
+                }
             }
 
             // If admin is manually confirming the employee as assigned (bypass the WhatsApp flow)
             if (['active', 'assigned'].includes(resolvedStatus) && newClient) {
-                await supabase.from('crm_leads')
-                    .update({ pipeline_stage: 'Active Client' })
-                    .eq('name', newClient)
-                    .eq('pipeline_stage', 'Staff Assigned');
-                toast.success(`Pipeline: ${newClient} confirmed as Active Client`);
+                const matchedLead = pipelineLeads.find((l: any) =>
+                    l.name?.toLowerCase().trim() === newClient.toLowerCase().trim()
+                );
+                if (matchedLead?.id) {
+                    await supabase.from('crm_leads')
+                        .update({ pipeline_stage: 'Active Client' })
+                        .eq('id', matchedLead.id)
+                        .eq('pipeline_stage', 'Staff Assigned');
+                    toast.success(`Pipeline: ${newClient} confirmed as Active Client`);
+                }
             }
 
             setIsModalOpen(false);
@@ -706,20 +716,19 @@ export default function HR() {
         setIsSubmitting(true);
 
         try {
-            // Optimistic Update
-            setPayrollItems(prev => prev.map(p => p.id === editingPayroll.id ? editingPayroll : p));
-            setIsEditPayrollModalOpen(false);
-
-            // Try saving to DB if it's connected
-            await supabase.from('payroll').update({
+            const { error } = await supabase.from('payroll').update({
                 days_worked: editingPayroll.days_worked,
                 net_balance: editingPayroll.net_balance
             }).eq('id', editingPayroll.id);
 
+            if (error) throw error;
+
+            setPayrollItems(prev => prev.map(p => p.id === editingPayroll.id ? editingPayroll : p));
+            setIsEditPayrollModalOpen(false);
             toast.success(`Payslip for ${editingPayroll.worker} updated successfully.`);
         } catch (error: any) {
             console.error("Error updating payroll", error);
-            // It might fail if DB is disconnected, but since we optimistically updated, it's fine for the demo.
+            toast.error(`Failed to save payroll: ${error.message}`);
         } finally {
             setIsSubmitting(false);
         }
