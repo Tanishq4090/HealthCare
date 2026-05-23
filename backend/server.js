@@ -57,7 +57,17 @@ app.use((req, res, next) => {
 });
 
 app.use(helmet({
-  contentSecurityPolicy: false, // Prevents breaking inline scripts if serving views
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://*.supabase.co", "https://graph.facebook.com"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true }
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? "combined" : "dev"));
@@ -73,11 +83,22 @@ const globalLimiter = rateLimit({
 app.use("/api/", globalLimiter);
 
 app.use(cors({
-  origin: "*",
+  origin: process.env.FRONTEND_ORIGIN
+    ? process.env.FRONTEND_ORIGIN.split(',').map(o => o.trim())
+    : ['http://localhost:5173'],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["*"],
+  allowedHeaders: ["Content-Type", "Authorization", "apikey"],
+  credentials: true,
 }));
 
+// Capture raw body for Meta webhook HMAC verification — must be before express.json()
+app.use("/api/whatsapp/webhook", express.raw({ type: 'application/json' }), (req, _res, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    req.rawBody = req.body;
+    req.body = JSON.parse(req.body.toString());
+  }
+  next();
+});
 app.use("/api/whatsapp/webhook", express.urlencoded({ extended: false }));
 app.use(express.json());
 

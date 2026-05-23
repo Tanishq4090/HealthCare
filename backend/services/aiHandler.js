@@ -72,6 +72,7 @@ Rules for you (the AI):
 const sessions = new Map();
 const sessionTimers = new Map();
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_SESSIONS = 5000; // Hard cap to prevent memory exhaustion DoS
 
 function resetSessionTimer(phone) {
   if (sessionTimers.has(phone)) clearTimeout(sessionTimers.get(phone));
@@ -125,6 +126,17 @@ async function analyzeIntent(message) {
  */
 export async function processMessage(phone, message, messageCount = 0) {
   if (!sessions.has(phone)) {
+    // Enforce session cap — evict oldest expired sessions first, then reject if still full
+    if (sessions.size >= MAX_SESSIONS) {
+      const now = Date.now();
+      for (const [key, val] of sessions) {
+        const timer = sessionTimers.get(key);
+        if (!timer) { sessions.delete(key); sessionTimers.delete(key); break; }
+      }
+      if (sessions.size >= MAX_SESSIONS) {
+        return { reply: "Service is temporarily busy. Please try again in a few minutes.", history: [] };
+      }
+    }
     sessions.set(phone, { history: [], state: 'idling', intent: 'GENERAL' });
   }
   

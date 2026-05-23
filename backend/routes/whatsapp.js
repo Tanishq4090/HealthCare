@@ -4,6 +4,7 @@
  */
 
 import express from "express";
+import { createHmac, timingSafeEqual } from "crypto";
 import { generateOTP, verifyOTP, hasActiveOTP } from "../services/otpService.js";
 import { processMessage } from "../services/aiHandler.js";
 import {
@@ -39,6 +40,7 @@ const {
   META_ACCESS_TOKEN,
   META_PHONE_NUMBER_ID,
   META_WEBHOOK_VERIFY_TOKEN,
+  META_APP_SECRET,
   DEV_MODE,
 } = process.env;
 
@@ -46,6 +48,28 @@ const {
 let broadcastFn = null;
 export function setWss(fn) { broadcastFn = fn; }
 export function broadcast(event, data) { broadcastFn?.(event, data); }
+
+/**
+ * Verify Meta webhook HMAC-SHA256 signature.
+ * Meta signs the raw body with the app secret and sends it in X-Hub-Signature-256.
+ */
+function verifyMetaSignature(req) {
+  // Skip verification in dev mode or if app secret not configured
+  if (DEV_MODE?.trim() === 'true' || !META_APP_SECRET) return true;
+
+  const signature = req.headers['x-hub-signature-256'];
+  if (!signature) return false;
+
+  const rawBody = req.rawBody; // Set by express.json verify callback in server.js
+  if (!rawBody) return false;
+
+  const expected = `sha256=${createHmac('sha256', META_APP_SECRET).update(rawBody).digest('hex')}`;
+  try {
+    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
 
 // ── CRM: Get all conversations ────────────────────────────────────────────────
 router.get("/conversations", requireAuth, (_req, res) => {
@@ -107,16 +131,16 @@ router.post("/conversations/:phone/send", [
   }
 });
 
-// ── Booking confirmation message ──────────────────────────────────────────────
+// ── Booking confirmation message (requires auth — prevents API abuse) ─────────
 router.post("/send-booking-confirmation", [
   body("phone").trim().isString().notEmpty(),
-  body("name").trim().isString().notEmpty().escape(), // Escape names/locations to prevent basic XSS
+  body("name").trim().isString().notEmpty().escape(),
   body("service").trim().isString().notEmpty().escape(),
   body("date").trim().isString().notEmpty().escape(),
   body("time").trim().isString().notEmpty().escape(),
   body("location").trim().isString().notEmpty().escape(),
   validateStrict
-], async (req, res) => {
+], requireAuth, async (req, res) => {
   const payload = req.body;
   
   try {
@@ -125,7 +149,6 @@ router.post("/send-booking-confirmation", [
     res.json({ success: true });
   } catch (err) {
     console.error("[Booking confirmation] Failed:", err.message);
-    // Don't fail the whole booking if WhatsApp fails
     res.json({ success: false, warning: err.message });
   }
 });
@@ -167,8 +190,8 @@ router.post("/send-otp", otpLimiter, [
 
 // ── OTP: Verify ───────────────────────────────────────────────────────────────
 router.post("/verify-otp", otpLimiter, [
-  body("phone").trim().isString().notEmpty(),
-  body("code").trim().isString().notEmpty(),
+  body("phone").trim().isString().matches(/^\+\d{7,15}$/).withMessage("Invalid phone format"),
+  body("code").trim().isString().isLength({ min: 6, max: 6 }).isNumeric(),
   validateStrict
 ], (req, res) => {
   const { phone, code } = req.body;
@@ -191,6 +214,12 @@ router.get("/webhook", (req, res) => {
 
 // ── Meta webhook: inbound messages ───────────────────────────────────────────
 router.post("/webhook", (req, res) => {
+  // Verify Meta HMAC-SHA256 signature before processing
+  if (!verifyMetaSignature(req)) {
+    console.warn('[Webhook] ⚠️ Invalid signature — rejected');
+    return res.sendStatus(403);
+  }
+
   res.sendStatus(200);
   try {
     const messages = req.body?.entry?.[0]?.changes?.[0]?.value?.messages;
