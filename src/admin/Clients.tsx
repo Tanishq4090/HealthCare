@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -58,13 +58,24 @@ export default function Clients() {
     };
 
     const handleRemoveFromPipeline = async (client: any) => {
+        const isArchived = client.status === 'Archived';
+
+        if (isArchived) {
+            // Add back to pipeline — move to Closed Won
+            try {
+                await supabase.from('crm_leads').update({ pipeline_stage: 'Closed Won' }).eq('id', client.id);
+                setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Closed Won' } : c));
+                toast.success(`${client.name} added back to pipeline as Closed Won.`);
+            } catch (err: any) {
+                toast.error(`Failed: ${err.message}`);
+            }
+            return;
+        }
+
         toast(`Remove "${client.name}" from CRM pipeline?`, {
             action: { label: 'Remove', onClick: async () => {
                 try {
-                    // Set pipeline_stage to null — removes from CRM kanban
-                    // but keeps the clients table record so they stay in Client Master Database
                     await supabase.from('crm_leads').update({ pipeline_stage: null }).eq('id', client.id);
-                    // Update local status to show as archived
                     setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Archived' } : c));
                     toast.success(`${client.name} removed from pipeline. Still visible in Client Master.`);
                 } catch (err: any) {
@@ -195,18 +206,20 @@ export default function Clients() {
         try {
             // 1. Fetch leads in client stages WITH their pipeline_stage
             // Also include leads with null pipeline_stage (removed from pipeline but still clients)
-            const { data: leads, error: leadsError } = await supabase
-                .from('crm_leads')
-                .select('id, pipeline_stage')
-                .or('pipeline_stage.in.(Active Client,Monthly Billing,Closed Won),pipeline_stage.is.null');
+            const [activeLeadsResult, archivedLeadsResult] = await Promise.all([
+                supabase.from('crm_leads').select('id, pipeline_stage')
+                    .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
+                supabase.from('crm_leads').select('id, pipeline_stage')
+                    .is('pipeline_stage', null)
+            ]);
 
-            if (leadsError) throw leadsError;
+            if (activeLeadsResult.error) throw activeLeadsResult.error;
 
-            // Only include leads that have a corresponding clients table record
-            const clientIds = (leads || []).map(l => l.id);
+            const allLeads = [...(activeLeadsResult.data || []), ...(archivedLeadsResult.data || [])];
+            const clientIds = allLeads.map(l => l.id);
             // Build a map of lead_id -> pipeline_stage for status badge
             const stageMap: Record<string, string> = {};
-            (leads || []).forEach(l => { stageMap[l.id] = l.pipeline_stage || 'Archived'; });
+            allLeads.forEach(l => { stageMap[l.id] = l.pipeline_stage || 'Archived'; });
 
             // 2. Fetch records from the clients table for these lead IDs
             let clientData = [];
@@ -396,10 +409,17 @@ export default function Clients() {
                                         )}
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleRemoveFromPipeline(client); }}
-                                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                            title="Remove from pipeline"
+                                            className={`p-2 rounded-xl transition-all border ${
+                                                client.status === 'Archived'
+                                                    ? 'text-emerald-600 hover:bg-emerald-50 border-transparent hover:border-emerald-100'
+                                                    : 'text-slate-400 hover:text-red-500 hover:bg-red-50 border-transparent hover:border-red-100'
+                                            }`}
+                                            title={client.status === 'Archived' ? 'Add back to pipeline' : 'Remove from pipeline'}
                                         >
-                                            <UserMinus className="w-4 h-4" />
+                                            {client.status === 'Archived'
+                                                ? <Plus className="w-4 h-4" />
+                                                : <UserMinus className="w-4 h-4" />
+                                            }
                                         </button>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
