@@ -134,7 +134,7 @@ export default function Clients() {
                 body: {
                     phone: phoneDigits,
                     useTemplate: true,
-                    templateName: 'customer_review_request', // Ensure this exists in Meta Dashboard
+                    templateName: 'client_review_request',
                     templateParams: [firstName]
                 }
             });
