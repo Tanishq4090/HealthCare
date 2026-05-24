@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -17,8 +17,97 @@ export default function Clients() {
     const [editingClient, setEditingClient] = useState<any>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Monthly slider state
+    const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
+
+    // Restart Service modal state
+    const [restartModal, setRestartModal] = useState<any>(null);
+    const [restartStartDate, setRestartStartDate] = useState('');
+    const [restartEndDate, setRestartEndDate] = useState('');
+    const [restartWorkers, setRestartWorkers] = useState<any[]>([]);
+    const [restartSelectedWorker, setRestartSelectedWorker] = useState<any>(null);
+    const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
+
     const toggleWorkflow = (key: keyof typeof workflows) => {
         setWorkflows(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const monthLabel = (m: string) => {
+        const [y, mo] = m.split('-');
+        return new Date(Number(y), Number(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+    };
+
+    const prevMonth = () => {
+        const [y, m] = selectedMonth.split('-').map(Number);
+        const d = new Date(y, m - 2);
+        setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    };
+
+    const nextMonth = () => {
+        const [y, m] = selectedMonth.split('-').map(Number);
+        const now = new Date();
+        const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const next = new Date(y, m);
+        const nextKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+        if (nextKey <= nowKey) setSelectedMonth(nextKey);
+    };
+
+    const handleRemoveFromPipeline = async (client: any) => {
+        toast(`Remove "${client.name}" from pipeline?`, {
+            action: { label: 'Remove', onClick: async () => {
+                try {
+                    await supabase.from('crm_leads').update({ pipeline_stage: 'Lost' }).eq('id', client.id);
+                    setClients(prev => prev.filter(c => c.id !== client.id));
+                    toast.success(`${client.name} removed from pipeline.`);
+                } catch (err: any) {
+                    toast.error(`Failed: ${err.message}`);
+                }
+            }},
+            cancel: { label: 'Cancel', onClick: () => {} },
+            duration: 8000,
+        });
+    };
+
+    const openRestartModal = async (client: any) => {
+        setRestartModal(client);
+        setRestartStartDate('');
+        setRestartEndDate('');
+        setRestartSelectedWorker(null);
+        // Fetch available workers
+        const { data } = await supabase.from('employees').select('id, full_name, job_title, status').eq('status', 'available');
+        setRestartWorkers(data || []);
+    };
+
+    const handleRestartService = async () => {
+        if (!restartStartDate) return toast.error('Please select a start date.');
+        if (!restartSelectedWorker) return toast.error('Please select a staff member.');
+        setIsRestartSubmitting(true);
+        try {
+            // 1. Move lead back to Active Client
+            await supabase.from('crm_leads').update({ pipeline_stage: 'Active Client' }).eq('id', restartModal.id);
+            // 2. Create new worker assignment
+            await supabase.from('worker_assignments').insert([{
+                client_id: restartModal.id,
+                employee_id: restartSelectedWorker.id,
+                start_date: restartStartDate,
+                end_date: restartEndDate || null,
+                assignment_status: 'active',
+                assigned_at: new Date().toISOString(),
+            }]);
+            // 3. Update worker status
+            await supabase.from('employees').update({ status: 'assigned', assigned_client: restartModal.name }).eq('id', restartSelectedWorker.id);
+            setClients(prev => prev.map(c => c.id === restartModal.id ? { ...c, status: 'Active Client' } : c));
+            toast.success(`Service restarted for ${restartModal.name}! Moved to Active Client. ✅`);
+            setRestartModal(null);
+            fetchClients();
+        } catch (err: any) {
+            toast.error(`Failed to restart service: ${err.message}`);
+        } finally {
+            setIsRestartSubmitting(false);
+        }
     };
 
     const openEditModal = (client: any) => {
@@ -170,7 +259,8 @@ export default function Clients() {
                 workerCount: workerMap[c.client_name]?.workerCount || 0,
                 activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
                 lifetimeValue: '₹0',
-                securityDeposit: depositMap[c.id] || 0
+                securityDeposit: depositMap[c.id] || 0,
+                created_at: c.created_at,
             }));
 
             setClients(enrichedClients);
@@ -203,7 +293,7 @@ export default function Clients() {
             <div className="grid lg:grid-cols-3 gap-6 flex-1">
                 {/* Client List */}
                 <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3">
                         <div className="relative flex-1 max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                             <input
@@ -212,9 +302,30 @@ export default function Clients() {
                                 className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                             />
                         </div>
+                        {/* Month slider */}
+                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden shrink-0">
+                            <button onClick={prevMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm">‹</button>
+                            <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[120px] text-center border-x border-slate-200">{monthLabel(selectedMonth)}</span>
+                            <button onClick={nextMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30"
+                                disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; })()}>›</button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-3">
-                        {clients.map(client => (
+                        {(() => {
+                            const filtered = clients.filter(c => {
+                                if (!c.created_at) return true;
+                                const d = new Date(c.created_at);
+                                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                                return key === selectedMonth;
+                            });
+                            if (filtered.length === 0) return (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <Calendar className="w-10 h-10 text-slate-200 mb-3" />
+                                    <p className="text-sm font-semibold text-slate-500">No clients joined in {monthLabel(selectedMonth)}</p>
+                                    <p className="text-xs text-slate-400 mt-1">Use the arrows to browse other months.</p>
+                                </div>
+                            );
+                            return filtered.map(client => (
                             <div key={client.id} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-3">
@@ -253,16 +364,31 @@ export default function Clients() {
                                         </p>
                                         <p className="text-sm font-bold text-emerald-700">₹{client.securityDeposit.toLocaleString()}</p>
                                     </div>
-                                    <div className="col-span-2 flex items-center gap-2">
+                                    <div className="col-span-2 flex items-center gap-2 flex-wrap">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleRequestReview(client); }}
-                                            className="flex-1 px-4 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                            className="flex-1 px-3 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5 shadow-sm"
                                         >
-                                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> WhatsApp Review
+                                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> Review
                                         </button>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); openEditModal(client); }} 
-                                            className="p-2.5 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
+                                        {client.status === 'Closed Won' && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); openRestartModal(client); }}
+                                                className="flex-1 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                                            >
+                                                <RotateCcw className="w-3.5 h-3.5" /> Restart Service
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleRemoveFromPipeline(client); }}
+                                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Remove from pipeline"
+                                        >
+                                            <UserMinus className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
+                                            className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
                                             title="Edit Profile"
                                         >
                                             <Edit2 className="w-4 h-4" />
@@ -270,7 +396,8 @@ export default function Clients() {
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                        ));
+                        })()}
                     </div>
                 </div>
 
@@ -408,6 +535,71 @@ export default function Clients() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Restart Service Modal */}
+            {restartModal && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-emerald-50 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-emerald-100 rounded-lg flex items-center justify-center">
+                                    <RotateCcw className="w-5 h-5 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-slate-900">Restart Service</h2>
+                                    <p className="text-xs text-slate-500">{restartModal.name}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setRestartModal(null)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-white/50 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date *</label>
+                                    <input type="date" value={restartStartDate} onChange={e => setRestartStartDate(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
+                                    <input type="date" value={restartEndDate} onChange={e => setRestartEndDate(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Assign Staff Member *</label>
+                                {restartWorkers.length === 0 ? (
+                                    <p className="text-sm text-slate-400 italic py-2">No available staff members. Please mark a worker as available in HR first.</p>
+                                ) : (
+                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                        {restartWorkers.map(w => (
+                                            <button key={w.id} onClick={() => setRestartSelectedWorker(w)}
+                                                className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors flex items-center gap-2 ${restartSelectedWorker?.id === w.id ? 'border-primary bg-primary/5 text-primary font-bold' : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}>
+                                                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                    {w.full_name?.charAt(0)}
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold">{w.full_name}</p>
+                                                    <p className="text-xs text-slate-400">{w.job_title}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                            <button onClick={() => setRestartModal(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
+                            <button onClick={handleRestartService} disabled={isRestartSubmitting || !restartStartDate || !restartSelectedWorker}
+                                className="flex-1 py-2.5 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                                {isRestartSubmitting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                                Restart Service
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
