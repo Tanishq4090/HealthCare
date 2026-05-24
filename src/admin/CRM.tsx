@@ -1,5 +1,6 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star, QrCode } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
@@ -10,6 +11,7 @@ import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 import {
+    findClientMasterByPhone,
     isLegacyPipelineStage,
     isPipelineVisibleLead,
     NEW_LEAD_PIPELINE_STAGE,
@@ -522,6 +524,7 @@ export default function CRM() {
     // Voice AI State
     const [calls, setCalls] = useState<any[]>([]);
     const [isLoadingVoice, setIsLoadingVoice] = useState(true);
+    const [capturingCallId, setCapturingCallId] = useState<string | number | null>(null);
     const [voiceMetrics, setVoiceMetrics] = useState({
         totalCallsToday: 0,
         avgDurationSeconds: 0,
@@ -2533,69 +2536,89 @@ export default function CRM() {
         }
     };
 
-    const createLeadFromVoiceCall = async (
-        call: {
-            id: string | number;
-            phone?: string;
-            capturedName?: string;
-            capturedWhatsapp?: string;
-            capturedValue?: number;
-        },
-        opts?: { duplicateOfId?: string; skipReturningCheck?: boolean }
-    ) => {
+    type VoiceCallSnapshot = {
+        id: string | number;
+        phone?: string;
+        capturedName?: string;
+        capturedWhatsapp?: string;
+        capturedValue?: number;
+    };
+
+    const resolveVoiceCallPhone = (call: VoiceCallSnapshot) => {
         const leadPhone = !call.phone || call.phone === 'Unknown Number' ? '' : call.phone;
         const leadWhatsapp =
             !call.capturedWhatsapp || call.capturedWhatsapp === 'Unknown Number' ? '' : call.capturedWhatsapp;
-        const phoneForLookup = leadPhone || leadWhatsapp;
+        return { leadPhone, leadWhatsapp, phoneForLookup: leadPhone || leadWhatsapp };
+    };
 
-        if (!opts?.skipReturningCheck && phoneLast10(phoneForLookup).length >= 10) {
-            const existingClient = await findExistingClientByPhone(phoneForLookup);
-            if (existingClient) {
-                setReturningClientModal({
-                    phone: phoneForLookup,
-                    name: call.capturedName || 'Voice Lead',
-                    existingClient,
-                    pendingLeadData: {
-                        kind: 'voice',
-                        callId: call.id,
+    const createLeadFromVoiceCall = async (
+        call: VoiceCallSnapshot,
+        opts?: { duplicateOfId?: string; skipReturningCheck?: boolean }
+    ) => {
+        const { leadPhone, leadWhatsapp, phoneForLookup } = resolveVoiceCallPhone(call);
+
+        if (!opts?.skipReturningCheck && phoneLast10(phoneForLookup).length >= 8) {
+            try {
+                const existingClient = await findClientMasterByPhone(supabase, phoneForLookup);
+                if (existingClient) {
+                    setReturningClientModal({
+                        phone: phoneForLookup,
                         name: call.capturedName || 'Voice Lead',
-                        phone: leadPhone,
-                        whatsapp_number: leadWhatsapp,
-                        estimated_value_monthly: call.capturedValue || 0,
-                    },
-                });
-                return;
+                        existingClient,
+                        pendingLeadData: {
+                            kind: 'voice',
+                            callSnapshot: {
+                                id: call.id,
+                                phone: call.phone,
+                                capturedName: call.capturedName,
+                                capturedWhatsapp: call.capturedWhatsapp,
+                                capturedValue: call.capturedValue,
+                            },
+                        },
+                    });
+                    return;
+                }
+            } catch (lookupErr: any) {
+                console.warn('Client master lookup failed:', lookupErr?.message || lookupErr);
             }
         }
 
+        const toastId = toast.loading('Adding lead to pipeline…');
         try {
             const standardized = normalizePhoneDigits(leadWhatsapp || leadPhone);
-            const { data: newLead, error } = await supabase.from('crm_leads').insert([{
-                name: call.capturedName || 'Voice Lead',
-                phone: leadPhone || null,
-                whatsapp_number: standardized || leadWhatsapp || null,
-                source: opts?.duplicateOfId ? 'AI Phone Call (Returning)' : 'AI Phone Call',
-                status: 'AI Handled',
-                pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
-                estimated_value_monthly: call.capturedValue || 0,
-                ...(opts?.duplicateOfId ? { duplicate_of_lead_id: opts.duplicateOfId } : {}),
-            }]).select('id').single();
+            const { data: newLead, error } = await supabase
+                .from('crm_leads')
+                .insert([
+                    {
+                        name: call.capturedName || 'Voice Lead',
+                        phone: leadPhone || null,
+                        whatsapp_number: standardized || leadWhatsapp || null,
+                        source: opts?.duplicateOfId ? 'AI Phone Call (Returning)' : 'AI Phone Call',
+                        status: 'AI Handled',
+                        pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
+                        estimated_value_monthly: Number(call.capturedValue) || 0,
+                        ...(opts?.duplicateOfId ? { duplicate_of_lead_id: opts.duplicateOfId } : {}),
+                    },
+                ])
+                .select('*')
+                .single();
 
             if (error) throw error;
 
             if (newLead?.id && call.id) {
-                await supabase.from('call_transcripts').upsert(
+                const { error: transcriptErr } = await supabase.from('call_transcripts').upsert(
                     {
                         conversation_id: String(call.id),
                         lead_id: newLead.id,
-                        phone_number: leadPhone || null,
+                        phone_number: leadPhone || standardized || null,
                         called_at: new Date().toISOString(),
                     },
                     { onConflict: 'conversation_id' }
                 );
+                if (transcriptErr) console.warn('call_transcripts upsert:', transcriptErr.message);
 
                 const activityMsg = opts?.duplicateOfId
-                    ? `Returning client — voice lead linked to existing client record`
+                    ? 'Returning client — voice lead linked to existing client record'
                     : 'Lead created from AI phone call';
                 await logActivity(newLead.id, 'lead_created', activityMsg, {
                     source: 'AI Phone Call',
@@ -2604,81 +2627,39 @@ export default function CRM() {
                 });
             }
 
-            setCalls((prev) => prev.map((c) => (c.id === call.id ? { ...c, status: 'Processed' } : c)));
+            setCalls((prev) =>
+                prev.map((c) =>
+                    String(c.id) === String(call.id)
+                        ? { ...c, status: 'Processed', lead_id: newLead?.id ?? c.lead_id }
+                        : c
+                )
+            );
+            setLeads((prev) => [newLead, ...prev.filter((l) => l.id !== newLead.id)]);
             fetchLeads();
-            toast.success(`Added ${call.capturedName || 'Lead'} to ${NEW_LEAD_PIPELINE_STAGE}!`);
+            setActiveTab('pipeline');
+            setSelectedInspectorLead(newLead);
+            toast.success(`Added ${call.capturedName || 'Lead'} to ${NEW_LEAD_PIPELINE_STAGE}!`, { id: toastId });
         } catch (error: any) {
             console.error('Error creating lead from call:', error);
-            toast.error(`Failed to create lead: ${error.message}`);
+            toast.error(`Failed to create lead: ${error.message}`, { id: toastId });
+            throw error;
         }
     };
 
     const captureCallAsLead = async (callId: string | number) => {
-        const call = calls.find((c) => c.id === callId);
-        if (!call) return;
-        await createLeadFromVoiceCall(call);
-    };
-
-    const findExistingClientByPhone = async (phone: string) => {
-        const last10 = phoneLast10(phone);
-        if (last10.length < 10) return null;
-
-        const clientStages = ['Active Client', 'Monthly Billing', 'Closed Won', 'Archived'];
-        const stageRank: Record<string, number> = {
-            'Active Client': 4,
-            'Monthly Billing': 3,
-            'Closed Won': 2,
-            Archived: 1,
-        };
-
-        // Source of truth: live leads in client stages (skip trashed / permanently deleted)
-        const { data: leadRows } = await supabase
-            .from('crm_leads')
-            .select('id, name, phone, whatsapp_number, pipeline_stage, updated_at')
-            .is('deleted_at', null)
-            .in('pipeline_stage', clientStages)
-            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
-
-        const liveMatches = (leadRows || [])
-            .filter((l) => phonesMatch(l.phone, phone) || phonesMatch(l.whatsapp_number, phone))
-            .sort((a, b) => {
-                const rankDiff = (stageRank[b.pipeline_stage] || 0) - (stageRank[a.pipeline_stage] || 0);
-                if (rankDiff !== 0) return rankDiff;
-                return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
-            });
-
-        if (liveMatches.length > 0) {
-            const best = liveMatches[0];
-            return {
-                id: best.id,
-                client_name: best.name,
-                phone_number: best.phone || best.whatsapp_number,
-            };
+        const call = calls.find((c) => String(c.id) === String(callId));
+        if (!call) {
+            toast.error('Call not found. Refresh Voice AI and try again.');
+            return;
         }
-
-        // Fallback: clients row only if a matching lead still exists (ignore orphan ghosts)
-        const { data: clientRows } = await supabase
-            .from('clients')
-            .select('id, client_name, phone_number')
-            .or(`phone_number.ilike.%${last10}%`);
-
-        for (const c of clientRows || []) {
-            if (!phonesMatch(c.phone_number, phone)) continue;
-            const { data: lead } = await supabase
-                .from('crm_leads')
-                .select('id, name, pipeline_stage')
-                .eq('id', c.id)
-                .is('deleted_at', null)
-                .maybeSingle();
-            if (lead && clientStages.includes(lead.pipeline_stage)) {
-                return {
-                    id: c.id,
-                    client_name: lead.name || c.client_name,
-                    phone_number: c.phone_number,
-                };
-            }
+        setCapturingCallId(callId);
+        try {
+            await createLeadFromVoiceCall(call);
+        } catch {
+            /* toast shown in createLeadFromVoiceCall */
+        } finally {
+            setCapturingCallId(null);
         }
-        return null;
     };
 
     const checkAddLeadDuplicate = async (phone: string) => {
@@ -2730,8 +2711,8 @@ export default function CRM() {
         const standardized = normalizePhoneDigits(leadPhone);
 
         // Check if this phone belongs to an existing client (returning client detection)
-        if (!opts?.skipReturningCheck && phoneLast10(leadPhone).length >= 10) {
-            const existingClient = await findExistingClientByPhone(leadPhone);
+        if (!opts?.skipReturningCheck && phoneLast10(leadPhone).length >= 8) {
+            const existingClient = await findClientMasterByPhone(supabase, leadPhone);
 
             if (existingClient) {
                 setReturningClientModal({
@@ -2788,9 +2769,8 @@ export default function CRM() {
         if (!returningClientModal) return;
         const { pendingLeadData } = returningClientModal;
         setReturningClientModal(null);
-        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callId != null) {
-            const call = calls.find((c) => c.id === pendingLeadData.callId);
-            if (call) await createLeadFromVoiceCall(call, { skipReturningCheck: true });
+        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callSnapshot) {
+            await createLeadFromVoiceCall(pendingLeadData.callSnapshot, { skipReturningCheck: true });
             return;
         }
         await handleAddManualLead({
@@ -2806,14 +2786,11 @@ export default function CRM() {
         if (!returningClientModal) return;
         const { phone, name, existingClient, pendingLeadData } = returningClientModal;
         setReturningClientModal(null);
-        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callId != null) {
-            const call = calls.find((c) => c.id === pendingLeadData.callId);
-            if (call) {
-                await createLeadFromVoiceCall(call, {
-                    skipReturningCheck: true,
-                    duplicateOfId: existingClient.id,
-                });
-            }
+        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callSnapshot) {
+            await createLeadFromVoiceCall(pendingLeadData.callSnapshot, {
+                skipReturningCheck: true,
+                duplicateOfId: existingClient.id,
+            });
             return;
         }
         const standardized = normalizePhoneDigits(phone);
@@ -3470,10 +3447,16 @@ export default function CRM() {
                                                             </div>
                                                         ) : (
                                                             <button
+                                                                type="button"
+                                                                disabled={capturingCallId != null && String(capturingCallId) === String(call.id)}
                                                                 onClick={() => captureCallAsLead(call.id)}
-                                                                className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                                                className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
                                                             >
-                                                                <Plus className="w-3.5 h-3.5" /> Add to Pipeline
+                                                                {capturingCallId != null && String(capturingCallId) === String(call.id) ? (
+                                                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Adding…</>
+                                                                ) : (
+                                                                    <><Plus className="w-3.5 h-3.5" /> Add to Pipeline</>
+                                                                )}
                                                             </button>
                                                         )}
                                                     </div>
@@ -4761,59 +4744,64 @@ export default function CRM() {
             </div>
         )}
 
-            {/* Returning Client Modal — must sit above Add Lead modal (z-200) */}
-            {returningClientModal && (
-                <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-100 bg-amber-50 flex items-center gap-3">
-                            <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
-                                <Users className="w-5 h-5 text-amber-600" />
+            {/* Returning Client Modal — portal so Voice AI tab overflow cannot hide it */}
+            {returningClientModal &&
+                createPortal(
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+                            <div className="p-5 border-b border-slate-100 bg-amber-50 flex items-center gap-3">
+                                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
+                                    <Users className="w-5 h-5 text-amber-600" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900">Returning Client Detected</h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">This phone matches Client Master</p>
+                                </div>
                             </div>
-                            <div>
-                                <h3 className="font-bold text-slate-900">Returning Client Detected</h3>
-                                <p className="text-xs text-slate-500 mt-0.5">This phone matches an existing client record</p>
+                            <div className="p-5 space-y-3">
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm">
+                                    <p className="font-bold text-slate-900">{returningClientModal.existingClient.client_name}</p>
+                                    <p className="text-slate-500 text-xs mt-0.5">{returningClientModal.existingClient.phone_number}</p>
+                                </div>
+                                <p className="text-sm text-slate-600">How would you like to handle this enquiry?</p>
+                                <button
+                                    type="button"
+                                    onClick={handleReturningClientNewLead}
+                                    className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                                >
+                                    <Plus className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="font-bold text-blue-800 text-sm">New Independent Lead</p>
+                                        <p className="text-xs text-blue-600 mt-0.5">Fresh enquiry, no connection to old record.</p>
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleReturningClientLink}
+                                    className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
+                                >
+                                    <Users className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="font-bold text-emerald-800 text-sm">Link to Existing Client</p>
+                                        <p className="text-xs text-emerald-600 mt-0.5">New lead linked to {returningClientModal.existingClient.client_name}'s history.</p>
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const fromVoice = returningClientModal.pendingLeadData?.kind === 'voice';
+                                        setReturningClientModal(null);
+                                        if (!fromVoice) setIsAddLeadModalOpen(true);
+                                    }}
+                                    className="w-full py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                                >
+                                    Cancel
+                                </button>
                             </div>
                         </div>
-                        <div className="p-5 space-y-3">
-                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm">
-                                <p className="font-bold text-slate-900">{returningClientModal.existingClient.client_name}</p>
-                                <p className="text-slate-500 text-xs mt-0.5">{returningClientModal.existingClient.phone_number}</p>
-                            </div>
-                            <p className="text-sm text-slate-600">How would you like to handle this enquiry?</p>
-                            <button
-                                onClick={handleReturningClientNewLead}
-                                className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
-                            >
-                                <Plus className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="font-bold text-blue-800 text-sm">New Independent Lead</p>
-                                    <p className="text-xs text-blue-600 mt-0.5">Fresh enquiry, no connection to old record.</p>
-                                </div>
-                            </button>
-                            <button
-                                onClick={handleReturningClientLink}
-                                className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
-                            >
-                                <Users className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="font-bold text-emerald-800 text-sm">Link to Existing Client</p>
-                                    <p className="text-xs text-emerald-600 mt-0.5">New lead linked to {returningClientModal.existingClient.client_name}'s history.</p>
-                                </div>
-                            </button>
-                            <button
-                                onClick={() => {
-                                    const fromVoice = returningClientModal.pendingLeadData?.kind === 'voice';
-                                    setReturningClientModal(null);
-                                    if (!fromVoice) setIsAddLeadModalOpen(true);
-                                }}
-                                className="w-full py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                    </div>,
+                    document.body
+                )}
 
             {/* Delete Choice Modal */}
             {deleteChoiceModal && (
