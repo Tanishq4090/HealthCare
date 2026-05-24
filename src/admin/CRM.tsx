@@ -1299,6 +1299,9 @@ export default function CRM() {
                 const start = new Date(autoStartDate);
                 if (!isNaN(start.getTime())) {
                     const dur = quote.duration.toLowerCase().trim();
+                    if (dur.includes('open') || dur.includes('ongoing') || dur.includes('indefinite')) {
+                        autoEndDate = '';
+                    } else {
                     const match = dur.match(/^(\d+)\s*(day|month|year)s?$/);
                     if (match) {
                         const amount = parseInt(match[1]);
@@ -1321,6 +1324,7 @@ export default function CRM() {
                         const amount = amountMatch ? parseInt(amountMatch[1]) : 15;
                         start.setDate(start.getDate() + amount);
                         autoEndDate = start.toISOString().split('T')[0];
+                    }
                     }
                 }
             } else {
@@ -4808,7 +4812,7 @@ export default function CRM() {
                                             }} />
                                         </div>
                                         <div className="flex-1">
-                                            <label className="block text-sm font-semibold text-slate-700 mb-2">End Date</label>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-2">End Date <span className="font-normal text-slate-400">(optional — leave blank for open-ended)</span></label>
                                             <input type="date" min={serviceStartDate} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceEndDate} onChange={e => {
                                                 setServiceEndDate(e.target.value);
                                                 if (serviceStartDate) {
@@ -4853,7 +4857,7 @@ export default function CRM() {
                         </div>
                         <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50">
                             <button onClick={() => setIsServicePeriodOpen(false)} className="flex-1 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
-                            <button onClick={handleConfirmServicePeriod} className="flex-1 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm" disabled={serviceType === 'date_range' && !serviceEndDate}>Confirm Assignment</button>
+                            <button onClick={handleConfirmServicePeriod} className="flex-1 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm">Confirm Assignment</button>
                         </div>
                     </div>
                 </div>

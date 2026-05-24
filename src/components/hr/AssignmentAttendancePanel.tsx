@@ -38,35 +38,34 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
   const today = startOfDay(new Date());
 
-  const { startDate, safeStartDate, endDate, allDays, isAssignmentOver } = useMemo(() => {
-    const fallbackStart = assignment.start_date || assignment.assigned_at;
-    const startDate = fallbackStart ? parseISO(fallbackStart) : new Date();
+    const { startDate, safeStartDate, endDate, allDays, isAssignmentOver, isOpenEnded } = useMemo(() => {
+        const fallbackStart = assignment.start_date || assignment.assigned_at;
+        const startDate = fallbackStart ? parseISO(fallbackStart) : new Date();
 
-    // Determine end date: if end_date is set, use it.
-    // If null but service_type is 'one_day', cap to start_date.
-    // Otherwise cap at today (open-ended, show up to now).
-    let endDate: Date;
-    if (assignment.end_date) {
-      endDate = parseISO(assignment.end_date);
-    } else if (assignment.service_type === 'one_day') {
-      endDate = new Date(startDate);
-    } else {
-      endDate = new Date(); // open-ended: show up to today
-    }
+        // Fixed end_date → bounded assignment. one_day → single day. No end_date → open-ended (CRM "Open-ended").
+        const openEnded = !assignment.end_date && assignment.service_type !== 'one_day';
 
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(0, 0, 0, 0);
+        let endDate: Date;
+        if (assignment.end_date) {
+            endDate = parseISO(assignment.end_date);
+        } else if (assignment.service_type === 'one_day') {
+            endDate = new Date(startDate);
+        } else {
+            endDate = new Date(); // open-ended: attendance window grows daily up to today
+        }
 
-    const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
-    const allDays = eachDayOfInterval({ start: safeStartDate, end: endDate });
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(0, 0, 0, 0);
 
-    // Assignment is "over" if end_date is explicitly set and it's before today
-    const isAssignmentOver = assignment.end_date
-      ? isBefore(endDate, startOfDay(new Date()))
-      : false;
+        const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
+        const allDays = eachDayOfInterval({ start: safeStartDate, end: endDate });
 
-    return { startDate, safeStartDate, endDate, allDays, isAssignmentOver };
-  }, [assignment.start_date, assignment.assigned_at, assignment.end_date, assignment.service_type]);
+        const isAssignmentOver = assignment.end_date
+            ? isBefore(endDate, startOfDay(new Date()))
+            : false;
+
+        return { startDate, safeStartDate, endDate, allDays, isAssignmentOver, isOpenEnded: openEnded };
+    }, [assignment.start_date, assignment.assigned_at, assignment.end_date, assignment.service_type]);
 
   const pastDays = useMemo(() => {
     return allDays.filter(d => !isAfter(d, today));
@@ -300,7 +299,10 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             <h3 className="font-bold text-slate-900 text-sm">{assignment.employees?.full_name || 'Unknown'}</h3>
             <p className="text-xs text-slate-500">{assignment.employees?.job_title} → {assignment.clients?.client_name || 'Unknown Client'}</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Ongoing'} ({allDays.length} {allDays.length === 1 ? 'day' : 'days'} assigned)
+              {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Open-ended'}
+              {isOpenEnded
+                ? ` · ${allDays.length} ${allDays.length === 1 ? 'day' : 'days'} to mark so far`
+                : ` (${allDays.length} ${allDays.length === 1 ? 'day' : 'days'} assigned)`}
             </p>
           </div>
         </div>
@@ -406,7 +408,15 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
           <div className="bg-white rounded-lg border border-slate-200 p-3 flex flex-wrap gap-4 text-sm">
             <div><span className="text-slate-500 text-xs">Days Worked</span><p className="font-bold text-slate-900">{effectiveDays} days</p></div>
-            <div className="border-l border-slate-100 pl-4"><span className="text-slate-500 text-xs">Assigned Days</span><p className="font-bold text-slate-900">{allDays.length} days</p></div>
+            <div className="border-l border-slate-100 pl-4">
+              <span className="text-slate-500 text-xs">Service Duration</span>
+              <p className="font-bold text-slate-900">
+                {isOpenEnded ? 'Open-ended' : `${allDays.length} days`}
+              </p>
+              {isOpenEnded && (
+                <p className="text-[10px] text-slate-400 mt-0.5">{allDays.length} days elapsed since start</p>
+              )}
+            </div>
             <div className="border-l border-slate-100 pl-4"><span className="text-slate-500 text-xs">Completion</span><p className="font-bold text-slate-900">{Math.round((days.filter(d => d.status !== null).length / Math.max(allDays.length, 1)) * 100)}%</p></div>
           </div>
         </div>

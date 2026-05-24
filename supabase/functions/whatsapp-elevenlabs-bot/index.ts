@@ -233,10 +233,10 @@ serve(async (req) => {
             const resolvedService = service !== 'Unknown' ? service
                 : (existingService !== 'Unknown' ? existingService : 'Unknown');
 
+            // Never overwrite source on existing leads — preserve AI Phone Call, WhatsApp Chat, Manual Add, etc.
             const leadPayload: any = {
                 name,
                 whatsapp_number: purePhone,
-                source: 'WhatsApp Flow',
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
                 notes: `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`,
                 last_greeted_at: new Date().toISOString(),
@@ -246,9 +246,14 @@ serve(async (req) => {
             if (existingLead) {
                 const { error: updErr } = await supabase.from('crm_leads').update(leadPayload).eq('id', existingLead.id);
                 if (updErr) console.error(`[Flow] DB Update Error for lead ${existingLead.id}:`, updErr);
-                else console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'})`);
+                else console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'}, source unchanged)`);
             } else {
-                const { data: newLead, error: insErr } = await supabase.from('crm_leads').insert([{ ...leadPayload, pipeline_stage: 'In Discussion', status: 'new' }]).select('id').single();
+                const { data: newLead, error: insErr } = await supabase.from('crm_leads').insert([{
+                    ...leadPayload,
+                    source: 'WhatsApp Flow',
+                    pipeline_stage: 'In Discussion',
+                    status: 'new',
+                }]).select('id').single();
                 if (insErr) console.error(`[Flow] DB Insert Error:`, insErr);
                 upsertedLeadId = newLead?.id ?? null;
                 console.log(`[Flow] Created new lead for ${name}`);
