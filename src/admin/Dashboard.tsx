@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { sanitizePipelineStages } from '../utils/crm';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Users, TrendingUp, Phone, CheckCircle2, Loader2, ArrowUpRight } from 'lucide-react';
 
@@ -24,8 +25,9 @@ export default function Dashboard() {
                     supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle()
                 ]);
                 
-                const pipelineStages = (settings?.pipeline_stages || ['New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'])
-                    .filter((s: string) => s !== 'New Lead' && s !== 'New');
+                const pipelineStages = sanitizePipelineStages(
+                    settings?.pipeline_stages || ['New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending']
+                );
                 const activeLeads = leads?.filter(l => pipelineStages.includes(l.pipeline_stage)) || [];
                 const activeWorkersList = employees?.filter(w => w.status === 'assigned' || w.status === 'Active') || [];
                 

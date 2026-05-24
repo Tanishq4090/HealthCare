@@ -627,7 +627,7 @@ export default function HR() {
                     await supabase.from('crm_leads')
                         .update({ pipeline_stage: 'Staff Assigned' })
                         .eq('id', matchedLead.id)
-                        .in('pipeline_stage', ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted']);
+                        .in('pipeline_stage', ['New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted']);
                     toast.success(`Pipeline: ${newClient} advanced to Staff Assigned`);
                 }
             }

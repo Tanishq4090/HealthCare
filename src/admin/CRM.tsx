@@ -9,7 +9,12 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
-import { isLegacyPipelineStage, isPipelineVisibleLead } from '../utils/crm';
+import {
+    isLegacyPipelineStage,
+    isPipelineVisibleLead,
+    NEW_LEAD_PIPELINE_STAGE,
+    sanitizePipelineStages,
+} from '../utils/crm';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -143,13 +148,9 @@ export default function CRM() {
                 if (data.pipeline_stages) {
                     // Defensively strip out any client stages that may have leaked in
                     const knownClientStages = new Set(data.client_stages ?? ['Active Client', 'Monthly Billing', 'Closed Won']);
-                    let cleanPipeline = data.pipeline_stages.filter((s: string) => !knownClientStages.has(s) && s !== 'New Lead');
-                    
-                    // If we removed 'New Lead', ensure 'New Inquiry' is present
-                    if (!cleanPipeline.includes('New Inquiry')) {
-                        cleanPipeline = ['New Inquiry', ...cleanPipeline];
-                    }
-                    
+                    const cleanPipeline = sanitizePipelineStages(
+                        data.pipeline_stages.filter((s: string) => !knownClientStages.has(s))
+                    );
                     setPipelineStages(cleanPipeline);
                 }
                 if (data.whatsapp_templates) {
@@ -433,7 +434,7 @@ export default function CRM() {
         syncToCloud();
     }, [whatsappTemplates]);
 
-    const PROTECTED_STAGES = ['New Lead', 'Active Client', 'Closed Won', 'Lost'];
+    const PROTECTED_STAGES = ['New Inquiry', 'Active Client', 'Closed Won', 'Lost'];
 
     // Initialize pipelineStages from localStorage or defaults
     // Initialize pipelineStages - prioritize clean split defaults
@@ -1037,11 +1038,10 @@ export default function CRM() {
             return;
         }
 
-        const firstStage = pipelineStages[0] || 'New Inquiry';
-        const newInquiryLeads = leads.filter((l) => l.pipeline_stage === firstStage);
+        const newInquiryLeads = leads.filter((l) => l.pipeline_stage === NEW_LEAD_PIPELINE_STAGE);
 
         if (newInquiryLeads.length === 0) {
-            toast.info(`No leads in '${firstStage}' to greet. There may not be any fresh ungreeted leads right now.`);
+            toast.info(`No leads in '${NEW_LEAD_PIPELINE_STAGE}' to greet. There may not be any fresh ungreeted leads right now.`);
             return;
         }
 
@@ -1146,7 +1146,7 @@ export default function CRM() {
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
                     const fallbackRows = fallback || [];
-                    const firstStage = pipelineStages[0] || 'New Inquiry';
+                    const firstStage = NEW_LEAD_PIPELINE_STAGE;
                     const legacyIds = fallbackRows
                         .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
                         .map((l) => l.id);
@@ -1168,7 +1168,7 @@ export default function CRM() {
                 throw error;
             }
             const rows = data || [];
-            const firstStage = pipelineStages[0] || 'New Inquiry';
+            const firstStage = NEW_LEAD_PIPELINE_STAGE;
             const legacyIds = rows
                 .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
                 .map((l) => l.id);
@@ -2114,7 +2114,7 @@ export default function CRM() {
             }
 
             // Rule: Automatic staff release if moved to pre-assignment stages
-            const preAssignmentStages = ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted'];
+            const preAssignmentStages = ['New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted'];
             if (preAssignmentStages.includes(newStage)) {
                 try {
                     await releaseWorkerByClientId(id);
@@ -2533,48 +2533,90 @@ export default function CRM() {
         }
     };
 
-    const captureCallAsLead = async (callId: string | number) => {
-        const call = calls.find(c => c.id === callId);
-        if (!call) return;
+    const createLeadFromVoiceCall = async (
+        call: {
+            id: string | number;
+            phone?: string;
+            capturedName?: string;
+            capturedWhatsapp?: string;
+            capturedValue?: number;
+        },
+        opts?: { duplicateOfId?: string; skipReturningCheck?: boolean }
+    ) => {
+        const leadPhone = !call.phone || call.phone === 'Unknown Number' ? '' : call.phone;
+        const leadWhatsapp =
+            !call.capturedWhatsapp || call.capturedWhatsapp === 'Unknown Number' ? '' : call.capturedWhatsapp;
+        const phoneForLookup = leadPhone || leadWhatsapp;
+
+        if (!opts?.skipReturningCheck && phoneLast10(phoneForLookup).length >= 10) {
+            const existingClient = await findExistingClientByPhone(phoneForLookup);
+            if (existingClient) {
+                setReturningClientModal({
+                    phone: phoneForLookup,
+                    name: call.capturedName || 'Voice Lead',
+                    existingClient,
+                    pendingLeadData: {
+                        kind: 'voice',
+                        callId: call.id,
+                        name: call.capturedName || 'Voice Lead',
+                        phone: leadPhone,
+                        whatsapp_number: leadWhatsapp,
+                        estimated_value_monthly: call.capturedValue || 0,
+                    },
+                });
+                return;
+            }
+        }
 
         try {
-            const initialStage = pipelineStages[0] || 'New Inquiry';
-
+            const standardized = normalizePhoneDigits(leadWhatsapp || leadPhone);
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: call.capturedName || 'Voice Lead',
-                phone: (!call.phone || call.phone === 'Unknown Number') ? null : call.phone,
-                whatsapp_number: (!call.capturedWhatsapp || call.capturedWhatsapp === 'Unknown Number') ? null : call.capturedWhatsapp,
-                source: 'AI Phone Call',
+                phone: leadPhone || null,
+                whatsapp_number: standardized || leadWhatsapp || null,
+                source: opts?.duplicateOfId ? 'AI Phone Call (Returning)' : 'AI Phone Call',
                 status: 'AI Handled',
-                pipeline_stage: initialStage,
+                pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
                 estimated_value_monthly: call.capturedValue || 0,
+                ...(opts?.duplicateOfId ? { duplicate_of_lead_id: opts.duplicateOfId } : {}),
             }]).select('id').single();
 
             if (error) throw error;
 
-            // Mark this conversation_id as processed in call_transcripts
-            // so the Edge Function's new conversation_id-based check picks it up
             if (newLead?.id && call.id) {
-                await supabase.from('call_transcripts').upsert({
-                    conversation_id: String(call.id),
-                    lead_id: newLead.id,
-                    phone_number: call.phone === 'Unknown Number' ? null : call.phone,
-                    called_at: new Date().toISOString(),
-                }, { onConflict: 'conversation_id' });
+                await supabase.from('call_transcripts').upsert(
+                    {
+                        conversation_id: String(call.id),
+                        lead_id: newLead.id,
+                        phone_number: leadPhone || null,
+                        called_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'conversation_id' }
+                );
 
-                // Log lead_created activity
-                await logActivity(newLead.id, 'lead_created', 'Lead created from AI phone call', { source: 'AI Phone Call', call_id: String(call.id) });
+                const activityMsg = opts?.duplicateOfId
+                    ? `Returning client — voice lead linked to existing client record`
+                    : 'Lead created from AI phone call';
+                await logActivity(newLead.id, 'lead_created', activityMsg, {
+                    source: 'AI Phone Call',
+                    call_id: String(call.id),
+                    ...(opts?.duplicateOfId ? { client_id: opts.duplicateOfId } : {}),
+                });
             }
 
-            // Optimistically mark the call as processed in the UI
-            setCalls(prev => prev.map(c => c.id === callId ? { ...c, status: 'Processed' } : c));
+            setCalls((prev) => prev.map((c) => (c.id === call.id ? { ...c, status: 'Processed' } : c)));
             fetchLeads();
-
-            toast.success(`Successfully added ${call.capturedName || 'Lead'} to the pipeline!`);
+            toast.success(`Added ${call.capturedName || 'Lead'} to ${NEW_LEAD_PIPELINE_STAGE}!`);
         } catch (error: any) {
-            console.error("Error creating lead from call:", error);
+            console.error('Error creating lead from call:', error);
             toast.error(`Failed to create lead: ${error.message}`);
         }
+    };
+
+    const captureCallAsLead = async (callId: string | number) => {
+        const call = calls.find((c) => c.id === callId);
+        if (!call) return;
+        await createLeadFromVoiceCall(call);
     };
 
     const findExistingClientByPhone = async (phone: string) => {
@@ -2715,7 +2757,7 @@ export default function CRM() {
                 whatsapp_number: standardized || null,
                 source: 'Manual Add',
                 status: 'New',
-                pipeline_stage: pipelineStages[0] || 'New Inquiry',
+                pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
                 estimated_value_monthly: 0,
                 is_duplicate: opts?.isDuplicate || false,
                 duplicate_of_lead_id: opts?.duplicateOfId || null,
@@ -2746,6 +2788,11 @@ export default function CRM() {
         if (!returningClientModal) return;
         const { pendingLeadData } = returningClientModal;
         setReturningClientModal(null);
+        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callId != null) {
+            const call = calls.find((c) => c.id === pendingLeadData.callId);
+            if (call) await createLeadFromVoiceCall(call, { skipReturningCheck: true });
+            return;
+        }
         await handleAddManualLead({
             name: pendingLeadData?.name || returningClientModal.name,
             phone: pendingLeadData?.phone || returningClientModal.phone,
@@ -2757,8 +2804,18 @@ export default function CRM() {
 
     const handleReturningClientLink = async () => {
         if (!returningClientModal) return;
-        const { phone, name, existingClient } = returningClientModal;
+        const { phone, name, existingClient, pendingLeadData } = returningClientModal;
         setReturningClientModal(null);
+        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callId != null) {
+            const call = calls.find((c) => c.id === pendingLeadData.callId);
+            if (call) {
+                await createLeadFromVoiceCall(call, {
+                    skipReturningCheck: true,
+                    duplicateOfId: existingClient.id,
+                });
+            }
+            return;
+        }
         const standardized = normalizePhoneDigits(phone);
         try {
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
@@ -2767,7 +2824,7 @@ export default function CRM() {
                 whatsapp_number: standardized || null,
                 source: 'Manual Add (Returning)',
                 status: 'New',
-                pipeline_stage: pipelineStages[0] || 'New Inquiry',
+                pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
                 estimated_value_monthly: 0,
                 duplicate_of_lead_id: existingClient.id,
             }]).select('*').single();
@@ -4745,8 +4802,9 @@ export default function CRM() {
                             </button>
                             <button
                                 onClick={() => {
+                                    const fromVoice = returningClientModal.pendingLeadData?.kind === 'voice';
                                     setReturningClientModal(null);
-                                    setIsAddLeadModalOpen(true);
+                                    if (!fromVoice) setIsAddLeadModalOpen(true);
                                 }}
                                 className="w-full py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
                             >
