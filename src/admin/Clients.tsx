@@ -57,6 +57,9 @@ export default function Clients() {
         if (nextKey <= nowKey) setSelectedMonth(nextKey);
     };
 
+    // Remove from pipeline confirmation state
+    const [removeConfirmClient, setRemoveConfirmClient] = useState<any>(null);
+
     const handleRemoveFromPipeline = async (client: any) => {
         const isArchived = client.status === 'Archived';
 
@@ -72,19 +75,22 @@ export default function Clients() {
             return;
         }
 
-        toast(`Remove "${client.name}" from CRM pipeline?`, {
-            action: { label: 'Remove', onClick: async () => {
-                try {
-                    await supabase.from('crm_leads').update({ pipeline_stage: null }).eq('id', client.id);
-                    setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Archived' } : c));
-                    toast.success(`${client.name} removed from pipeline. Still visible in Client Master.`);
-                } catch (err: any) {
-                    toast.error(`Failed: ${err.message}`);
-                }
-            }},
-            cancel: { label: 'Cancel', onClick: () => {} },
-            duration: 8000,
-        });
+        // Show inline confirmation modal
+        setRemoveConfirmClient(client);
+    };
+
+    const confirmRemoveFromPipeline = async () => {
+        if (!removeConfirmClient) return;
+        const client = removeConfirmClient;
+        setRemoveConfirmClient(null);
+        try {
+            const { error } = await supabase.from('crm_leads').update({ pipeline_stage: null }).eq('id', client.id);
+            if (error) throw error;
+            setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Archived' } : c));
+            toast.success(`${client.name} removed from pipeline. Still visible in Client Master.`);
+        } catch (err: any) {
+            toast.error(`Failed: ${err.message}`);
+        }
     };
 
     const openRestartModal = async (client: any) => {
@@ -660,6 +666,29 @@ export default function Clients() {
                                 {isRestartSubmitting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                                 Restart Service
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Remove from Pipeline Confirmation Modal */}
+            {removeConfirmClient && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-red-50 flex items-center gap-3">
+                            <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                                <UserMinus className="w-5 h-5 text-red-600" />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-bold text-slate-900">Remove from Pipeline?</h2>
+                                <p className="text-xs text-slate-500">{removeConfirmClient.name} will stay in Client Master Database</p>
+                            </div>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <p className="text-sm text-slate-600">This will remove <strong>{removeConfirmClient.name}</strong> from the CRM pipeline. Their record, billing history, and all data will remain in the Client Master Database.</p>
+                            <div className="flex gap-3 pt-1">
+                                <button onClick={() => setRemoveConfirmClient(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
+                                <button onClick={confirmRemoveFromPipeline} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm">Remove</button>
+                            </div>
                         </div>
                     </div>
                 </div>
