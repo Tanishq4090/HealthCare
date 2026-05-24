@@ -97,6 +97,8 @@ export default function CRM() {
     // Reviews state
     const [reviews, setReviews] = useState<any[]>([]);
     const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+    // Returning client modal state
+    const [returningClientModal, setReturningClientModal] = useState<{ phone: string; name: string; existingClient: any; pendingLeadData: any } | null>(null);
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -2553,11 +2555,32 @@ export default function CRM() {
         }
     };
 
-    const handleAddManualLead = async (opts?: { name: string; phone: string; isDuplicate?: boolean; duplicateOfId?: string }) => {
+    const handleAddManualLead = async (opts?: { name: string; phone: string; isDuplicate?: boolean; duplicateOfId?: string; skipReturningCheck?: boolean }) => {
         const leadName = opts?.name?.trim() || 'New Lead';
         const leadPhone = opts?.phone?.trim() || '';
         const digits = leadPhone.replace(/\D/g, '');
         const standardized = digits.length === 10 ? `91${digits}` : digits;
+
+        // Check if this phone belongs to an existing client (returning client detection)
+        if (!opts?.skipReturningCheck && digits.length >= 10) {
+            const last10 = digits.slice(-10);
+            const { data: existingClient } = await supabase
+                .from('clients')
+                .select('id, client_name, phone_number')
+                .or(`phone_number.ilike.%${last10}%`)
+                .maybeSingle();
+
+            if (existingClient) {
+                setReturningClientModal({
+                    phone: leadPhone,
+                    name: leadName,
+                    existingClient,
+                    pendingLeadData: opts
+                });
+                return; // Wait for user choice
+            }
+        }
+
         try {
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: leadName,
@@ -2584,6 +2607,43 @@ export default function CRM() {
             setAddLeadConfirmDuplicate(false);
         } catch (err: any) {
             toast.error("Failed to add lead: " + err.message);
+        }
+    };
+
+    const handleReturningClientNewLead = async () => {
+        if (!returningClientModal) return;
+        const { pendingLeadData } = returningClientModal;
+        setReturningClientModal(null);
+        await handleAddManualLead({ ...pendingLeadData, skipReturningCheck: true });
+    };
+
+    const handleReturningClientLink = async () => {
+        if (!returningClientModal) return;
+        const { phone, name, existingClient, pendingLeadData } = returningClientModal;
+        setReturningClientModal(null);
+        const digits = phone.replace(/\D/g, '');
+        const standardized = digits.length === 10 ? `91${digits}` : digits;
+        try {
+            const { data: newLead, error } = await supabase.from('crm_leads').insert([{
+                name: name || existingClient.client_name,
+                phone: phone || null,
+                whatsapp_number: standardized || null,
+                source: 'Manual Add (Returning)',
+                status: 'New',
+                pipeline_stage: pipelineStages[0] || 'New Inquiry',
+                estimated_value_monthly: 0,
+                // Link to existing client record
+                duplicate_of_lead_id: existingClient.id,
+            }]).select('id').single();
+            if (error) throw error;
+            if (newLead?.id) {
+                await logActivity(newLead.id, 'lead_created', `Returning client — linked to existing client record: ${existingClient.client_name}`, { source: 'Returning Client', client_id: existingClient.id });
+            }
+            toast.success(`New lead created and linked to ${existingClient.client_name}'s client record! ✅`);
+            fetchLeads();
+            setIsAddLeadModalOpen(false);
+        } catch (err: any) {
+            toast.error("Failed: " + err.message);
         }
     };
 
@@ -4501,6 +4561,56 @@ export default function CRM() {
                 </div>
             </div>
         )}
+
+            {/* Returning Client Modal */}
+            {returningClientModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-amber-50 flex items-center gap-3">
+                            <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
+                                <Users className="w-5 h-5 text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900">Returning Client Detected</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">This phone matches an existing client record</p>
+                            </div>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm">
+                                <p className="font-bold text-slate-900">{returningClientModal.existingClient.client_name}</p>
+                                <p className="text-slate-500 text-xs mt-0.5">{returningClientModal.existingClient.phone_number}</p>
+                            </div>
+                            <p className="text-sm text-slate-600">How would you like to handle this enquiry?</p>
+                            <button
+                                onClick={handleReturningClientNewLead}
+                                className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                            >
+                                <Plus className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-bold text-blue-800 text-sm">New Independent Lead</p>
+                                    <p className="text-xs text-blue-600 mt-0.5">Fresh enquiry, no connection to old record.</p>
+                                </div>
+                            </button>
+                            <button
+                                onClick={handleReturningClientLink}
+                                className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
+                            >
+                                <Users className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-bold text-emerald-800 text-sm">Link to Existing Client</p>
+                                    <p className="text-xs text-emerald-600 mt-0.5">New lead linked to {returningClientModal.existingClient.client_name}'s history.</p>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setReturningClientModal(null)}
+                                className="w-full py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Delete Choice Modal */}
             {deleteChoiceModal && (

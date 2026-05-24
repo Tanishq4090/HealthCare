@@ -58,12 +58,15 @@ export default function Clients() {
     };
 
     const handleRemoveFromPipeline = async (client: any) => {
-        toast(`Remove "${client.name}" from pipeline?`, {
+        toast(`Remove "${client.name}" from CRM pipeline?`, {
             action: { label: 'Remove', onClick: async () => {
                 try {
-                    await supabase.from('crm_leads').update({ pipeline_stage: 'Lost' }).eq('id', client.id);
-                    setClients(prev => prev.filter(c => c.id !== client.id));
-                    toast.success(`${client.name} removed from pipeline.`);
+                    // Set pipeline_stage to null — removes from CRM kanban
+                    // but keeps the clients table record so they stay in Client Master Database
+                    await supabase.from('crm_leads').update({ pipeline_stage: null }).eq('id', client.id);
+                    // Update local status to show as archived
+                    setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Archived' } : c));
+                    toast.success(`${client.name} removed from pipeline. Still visible in Client Master.`);
                 } catch (err: any) {
                     toast.error(`Failed: ${err.message}`);
                 }
@@ -191,17 +194,19 @@ export default function Clients() {
     const fetchClients = async () => {
         try {
             // 1. Fetch leads in client stages WITH their pipeline_stage
+            // Also include leads with null pipeline_stage (removed from pipeline but still clients)
             const { data: leads, error: leadsError } = await supabase
                 .from('crm_leads')
                 .select('id, pipeline_stage')
-                .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']);
+                .or('pipeline_stage.in.(Active Client,Monthly Billing,Closed Won),pipeline_stage.is.null');
 
             if (leadsError) throw leadsError;
 
+            // Only include leads that have a corresponding clients table record
             const clientIds = (leads || []).map(l => l.id);
             // Build a map of lead_id -> pipeline_stage for status badge
             const stageMap: Record<string, string> = {};
-            (leads || []).forEach(l => { stageMap[l.id] = l.pipeline_stage; });
+            (leads || []).forEach(l => { stageMap[l.id] = l.pipeline_stage || 'Archived'; });
 
             // 2. Fetch records from the clients table for these lead IDs
             let clientData = [];
@@ -346,11 +351,13 @@ export default function Clients() {
                                         client.status === 'Closed Won' ? 'bg-emerald-100 text-emerald-700' :
                                         client.status === 'Monthly Billing' ? 'bg-blue-100 text-blue-700' :
                                         client.status === 'Active Client' ? 'bg-teal-100 text-teal-700' :
+                                        client.status === 'Archived' ? 'bg-slate-100 text-slate-500' :
                                         'bg-slate-100 text-slate-600'
                                     }`}>
                                         {client.status === 'Closed Won' ? 'Closed' :
                                          client.status === 'Monthly Billing' ? 'Billing' :
                                          client.status === 'Active Client' ? 'Active' :
+                                         client.status === 'Archived' ? 'Archived' :
                                          client.status}
                                     </span>
                                 </div>
