@@ -8,6 +8,7 @@ import { MOCK_WORKERS } from '../data/mockWorkers';
 import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -2535,22 +2536,85 @@ export default function CRM() {
         }
     };
 
+    const findExistingClientByPhone = async (phone: string) => {
+        const last10 = phoneLast10(phone);
+        if (last10.length < 10) return null;
+
+        const clientStages = ['Active Client', 'Monthly Billing', 'Closed Won', 'Archived'];
+        const stageRank: Record<string, number> = {
+            'Active Client': 4,
+            'Monthly Billing': 3,
+            'Closed Won': 2,
+            Archived: 1,
+        };
+
+        // Source of truth: live leads in client stages (skip trashed / permanently deleted)
+        const { data: leadRows } = await supabase
+            .from('crm_leads')
+            .select('id, name, phone, whatsapp_number, pipeline_stage, updated_at')
+            .is('deleted_at', null)
+            .in('pipeline_stage', clientStages)
+            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
+
+        const liveMatches = (leadRows || [])
+            .filter((l) => phonesMatch(l.phone, phone) || phonesMatch(l.whatsapp_number, phone))
+            .sort((a, b) => {
+                const rankDiff = (stageRank[b.pipeline_stage] || 0) - (stageRank[a.pipeline_stage] || 0);
+                if (rankDiff !== 0) return rankDiff;
+                return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
+            });
+
+        if (liveMatches.length > 0) {
+            const best = liveMatches[0];
+            return {
+                id: best.id,
+                client_name: best.name,
+                phone_number: best.phone || best.whatsapp_number,
+            };
+        }
+
+        // Fallback: clients row only if a matching lead still exists (ignore orphan ghosts)
+        const { data: clientRows } = await supabase
+            .from('clients')
+            .select('id, client_name, phone_number')
+            .or(`phone_number.ilike.%${last10}%`);
+
+        for (const c of clientRows || []) {
+            if (!phonesMatch(c.phone_number, phone)) continue;
+            const { data: lead } = await supabase
+                .from('crm_leads')
+                .select('id, name, pipeline_stage')
+                .eq('id', c.id)
+                .is('deleted_at', null)
+                .maybeSingle();
+            if (lead && clientStages.includes(lead.pipeline_stage)) {
+                return {
+                    id: c.id,
+                    client_name: lead.name || c.client_name,
+                    phone_number: c.phone_number,
+                };
+            }
+        }
+        return null;
+    };
+
     const checkAddLeadDuplicate = async (phone: string) => {
         if (!phone || phone.replace(/\D/g, '').length < 8) {
             setAddLeadDuplicateWarning(null);
             return;
         }
         setAddLeadCheckingDuplicate(true);
-        const digits = phone.replace(/\D/g, '');
-        const last10 = digits.slice(-10);
+        const last10 = phoneLast10(phone);
         const { data } = await supabase
             .from('crm_leads')
             .select('id, name, pipeline_stage, whatsapp_number, phone')
-            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
-            .limit(1);
+            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
         setAddLeadCheckingDuplicate(false);
-        if (data && data.length > 0) {
-            setAddLeadDuplicateWarning(data[0]);
+        const match = (data || []).find(
+            (l) => phonesMatch(l.phone, phone) || phonesMatch(l.whatsapp_number, phone)
+        );
+        if (match) {
+            setAddLeadDuplicateWarning(match);
             setAddLeadConfirmDuplicate(false);
         } else {
             setAddLeadDuplicateWarning(null);
@@ -2560,26 +2624,26 @@ export default function CRM() {
     const handleAddManualLead = async (opts?: { name: string; phone: string; isDuplicate?: boolean; duplicateOfId?: string; skipReturningCheck?: boolean }) => {
         const leadName = opts?.name?.trim() || 'New Lead';
         const leadPhone = opts?.phone?.trim() || '';
-        const digits = leadPhone.replace(/\D/g, '');
-        const standardized = digits.length === 10 ? `91${digits}` : digits;
+        const standardized = normalizePhoneDigits(leadPhone);
 
         // Check if this phone belongs to an existing client (returning client detection)
-        if (!opts?.skipReturningCheck && digits.length >= 10) {
-            const last10 = digits.slice(-10);
-            const { data: existingClient } = await supabase
-                .from('clients')
-                .select('id, client_name, phone_number')
-                .or(`phone_number.ilike.%${last10}%`)
-                .maybeSingle();
+        if (!opts?.skipReturningCheck && phoneLast10(leadPhone).length >= 10) {
+            const existingClient = await findExistingClientByPhone(leadPhone);
 
             if (existingClient) {
                 setReturningClientModal({
                     phone: leadPhone,
                     name: leadName,
                     existingClient,
-                    pendingLeadData: opts
+                    pendingLeadData: {
+                        name: leadName,
+                        phone: leadPhone,
+                        isDuplicate: opts?.isDuplicate,
+                        duplicateOfId: opts?.duplicateOfId,
+                    },
                 });
-                return; // Wait for user choice
+                setIsAddLeadModalOpen(false);
+                return; // Wait for user choice on returning-client modal
             }
         }
 
@@ -2594,21 +2658,26 @@ export default function CRM() {
                 estimated_value_monthly: 0,
                 is_duplicate: opts?.isDuplicate || false,
                 duplicate_of_lead_id: opts?.duplicateOfId || null,
-            }]).select('id').single();
+            }]).select('*').single();
             
             if (error) throw error;
             if (newLead?.id) {
                 await logActivity(newLead.id, 'lead_created', opts?.isDuplicate ? 'Lead created manually (duplicate confirmed by staff)' : 'Lead created manually', { source: 'Manual Add' });
             }
             toast.success(`Lead "${leadName}" created!`);
-            fetchLeads();
             setIsAddLeadModalOpen(false);
+            setReturningClientModal(null);
             setAddLeadName('');
             setAddLeadPhone('');
             setAddLeadDuplicateWarning(null);
             setAddLeadConfirmDuplicate(false);
+            if (newLead) setSelectedInspectorLead(newLead);
+            fetchLeads();
         } catch (err: any) {
             toast.error("Failed to add lead: " + err.message);
+            setAddLeadName(leadName);
+            setAddLeadPhone(leadPhone);
+            setIsAddLeadModalOpen(true);
         }
     };
 
@@ -2616,15 +2685,20 @@ export default function CRM() {
         if (!returningClientModal) return;
         const { pendingLeadData } = returningClientModal;
         setReturningClientModal(null);
-        await handleAddManualLead({ ...pendingLeadData, skipReturningCheck: true });
+        await handleAddManualLead({
+            name: pendingLeadData?.name || returningClientModal.name,
+            phone: pendingLeadData?.phone || returningClientModal.phone,
+            isDuplicate: pendingLeadData?.isDuplicate,
+            duplicateOfId: pendingLeadData?.duplicateOfId,
+            skipReturningCheck: true,
+        });
     };
 
     const handleReturningClientLink = async () => {
         if (!returningClientModal) return;
-        const { phone, name, existingClient, pendingLeadData } = returningClientModal;
+        const { phone, name, existingClient } = returningClientModal;
         setReturningClientModal(null);
-        const digits = phone.replace(/\D/g, '');
-        const standardized = digits.length === 10 ? `91${digits}` : digits;
+        const standardized = normalizePhoneDigits(phone);
         try {
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: name || existingClient.client_name,
@@ -2634,18 +2708,23 @@ export default function CRM() {
                 status: 'New',
                 pipeline_stage: pipelineStages[0] || 'New Inquiry',
                 estimated_value_monthly: 0,
-                // Link to existing client record
                 duplicate_of_lead_id: existingClient.id,
-            }]).select('id').single();
+            }]).select('*').single();
             if (error) throw error;
             if (newLead?.id) {
                 await logActivity(newLead.id, 'lead_created', `Returning client — linked to existing client record: ${existingClient.client_name}`, { source: 'Returning Client', client_id: existingClient.id });
             }
             toast.success(`New lead created and linked to ${existingClient.client_name}'s client record! ✅`);
-            fetchLeads();
             setIsAddLeadModalOpen(false);
+            setAddLeadName('');
+            setAddLeadPhone('');
+            setAddLeadDuplicateWarning(null);
+            setAddLeadConfirmDuplicate(false);
+            if (newLead) setSelectedInspectorLead(newLead);
+            fetchLeads();
         } catch (err: any) {
             toast.error("Failed: " + err.message);
+            setIsAddLeadModalOpen(true);
         }
     };
 
@@ -4564,9 +4643,9 @@ export default function CRM() {
             </div>
         )}
 
-            {/* Returning Client Modal */}
+            {/* Returning Client Modal — must sit above Add Lead modal (z-200) */}
             {returningClientModal && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-slate-100 bg-amber-50 flex items-center gap-3">
                             <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
@@ -4604,7 +4683,10 @@ export default function CRM() {
                                 </div>
                             </button>
                             <button
-                                onClick={() => setReturningClientModal(null)}
+                                onClick={() => {
+                                    setReturningClientModal(null);
+                                    setIsAddLeadModalOpen(true);
+                                }}
                                 className="w-full py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
                             >
                                 Cancel
