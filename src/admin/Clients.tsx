@@ -427,16 +427,42 @@ export default function Clients() {
                         </div>
                     </div>
 
-                    <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
-                        <h3 className="font-semibold text-slate-900 flex items-center gap-2 mb-3">
-                            <MessageSquare className="w-5 h-5 text-slate-500" />
-                            Recent Reviews
-                        </h3>
-                        <div className="space-y-3">
-                            <div className="flex flex-col items-center justify-center py-6 text-center">
-                                <MessageSquare className="w-8 h-8 text-slate-200 mb-2" />
-                                <p className="text-xs text-slate-400">No verified reviews found.<br/>Request reviews via WhatsApp to see them here.</p>
+                    <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                        <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
+                            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                                <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                                Google Reviews
+                            </h3>
+                            <a href="https://g.page/r/CVxFhJ1HNBxfEAE/review" target="_blank" rel="noopener noreferrer"
+                                className="text-xs font-bold text-primary hover:underline">
+                                View All →
+                            </a>
+                        </div>
+                        {/* Google Reviews - direct link card since Maps embed requires Place ID */}
+                        <div className="p-5 space-y-3">
+                            <div className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200">
+                                <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center shrink-0">
+                                    <Star className="w-6 h-6 text-amber-400 fill-amber-400" />
+                                </div>
+                                <div className="flex-1">
+                                    <p className="font-bold text-slate-900 text-sm">99 Care — Google Reviews</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">View all client reviews on Google</p>
+                                </div>
+                                <a href="https://g.page/r/CVxFhJ1HNBxfEAE/review" target="_blank" rel="noopener noreferrer"
+                                    className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors shrink-0">
+                                    Open
+                                </a>
                             </div>
+                            <p className="text-[11px] text-slate-400 text-center">
+                                To embed live Google reviews, enable the Maps Embed API in Google Cloud Console and add the Place ID.
+                            </p>
+                        </div>
+                        <div className="p-3 bg-white border-t border-slate-100 flex items-center justify-between">
+                            <p className="text-xs text-slate-500">Tap "View All" to see all Google reviews</p>
+                            <a href="https://g.page/r/CVxFhJ1HNBxfEAE/review" target="_blank" rel="noopener noreferrer"
+                                className="px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
+                                <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> Leave a Review
+                            </a>
                         </div>
                     </div>
                 </div>
