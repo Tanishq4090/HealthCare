@@ -147,7 +147,11 @@ export default function HR() {
                 .select('*, employees(*), clients(*), service_type, client_id')
                 .neq('assignment_status', 'cancelled');
             if (assignmentsData) setActiveAssignments(assignmentsData.filter((a: any) => a.assignment_status === 'active'));
-            const { data: leadData } = await supabase.from('crm_leads').select('id, name, phone, pipeline_stage, estimated_value_monthly').order('created_at', { ascending: false });
+            const { data: leadData } = await supabase
+                .from('crm_leads')
+                .select('id, name, phone, pipeline_stage, estimated_value_monthly')
+                .is('deleted_at', null)
+                .order('created_at', { ascending: false });
 
             // Fetch Month-to-Date Stats for all employees
             const startOfMonth = new Date();

@@ -9,6 +9,7 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
+import { isLegacyPipelineStage, isPipelineVisibleLead } from '../utils/crm';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -1036,11 +1037,11 @@ export default function CRM() {
             return;
         }
 
-        // Target leads in New stage only
-        const newInquiryLeads = leads.filter(l => l.pipeline_stage === 'New');
+        const firstStage = pipelineStages[0] || 'New Inquiry';
+        const newInquiryLeads = leads.filter((l) => l.pipeline_stage === firstStage);
 
         if (newInquiryLeads.length === 0) {
-            toast.info("No leads in 'New' stage to greet. There may not be any fresh ungreeted leads right now.");
+            toast.info(`No leads in '${firstStage}' to greet. There may not be any fresh ungreeted leads right now.`);
             return;
         }
 
@@ -1144,12 +1145,49 @@ export default function CRM() {
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
-                    setLeads(fallback || []);
+                    const fallbackRows = fallback || [];
+                    const firstStage = pipelineStages[0] || 'New Inquiry';
+                    const legacyIds = fallbackRows
+                        .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
+                        .map((l) => l.id);
+                    if (legacyIds.length > 0) {
+                        supabase
+                            .from('crm_leads')
+                            .update({ pipeline_stage: firstStage })
+                            .in('id', legacyIds);
+                    }
+                    setLeads(
+                        fallbackRows.map((l) =>
+                            isLegacyPipelineStage(l.pipeline_stage)
+                                ? { ...l, pipeline_stage: firstStage }
+                                : l
+                        )
+                    );
                     return;
                 }
                 throw error;
             }
-            setLeads(data || []);
+            const rows = data || [];
+            const firstStage = pipelineStages[0] || 'New Inquiry';
+            const legacyIds = rows
+                .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
+                .map((l) => l.id);
+            if (legacyIds.length > 0) {
+                supabase
+                    .from('crm_leads')
+                    .update({ pipeline_stage: firstStage })
+                    .in('id', legacyIds)
+                    .then(({ error }) => {
+                        if (error) console.warn('Legacy stage migration failed:', error.message);
+                    });
+            }
+            setLeads(
+                rows.map((l) =>
+                    isLegacyPipelineStage(l.pipeline_stage)
+                        ? { ...l, pipeline_stage: firstStage }
+                        : l
+                )
+            );
         } catch (err: any) {
             console.error('Error fetching leads:', err);
             toast.error('Failed to load CRM leads. Please refresh the page.');
@@ -2500,8 +2538,7 @@ export default function CRM() {
         if (!call) return;
 
         try {
-            // Always start at 'New Lead' — the WhatsApp greeting flow will move them to 'In Discussion'
-            const initialStage = 'New Lead';
+            const initialStage = pipelineStages[0] || 'New Inquiry';
 
             const { data: newLead, error } = await supabase.from('crm_leads').insert([{
                 name: call.capturedName || 'Voice Lead',
@@ -2611,12 +2648,32 @@ export default function CRM() {
         const last10 = phoneLast10(phone);
         const { data } = await supabase
             .from('crm_leads')
-            .select('id, name, pipeline_stage, whatsapp_number, phone')
+            .select('id, name, pipeline_stage, whatsapp_number, phone, deleted_at')
+            .is('deleted_at', null)
             .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
         setAddLeadCheckingDuplicate(false);
-        const match = (data || []).find(
+
+        const matches = (data || []).filter(
             (l) => phonesMatch(l.phone, phone) || phonesMatch(l.whatsapp_number, phone)
         );
+
+        // Stale ghost in legacy "New Lead" stage (hidden from pipeline after permanent delete)
+        const legacyOnly = matches.filter((l) => isLegacyPipelineStage(l.pipeline_stage));
+        if (legacyOnly.length > 0 && legacyOnly.length === matches.length) {
+            for (const ghost of legacyOnly) {
+                await supabase.rpc('delete_crm_lead_robust', { target_lead_id: ghost.id });
+            }
+            setAddLeadDuplicateWarning(null);
+            toast.success(
+                legacyOnly.length === 1
+                    ? `Removed hidden stale record (${legacyOnly[0].name}). You can add this lead now.`
+                    : `Removed ${legacyOnly.length} hidden stale records. You can add this lead now.`
+            );
+            fetchLeads();
+            return;
+        }
+
+        const match = matches.find((l) => isPipelineVisibleLead(l, pipelineStages, clientStages));
         if (match) {
             setAddLeadDuplicateWarning(match);
             setAddLeadConfirmDuplicate(false);
@@ -4702,7 +4759,7 @@ export default function CRM() {
 
             {/* Delete Choice Modal */}
             {deleteChoiceModal && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
                             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center shrink-0">

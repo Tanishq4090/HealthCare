@@ -497,6 +497,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
     const validStages = ['Form Submitted', 'Staff Assigned', 'Active Client', 'Deposit Pending', 'Trial in Progress'];
     supabase.from('crm_leads')
       .select('id, name, phone, whatsapp_number, pipeline_stage')
+      .is('deleted_at', null)
       .in('pipeline_stage', validStages)
       .ilike('name', `%${debouncedSearch}%`)
       .limit(20)

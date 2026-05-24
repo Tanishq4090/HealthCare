@@ -45,6 +45,7 @@ export default function AdminLayout() {
                     supabase
                         .from('crm_leads')
                         .select('id, name, phone, pipeline_stage')
+                        .is('deleted_at', null)
                         .or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
                         .limit(5),
                     supabase

@@ -19,12 +19,13 @@ export default function Dashboard() {
             try {
                 // Fetch Leads, Employees, and Settings concurrently
                 const [{ data: leads }, { data: employees }, { data: settings }] = await Promise.all([
-                    supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at'),
+                    supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at').is('deleted_at', null),
                     supabase.from('employees').select('id, status, monthly_daily_rate'),
                     supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle()
                 ]);
                 
-                const pipelineStages = settings?.pipeline_stages || ['New Lead', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'];
+                const pipelineStages = (settings?.pipeline_stages || ['New Inquiry', 'In Discussion', 'Quotation Sent', 'Form Submitted', 'Staff Assigned', 'Deposit Pending'])
+                    .filter((s: string) => s !== 'New Lead' && s !== 'New');
                 const activeLeads = leads?.filter(l => pipelineStages.includes(l.pipeline_stage)) || [];
                 const activeWorkersList = employees?.filter(w => w.status === 'assigned' || w.status === 'Active') || [];
                 

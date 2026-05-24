@@ -6,5 +6,7 @@ frontend/.env
 *.exe
 *-log.txt
 dist
+dist-os
+dist-public
 .DS_Store
 .vscode
