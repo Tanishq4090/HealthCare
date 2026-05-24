@@ -84,7 +84,7 @@ export default function Clients() {
         const client = removeConfirmClient;
         setRemoveConfirmClient(null);
         try {
-            const { error } = await supabase.from('crm_leads').update({ pipeline_stage: null }).eq('id', client.id);
+            const { error } = await supabase.from('crm_leads').update({ pipeline_stage: 'Archived' }).eq('id', client.id);
             if (error) throw error;
             setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Archived' } : c));
             toast.success(`${client.name} removed from pipeline. Still visible in Client Master.`);
@@ -216,7 +216,7 @@ export default function Clients() {
                 supabase.from('crm_leads').select('id, pipeline_stage')
                     .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
                 supabase.from('crm_leads').select('id, pipeline_stage')
-                    .is('pipeline_stage', null)
+                    .eq('pipeline_stage', 'Archived')
             ]);
 
             if (activeLeadsResult.error) throw activeLeadsResult.error;

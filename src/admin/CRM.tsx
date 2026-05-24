@@ -1131,6 +1131,7 @@ export default function CRM() {
                 .from('crm_leads')
                 .select('*, crm_quotations(start_date, duration, created_at)')
                 .is('deleted_at', null)
+                .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
 
             if (error) {
@@ -1139,6 +1140,7 @@ export default function CRM() {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
                         .select('*, crm_quotations(start_date, duration, created_at)')
+                        .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
                     setLeads(fallback || []);
