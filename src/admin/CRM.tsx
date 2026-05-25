@@ -2397,6 +2397,115 @@ export default function CRM() {
         }
     };
 
+    const parseMoneyValue = (value: any) => {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') return parseFloat(value.replace(/[^\d.-]/g, '')) || 0;
+        return 0;
+    };
+
+    const handleDepositReceived = async (lead: any) => {
+        if (!lead?.id) return;
+
+        if (lead.id.length < 10) {
+            setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, pipeline_stage: 'Active Client' } : item));
+            setSelectedInspectorLead((prev: any) => prev?.id === lead.id ? { ...prev, pipeline_stage: 'Active Client' } : prev);
+            toast.success('Deposit confirmed! Mock lead moved to Active Client.');
+            return;
+        }
+
+        const toastId = toast.loading('Recording deposit collection...');
+
+        try {
+            const [{ data: assignment, error: assignmentError }, { data: latestQuote, error: quoteError }, { data: existingPayment, error: paymentLookupError }] = await Promise.all([
+                supabase
+                    .from('worker_assignments')
+                    .select('id, deposit_amount, deposit_paid')
+                    .eq('client_id', lead.id)
+                    .eq('assignment_status', 'active')
+                    .order('assigned_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+                supabase
+                    .from('crm_quotations')
+                    .select('deposit, complete_month_rate')
+                    .eq('lead_id', lead.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+                supabase
+                    .from('payments')
+                    .select('id, amount')
+                    .eq('client_name', lead.name)
+                    .eq('payment_type', 'deposit')
+                    .order('payment_date', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+            ]);
+
+            if (assignmentError) throw assignmentError;
+            if (quoteError) throw quoteError;
+            if (paymentLookupError) throw paymentLookupError;
+            if (!assignment) throw new Error('No active staff assignment found. Assign staff before recording the deposit.');
+
+            const amount =
+                parseMoneyValue(assignment.deposit_paid)
+                || parseMoneyValue(existingPayment?.amount)
+                || parseMoneyValue(assignment.deposit_amount)
+                || parseMoneyValue(latestQuote?.deposit)
+                || parseMoneyValue(lead.quoted_monthly_rate)
+                || parseMoneyValue(lead.estimated_value_monthly)
+                || 15000;
+
+            if (!existingPayment && parseMoneyValue(assignment.deposit_paid) <= 0) {
+                const { error: insertPaymentError } = await supabase.from('payments').insert([{
+                    amount,
+                    client_name: lead.name,
+                    recorded_by: 'admin',
+                    transaction_ref: `CRM-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`,
+                    payment_date: new Date().toISOString(),
+                    payment_type: 'deposit'
+                }]);
+
+                if (insertPaymentError) throw insertPaymentError;
+            }
+
+            const assignmentUpdate: any = {
+                deposit_paid: amount,
+                deposit_invoice_sent: true
+            };
+            if (parseMoneyValue(assignment.deposit_amount) <= 0) {
+                assignmentUpdate.deposit_amount = amount;
+            }
+
+            const { error: updateAssignmentError } = await supabase
+                .from('worker_assignments')
+                .update(assignmentUpdate)
+                .eq('id', assignment.id);
+
+            if (updateAssignmentError) throw updateAssignmentError;
+
+            const { error: updateLeadError } = await supabase
+                .from('crm_leads')
+                .update({ pipeline_stage: 'Active Client' })
+                .eq('id', lead.id);
+
+            if (updateLeadError) throw updateLeadError;
+
+            setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, pipeline_stage: 'Active Client' } : item));
+            setSelectedInspectorLead((prev: any) => prev?.id === lead.id ? { ...prev, pipeline_stage: 'Active Client' } : prev);
+            await logActivity(lead.id, 'payment_recorded', `Deposit collection recorded: ₹${amount.toLocaleString('en-IN')}`, { amount, payment_type: 'deposit' });
+            await logActivity(lead.id, 'stage_changed', 'Deposit received — moved to Active Client', { from: lead.pipeline_stage, to: 'Active Client' });
+            fetchLeadActivity(lead.id, lead?.duplicate_of_lead_id);
+            fetchLeads();
+
+            toast.success(`Deposit collection recorded. Finance invoice marked paid for ₹${amount.toLocaleString('en-IN')}.`, { id: toastId, duration: 5000 });
+            setSelectedInspectorLead(null);
+        } catch (err: any) {
+            console.error('Error recording deposit collection:', err);
+            toast.error(`Failed to record deposit: ${err.message}`, { id: toastId, duration: 6000 });
+        }
+    };
+
     const handleDeleteLead = async (leadId: string, leadName: string) => {
         // Show choice modal instead of window.confirm
         setDeleteChoiceModal({ id: leadId, name: leadName });
@@ -5005,21 +5114,11 @@ export default function CRM() {
 
                                             {selectedInspectorLead.pipeline_stage === 'Deposit Pending' && (
                                                 <button
-                                                    onClick={async () => {
-                                                        const toastId = toast.loading('Confirming deposit and activating client...');
-                                                        try {
-                                                            await handleMoveLead(selectedInspectorLead.id, 'Active Client');
-                                                            await logActivity(selectedInspectorLead.id, 'stage_changed', 'Deposit received — moved to Active Client');
-                                                            toast.success('✅ Deposit confirmed! Lead moved to Active Client.', { id: toastId });
-                                                            setSelectedInspectorLead(null);
-                                                        } catch (err: any) {
-                                                            toast.error(`Failed: ${err.message}`, { id: toastId });
-                                                        }
-                                                    }}
+                                                    onClick={() => handleDepositReceived(selectedInspectorLead)}
                                                     className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-200 text-emerald-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                                 >
                                                     <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                    Deposit Received → Activate Client
+                                                    Record Collection → Activate Client
                                                 </button>
                                             )}
 

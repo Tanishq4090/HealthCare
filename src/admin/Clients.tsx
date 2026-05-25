@@ -247,12 +247,22 @@ export default function Clients() {
             
             if (empError) throw empError;
 
-            // 4. Fetch assignments to get deposit data
-            const { data: assignments, error: asgnError } = await supabase
-                .from('worker_assignments')
-                .select('client_id, deposit_amount');
-            
-            if (asgnError) throw asgnError;
+            // 4. Fetch assignment/payment data to show the actual collected deposit.
+            const [assignmentsResult, paymentsResult] = await Promise.all([
+                supabase
+                    .from('worker_assignments')
+                    .select('client_id, deposit_amount, deposit_paid'),
+                supabase
+                    .from('payments')
+                    .select('client_name, amount, payment_type')
+                    .eq('payment_type', 'deposit'),
+            ]);
+
+            if (assignmentsResult.error) throw assignmentsResult.error;
+            if (paymentsResult.error) throw paymentsResult.error;
+
+            const assignments = assignmentsResult.data || [];
+            const depositPayments = paymentsResult.data || [];
 
             // Group employees by client name
             const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
@@ -269,10 +279,24 @@ export default function Clients() {
                 }
             });
 
-            // Map deposits by client ID
-            const depositMap: Record<string, number> = {};
-            (assignments || []).forEach(a => {
-                depositMap[a.client_id] = (depositMap[a.client_id] || 0) + (Number(a.deposit_amount) || 0);
+            const normalizeClientName = (name?: string | null) => (name || '').trim().toLowerCase();
+
+            // Map deposits by client ID. Prefer money actually marked as paid, then fall
+            // back to the requested deposit amount for older assignment records.
+            const paidDepositByClientId: Record<string, number> = {};
+            const requestedDepositByClientId: Record<string, number> = {};
+            assignments.forEach(a => {
+                paidDepositByClientId[a.client_id] = (paidDepositByClientId[a.client_id] || 0) + (Number(a.deposit_paid) || 0);
+                requestedDepositByClientId[a.client_id] = (requestedDepositByClientId[a.client_id] || 0) + (Number(a.deposit_amount) || 0);
+            });
+
+            // Collection history stores client_name rather than client_id, so keep it as
+            // a fallback for deposits recorded before deposit_paid was backfilled.
+            const paidDepositByClientName: Record<string, number> = {};
+            depositPayments.forEach(p => {
+                const clientName = normalizeClientName(p.client_name);
+                if (!clientName) return;
+                paidDepositByClientName[clientName] = (paidDepositByClientName[clientName] || 0) + (Number(p.amount) || 0);
             });
 
             // 5. Map database clients to UI structure
@@ -286,7 +310,10 @@ export default function Clients() {
                 workerCount: workerMap[c.client_name]?.workerCount || 0,
                 activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
                 lifetimeValue: '₹0',
-                securityDeposit: depositMap[c.id] || 0,
+                securityDeposit: paidDepositByClientId[c.id]
+                    || paidDepositByClientName[normalizeClientName(c.client_name)]
+                    || requestedDepositByClientId[c.id]
+                    || 0,
                 created_at: c.created_at,
             }));
 
