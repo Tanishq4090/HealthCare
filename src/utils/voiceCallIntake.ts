@@ -119,18 +119,24 @@ export function mapIntentToService(intent: string, summary: string, extraContext
     return '';
 }
 
-export function parseShiftFromText(text: string): { shiftType: string; shiftLabel: string } {
+export function parseShiftFromText(text: string): { shiftType: string; shiftLabel: string } | null {
     const hay = normalizeText(text);
     if (/\b24[\s-]*(?:hour|hr|h)\b/.test(hay)) {
         return { shiftType: '24-Hour Shift', shiftLabel: '24 Hour Shift' };
     }
+    if (/\b12[\s-]*(?:hour|hr|h)\b/.test(hay)) {
+        return { shiftType: '12-Hour Shift', shiftLabel: '12 Hour Shift' };
+    }
     if (/\b10[\s-]*(?:hour|hr|h)\b/.test(hay)) {
         return { shiftType: '10-Hour Shift', shiftLabel: '10 Hour Shift' };
+    }
+    if (/\b8[\s-]*(?:hour|hr|h)\b/.test(hay)) {
+        return { shiftType: '8-Hour Shift', shiftLabel: '8 Hour Shift' };
     }
     if (/\bfull[\s-]*day\b|\b24\s*7\b/.test(hay)) {
         return { shiftType: '24-Hour Shift', shiftLabel: '24 Hour Shift' };
     }
-    return { shiftType: '10-Hour Shift', shiftLabel: '10 Hour Shift' };
+    return null;
 }
 
 export function parseStartDateFromSummary(summary: string): { display: string; iso: string } | null {
@@ -189,7 +195,15 @@ export function buildVoiceCallIntakePrefill(call: {
     const summary = call.summary || '';
     const intent = call.intent || '';
     const service = mapIntentToService(intent, summary, call.transcript || '');
-    const { shiftType, shiftLabel } = parseShiftFromText(`${summary} ${intent} ${call.transcript || ''}`);
+    
+    // Prioritize checking the summary (which represents the finalized intent)
+    let shiftResult = parseShiftFromText(`${summary} ${intent}`);
+    // If not found in summary, try the full transcript, but beware it may contain the agent's stock phrases
+    if (!shiftResult && call.transcript) {
+        shiftResult = parseShiftFromText(call.transcript);
+    }
+    const { shiftType, shiftLabel } = shiftResult || { shiftType: '10-Hour Shift', shiftLabel: '10 Hour Shift' };
+    
     const startParsed = parseStartDateFromSummary(summary);
     const fullName = (call.capturedName || '').trim();
     const firstName = fullName.split(/\s+/)[0] || 'there';
@@ -231,7 +245,7 @@ export function buildLeadIntakePrefill(lead: {
     const serviceLabel = service || 'Home Healthcare';
     const { shiftType, shiftLabel } = shiftFromNotes
         ? { shiftType: shiftFromNotes, shiftLabel: shiftFromNotes }
-        : parseShiftFromText(notes);
+        : (parseShiftFromText(notes) || { shiftType: '10-Hour Shift', shiftLabel: '10 Hour Shift' });
     const startParsed = parseStartDateFromSummary(notes);
     const fullName = (lead.name || '').trim();
     const firstName = fullName.split(/\s+/)[0] || 'there';
