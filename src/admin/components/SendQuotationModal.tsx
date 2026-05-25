@@ -23,7 +23,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     const [daysPerWeek, setDaysPerWeek] = useState('');
     const [shiftType, setShiftType] = useState('Day shift');
     const [startDate, setStartDate] = useState('');
-    const [duration, setDuration] = useState('Open-ended');
+    const [endDate, setEndDate] = useState('');
     const [completeMonthRate, setCompleteMonthRate] = useState('');
     const [incompleteMonthRate, setIncompleteMonthRate] = useState('');
     const [deposit, setDeposit] = useState('');
@@ -106,20 +106,14 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                 }
 
                 const endDateMatch = lead.notes.match(/End Date:\s*(.+)/i);
-                if (endDateMatch && endDateMatch[1] && parsedStartDate) {
+                if (endDateMatch && endDateMatch[1]) {
                     const endParsedStr = endDateMatch[1].trim();
-                    const parsedEndDate = new Date(endParsedStr);
-                    
-                    if (!isNaN(parsedEndDate.getTime())) {
-                        const diffTime = Math.abs(parsedEndDate.getTime() - parsedStartDate.getTime());
-                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                        
-                        if (diffDays >= 170) {
-                            setDuration('6 months');
-                        } else if (diffDays >= 80) {
-                            setDuration('3 months');
-                        } else if (diffDays >= 25) {
-                            setDuration('1 month');
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(endParsedStr)) {
+                        setEndDate(endParsedStr);
+                    } else {
+                        const parsedEndDate = new Date(endParsedStr);
+                        if (!isNaN(parsedEndDate.getTime())) {
+                            setEndDate(parsedEndDate.toISOString().split('T')[0]);
                         }
                     }
                 }
@@ -153,7 +147,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
             daysPerWeek: Number(daysPerWeek) || null,
             shiftType,
             startDate,
-            duration,
+            duration: endDate ? endDate : 'Open-ended',
             completeMonthRate: Number(completeMonthRate) || null,
             incompleteMonthRate: Number(incompleteMonthRate) || null,
             deposit: Number(deposit) || 0,
@@ -290,14 +284,14 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                                     <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf] [color-scheme:dark]" />
                                 </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Duration / contract length</label>
-                                <select value={duration} onChange={e => setDuration(e.target.value)} className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf] appearance-none">
-                                    <option>Open-ended</option>
-                                    <option>1 month</option>
-                                    <option>3 months</option>
-                                    <option>6 months</option>
-                                </select>
+                            <div className="flex-1">
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Proposed end date (optional)</label>
+                                <input 
+                                    type="date"
+                                    value={endDate}
+                                    onChange={e => setEndDate(e.target.value)}
+                                    className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf] color-scheme-dark"
+                                />
                             </div>
                         </div>
                     </section>
