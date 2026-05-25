@@ -209,11 +209,18 @@ export default function CRM() {
             })
             .subscribe();
 
+        const consentSub = supabase.channel('realtime_client_consents_v2')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'client_consents' }, () => {
+                fetchLeads();
+            })
+            .subscribe();
+
         const activitySub = supabase.channel('realtime_activity_v2')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_lead_activity' }, (payload) => {
                 const activity = payload.new;
                 if (activity.event_type === 'form_filled') {
                     toast.success(`📋 New Intake Form: ${activity.metadata?.service || 'Unknown Service'}`, { duration: 6000 });
+                    fetchLeads();
 
                     // Trigger browser notification if supported and granted
                     if ("Notification" in window && Notification.permission === "granted") {
@@ -235,6 +242,7 @@ export default function CRM() {
             clearInterval(interval);
             supabase.removeChannel(callSub);
             supabase.removeChannel(leadsSub);
+            supabase.removeChannel(consentSub);
             supabase.removeChannel(activitySub);
         };
     }, []);
@@ -1215,7 +1223,7 @@ export default function CRM() {
         try {
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, created_at), client_consents(*)')
+                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, created_at), client_consents(*)')
                 .is('deleted_at', null)
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
@@ -1225,7 +1233,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, created_at), client_consents(*)')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, created_at), client_consents(*)')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -1247,6 +1255,11 @@ export default function CRM() {
                                 : l
                         )
                     );
+                    setSelectedInspectorLead((prev: any) => {
+                        if (!prev?.id) return prev;
+                        const latest = fallbackRows.find((l) => l.id === prev.id);
+                        return latest ? { ...prev, ...latest } : prev;
+                    });
                     return;
                 }
                 throw error;
@@ -1272,6 +1285,11 @@ export default function CRM() {
                         : l
                 )
             );
+            setSelectedInspectorLead((prev: any) => {
+                if (!prev?.id) return prev;
+                const latest = rows.find((l) => l.id === prev.id);
+                return latest ? { ...prev, ...latest } : prev;
+            });
         } catch (err: any) {
             console.error('Error fetching leads:', err);
             toast.error('Failed to load CRM leads. Please refresh the page.');
@@ -1671,6 +1689,42 @@ export default function CRM() {
         return parseFloat(matched) || 0;
     };
 
+    const normalizeConsentOfferedTime = (value?: string | null) => {
+        const raw = (value || '').trim().toLowerCase();
+        if (raw.includes('24')) return '24 Hours (Live-in)';
+        if (raw.includes('10')) return '10 Hours';
+        return raw ? 'Other' : '';
+    };
+
+    const getLatestByCreatedAt = (items?: any[]) => {
+        if (!items || items.length === 0) return null;
+        return [...items].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+    };
+
+    const buildConsentFlowPrefill = (lead: any, extra: Record<string, any> = {}) => {
+        const consent = getLatestByCreatedAt(lead?.client_consents);
+        const quote = getLatestByCreatedAt(lead?.crm_quotations);
+        const phone = (lead?.whatsapp_number || lead?.phone || '').replace(/\D/g, '');
+        const startDate = consent?.service_start_date || quote?.start_date || '';
+
+        return {
+            screen: 'CONSENT_SCREEN',
+            relative_name: consent?.relative_name || lead?.name || '',
+            patient_name: consent?.patient_name || '',
+            age: consent?.age || '',
+            weight: consent?.weight || '',
+            contact_number: consent?.contact_number || phone,
+            alternate_contact_number: consent?.alternate_contact_number || '',
+            address: consent?.address || '',
+            reference_by: consent?.reference_by || '',
+            service_start_date: startDate ? String(startDate).split('T')[0] : '',
+            service_category: consent?.service_category || quote?.service_category || quote?.service_name || '',
+            offered_time: normalizeConsentOfferedTime(consent?.offered_time || quote?.shift_type || ''),
+            other_details: consent?.other_details || '',
+            ...extra,
+        };
+    };
+
     // Helper to dispatch WhatsApp templates programmatically
     const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[], flowData?: any) => {
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -1702,7 +1756,7 @@ export default function CRM() {
                 useTemplate: true,
                 templateName: templateMap[action],
                 templateParams: params || (action === 'inquiry' ? buildLeadIntakePrefill(lead).templateParams : [lead.name.split(' ')[0] || 'there']),
-                flowData: flowData || (action === 'inquiry' ? buildLeadIntakePrefill(lead).flowData : undefined),
+                flowData: flowData || (action === 'inquiry' ? buildLeadIntakePrefill(lead).flowData : action === 'consent' ? buildConsentFlowPrefill(lead) : undefined),
             })
         });
 
@@ -1962,6 +2016,9 @@ export default function CRM() {
             const inquiryPrefill = agentTargetAction === 'inquiry' && agentTargetLead
                 ? buildLeadIntakePrefill(agentTargetLead)
                 : null;
+            const consentPrefill = agentTargetAction === 'consent' && agentTargetLead
+                ? buildConsentFlowPrefill(agentTargetLead)
+                : null;
 
             const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
@@ -1994,7 +2051,7 @@ export default function CRM() {
                             : agentTargetAction === 'inquiry' && inquiryPrefill
                                 ? inquiryPrefill.templateParams
                                 : (agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there'), String(invoiceDepositAmount || '')] : undefined),
-                    flowData: inquiryPrefill?.flowData,
+                    flowData: inquiryPrefill?.flowData || consentPrefill || undefined,
                 })
             });
 
@@ -4522,38 +4579,77 @@ export default function CRM() {
                         </div>
 
                         {/* ── Patient & Consent Details ──────────────────────────── */}
-                        {selectedInspectorLead.client_consents && selectedInspectorLead.client_consents.length > 0 && (
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Patient & Care Details</p>
-                                <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-slate-500 font-medium">Patient Name</span>
-                                        <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.client_consents[0].patient_name || '—'}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
-                                        <span className="text-sm font-semibold text-slate-800">
-                                            {selectedInspectorLead.client_consents[0].age ? `${selectedInspectorLead.client_consents[0].age} yrs` : '—'}
-                                            {selectedInspectorLead.client_consents[0].weight ? `, ${selectedInspectorLead.client_consents[0].weight}` : ''}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-slate-500 font-medium">Alternate Phone</span>
-                                        <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.client_consents[0].alternate_contact_number || '—'}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-slate-500 font-medium">Address</span>
-                                        <span className="text-sm font-semibold text-slate-800 text-right max-w-[200px] truncate" title={selectedInspectorLead.client_consents[0].address}>
-                                            {selectedInspectorLead.client_consents[0].address || '—'}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-slate-500 font-medium">Referred By</span>
-                                        <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.client_consents[0].reference_by || '—'}</span>
+                        {selectedInspectorLead.client_consents && selectedInspectorLead.client_consents.length > 0 && (() => {
+                            const consent = getLatestByCreatedAt(selectedInspectorLead.client_consents);
+                            const startDate = consent?.service_start_date
+                                ? new Date(consent.service_start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : '—';
+
+                            return (
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Patient & Care Details</p>
+                                    <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Relative Name</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.relative_name || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Patient Name</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.patient_name || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Patient Phone</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.contact_number || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">
+                                                {consent?.age ? `${consent.age} yrs` : '—'}
+                                                {consent?.weight ? `, ${consent.weight} kg` : ''}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Alternate Phone</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.alternate_contact_number || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Service</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.service_category || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Offered Time</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.offered_time || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Start Date</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{startDate}</span>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium shrink-0">Address</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right max-w-[320px] whitespace-pre-wrap break-words leading-relaxed" title={consent?.address}>
+                                                {consent?.address || '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Referred By</span>
+                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.reference_by || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                                            <span className="text-sm text-slate-500 font-medium">Terms</span>
+                                            <span className={`text-sm font-semibold text-right ${consent?.terms_accepted ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                                {consent?.terms_accepted ? 'Accepted' : 'Not accepted'}
+                                            </span>
+                                        </div>
+                                        {consent?.other_details && (
+                                            <div className="px-4 py-3">
+                                                <span className="block text-sm text-slate-500 font-medium mb-1">Other Details</span>
+                                                <p className="text-sm font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">{consent.other_details}</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {/* ── Lead Value ─────────────────────────────────── */}
                         <div>
@@ -4755,16 +4851,12 @@ export default function CRM() {
                                                                     .limit(1)
                                                                     .maybeSingle();
 
-                                                                let flowData: any = {
-                                                                    relative_name: selectedInspectorLead.name || '',
-                                                                    patient_name: '',
-                                                                    contact_number: (selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '').replace(/\D/g, '')
-                                                                };
+                                                                let flowData: any = buildConsentFlowPrefill(selectedInspectorLead);
                                                                 if (latestQuote) {
                                                                     flowData = {
                                                                         ...flowData,
                                                                         service_category: latestQuote.service_category || latestQuote.service_name || '',
-                                                                        offered_time: latestQuote.shift_type || '',
+                                                                        offered_time: normalizeConsentOfferedTime(latestQuote.shift_type || ''),
                                                                         service_start_date: latestQuote.start_date ? latestQuote.start_date.split('T')[0] : ''
                                                                     };
                                                                 }

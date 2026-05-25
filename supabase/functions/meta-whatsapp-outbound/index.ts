@@ -12,6 +12,43 @@ function shiftLabelToFlowId(label: string): string {
   return '10-Hour Shift';
 }
 
+function normalizeConsentOfferedTime(value: unknown): string {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw.includes('24')) return '24 Hours (Live-in)';
+  if (raw.includes('10')) return '10 Hours';
+  return raw ? 'Other' : '';
+}
+
+const CONSENT_FLOW_KEYS = new Set([
+  'relative_name',
+  'patient_name',
+  'age',
+  'weight',
+  'contact_number',
+  'alternate_contact_number',
+  'address',
+  'reference_by',
+  'service_start_date',
+  'service_category',
+  'offered_time',
+  'other_details',
+]);
+
+function buildConsentFlowPayload(flowData: unknown): Record<string, string> {
+  const out: Record<string, string> = {
+    screen: 'CONSENT_SCREEN',
+  };
+
+  if (!flowData || typeof flowData !== 'object') return out;
+
+  for (const [key, val] of Object.entries(flowData as Record<string, unknown>)) {
+    if (!CONSENT_FLOW_KEYS.has(key) || val == null || val === '') continue;
+    out[key] = key === 'offered_time' ? normalizeConsentOfferedTime(val) : String(val);
+  }
+
+  return out;
+}
+
 /** Build INTAKE_FORM screen data for flow_action_data (keys must match Flow JSON `data` schema). */
 function buildIntakeFlowPayload(
   flowData: unknown,
@@ -261,15 +298,8 @@ serve(async (req) => {
         if (templateName === "post_call_intake") {
           // Always send screen data — logs showed flowData:null so prefill never reached Meta
           actionPayload.flow_action_data = buildIntakeFlowPayload(flowData, parameters, leadName);
-        } else if (flowData && typeof flowData === "object") {
-          const consentPayload: Record<string, string> = {};
-          for (const [key, val] of Object.entries(flowData)) {
-            if (key === "screen" || val == null || val === "") continue;
-            consentPayload[key] = String(val);
-          }
-          if (Object.keys(consentPayload).length > 0) {
-            actionPayload.flow_action_data = consentPayload;
-          }
+        } else {
+          actionPayload.flow_action_data = buildConsentFlowPayload(flowData);
         }
 
         components.push({

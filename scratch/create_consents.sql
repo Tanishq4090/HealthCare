@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.client_consents (
     service_start_date TEXT,
     service_category TEXT,
     offered_time TEXT,
+    other_details TEXT,
     terms_accepted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

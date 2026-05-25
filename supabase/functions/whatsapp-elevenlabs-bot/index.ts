@@ -8,6 +8,13 @@ const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
 const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 const WHATSAPP_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
 
+function normalizeConsentOfferedTime(value: unknown): string {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw.includes('24')) return '24 Hours (Live-in)';
+    if (raw.includes('10')) return '10 Hours';
+    return raw ? 'Other' : '';
+}
+
 serve(async (req) => {
     try {
         const url = new URL(req.url);
@@ -135,7 +142,8 @@ serve(async (req) => {
                         reference_by: formData.reference_by,
                         service_start_date: formData.service_start_date,
                         service_category: formData.service_category,
-                        offered_time: formData.offered_time,
+                        offered_time: normalizeConsentOfferedTime(formData.offered_time),
+                        other_details: formData.other_details,
                         terms_accepted: formData.terms_accepted === 'on' || formData.terms_accepted === true
                     }]);
 
@@ -148,7 +156,7 @@ serve(async (req) => {
                         lead_id: existingLead.id,
                         event_type: 'form_filled',
                         description: `Consent form filled for ${formData.patient_name}`,
-                        metadata: { patient_name: formData.patient_name, service_category: formData.service_category }
+                        metadata: { patient_name: formData.patient_name, service: formData.service_category, service_category: formData.service_category }
                     }]);
                     if (actError) console.error('[Flow] Error inserting activity:', actError);
                 } else {
@@ -480,13 +488,7 @@ serve(async (req) => {
                             if (match && match[1]) extractedAddress = match[1].trim();
                         }
 
-                        const rawShift = consent?.offered_time || quote?.shift_type || "";
-                        let formattedShift = "";
-                        if (rawShift.toLowerCase().includes("24")) {
-                            formattedShift = "24 hours";
-                        } else if (rawShift.toLowerCase().includes("10")) {
-                            formattedShift = "10 hours";
-                        }
+                        const formattedShift = normalizeConsentOfferedTime(consent?.offered_time || quote?.shift_type || "");
 
                         const prefillData = {
                             patient_name: consent?.patient_name || "",
