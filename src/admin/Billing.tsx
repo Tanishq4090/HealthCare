@@ -54,6 +54,31 @@ const inclusiveDays = (startDate: string, endDate: string) => {
 const normalizePhoneDigits = (phone: string) => phone.replace(/\D/g, '');
 const phoneLast10 = (phone: string) => normalizePhoneDigits(phone).slice(-10);
 
+const parseManualInvoiceNotes = (notes?: string | null) => {
+    const parsed: Record<string, string> = {};
+    (notes || '').split('\n').forEach(line => {
+        const idx = line.indexOf(':');
+        if (idx === -1) return;
+        parsed[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+    });
+    return parsed;
+};
+
+const buildManualInvoiceNotes = (form: ManualInvoiceForm, extras: Record<string, string | number> = {}) => {
+    const lines = [
+        `Manual Invoice: true`,
+        `Service: ${form.serviceName.trim()}`,
+        `Shift: ${form.serviceHours}`,
+        `Location: ${form.address.trim()}`,
+        `Start Date: ${form.startDate}`,
+        `End Date: ${form.endDate}`,
+        `Rate Per Day: ${Number(form.ratePerDay) || 0}`,
+        `Deposit Collected: ${Number(form.depositCollected || 0)}`,
+        ...Object.entries(extras).map(([key, value]) => `${key}: ${value}`),
+    ];
+    return lines.join('\n');
+};
+
 const manualInvoiceInitialForm = (): ManualInvoiceForm => ({
     clientName: '',
     phone: '',
@@ -127,7 +152,7 @@ export default function Billing() {
         setIsLoading(true);
         try {
             // Run all 4 queries in parallel for ~3x faster load
-            const [assignmentsResult, leadsResult, quotesResult, servicePaymentsResult] = await Promise.all([
+            const [assignmentsResult, leadsResult, quotesResult, servicePaymentsResult, manualLeadsResult] = await Promise.all([
                 supabase
                     .from('worker_assignments')
                     .select(`
@@ -154,10 +179,16 @@ export default function Billing() {
                 supabase.from('crm_leads').select('id, estimated_value_monthly'),
                 supabase.from('crm_quotations').select('lead_id, complete_month_rate, start_date, deposit').order('created_at', { ascending: true }),
                 supabase.from('payments').select('client_name').eq('payment_type', 'service'),
+                supabase
+                    .from('crm_leads')
+                    .select('id, name, phone, whatsapp_number, source, status, pipeline_stage, estimated_value_monthly, created_at, notes')
+                    .eq('pipeline_stage', 'Monthly Billing')
+                    .is('deleted_at', null),
             ]);
 
             const { data, error } = assignmentsResult;
             if (error) throw error;
+            if (manualLeadsResult.error) throw manualLeadsResult.error;
 
             let leadsMap: Record<string, number> = {};
             let activeLeadIds = new Set<string>();
@@ -217,8 +248,10 @@ export default function Billing() {
                 });
                 setDeposits(mappedDeposits);
 
+                const assignedClientIds = new Set(activeAssignments.map(asgn => (asgn as any).clients?.id).filter(Boolean));
+
                 // Build monthly bills with correct status in one pass — no second update needed
-                setMonthlyBills(activeAssignments.map(asgn => {
+                const assignmentBills = activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
                     const clientName = (asgn as any).clients?.client_name || 'Unknown';
                     const billingRate = asgn.client_billing_rate || quotesMap[clientId]?.complete_month_rate || 0;
@@ -243,7 +276,42 @@ export default function Billing() {
                         invoice_pdf_url: asgn.invoice_pdf_url || "",
                         rawAssignment: { ...asgn, _quote: quotesMap[clientId] }
                     };
-                }));
+                });
+
+                const manualBills = (manualLeadsResult.data || [])
+                    .filter((lead: any) => !assignedClientIds.has(lead.id))
+                    .filter((lead: any) => {
+                        const source = (lead.source || '').toLowerCase();
+                        const notes = (lead.notes || '').toLowerCase();
+                        return source.includes('manual invoice') || notes.includes('manual invoice: true');
+                    })
+                    .map((lead: any) => {
+                        const info = parseManualInvoiceNotes(lead.notes);
+                        const rate = Number(info['rate per day'] || 0);
+                        const payable = Number(info['amount payable'] || lead.estimated_value_monthly || 0);
+                        return {
+                            id: `manual-${lead.id}`,
+                            client_id: lead.id,
+                            client: lead.name || 'Manual Client',
+                            client_phone: lead.whatsapp_number || lead.phone || '',
+                            amount: rate ? `₹${rate}/day` : `₹${payable}`,
+                            attendanceVerified: true,
+                            status: lead.status === 'Paid' ? 'Paid' : 'Sent',
+                            month: new Date(lead.created_at || Date.now()).toLocaleString('default', { month: 'long' }),
+                            invoice_no: info['invoice no'] || '',
+                            invoice_pdf_url: info['invoice pdf'] || '',
+                            rawAssignment: {
+                                isManualInvoice: true,
+                                client_billing_rate: rate,
+                                deposit_amount: Number(info['deposit collected'] || 0),
+                                start_date: info['start date'] || '',
+                                end_date: info['end date'] || '',
+                                service_name: info.service || '',
+                            },
+                        };
+                    });
+
+                setMonthlyBills([...manualBills, ...assignmentBills]);
             }
         } catch (err: any) {
             console.error('Error fetching billing data:', err);
@@ -679,11 +747,7 @@ export default function Billing() {
         const normalizedPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
         const days = inclusiveDays(f.startDate, f.endDate);
         const grossAmount = days * Number(f.ratePerDay);
-        const notes = [
-            `Service: ${f.serviceName.trim()}`,
-            `Shift: ${f.serviceHours}`,
-            `Location: ${f.address.trim()}`,
-        ].join('\n');
+        const notes = buildManualInvoiceNotes(f);
 
         let leadId = match?.id || '';
 
@@ -779,7 +843,8 @@ export default function Billing() {
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
             const days = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
             const grossAmount = days * Number(manualInvoiceForm.ratePerDay);
-            const netAmount = Math.max(0, grossAmount - Number(manualInvoiceForm.depositCollected || 0));
+            const depositCollected = Number(manualInvoiceForm.depositCollected || 0);
+            const netAmount = Math.max(0, grossAmount - depositCollected);
 
             const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                 method: 'POST',
@@ -799,6 +864,7 @@ export default function Billing() {
                     end_date: manualInvoiceForm.endDate,
                     rate_per_day: Number(manualInvoiceForm.ratePerDay),
                     deposit_collected: Number(manualInvoiceForm.depositCollected || 0),
+                    invoice_date: todayInputDate(),
                     due_date: addDaysInputDate(todayInputDate(), 3),
                 }),
             });
@@ -830,8 +896,48 @@ export default function Billing() {
             const waData = await waResp.json();
             if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed.');
 
+            const finalNotes = buildManualInvoiceNotes(manualInvoiceForm, {
+                'Gross Amount': grossAmount,
+                'Amount Payable': netAmount,
+                'Invoice No': invData.invoice_number || '',
+                'Invoice PDF': invData.public_url,
+            });
+
+            const { error: invoiceMetaError } = await supabase
+                .from('crm_leads')
+                .update({
+                    notes: finalNotes,
+                    estimated_value_monthly: netAmount,
+                    status: 'Invoice Generated',
+                    pipeline_stage: 'Monthly Billing',
+                })
+                .eq('id', leadId);
+            if (invoiceMetaError) throw invoiceMetaError;
+
+            if (depositCollected > 0) {
+                const depositRef = `MANUAL-DEP-${leadId.slice(0, 8).toUpperCase()}`;
+                const { data: existingDeposit, error: existingDepositError } = await supabase
+                    .from('payments')
+                    .select('id')
+                    .eq('transaction_ref', depositRef)
+                    .limit(1);
+                if (existingDepositError) throw existingDepositError;
+
+                if (!existingDeposit || existingDeposit.length === 0) {
+                    const { error: depositPaymentError } = await supabase.from('payments').insert([{
+                        amount: depositCollected,
+                        client_name: manualInvoiceForm.clientName.trim(),
+                        recorded_by: 'admin',
+                        transaction_ref: depositRef,
+                        payment_date: new Date().toISOString(),
+                        payment_type: 'deposit',
+                    }]);
+                    if (depositPaymentError) throw depositPaymentError;
+                }
+            }
+
             setMonthlyBills(prev => [{
-                id: leadId,
+                id: `manual-${leadId}`,
                 client_id: leadId,
                 client: manualInvoiceForm.clientName.trim(),
                 client_phone: manualInvoiceForm.phone.trim(),

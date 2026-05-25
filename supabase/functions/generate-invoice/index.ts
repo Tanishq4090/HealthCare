@@ -70,6 +70,7 @@ serve(async (req) => {
             deposit_amount,
             service_period,
             invoice_number: input_invoice_number,
+            invoice_date,
             due_date,
             is_deposit,
             manual_invoice,
@@ -109,16 +110,17 @@ serve(async (req) => {
 
         // Invoice meta
         const invoiceNum   = input_invoice_number || `INV-${Date.now().toString().slice(-6)}`;
-        const now          = new Date();
+        const parseDateOnly = (dateStr?: string) => {
+            if (!dateStr) return null;
+            const parsed = new Date(`${dateStr}T00:00:00`);
+            return isNaN(parsed.getTime()) ? null : parsed;
+        };
+        const now          = parseDateOnly(invoice_date) || new Date();
         
         let due = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
         if (due_date) {
-            try {
-                const parsedDue = new Date(due_date);
-                if (!isNaN(parsedDue.getTime())) {
-                    due = parsedDue;
-                }
-            } catch (e) {}
+            const parsedDue = parseDateOnly(due_date);
+            if (parsedDue) due = parsedDue;
         }
         
         const monthNames   = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
