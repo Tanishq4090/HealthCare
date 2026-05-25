@@ -697,7 +697,6 @@ export default function Billing() {
                     source: mode === 'new' && match ? 'Manual Invoice (Independent)' : 'Manual Invoice',
                     status: 'Invoice Generated',
                     pipeline_stage: 'Monthly Billing',
-                    service_interest: f.serviceName.trim(),
                     estimated_value_monthly: grossAmount,
                     notes,
                 }])
@@ -720,7 +719,6 @@ export default function Billing() {
                 source: 'Manual Invoice',
                 status: 'Invoice Generated',
                 pipeline_stage: 'Monthly Billing',
-                service_interest: f.serviceName.trim(),
                 estimated_value_monthly: grossAmount,
                 notes,
             };
