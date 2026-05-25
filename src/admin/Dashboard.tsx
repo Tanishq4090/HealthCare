@@ -2,7 +2,17 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { sanitizePipelineStages } from '../utils/crm';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, TrendingUp, Phone, CheckCircle2, Loader2, ArrowUpRight } from 'lucide-react';
+import { Users, TrendingUp, Phone, CheckCircle2, Loader2, ArrowUpRight, Bot, FileText, MessageSquare, Clock } from 'lucide-react';
+
+type ActivityItem = {
+    id: string;
+    lead_id?: string;
+    event_type: string;
+    description: string;
+    metadata?: Record<string, any>;
+    created_at: string;
+    leadName?: string;
+};
 
 export default function Dashboard() {
     const [stats, setStats] = useState({
@@ -12,9 +22,96 @@ export default function Dashboard() {
         aiVoiceCalls: { value: 48, trend: '+12%' }
     });
     const [revenueData, setRevenueData] = useState<any[]>([]);
+    const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
+        const fetchRecentActivity = async () => {
+            const [activityResult, whatsappResult] = await Promise.all([
+                supabase
+                    .from('crm_lead_activity')
+                    .select('id, lead_id, event_type, description, metadata, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(8),
+                supabase
+                    .from('whatsapp_logs')
+                    .select('id, status, error_message, payload, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(8),
+            ]);
+
+            if (activityResult.error) throw activityResult.error;
+            if (whatsappResult.error) {
+                console.warn('Dashboard WhatsApp activity unavailable:', whatsappResult.error.message);
+            }
+
+            const activities = activityResult.data || [];
+            const whatsappLogs = whatsappResult.error ? [] : (whatsappResult.data || []);
+
+            const leadIds = [...new Set((activities || []).map(item => item.lead_id).filter(Boolean))];
+            let leadNames: Record<string, string> = {};
+
+            if (leadIds.length > 0) {
+                const { data: leads, error: leadsError } = await supabase
+                    .from('crm_leads')
+                    .select('id, name')
+                    .in('id', leadIds);
+
+                if (leadsError) {
+                    console.warn('Dashboard activity lead names unavailable:', leadsError.message);
+                } else {
+                    leadNames = (leads || []).reduce((acc: Record<string, string>, lead: any) => {
+                        acc[lead.id] = lead.name;
+                        return acc;
+                    }, {});
+                }
+            }
+
+            const leadActivity = activities.map((item: any) => ({
+                ...item,
+                leadName: leadNames[item.lead_id]
+            }));
+
+            const whatsappActivity = whatsappLogs.map((log: any) => {
+                const payload = log.payload || {};
+                const templateName = payload.templateName || payload.type || 'message';
+                const recipient = payload.leadName || payload.original_recipient || payload.phone || 'client';
+                let description = 'AI performed an automated WhatsApp action.';
+
+                if (payload.pipelineStageUpdate) {
+                    description = `Moved lead to "${payload.pipelineStageUpdate}".`;
+                } else if (payload.templateName === 'post_call_intake') {
+                    description = `Sent intake form prompt to ${recipient}.`;
+                } else if (payload.templateName === 'deposit_request') {
+                    description = `Sent deposit invoice request to ${recipient}.`;
+                } else if (payload.templateName === 'client_monthly_invoice') {
+                    description = `Sent client service invoice to ${recipient}.`;
+                } else if (payload.templateName === 'staff_assignment') {
+                    description = `Sent staff assignment confirmation to ${recipient}.`;
+                } else if (payload.templateName) {
+                    description = `Sent ${payload.templateName} to ${recipient}.`;
+                } else if (payload.message) {
+                    description = `AI replied to ${recipient}: "${String(payload.message).slice(0, 60)}${String(payload.message).length > 60 ? '...' : ''}"`;
+                } else if (log.error_message) {
+                    description = `WhatsApp automation error: ${log.error_message}`;
+                }
+
+                return {
+                    id: `whatsapp-${log.id}`,
+                    lead_id: payload.leadId,
+                    event_type: log.status === 'error' ? 'automation_error' : `whatsapp_${templateName}`,
+                    description,
+                    metadata: payload,
+                    created_at: log.created_at,
+                    leadName: payload.leadName
+                };
+            });
+
+            setRecentActivity([...leadActivity, ...whatsappActivity]
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .slice(0, 8));
+        };
+
         const fetchDashboardData = async () => {
             setIsLoading(true);
             try {
@@ -51,6 +148,7 @@ export default function Dashboard() {
                 });
                 
                 setRevenueData(generatedRevenue);
+                await fetchRecentActivity();
             } catch (err) {
                 console.error("Dashboard fetch error:", err);
             } finally {
@@ -59,6 +157,19 @@ export default function Dashboard() {
         };
 
         fetchDashboardData();
+
+        const activitySub = supabase.channel('dashboard_recent_activity')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_lead_activity' }, () => {
+                fetchRecentActivity().catch(err => console.error('Dashboard activity refresh error:', err));
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_logs' }, () => {
+                fetchRecentActivity().catch(err => console.error('Dashboard WhatsApp activity refresh error:', err));
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(activitySub);
+        };
     }, []);
 
     if (isLoading) {
@@ -75,6 +186,33 @@ export default function Dashboard() {
         { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'AI Voice Calls', value: stats.aiVoiceCalls.value, trend: stats.aiVoiceCalls.trend, icon: <Phone className="w-5 h-5 text-amber-500"/>, bg: 'bg-amber-50' },
     ];
+
+    const formatActivityTime = (dateStr: string) => {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMinutes = Math.floor(diffMs / 60000);
+        if (diffMinutes < 1) return 'Just now';
+        if (diffMinutes < 60) return `${diffMinutes}m ago`;
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) return `${diffHours}h ago`;
+        return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    };
+
+    const getActivityIcon = (eventType: string) => {
+        if (eventType.includes('sent') || eventType.includes('invoice')) return <MessageSquare className="w-4 h-4" />;
+        if (eventType.includes('form') || eventType.includes('consent')) return <FileText className="w-4 h-4" />;
+        if (eventType.includes('call')) return <Phone className="w-4 h-4" />;
+        if (eventType.includes('stage') || eventType.includes('payment')) return <CheckCircle2 className="w-4 h-4" />;
+        return <Bot className="w-4 h-4" />;
+    };
+
+    const getActivityLabel = (eventType: string) => {
+        return eventType
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    };
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -138,12 +276,43 @@ export default function Dashboard() {
                         <h2 className="font-bold text-slate-900">Recent AI Activity</h2>
                         <span className="text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2 py-1 rounded-md">Live Stream</span>
                     </div>
-                    <div className="p-5 flex-1 overflow-auto flex items-center justify-center">
-                        <div className="text-center">
-                            <CheckCircle2 className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                            <p className="text-sm text-slate-500 font-medium">No recent activity.</p>
-                            <p className="text-xs text-slate-400 mt-1">Waiting for new AI events...</p>
-                        </div>
+                    <div className="p-4 flex-1 overflow-auto">
+                        {recentActivity.length > 0 ? (
+                            <div className="space-y-3">
+                                {recentActivity.map(activity => (
+                                    <div key={activity.id} className="flex gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                        <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                                            {getActivityIcon(activity.event_type)}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">
+                                                    {getActivityLabel(activity.event_type)}
+                                                </p>
+                                                <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 shrink-0">
+                                                    <Clock className="w-3 h-3" />
+                                                    {formatActivityTime(activity.created_at)}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-semibold text-slate-800 mt-1 leading-snug line-clamp-2">
+                                                {activity.description}
+                                            </p>
+                                            {activity.leadName && (
+                                                <p className="text-xs text-slate-500 mt-1 truncate">{activity.leadName}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-center">
+                                <div>
+                                    <CheckCircle2 className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                                    <p className="text-sm text-slate-500 font-medium">No recent activity.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Waiting for new AI events...</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

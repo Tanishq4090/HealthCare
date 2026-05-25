@@ -78,7 +78,8 @@ serve(async (req) => {
             .from('crm_leads').select('*').eq('id', lead_id).single();
         if (leadError || !lead) throw new Error(`Lead not found: ${leadError?.message || ''}`);
 
-        // Prefer the full address captured in the consent form. The intake form
+        // Deposit receipts and service invoices both use this Bill To block.
+        // Prefer the full address captured in the consent form; the intake form
         // often stores only a short location in lead.notes.
         const { data: latestConsent } = await supabase
             .from('client_consents')
