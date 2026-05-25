@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, AccessModule } from '../contexts/AuthContext';
 import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save } from 'lucide-react';
+import { toast } from 'sonner';
 
 const MODULES: { id: AccessModule; label: string; desc: string }[] = [
     { id: 'dashboard', label: 'Main Dashboard', desc: 'Access to high-level analytics and business overview.' },
@@ -17,6 +18,7 @@ export default function AccessControl() {
     // UI States
     const [isAdding, setIsAdding] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Form States
     const [formData, setFormData] = useState<Partial<User>>({
@@ -49,44 +51,54 @@ export default function AccessControl() {
         setIsAdding(false);
     };
 
-    const handleSave = () => {
-        if (!formData.username || !formData.name) return alert("Username and Name are required.");
+    const handleSave = async () => {
+        if (!formData.username || !formData.name) return toast.error("Username and name are required.");
 
-        if (isAdding) {
-            if (!formData.password) return alert("Password is required for new accounts.");
+        setIsSaving(true);
+        try {
+            if (isAdding) {
+                if (!formData.password) {
+                    toast.error("Password is required for new accounts.");
+                    return;
+                }
 
-            const newUser: User = {
-                id: 'usr_' + Date.now(),
-                username: formData.username,
-                password: formData.password,
-                name: formData.name,
-                role: 'user', // Default to standard user, only default admin is 'admin'
-                accesses: formData.accesses || [],
-                avatar: formData.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
-            };
-            createUser(newUser);
-        } else if (editingUserId) {
-            const existingUser = allUsers.find(u => u.id === editingUserId);
-            if (!existingUser) return;
+                const newUser: User = {
+                    id: 'new',
+                    username: formData.username.trim().toLowerCase(),
+                    password: formData.password,
+                    name: formData.name.trim(),
+                    role: 'user',
+                    accesses: formData.accesses || [],
+                    avatar: formData.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+                };
+                await createUser(newUser);
+                toast.success(`${newUser.name} can now sign in to 99Care OS.`);
+            } else if (editingUserId) {
+                const existingUser = allUsers.find(u => u.id === editingUserId);
+                if (!existingUser) return;
 
-            const updated: User = {
-                ...existingUser,
-                username: formData.username,
-                name: formData.name,
-                accesses: formData.accesses || [],
-                // only update password if they typed a new one, else keep old
-                ...(formData.password ? { password: formData.password } : {})
-            };
+                const updated: User = {
+                    ...existingUser,
+                    username: formData.username.trim().toLowerCase(),
+                    name: formData.name.trim(),
+                    accesses: formData.accesses || [],
+                    ...(formData.password ? { password: formData.password } : {})
+                };
 
-            // Re-calculate avatar if name changed
-            if (existingUser.name !== formData.name) {
-                updated.avatar = formData.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+                if (existingUser.name !== formData.name) {
+                    updated.avatar = formData.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+                }
+
+                await updateUser(updated);
+                toast.success(`${updated.name}'s access was updated.`);
             }
 
-            updateUser(updated);
+            resetForm();
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to save staff account.');
+        } finally {
+            setIsSaving(false);
         }
-
-        resetForm();
     };
 
     const toggleAccess = (moduleId: AccessModule) => {
@@ -216,9 +228,13 @@ export default function AccessControl() {
                         <button onClick={resetForm} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200/50 transition-colors">
                             Cancel
                         </button>
-                        <button onClick={handleSave} className="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm flex items-center gap-2">
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
                             <Save className="w-4 h-4" />
-                            Save Account
+                            {isSaving ? 'Saving...' : 'Save Account'}
                         </button>
                     </div>
                 </div>
@@ -284,8 +300,14 @@ export default function AccessControl() {
 
                                             {u.id !== user?.id && (
                                                 <button
-                                                    onClick={() => {
-                                                        if (window.confirm(`Are you sure you want to delete ${u.name}?`)) deleteUser(u.id);
+                                                    onClick={async () => {
+                                                        if (!window.confirm(`Are you sure you want to delete ${u.name}?`)) return;
+                                                        try {
+                                                            await deleteUser(u.id);
+                                                            toast.success(`${u.name} was removed from OS access.`);
+                                                        } catch (err: any) {
+                                                            toast.error(err.message || 'Failed to delete staff account.');
+                                                        }
                                                     }}
                                                     className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                     title="Delete User"

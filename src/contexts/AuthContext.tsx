@@ -18,71 +18,95 @@ interface AuthContextType {
     user: User | null;
     allUsers: User[]; 
     loading: boolean;
-    login: (role?: string) => void; 
+    login: (role?: string, staffUser?: User) => Promise<void>; 
     logout: () => Promise<void>;
     hasAccess: (module: AccessModule) => boolean;
-    createUser: (user: User) => void;
-    updateUser: (user: User) => void;
-    deleteUser: (userId: string) => void;
+    refreshUsers: () => Promise<void>;
+    createUser: (user: User) => Promise<void>;
+    updateUser: (user: User) => Promise<void>;
+    deleteUser: (userId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'healthfirst_pure_token';
+const STAFF_SESSION_KEY = 'healthfirst_staff_user';
+
+const adminUser: User = {
+    id: 'admin',
+    username: 'admin',
+    name: 'System Admin',
+    role: 'admin',
+    accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
+    avatar: 'SA'
+};
 
 // Removal of HARDCODED_USERS as we are moving to database-backed authentication.
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [allUsers] = useState<User[]>([]); 
+    const [allUsers, setAllUsers] = useState<User[]>([]); 
     const [loading, setLoading] = useState(true);
+
+    const refreshUsers = async () => {
+        try {
+            const { data, error } = await supabase.functions.invoke('staff-auth', {
+                body: { action: 'list' }
+            });
+
+            if (error) throw error;
+            setAllUsers([adminUser, ...((data?.users || []) as User[])]);
+        } catch (err) {
+            console.error('Failed to load OS staff users:', err);
+            setAllUsers([adminUser]);
+        }
+    };
 
     useEffect(() => {
         const checkUser = async () => {
-            const { data: { user: supabaseUser } } = await supabase.auth.getUser();
-            if (supabaseUser) {
-                // Fetch additional employee data from public.employees
-                const { data: profile } = await supabase
-                    .from('employees')
-                    .select('id, username, full_name, role, accesses, photo_url')
-                    .eq('username', supabaseUser.email?.split('@')[0])
-                    .single();
+            const savedStaffUser = localStorage.getItem(STAFF_SESSION_KEY);
+            const legacyAdmin = localStorage.getItem(LOCAL_STORAGE_KEY);
 
-                if (profile) {
-                    setUser({
-                        id: profile.id,
-                        username: profile.username,
-                        name: profile.full_name,
-                        role: profile.role,
-                        accesses: profile.accesses || [],
-                        avatar: profile.photo_url || profile.full_name[0]
-                    });
+            if (savedStaffUser) {
+                try {
+                    setUser(JSON.parse(savedStaffUser));
+                } catch {
+                    localStorage.removeItem(STAFF_SESSION_KEY);
+                    setUser(null);
                 }
+            } else if (legacyAdmin === 'admin-token') {
+                setUser(adminUser);
             } else {
                 setUser(null);
             }
+
+            await refreshUsers();
             setLoading(false);
         };
         checkUser();
     }, []);
 
-    const login = async (role?: string) => {
+    const login = async (role?: string, staffUser?: User) => {
+        if (staffUser) {
+            localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(staffUser));
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            setUser(staffUser);
+            await refreshUsers();
+            return;
+        }
+
         if (role === 'admin') {
             localStorage.setItem(LOCAL_STORAGE_KEY, 'admin-token');
-            setUser({
-                id: 'admin',
-                username: 'admin',
-                name: 'System Admin',
-                role: 'admin',
-                accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
-                avatar: ''
-            });
+            localStorage.removeItem(STAFF_SESSION_KEY);
+            setUser(adminUser);
+            await refreshUsers();
         }
     };
 
     const logout = async () => {
         await supabase.auth.signOut();
         localStorage.removeItem(LOCAL_STORAGE_KEY);
+        localStorage.removeItem(STAFF_SESSION_KEY);
         setUser(null);
     };
 
@@ -92,12 +116,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return user.accesses.includes(module);
     };
 
-    const createUser = () => {};
-    const updateUser = () => {};
-    const deleteUser = () => {};
+    const callStaffAuth = async (body: Record<string, unknown>) => {
+        const { data, error } = await supabase.functions.invoke('staff-auth', { body });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        await refreshUsers();
+        return data;
+    };
+
+    const createUser = async (newUser: User) => {
+        await callStaffAuth({
+            action: 'create',
+            username: newUser.username,
+            password: newUser.password,
+            name: newUser.name,
+            accesses: newUser.accesses,
+        });
+    };
+
+    const updateUser = async (updatedUser: User) => {
+        await callStaffAuth({
+            action: 'update',
+            id: updatedUser.id,
+            username: updatedUser.username,
+            password: updatedUser.password,
+            name: updatedUser.name,
+            accesses: updatedUser.accesses,
+        });
+
+        if (user?.id === updatedUser.id) {
+            const nextUser = { ...user, ...updatedUser, password: undefined };
+            setUser(nextUser);
+            localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(nextUser));
+        }
+    };
+
+    const deleteUser = async (userId: string) => {
+        await callStaffAuth({ action: 'delete', id: userId });
+    };
 
     return (
-        <AuthContext.Provider value={{ user, allUsers, loading, login, logout, hasAccess, createUser, updateUser, deleteUser }}>
+        <AuthContext.Provider value={{ user, allUsers, loading, login, logout, hasAccess, refreshUsers, createUser, updateUser, deleteUser }}>
             {children}
         </AuthContext.Provider>
     );

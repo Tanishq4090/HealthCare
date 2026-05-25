@@ -32,29 +32,30 @@ export default function Login() {
         setIsLoading(true);
 
         try {
-            // Virtual Email strategy: map username to staff internal domain
             const cleanUser = username.toLowerCase().trim();
-            const virtualEmail = `${cleanUser}@staff.healthcare`;
 
-            const { error } = await supabase.auth.signInWithPassword({
-                email: virtualEmail,
-                password: password,
+            const { data, error } = await supabase.functions.invoke('staff-auth', {
+                body: {
+                    action: 'login',
+                    username: cleanUser,
+                    password
+                }
             });
 
-            if (error) {
-                // Check if it's the legacy dev credentials for quick fallback
-                if (cleanUser === 'admin' && password === 'password123') {
-                     await login('admin');
-                     navigate('/admin', { replace: true });
-                     return;
-                } else {
-                    setError('Invalid username or password.');
-                }
+            if (!error && data?.user) {
+                await login(undefined, data.user);
+                navigate('/admin', { replace: true });
                 return;
             }
 
-            // Success redirect is handled by useEffect in Login.tsx
-            navigate('/admin', { replace: true });
+            // Legacy fallback for the built-in owner account.
+            if (cleanUser === 'admin' && password === 'password123') {
+                 await login('admin');
+                 navigate('/admin', { replace: true });
+                 return;
+            }
+
+            setError(data?.error || 'Invalid username or password.');
 
         } catch (err: any) {
             setError(err.message || 'Authentication failed.');

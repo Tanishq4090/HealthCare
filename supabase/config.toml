@@ -68,6 +68,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/drip-campaign/index.ts"
 
+[functions.staff-auth]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/staff-auth/index.ts"
+
 [functions.temp-cleanup]
 enabled = true
 verify_jwt = true
