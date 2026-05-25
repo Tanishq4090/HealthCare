@@ -1205,7 +1205,7 @@ export default function CRM() {
         try {
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, created_at)')
+                .select('*, crm_quotations(start_date, duration, created_at), client_consents(*)')
                 .is('deleted_at', null)
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
@@ -1215,7 +1215,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, created_at)')
+                        .select('*, crm_quotations(start_date, duration, created_at), client_consents(*)')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -4511,6 +4511,40 @@ export default function CRM() {
                             </div>
                         </div>
                     </div>
+
+                    {/* ── Patient & Consent Details ──────────────────────────── */}
+                    {selectedInspectorLead.client_consents && selectedInspectorLead.client_consents.length > 0 && (
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Patient & Care Details</p>
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
+                                <div className="flex items-center justify-between px-4 py-3">
+                                    <span className="text-sm text-slate-500 font-medium">Patient Name</span>
+                                    <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.client_consents[0].patient_name || '—'}</span>
+                                </div>
+                                <div className="flex items-center justify-between px-4 py-3">
+                                    <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
+                                    <span className="text-sm font-semibold text-slate-800">
+                                        {selectedInspectorLead.client_consents[0].age ? `${selectedInspectorLead.client_consents[0].age} yrs` : '—'}
+                                        {selectedInspectorLead.client_consents[0].weight ? `, ${selectedInspectorLead.client_consents[0].weight}` : ''}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between px-4 py-3">
+                                    <span className="text-sm text-slate-500 font-medium">Alternate Phone</span>
+                                    <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.client_consents[0].alternate_contact_number || '—'}</span>
+                                </div>
+                                <div className="flex items-center justify-between px-4 py-3">
+                                    <span className="text-sm text-slate-500 font-medium">Address</span>
+                                    <span className="text-sm font-semibold text-slate-800 text-right max-w-[200px] truncate" title={selectedInspectorLead.client_consents[0].address}>
+                                        {selectedInspectorLead.client_consents[0].address || '—'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between px-4 py-3">
+                                    <span className="text-sm text-slate-500 font-medium">Referred By</span>
+                                    <span className="text-sm font-semibold text-slate-800">{selectedInspectorLead.client_consents[0].reference_by || '—'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* ── Lead Value ─────────────────────────────────── */}
                     <div>

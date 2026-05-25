@@ -97,7 +97,7 @@ serve(async (req) => {
             // --- CONSENT FORM FLOW BRANCH ---
             if (formData.flow_type === 'consent_form') {
                 console.log(`[Flow] Processing Consent Form for ${formData.patient_name}`);
-                
+
                 // Find existing lead to attach to
                 const { data: existingLeads } = await supabase
                     .from('crm_leads')
@@ -108,12 +108,16 @@ serve(async (req) => {
                 const existingLead = existingLeads?.[0] ?? null;
 
                 if (existingLead) {
-                    // Automatically advance the CRM pipeline and sync name
-                    await supabase.from('crm_leads').update({ 
+                    // Automatically advance the CRM pipeline and sync name (preserve relative/lead name, don't overwrite with patient unless unknown)
+                    const newLeadName = (existingLead.name && existingLead.name !== 'Unknown Lead') 
+                        ? existingLead.name 
+                        : (formData.relative_name || formData.patient_name || 'Unknown Lead');
+
+                    await supabase.from('crm_leads').update({
                         pipeline_stage: 'Form Submitted',
-                        name: formData.patient_name || existingLead.name
+                        name: newLeadName
                     }).eq('id', existingLead.id);
-                    
+
                     // Securely store the patient details and terms acceptance
                     // Delete old consent to ensure we overwrite if they are editing/resubmitting
                     await supabase.from('client_consents').delete().eq('lead_id', existingLead.id);
@@ -163,13 +167,13 @@ serve(async (req) => {
                         })
                     });
                 }
-                
+
                 await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
                 await supabase.from('whatsapp_logs').insert([{
                     sid: wamid, status: 'success',
                     payload: { type: 'flow_submission_consent', patient_name: formData.patient_name, other_details: formData.other_details, original_recipient: fromPhone }
                 }]);
-                
+
                 // Log user action in chat history
                 await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: '[Consent form submitted]' }]);
 
@@ -234,7 +238,7 @@ serve(async (req) => {
             }
             const resolvedService = service !== 'Unknown' ? service
                 : (existingService !== 'Unknown' ? existingService : 'Unknown');
-                
+
             let notesStr = `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`;
             if (startDate) notesStr += `\nStart Date: ${startDate}`;
             if (endDate) notesStr += `\nEnd Date: ${endDate}`;
@@ -320,7 +324,7 @@ serve(async (req) => {
         // Attempt to log the incoming message immediately. 
         // If 'sid' is unique, this will fail for retries.
         const { error: idempotencyError } = await supabase.from('whatsapp_logs').insert([{
-            sid: wamid, 
+            sid: wamid,
             status: 'processing',
             payload: { type: 'incoming_message', raw_text: rawBody }
         }]);
@@ -367,7 +371,7 @@ serve(async (req) => {
             'have a nice day', 'have a good day', 'good night', 'good morning', 'good afternoon', 'good evening'
         ];
         const cleanMsg = rawBody.toLowerCase().trim().replace(/[^\w\s]/g, '').trim();
-        
+
         // If it's pure stopword-only message, we stay silent even for new leads
         const isStopWord = stopWords.includes(cleanMsg);
         const isPositiveIntent = positiveIntentWords.some(w => cleanMsg === w || cleanMsg.startsWith(w));
@@ -376,8 +380,8 @@ serve(async (req) => {
             // Check if we already sent an acknowledgment response in history to avoid repeating ourselves
             const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
             const alreadyAcknowledged = lastAssistantMsg && (
-                lastAssistantMsg.content.includes("prepar") || 
-                lastAssistantMsg.content.includes("contact") || 
+                lastAssistantMsg.content.includes("prepar") ||
+                lastAssistantMsg.content.includes("contact") ||
                 lastAssistantMsg.content.includes("shukriya") ||
                 stopWords.some(sw => lastAssistantMsg.content.toLowerCase().includes(sw))
             );
@@ -435,7 +439,7 @@ serve(async (req) => {
                     // Auto-dispatch the consent form Flow
                     const CONSENT_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
                     if (META_SYSTEM_TOKEN && META_PHONE_ID && CONSENT_FLOW_ID) {
-                        
+
                         // 1. Fetch latest quotation to pre-fill service details
                         const { data: quotes } = await supabase
                             .from('crm_quotations')
@@ -461,12 +465,20 @@ serve(async (req) => {
                             if (match && match[1]) extractedAddress = match[1].trim();
                         }
 
+                        const rawShift = consent?.offered_time || quote?.shift_type || "";
+                        let formattedShift = "";
+                        if (rawShift.toLowerCase().includes("24")) {
+                            formattedShift = "24 hours";
+                        } else if (rawShift.toLowerCase().includes("10")) {
+                            formattedShift = "10 hours";
+                        }
+
                         const prefillData = {
                             patient_name: consent?.patient_name || "",
                             contact_number: consent?.contact_number || purePhone || "",
                             service_category: consent?.service_category || quote?.service_category || quote?.service_name || "",
                             service_start_date: consent?.service_start_date || (quote?.start_date ? quote.start_date.split('T')[0] : ""),
-                            offered_time: consent?.offered_time || quote?.shift_type || "",
+                            offered_time: formattedShift,
                             relative_name: consent?.relative_name || earlyLead.name || "",
                             age: consent?.age || "",
                             weight: consent?.weight || "",
@@ -496,7 +508,7 @@ serve(async (req) => {
                                             type: "action",
                                             action: {
                                                 flow_token: `consent_${purePhone}_${Date.now()}`,
-                                                flow_action_data: { 
+                                                flow_action_data: {
                                                     screen: "CONSENT_SCREEN",
                                                     ...prefillData
                                                 }
@@ -580,7 +592,7 @@ serve(async (req) => {
             }
 
             // Truly new lead — create it
-            await supabase.from('crm_leads').insert([{ 
+            await supabase.from('crm_leads').insert([{
                 name: contact?.profile?.name || 'Unknown Lead',
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Chat',
@@ -659,17 +671,17 @@ serve(async (req) => {
         // This guarantees consistent, on-brand messaging at every step of the customer journey.
         // NOTE: We never update the pipeline stage here — the CRM team does that manually.
         const quotationAlreadySent = historyData.some(m => m.role === 'assistant' && (m.content.includes('Pricing Information') || m.content.includes('Service Details for')));
-        
+
         const STAGE_SCRIPTS: Record<string, string> = {
             'New': `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
-            
+
             'New Lead': `Thank you for reaching out! 🙏 To prepare the most accurate quotation for you, please complete the "Fill Service Details" form we shared earlier. This helps our team understand your requirements perfectly! 😊📋`,
-            
-            'In Discussion': earlyLead?.estimated_value_monthly > 0 
+
+            'In Discussion': earlyLead?.estimated_value_monthly > 0
                 ? `Our 99 team will contact you shortly for this and resolve all your issues 🙏`
                 : `Thank you for your patience! 🙏 Our 99 Care team is already preparing your personalised quotation based on the details you shared and will send it shortly. 😊✨`,
 
-            'Quotation Sent': 
+            'Quotation Sent':
                 `Thank you! 🙏 Please complete the consent form we shared with you so that we can move forward and assign your staff. 😊✨`,
 
             'Form Submitted':
@@ -711,7 +723,7 @@ serve(async (req) => {
         if (earlyLead?.needs_attention === true) {
             const supportMsg = `Our 99 team will contact you shortly for this and resolve all your issues 🙏`;
             const lastAssistantMsg = historyData.filter(m => m.role === 'assistant').pop();
-            
+
             // Loop prevention: only send it once
             if (lastAssistantMsg?.content !== supportMsg) {
                 if (META_SYSTEM_TOKEN && META_PHONE_ID) {
@@ -726,7 +738,7 @@ serve(async (req) => {
                     status: 'success', payload: { type: 'support_reply', message: supportMsg, original_recipient: fromPhone }
                 }).eq('sid', wamid);
             }
-            
+
             // Stay silent on subsequent messages until staff steps in
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
@@ -788,17 +800,17 @@ serve(async (req) => {
                 .order('called_at', { ascending: false }).limit(3);
 
             if (callTranscripts && callTranscripts.length > 0) {
-                const isEarlyStage = !leadRecord || 
-                    ['New', 'New Inquiry'].includes(leadRecord.pipeline_stage) || 
+                const isEarlyStage = !leadRecord ||
+                    ['New', 'New Inquiry'].includes(leadRecord.pipeline_stage) ||
                     (leadRecord.pipeline_stage === 'In Discussion' && (!leadRecord.estimated_value_monthly || leadRecord.estimated_value_monthly === 0));
 
                 if (isEarlyStage) {
                     const leadName = leadRecord?.name?.split('—')[0]?.trim() || 'there';
                     const quotationMsg = `Namaste ${leadName} ji! 🙏\n\nWe already have your details from our recent call. Our 99 Care team is preparing your personalised quotation and will share it on this number shortly.\n\nFeel free to ask any questions in the meantime. We're always here for you! 😊✨`;
 
-                // Loop prevention: don't send this exact message twice in a row
-                const lastAssistantMsg = (historyData || []).filter((m: any) => m.role === 'assistant').pop();
-                
+                    // Loop prevention: don't send this exact message twice in a row
+                    const lastAssistantMsg = (historyData || []).filter((m: any) => m.role === 'assistant').pop();
+
                     if (lastAssistantMsg?.content === quotationMsg) {
                         console.log(`[Call Transcript] Already sent quotation prep msg to ${purePhone}. Handing over to AI.`);
                         // Fall through to Groq AI logic below
