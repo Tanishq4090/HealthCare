@@ -10,7 +10,7 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
-import { buildVoiceCallIntakePrefill } from '../utils/voiceCallIntake';
+import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
 import {
     findClientMasterByPhone,
     isLegacyPipelineStage,
@@ -766,11 +766,21 @@ export default function CRM() {
                 .eq('conversation_id', call.id)
                 .maybeSingle();
 
-            if (transcriptRow?.automation_error === 'GREETING_SENT' || 
-                transcriptRow?.automation_error === 'GREETING_PROCESSING') {
+            if (
+                !isManual &&
+                (transcriptRow?.automation_error === 'GREETING_SENT' ||
+                    transcriptRow?.automation_error === 'GREETING_PROCESSING')
+            ) {
                 console.log(`[Auto-Greet] DB lock found (${transcriptRow.automation_error}) for ${call.id} — skipping.`);
                 setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
                 return;
+            }
+
+            if (isManual && transcriptRow?.automation_error === 'GREETING_SENT') {
+                await supabase
+                    .from('call_transcripts')
+                    .update({ automation_error: 'GREETING_RESENDING' })
+                    .eq('conversation_id', call.id);
             }
 
             // Mark as in-progress in DB BEFORE the actual WhatsApp send
@@ -807,7 +817,7 @@ export default function CRM() {
                 phone: digits,
                 useTemplate: true,
                 templateName: 'post_call_intake',
-                leadName: firstName,
+                leadName: intakePrefill.flowData.name || firstName,
                 templateParams: intakePrefill.templateParams,
                 flowData: intakePrefill.flowData,
             };
@@ -880,10 +890,12 @@ export default function CRM() {
             }
 
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
+            const prefillHint = `${intakePrefill.flowData.service || intakePrefill.service} · ${intakePrefill.shiftLabel}`;
+            const resendNote = isManual ? ' (resent)' : '';
             if (deliveryConfirmed) {
-                toast.success(`✅ Greeting sent & confirmed delivered to ${firstName}!`);
+                toast.success(`✅ Greeting sent to ${firstName}${resendNote}! Prefill: ${prefillHint}`);
             } else {
-                toast.success(`✅ Greeting dispatched to ${firstName}. (Delivery log pending)`);
+                toast.success(`✅ Greeting dispatched to ${firstName}${resendNote}. Prefill: ${prefillHint}`);
             }
         } catch (err: any) {
             console.error('[Greeting Error]', err.message);
@@ -1099,6 +1111,7 @@ export default function CRM() {
                 // Prioritize dedicated WhatsApp number if Vapi captured it, otherwise use regular phone
                 let targetNumber = lead.whatsapp_number || lead.phone || '918000044090';
                 const phoneDigits = targetNumber.replace(/\D/g, '');
+                const bulkPrefill = buildLeadIntakePrefill(lead);
 
                 const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                     method: 'POST',
@@ -1110,15 +1123,17 @@ export default function CRM() {
                     body: JSON.stringify({
                         phone: phoneDigits,
                         leadId: lead.id,
+                        leadName: bulkPrefill.flowData.name || lead.name?.split(/\s+/)[0] || 'there',
                         useTemplate: true,
                         templateName: 'post_call_intake',
-                        templateParams: [lead.name ? lead.name.split('—')[0].trim() : 'there'],
+                        templateParams: bulkPrefill.templateParams,
+                        flowData: bulkPrefill.flowData,
                     }),
                 });
 
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.details?.message || err.error || err.message || `HTTP ${response.status}`);
+                const bulkRes = await response.json().catch(() => ({}));
+                if (!response.ok || bulkRes.success === false) {
+                    throw new Error(bulkRes.error || bulkRes.message || `HTTP ${response.status}`);
                 }
 
                 sentCount++;
@@ -1645,18 +1660,19 @@ export default function CRM() {
             body: JSON.stringify({
                 phone: phoneDigits,
                 leadId: lead.id,
+                leadName: lead.name?.split(/\s+/)[0] || 'there',
                 useTemplate: true,
                 templateName: templateMap[action],
-                templateParams: params || [lead.name.split(' ')[0] || 'there'],
-                flowData: flowData
+                templateParams: params || (action === 'inquiry' ? buildLeadIntakePrefill(lead).templateParams : [lead.name.split(' ')[0] || 'there']),
+                flowData: flowData || (action === 'inquiry' ? buildLeadIntakePrefill(lead).flowData : undefined),
             })
         });
 
-        if (!response.ok) {
-            const errBody = await response.text();
-            throw new Error(`Dispatch failed: ${errBody || response.statusText}`);
+        const resData = await response.json().catch(() => ({}));
+        if (!response.ok || resData.success === false) {
+            throw new Error(resData.error || `Dispatch failed: HTTP ${response.status}`);
         }
-        return response.json();
+        return resData;
     };
 
     const handleDispatchQuotation = async (quotationData: any) => {
@@ -1905,6 +1921,10 @@ export default function CRM() {
                 toast.loading("Sending via WhatsApp...", { id: toastId });
             }
 
+            const inquiryPrefill = agentTargetAction === 'inquiry' && agentTargetLead
+                ? buildLeadIntakePrefill(agentTargetLead)
+                : null;
+
             const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
@@ -1914,6 +1934,7 @@ export default function CRM() {
                 },
                 body: JSON.stringify({
                     phone: phoneDigits,
+                    leadName: inquiryPrefill?.flowData?.name || agentTargetLead?.name?.split(/\s+/)[0] || 'there',
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
                     sendInvoicePdf: agentTargetAction === 'deposit' || agentTargetAction === 'billing',
@@ -1932,7 +1953,10 @@ export default function CRM() {
                                         selectedWorker?.job_title || 'Care Staff',
                                         assignmentResult?.shareableUrl || ''
                                       ]
-                                    : (agentTargetAction === 'inquiry' || agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there'), String(invoiceDepositAmount || '')] : undefined),
+                                    : agentTargetAction === 'inquiry' && inquiryPrefill
+                                    ? inquiryPrefill.templateParams
+                                    : (agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there'), String(invoiceDepositAmount || '')] : undefined),
+                    flowData: inquiryPrefill?.flowData,
                 })
             });
 
@@ -1940,7 +1964,7 @@ export default function CRM() {
             let resData: any = {};
             try { resData = textRes ? JSON.parse(textRes) : {}; } catch(e) {}
             
-            if (!response.ok) {
+            if (!response.ok || resData.success === false) {
                 let errMsg = response.statusText;
                 
                 if (resData.error && typeof resData.error === 'object') {
@@ -3106,7 +3130,9 @@ export default function CRM() {
                                                         if (serviceName === 'Unknown' || serviceName === '') serviceName = null;
                                                         if (shiftBubble === '' || shiftBubble === 'Unknown') shiftBubble = null;
                                                         if (serviceLocation === ', , , ' || serviceLocation === '') serviceLocation = null;
-                                                        const deliveryLog = deliveryLogs.find(l => l.payload?.lead_id === item.id);
+                                                        const deliveryLog = deliveryLogs
+                                                            .filter((l) => l.payload?.lead_id === item.id)
+                                                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                                                         return (
                                                         <div key={item.id} className="relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
                                                             {item.needs_attention && (
@@ -3179,8 +3205,16 @@ export default function CRM() {
                                                                         {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
                                                                     </span>
                                                                     {deliveryLog && (
-                                                                        <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${deliveryLog.status === 'delivered' ? 'bg-green-100 text-green-700' : deliveryLog.status === 'read' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                                            {deliveryLog.status}
+                                                                        <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                                                            deliveryLog.status === 'failed' || deliveryLog.status === 'error'
+                                                                                ? 'bg-red-100 text-red-700'
+                                                                                : deliveryLog.status === 'delivered'
+                                                                                ? 'bg-green-100 text-green-700'
+                                                                                : deliveryLog.status === 'read'
+                                                                                ? 'bg-blue-100 text-blue-700'
+                                                                                : 'bg-slate-100 text-slate-500'
+                                                                        }`} title={deliveryLog.error_message || undefined}>
+                                                                            {deliveryLog.status === 'accepted_by_meta' ? 'sent' : deliveryLog.status}
                                                                         </span>
                                                                     )}
                                                                 </div>

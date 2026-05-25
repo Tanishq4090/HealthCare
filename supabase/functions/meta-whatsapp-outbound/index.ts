@@ -6,6 +6,49 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function shiftLabelToFlowId(label: string): string {
+  const h = (label || '').toLowerCase();
+  if (/\b24/.test(h)) return '24-Hour Shift';
+  return '10-Hour Shift';
+}
+
+/** Build INTAKE_FORM screen data for flow_action_data (keys must match Flow JSON `data` schema). */
+function buildIntakeFlowPayload(
+  flowData: unknown,
+  bodyParams: { text: string }[],
+  leadName?: string,
+): Record<string, string> {
+  const out: Record<string, string> = {
+    country: 'India',
+    state: 'Gujarat',
+    city: 'Surat',
+    shift_type: '10-Hour Shift',
+  };
+
+  if (flowData && typeof flowData === 'object') {
+    for (const [key, val] of Object.entries(flowData as Record<string, unknown>)) {
+      if (key === 'screen' || val == null || val === '') continue;
+      out[key] = String(val);
+    }
+  }
+
+  const firstName = bodyParams[0]?.text?.trim();
+  const serviceText = bodyParams[1]?.text?.trim();
+  const shiftText = bodyParams[2]?.text?.trim();
+
+  const fromClient = flowData && typeof flowData === 'object' ? (flowData as Record<string, unknown>) : {};
+  if (!out.name && firstName && firstName !== 'there') out.name = firstName;
+  if (!fromClient.service && serviceText && !['home healthcare', 'general'].includes(serviceText.toLowerCase())) {
+    out.service = serviceText;
+  }
+  if (!fromClient.shift_type && shiftText && shiftText.toLowerCase() !== 'general') {
+    out.shift_type = shiftLabelToFlowId(shiftText);
+  }
+  if (leadName?.trim() && !out.name) out.name = leadName.trim();
+
+  return out;
+}
+
 serve(async (req) => {
   const url = new URL(req.url);
 
@@ -211,11 +254,23 @@ serve(async (req) => {
       // Add flow button to post_call_intake or consent_form templates
       const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
       if ((templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
-        const flowPayload = flowData && typeof flowData === "object" ? { ...flowData } : {};
-        const screenOverride = typeof flowPayload.screen === "string" ? flowPayload.screen : null;
-        delete flowPayload.screen;
-        const defaultScreen = templateName === "consent_form" ? "CONSENT_SCREEN" : "INTAKE_FORM";
-        const initialScreen = screenOverride || defaultScreen;
+        const actionPayload: Record<string, unknown> = {
+          flow_token: `flow_${digits}_${Date.now()}`,
+        };
+
+        if (templateName === "post_call_intake") {
+          // Always send screen data — logs showed flowData:null so prefill never reached Meta
+          actionPayload.flow_action_data = buildIntakeFlowPayload(flowData, parameters, leadName);
+        } else if (flowData && typeof flowData === "object") {
+          const consentPayload: Record<string, string> = {};
+          for (const [key, val] of Object.entries(flowData)) {
+            if (key === "screen" || val == null || val === "") continue;
+            consentPayload[key] = String(val);
+          }
+          if (Object.keys(consentPayload).length > 0) {
+            actionPayload.flow_action_data = consentPayload;
+          }
+        }
 
         components.push({
           type: "button",
@@ -224,13 +279,7 @@ serve(async (req) => {
           parameters: [
             {
               type: "action",
-              action: {
-                flow_token: `flow_${digits}_${Date.now()}`,
-                flow_action_data: {
-                  screen: initialScreen,
-                  ...flowPayload
-                }
-              }
+              action: actionPayload
             }
           ]
         });
@@ -334,7 +383,8 @@ serve(async (req) => {
                 original_recipient: digits,
                 templateName,
                 useTemplate,
-                message
+                message,
+                flowData: flowData || null,
             }
         });
 
@@ -372,7 +422,8 @@ serve(async (req) => {
                 templateName,
                 useTemplate,
                 templateParams,
-                message
+                message,
+                flowData: flowData || null,
             }
         });
 

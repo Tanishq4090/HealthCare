@@ -11,6 +11,7 @@ const SERVICE_OPTIONS = [
     'Old Age Care',
 ] as const;
 
+/** Exact labels from ElevenLabs data collection / call titles */
 const INTENT_TO_SERVICE: Record<string, string> = {
     'old age person care': 'Old Age Care',
     'old age care': 'Old Age Care',
@@ -20,10 +21,40 @@ const INTENT_TO_SERVICE: Record<string, string> = {
     'maternity': 'Maternity Care',
     'new born baby care': 'New Born Baby Care',
     'newborn baby care': 'New Born Baby Care',
+    'newborn care': 'New Born Baby Care',
+    'new born care': 'New Born Baby Care',
+    'baby care': 'New Born Baby Care',
     'japa care': 'Japa Care (Post-Delivery)',
     'japa care (post-delivery)': 'Japa Care (Post-Delivery)',
-    'home healthcare': 'Old Age Care',
 };
+
+/** Order matters: more specific phrases before generic (e.g. newborn before "care"). */
+const SERVICE_SIGNALS: { service: string; re: RegExp }[] = [
+    { service: 'New Born Baby Care', re: /\b(?:new\s*born|newborn|neonat(?:al|e)?|baby\s*care)\b/i },
+    { service: 'Japa Care (Post-Delivery)', re: /\b(?:japa|post[\s-]*delivery)\b/i },
+    { service: 'Maternity Care', re: /\b(?:maternity|pregnant|pregnancy|postpartum)\b/i },
+    { service: 'Nursing Care', re: /\b(?:nursing|nurse|patient\s+care)\b/i },
+    { service: 'Old Age Care', re: /\b(?:old\s*age|elderly|senior\s+citizen|geriatric)\b/i },
+];
+
+function stripCrmAutoNotes(text: string): string {
+    return text
+        .split('\n')
+        .filter((line) => !/^(service|shift|start date|source):/i.test(line.trim()))
+        .join('\n');
+}
+
+function matchServiceInText(text: string): string | null {
+    const hay = text || '';
+    if (!hay.trim()) return null;
+    for (const { service, re } of SERVICE_SIGNALS) {
+        if (re.test(hay)) return service;
+    }
+    for (const option of SERVICE_OPTIONS) {
+        if (hay.toLowerCase().includes(option.toLowerCase())) return option;
+    }
+    return null;
+}
 
 const MONTHS: Record<string, number> = {
     jan: 0,
@@ -66,21 +97,26 @@ function normalizeText(s: string): string {
     return s.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-export function mapIntentToService(intent: string, summary: string): string {
+/**
+ * Resolve service for WhatsApp prefill.
+ * Voice log "intent" (ElevenLabs data collection) wins when it's a known service label.
+ */
+export function mapIntentToService(intent: string, summary: string, extraContext = ''): string {
     const key = normalizeText(intent);
     if (INTENT_TO_SERVICE[key]) return INTENT_TO_SERVICE[key];
 
-    const hay = normalizeText(`${intent} ${summary}`);
-    for (const service of SERVICE_OPTIONS) {
-        if (hay.includes(normalizeText(service))) return service;
-    }
-    if (/\bold\s*age\b/.test(hay)) return 'Old Age Care';
-    if (/\bnurs/.test(hay)) return 'Nursing Care';
-    if (/\bmatern/.test(hay)) return 'Maternity Care';
-    if (/\bjapa\b/.test(hay)) return 'Japa Care (Post-Delivery)';
-    if (/\bnew\s*born|\bnewborn/.test(hay)) return 'New Born Baby Care';
+    const exactOption = SERVICE_OPTIONS.find((o) => normalizeText(o) === key);
+    if (exactOption) return exactOption;
 
-    return intent?.trim() || 'Home Healthcare';
+    const summaryClean = stripCrmAutoNotes(summary);
+    const extraClean = stripCrmAutoNotes(extraContext);
+    const fromSummary = matchServiceInText(`${summaryClean} ${extraClean}`);
+    if (fromSummary) return fromSummary;
+
+    const fromIntent = matchServiceInText(intent);
+    if (fromIntent) return fromIntent;
+
+    return '';
 }
 
 export function parseShiftFromText(text: string): { shiftType: string; shiftLabel: string } {
@@ -148,33 +184,74 @@ export function buildVoiceCallIntakePrefill(call: {
     capturedName?: string;
     intent?: string;
     summary?: string;
+    transcript?: string;
 }): VoiceCallIntakePrefill {
     const summary = call.summary || '';
     const intent = call.intent || '';
-    const service = mapIntentToService(intent, summary);
-    const { shiftType, shiftLabel } = parseShiftFromText(`${summary} ${intent}`);
+    const service = mapIntentToService(intent, summary, call.transcript || '');
+    const { shiftType, shiftLabel } = parseShiftFromText(`${summary} ${intent} ${call.transcript || ''}`);
     const startParsed = parseStartDateFromSummary(summary);
     const fullName = (call.capturedName || '').trim();
     const firstName = fullName.split(/\s+/)[0] || 'there';
+    const serviceLabel = service || 'Home Healthcare';
 
-    // Form init-values: service, name, location, shift (dates are manual — CalendarPicker cannot prefill in v6.1)
+    // Keys must match INTAKE_FORM screen `data` schema (passed as template flow_action_data)
     const flowData: Record<string, string> = {
-        screen: 'INTAKE_FORM',
-        service,
         shift_type: shiftType,
         country: 'India',
         state: 'Gujarat',
         city: 'Surat',
     };
+    if (service) flowData.service = service;
     if (fullName) flowData.name = fullName;
 
     return {
-        service,
+        service: serviceLabel,
         shiftType,
         shiftLabel,
         startDateDisplay: startParsed?.display ?? null,
         startDateIso: startParsed?.iso ?? null,
-        templateParams: [firstName, service, shiftLabel],
+        templateParams: [firstName, serviceLabel, shiftLabel],
+        flowData,
+    };
+}
+
+/** Prefill from CRM lead card (pipeline greeting). */
+export function buildLeadIntakePrefill(lead: {
+    name?: string;
+    service_interest?: string | null;
+    notes?: string | null;
+}): VoiceCallIntakePrefill {
+    const notes = lead.notes || '';
+    const shiftFromNotes = notes.match(/^Shift:\s*(.+)$/im)?.[1]?.trim();
+    const service =
+        mapIntentToService(lead.service_interest || '', notes) ||
+        notes.match(/^Service:\s*(.+)$/im)?.[1]?.trim() ||
+        '';
+    const serviceLabel = service || 'Home Healthcare';
+    const { shiftType, shiftLabel } = shiftFromNotes
+        ? { shiftType: shiftFromNotes, shiftLabel: shiftFromNotes }
+        : parseShiftFromText(notes);
+    const startParsed = parseStartDateFromSummary(notes);
+    const fullName = (lead.name || '').trim();
+    const firstName = fullName.split(/\s+/)[0] || 'there';
+
+    const flowData: Record<string, string> = {
+        shift_type: shiftType,
+        country: 'India',
+        state: 'Gujarat',
+        city: 'Surat',
+    };
+    if (service) flowData.service = service;
+    if (fullName) flowData.name = fullName;
+
+    return {
+        service: serviceLabel,
+        shiftType,
+        shiftLabel,
+        startDateDisplay: startParsed?.display ?? null,
+        startDateIso: startParsed?.iso ?? null,
+        templateParams: [firstName, serviceLabel, shiftLabel],
         flowData,
     };
 }
