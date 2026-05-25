@@ -115,11 +115,25 @@ export default function Dashboard() {
         const fetchDashboardData = async () => {
             setIsLoading(true);
             try {
-                // Fetch Leads, Employees, and Settings concurrently
-                const [{ data: leads }, { data: employees }, { data: settings }] = await Promise.all([
+                const now = new Date();
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+                // Fetch dashboard metrics concurrently
+                const [{ data: leads }, { data: employees }, { data: settings }, { data: servicePayments }, { data: assignments }] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at').is('deleted_at', null),
-                    supabase.from('employees').select('id, status, monthly_daily_rate'),
-                    supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle()
+                    supabase.from('employees').select('id, status'),
+                    supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle(),
+                    supabase
+                        .from('payments')
+                        .select('amount, client_name, payment_date, payment_type')
+                        .eq('payment_type', 'service')
+                        .gte('payment_date', monthStart.toISOString())
+                        .lt('payment_date', nextMonthStart.toISOString()),
+                    supabase
+                        .from('worker_assignments')
+                        .select('id, client_id, assignment_status, total_bill_amount, start_date, end_date, clients(client_name)')
+                        .eq('assignment_status', 'active')
                 ]);
                 
                 const pipelineStages = sanitizePipelineStages(
@@ -128,10 +142,31 @@ export default function Dashboard() {
                 const activeLeads = leads?.filter(l => pipelineStages.includes(l.pipeline_stage)) || [];
                 const activeWorkersList = employees?.filter(w => w.status === 'assigned' || w.status === 'Active') || [];
                 
-                let mrr = 0;
-                activeWorkersList.forEach(w => {
-                    mrr += (Number(w.monthly_daily_rate) || 0) * 30; // approx MRR
-                });
+                const normalizeClientName = (name?: string | null) => (name || '').trim().toLowerCase();
+                const paidServiceClients = new Set<string>();
+                const serviceRevenue = (servicePayments || []).reduce((sum: number, payment: any) => {
+                    const clientName = normalizeClientName(payment.client_name);
+                    if (clientName) paidServiceClients.add(clientName);
+                    return sum + (Number(payment.amount) || 0);
+                }, 0);
+
+                const assignmentRevenue = (assignments || []).reduce((sum: number, assignment: any) => {
+                    const amount = Number(assignment.total_bill_amount) || 0;
+                    if (amount <= 0) return sum;
+
+                    const clientName = normalizeClientName(assignment.clients?.client_name);
+                    if (clientName && paidServiceClients.has(clientName)) return sum;
+
+                    const startsAt = assignment.start_date ? new Date(assignment.start_date) : null;
+                    const endsAt = assignment.end_date ? new Date(assignment.end_date) : null;
+                    const overlapsCurrentMonth =
+                        (!startsAt || startsAt < nextMonthStart)
+                        && (!endsAt || endsAt >= monthStart);
+
+                    return overlapsCurrentMonth ? sum + amount : sum;
+                }, 0);
+
+                const mrr = serviceRevenue + assignmentRevenue;
 
                 // Generate a realistic looking trend over the last 6 months peaking at current MRR
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
