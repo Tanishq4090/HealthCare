@@ -1486,7 +1486,7 @@ export default function CRM() {
             // Monthly total bill estimation
             autoBill = quote?.estimated_monthly_total || quote?.complete_month_rate || 0;
             if (!autoBill) {
-                const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                const dailyRate = quote?.incomplete_month_rate || selectedWorker?.monthly_daily_rate || 0;
                 if (autoType === 'date_range' && autoEndDate) {
                     const days = Math.max(1, Math.ceil((new Date(autoEndDate).getTime() - new Date(autoStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
                     autoBill = Math.round(days * dailyRate);
@@ -5297,7 +5297,7 @@ export default function CRM() {
                                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'one_day' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
                                         onClick={() => {
                                             setServiceType('one_day');
-                                            const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                                            const dailyRate = selectedWorker?.monthly_daily_rate || 0;
                                             setCalculatedBill(Math.round(dailyRate));
                                         }}
                                     >One Day</button>
@@ -5324,7 +5324,7 @@ export default function CRM() {
                                             const h = parseInt(e.target.value) || 1;
                                             setServiceHours(h);
                                             // Pro-rate the daily rate based on 12h standard
-                                            const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                                            const dailyRate = selectedWorker?.monthly_daily_rate || 0;
                                             const hourlyRate = dailyRate / 12;
                                             setCalculatedBill(Math.round(h * hourlyRate));
                                         }} />
@@ -5355,7 +5355,7 @@ export default function CRM() {
                                                     // If days >= 30, use the monthly-commitment per-day rate.
                                                     // Otherwise, use the standard short-term per-day rate.
                                                     const monthlyDayRate = staffPickerTargetLead?.quoted_monthly_rate || 0;
-                                                    const dailyRate = staffPickerTargetLead?.quoted_daily_rate || 0;
+                                                    const dailyRate = selectedWorker?.monthly_daily_rate || monthlyDayRate;
 
                                                     if (days >= 30) {
                                                         setCalculatedBill(Math.round(days * monthlyDayRate));
