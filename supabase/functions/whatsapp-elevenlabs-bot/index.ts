@@ -122,7 +122,7 @@ serve(async (req) => {
                     // Delete old consent to ensure we overwrite if they are editing/resubmitting
                     await supabase.from('client_consents').delete().eq('lead_id', existingLead.id);
 
-                    await supabase.from('client_consents').insert([{
+                    const { error: consentError } = await supabase.from('client_consents').insert([{
                         lead_id: existingLead.id,
                         phone: purePhone,
                         relative_name: formData.relative_name,
@@ -136,17 +136,21 @@ serve(async (req) => {
                         service_start_date: formData.service_start_date,
                         service_category: formData.service_category,
                         offered_time: formData.offered_time,
-                        other_details: formData.other_details,
                         terms_accepted: formData.terms_accepted === 'on' || formData.terms_accepted === true
                     }]);
 
+                    if (consentError) {
+                        console.error('[Flow] Error inserting consent:', consentError);
+                    }
+
                     // Log activity event
-                    await supabase.from('crm_lead_activity').insert([{
+                    const { error: actError } = await supabase.from('crm_lead_activity').insert([{
                         lead_id: existingLead.id,
                         event_type: 'form_filled',
                         description: `Consent form filled for ${formData.patient_name}`,
                         metadata: { patient_name: formData.patient_name, service_category: formData.service_category }
                     }]);
+                    if (actError) console.error('[Flow] Error inserting activity:', actError);
                 } else {
                     console.warn(`[Flow] Consent Form received but no CRM Lead found for ${purePhone}! Saving orphans not implemented.`);
                 }
