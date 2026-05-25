@@ -118,13 +118,13 @@
             "helper-text": "e.g. Mother, Father, Spouse, Self"
           },
           {
-            "type": "CalendarPicker",
+            "type": "DatePicker",
             "label": "Service Start Date",
             "name": "start_date",
             "required": true
           },
           {
-            "type": "CalendarPicker",
+            "type": "DatePicker",
             "label": "Service End Date (optional)",
             "name": "end_date",
             "required": false
