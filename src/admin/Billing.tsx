@@ -699,7 +699,6 @@ export default function Billing() {
                     pipeline_stage: 'Monthly Billing',
                     service_interest: f.serviceName.trim(),
                     estimated_value_monthly: grossAmount,
-                    quoted_daily_rate: Number(f.ratePerDay),
                     notes,
                 }])
                 .select('id')
@@ -723,7 +722,6 @@ export default function Billing() {
                 pipeline_stage: 'Monthly Billing',
                 service_interest: f.serviceName.trim(),
                 estimated_value_monthly: grossAmount,
-                quoted_daily_rate: Number(f.ratePerDay),
                 notes,
             };
 
