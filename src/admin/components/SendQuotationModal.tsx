@@ -24,6 +24,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     const [shiftType, setShiftType] = useState('Day shift');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [durationValue, setDurationValue] = useState('');
     const [completeMonthRate, setCompleteMonthRate] = useState('');
     const [incompleteMonthRate, setIncompleteMonthRate] = useState('');
     const [deposit, setDeposit] = useState('');
@@ -117,6 +118,11 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                         }
                     }
                 }
+                
+                const durationMatch = lead.notes.match(/Duration:\s*(.+)/i);
+                if (durationMatch && durationMatch[1]) {
+                    setDurationValue(durationMatch[1].trim());
+                }
             }
         }
     }, [isOpen, lead]);
@@ -147,7 +153,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
             daysPerWeek: Number(daysPerWeek) || null,
             shiftType,
             startDate,
-            duration: endDate ? endDate : 'Open-ended',
+            duration: durationValue || (endDate ? endDate : 'Open-ended'),
             completeMonthRate: Number(completeMonthRate) || null,
             incompleteMonthRate: Number(incompleteMonthRate) || null,
             deposit: Number(deposit) || 0,
@@ -293,6 +299,17 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                                     className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf] color-scheme-dark"
                                 />
                             </div>
+                        </div>
+
+                        <div className="mt-4">
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Duration (optional)</label>
+                            <input 
+                                type="text"
+                                value={durationValue}
+                                onChange={e => setDurationValue(e.target.value)}
+                                placeholder="e.g. 1 month, 2 weeks, Open-ended"
+                                className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#2dd4bf] transition-colors"
+                            />
                         </div>
                     </section>
 

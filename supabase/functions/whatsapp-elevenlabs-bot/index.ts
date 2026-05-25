@@ -214,7 +214,8 @@ serve(async (req) => {
             
             let startDate = formData.start_date || formData.startDate || formData.service_start_date || '';
             let endDate = formData.end_date || formData.endDate || formData.service_end_date || '';
-            
+            const duration = formData.duration || formData['Duration'] || formData.duration_required || '';
+
             // Convert timestamps from Flow Datepicker if present
             if (startDate && /^\d+$/.test(startDate)) {
                 startDate = new Date(parseInt(startDate)).toISOString().split('T')[0];
@@ -223,7 +224,7 @@ serve(async (req) => {
                 endDate = new Date(parseInt(endDate)).toISOString().split('T')[0];
             }
 
-            console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}, start=${startDate}, end=${endDate}`);
+            console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}, start=${startDate}, end=${endDate}, duration=${duration}`);
 
             // ── Build location string FIRST (used both in notes and activity log) ──
             const locationStr = [area, city, state, country].filter(Boolean).join(', ');
@@ -255,6 +256,7 @@ serve(async (req) => {
             let notesStr = `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`;
             if (startDate) notesStr += `\nStart Date: ${startDate}`;
             if (endDate) notesStr += `\nEnd Date: ${endDate}`;
+            if (duration) notesStr += `\nDuration: ${duration}`;
 
             // Never overwrite source on existing leads — preserve AI Phone Call, WhatsApp Chat, Manual Add, etc.
             const leadPayload: any = {
@@ -288,14 +290,14 @@ serve(async (req) => {
                     lead_id: upsertedLeadId,
                     event_type: 'form_filled',
                     description: `Intake form submitted — Service: ${resolvedService}`,
-                    metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr, start_date: startDate, end_date: endDate }
+                    metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr, start_date: startDate, end_date: endDate, duration }
                 }]);
                 if (actErr) console.error(`[Flow] Activity Insert Error:`, actErr);
             }
 
             // Send warm confirmation echoing back their details
             const firstName = name.split(' ')[0];
-            const confirmMsg = `Thank you ${firstName}! 🙏😊\n\nWe've received your details:\n✅ Service: ${resolvedService}\n${shiftType ? `⏱️ Shift: ${shiftType}\n` : ''}${locationStr ? `📍 Area: ${locationStr}\n` : ''}${careFor ? `👤 Care for: ${careFor}\n` : ''}${startDate ? `📅 Start: ${startDate}\n` : ''}${endDate ? `📅 End: ${endDate}\n` : ''}\nOur 99 Care team will prepare your personalised quotation and share it with you shortly. We're excited to serve you! ✨`;
+            const confirmMsg = `Thank you ${firstName}! 🙏😊\n\nWe've received your details:\n✅ Service: ${resolvedService}\n${shiftType ? `⏱️ Shift: ${shiftType}\n` : ''}${locationStr ? `📍 Area: ${locationStr}\n` : ''}${careFor ? `👤 Care for: ${careFor}\n` : ''}${duration ? `⏳ Duration: ${duration}\n` : ''}${startDate ? `📅 Start: ${startDate}\n` : ''}${endDate ? `📅 End: ${endDate}\n` : ''}\nOur 99 Care team will prepare your personalised quotation and share it with you shortly. We're excited to serve you! ✨`;
 
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
