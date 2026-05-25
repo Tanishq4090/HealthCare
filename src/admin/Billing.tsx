@@ -8,6 +8,64 @@ const RupeeIcon = ({ className }: { className?: string }) => (
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 
+type ManualInvoiceForm = {
+    clientName: string;
+    phone: string;
+    address: string;
+    serviceName: string;
+    startDate: string;
+    endDate: string;
+    ratePerDay: string;
+    depositCollected: string;
+    serviceHours: '10' | '24';
+};
+
+type ClientMatch = {
+    id: string;
+    name: string;
+    phone: string;
+    source: 'clients' | 'crm_leads';
+    stage?: string;
+};
+
+const formatInputDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const todayInputDate = () => formatInputDate(new Date());
+
+const addDaysInputDate = (dateStr: string, days: number) => {
+    const date = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
+    date.setDate(date.getDate() + days);
+    return formatInputDate(date);
+};
+
+const inclusiveDays = (startDate: string, endDate: string) => {
+    if (!startDate || !endDate) return 0;
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+};
+
+const normalizePhoneDigits = (phone: string) => phone.replace(/\D/g, '');
+const phoneLast10 = (phone: string) => normalizePhoneDigits(phone).slice(-10);
+
+const manualInvoiceInitialForm = (): ManualInvoiceForm => ({
+    clientName: '',
+    phone: '',
+    address: '',
+    serviceName: '',
+    startDate: todayInputDate(),
+    endDate: todayInputDate(),
+    ratePerDay: '',
+    depositCollected: '0',
+    serviceHours: '10',
+});
+
 
 export default function Billing() {
     const [searchParams] = useSearchParams();
@@ -57,6 +115,13 @@ export default function Billing() {
     const [ciStartDate, setCiStartDate] = useState('');
     const [ciEndDate, setCiEndDate] = useState('');
     const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
+
+    // Manual Client Invoice State
+    const [isManualInvoiceOpen, setIsManualInvoiceOpen] = useState(false);
+    const [manualInvoiceForm, setManualInvoiceForm] = useState<ManualInvoiceForm>(() => manualInvoiceInitialForm());
+    const [manualDuplicateMatches, setManualDuplicateMatches] = useState<ClientMatch[]>([]);
+    const [isDuplicateChoiceOpen, setIsDuplicateChoiceOpen] = useState(false);
+    const [isManualInvoiceGenerating, setIsManualInvoiceGenerating] = useState(false);
 
     const fetchBillingData = async () => {
         setIsLoading(true);
@@ -211,6 +276,8 @@ export default function Billing() {
         setIsClientInvoiceOpen(false);
         setClientInvoiceBill(null);
         setIsAgentModalOpen(false);
+        setIsManualInvoiceOpen(false);
+        setIsDuplicateChoiceOpen(false);
         if (activeTab === 'history') {
             fetchPayments();
         } else {
@@ -539,6 +606,280 @@ export default function Billing() {
         }
     };
 
+    const resetManualInvoice = () => {
+        setManualInvoiceForm(manualInvoiceInitialForm());
+        setManualDuplicateMatches([]);
+        setIsDuplicateChoiceOpen(false);
+        setIsManualInvoiceOpen(false);
+    };
+
+    const updateManualInvoiceForm = (patch: Partial<ManualInvoiceForm>) => {
+        setManualInvoiceForm(prev => ({ ...prev, ...patch }));
+    };
+
+    const findManualInvoiceMatches = async (phone: string): Promise<ClientMatch[]> => {
+        const last10 = phoneLast10(phone);
+        if (last10.length < 10) return [];
+
+        const [clientsResult, leadsResult] = await Promise.all([
+            supabase.from('clients').select('id, client_name, phone_number'),
+            supabase.from('crm_leads').select('id, name, phone, whatsapp_number, pipeline_stage').is('deleted_at', null),
+        ]);
+
+        if (clientsResult.error) throw clientsResult.error;
+        if (leadsResult.error) throw leadsResult.error;
+
+        const byId = new Map<string, ClientMatch>();
+        (clientsResult.data || []).forEach((client: any) => {
+            if (phoneLast10(client.phone_number || '') !== last10) return;
+            byId.set(client.id, {
+                id: client.id,
+                name: client.client_name || 'Existing Client',
+                phone: client.phone_number || '',
+                source: 'clients',
+            });
+        });
+
+        (leadsResult.data || []).forEach((lead: any) => {
+            const leadPhone = lead.whatsapp_number || lead.phone || '';
+            if (phoneLast10(leadPhone) !== last10 || byId.has(lead.id)) return;
+            byId.set(lead.id, {
+                id: lead.id,
+                name: lead.name || 'Existing Lead',
+                phone: leadPhone,
+                source: 'crm_leads',
+                stage: lead.pipeline_stage,
+            });
+        });
+
+        return Array.from(byId.values());
+    };
+
+    const validateManualInvoiceForm = () => {
+        const f = manualInvoiceForm;
+        const days = inclusiveDays(f.startDate, f.endDate);
+        const phoneDigits = normalizePhoneDigits(f.phone);
+        const rate = Number(f.ratePerDay);
+        const deposit = Number(f.depositCollected || 0);
+
+        if (!f.clientName.trim()) return 'Client name is required.';
+        if (phoneDigits.length < 10) return 'Enter a valid client phone number.';
+        if (!f.address.trim()) return 'Full address is required.';
+        if (!f.serviceName.trim()) return 'Service name is required.';
+        if (!f.startDate || !f.endDate) return 'Start date and end date are required.';
+        if (days <= 0) return 'End date must be on or after the start date.';
+        if (!Number.isFinite(rate) || rate <= 0) return 'Client rate/day must be greater than 0.';
+        if (!Number.isFinite(deposit) || deposit < 0) return 'Deposit already collected cannot be negative.';
+        return '';
+    };
+
+    const ensureManualInvoiceClient = async (mode: 'new' | 'link', match?: ClientMatch) => {
+        const f = manualInvoiceForm;
+        const phoneDigits = normalizePhoneDigits(f.phone);
+        const normalizedPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
+        const days = inclusiveDays(f.startDate, f.endDate);
+        const grossAmount = days * Number(f.ratePerDay);
+        const notes = [
+            `Service: ${f.serviceName.trim()}`,
+            `Shift: ${f.serviceHours}`,
+            `Location: ${f.address.trim()}`,
+        ].join('\n');
+
+        let leadId = match?.id || '';
+
+        if (mode === 'new' || !leadId) {
+            const { data: lead, error } = await supabase
+                .from('crm_leads')
+                .insert([{
+                    name: f.clientName.trim(),
+                    phone: f.phone.trim(),
+                    whatsapp_number: normalizedPhone || f.phone.trim(),
+                    source: mode === 'new' && match ? 'Manual Invoice (Independent)' : 'Manual Invoice',
+                    status: 'Invoice Generated',
+                    pipeline_stage: 'Monthly Billing',
+                    service_interest: f.serviceName.trim(),
+                    estimated_value_monthly: grossAmount,
+                    quoted_daily_rate: Number(f.ratePerDay),
+                    notes,
+                }])
+                .select('id')
+                .single();
+            if (error) throw error;
+            leadId = lead.id;
+        } else {
+            const { data: existingLead, error: lookupError } = await supabase
+                .from('crm_leads')
+                .select('id')
+                .eq('id', leadId)
+                .maybeSingle();
+            if (lookupError) throw lookupError;
+
+            const leadPayload = {
+                name: f.clientName.trim(),
+                phone: f.phone.trim(),
+                whatsapp_number: normalizedPhone || f.phone.trim(),
+                source: 'Manual Invoice',
+                status: 'Invoice Generated',
+                pipeline_stage: 'Monthly Billing',
+                service_interest: f.serviceName.trim(),
+                estimated_value_monthly: grossAmount,
+                quoted_daily_rate: Number(f.ratePerDay),
+                notes,
+            };
+
+            if (existingLead) {
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .update(leadPayload)
+                    .eq('id', leadId);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .insert([{ id: leadId, ...leadPayload }]);
+                if (error) throw error;
+            }
+        }
+
+        const { error: clientError } = await supabase
+            .from('clients')
+            .upsert({
+                id: leadId,
+                client_name: f.clientName.trim(),
+                phone_number: f.phone.trim(),
+                created_at: new Date().toISOString(),
+            }, { onConflict: 'id' });
+        if (clientError) throw clientError;
+
+        const { error: consentError } = await supabase.from('client_consents').insert([{
+            lead_id: leadId,
+            phone: normalizedPhone || f.phone.trim(),
+            relative_name: f.clientName.trim(),
+            patient_name: f.clientName.trim(),
+            contact_number: f.phone.trim(),
+            address: f.address.trim(),
+            service_start_date: f.startDate,
+            service_category: f.serviceName.trim(),
+            offered_time: f.serviceHours === '24' ? '24 Hours (Live-in)' : '10 Hours',
+            terms_accepted: true,
+        }]);
+        if (consentError) throw consentError;
+
+        return { leadId, normalizedPhone };
+    };
+
+    const generateManualInvoice = async (mode: 'new' | 'link', match?: ClientMatch) => {
+        const validationError = validateManualInvoiceForm();
+        if (validationError) {
+            toast.error(validationError);
+            return;
+        }
+
+        setIsManualInvoiceGenerating(true);
+        const toastId = toast.loading('Generating manual invoice...');
+        try {
+            const { leadId, normalizedPhone } = await ensureManualInvoiceClient(mode, match);
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const days = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+            const grossAmount = days * Number(manualInvoiceForm.ratePerDay);
+            const netAmount = Math.max(0, grossAmount - Number(manualInvoiceForm.depositCollected || 0));
+
+            const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                },
+                body: JSON.stringify({
+                    lead_id: leadId,
+                    manual_invoice: true,
+                    client_name: manualInvoiceForm.clientName.trim(),
+                    client_phone: manualInvoiceForm.phone.trim(),
+                    client_address: manualInvoiceForm.address.trim(),
+                    service_name: manualInvoiceForm.serviceName.trim(),
+                    service_hours: manualInvoiceForm.serviceHours,
+                    start_date: manualInvoiceForm.startDate,
+                    end_date: manualInvoiceForm.endDate,
+                    rate_per_day: Number(manualInvoiceForm.ratePerDay),
+                    deposit_collected: Number(manualInvoiceForm.depositCollected || 0),
+                    due_date: addDaysInputDate(todayInputDate(), 3),
+                }),
+            });
+
+            const invText = await invResp.text();
+            if (!invResp.ok) throw new Error(invText);
+            const invData = JSON.parse(invText);
+            if (invData.error) throw new Error(invData.error);
+            if (!invData.public_url) throw new Error('Invoice generated but no PDF URL returned.');
+
+            toast.loading('Sending invoice on WhatsApp...', { id: toastId });
+            const waResp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({
+                    phone: normalizedPhone,
+                    leadId,
+                    useTemplate: true,
+                    templateName: 'client_monthly_invoice',
+                    templateParams: [manualInvoiceForm.clientName.trim(), String(netAmount)],
+                    sendInvoicePdf: true,
+                    invoicePdfUrl: invData.public_url,
+                }),
+            });
+            const waData = await waResp.json();
+            if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed.');
+
+            setMonthlyBills(prev => [{
+                id: leadId,
+                client_id: leadId,
+                client: manualInvoiceForm.clientName.trim(),
+                client_phone: manualInvoiceForm.phone.trim(),
+                amount: `₹${Number(manualInvoiceForm.ratePerDay)}/day`,
+                attendanceVerified: true,
+                status: 'Sent',
+                month: currentMonthYear.split(' ')[0],
+                invoice_no: invData.invoice_number || '',
+                invoice_pdf_url: invData.public_url,
+                rawAssignment: {},
+            }, ...prev]);
+
+            toast.success('Manual invoice generated and sent on WhatsApp.', { id: toastId, duration: 4000 });
+            window.open(invData.public_url, '_blank');
+            resetManualInvoice();
+            fetchBillingData();
+        } catch (err: any) {
+            console.error('Manual invoice generation failed:', err);
+            toast.error(err.message || 'Failed to generate manual invoice.', { id: toastId });
+        } finally {
+            setIsManualInvoiceGenerating(false);
+        }
+    };
+
+    const handleManualInvoiceGenerate = async () => {
+        const validationError = validateManualInvoiceForm();
+        if (validationError) {
+            toast.error(validationError);
+            return;
+        }
+
+        try {
+            const matches = await findManualInvoiceMatches(manualInvoiceForm.phone);
+            if (matches.length > 0) {
+                setManualDuplicateMatches(matches);
+                setIsDuplicateChoiceOpen(true);
+                return;
+            }
+            await generateManualInvoice('new');
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to check existing clients.');
+        }
+    };
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -634,9 +975,22 @@ export default function Billing() {
             ) : activeTab === 'monthly' ? (
                 /* Monthly Billing View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="p-5 border-b border-slate-200 bg-slate-50">
-                        <h2 className="font-semibold text-slate-900">Monthly Billing Dashboard ({currentMonthYear})</h2>
-                        <p className="text-sm text-slate-500 mt-1">Invoices require explicit HR Attendance Verification before dispatch.</p>
+                    <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">Monthly Billing Dashboard ({currentMonthYear})</h2>
+                            <p className="text-sm text-slate-500 mt-1">Invoices require explicit HR Attendance Verification before dispatch.</p>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setManualInvoiceForm(manualInvoiceInitialForm());
+                                setManualDuplicateMatches([]);
+                                setIsDuplicateChoiceOpen(false);
+                                setIsManualInvoiceOpen(true);
+                            }}
+                            className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                        >
+                            <FileText className="w-4 h-4" /> Manual Invoice
+                        </button>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-4">
                         {monthlyBills.map(bill => (
@@ -1320,6 +1674,240 @@ export default function Billing() {
                                     <p>[+91 9016116564]</p>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Manual Client Service Invoice Modal */}
+            {isManualInvoiceOpen && (() => {
+                const invoiceDate = todayInputDate();
+                const dueDate = addDaysInputDate(invoiceDate, 3);
+                const days = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+                const rate = Number(manualInvoiceForm.ratePerDay) || 0;
+                const deposit = Number(manualInvoiceForm.depositCollected) || 0;
+                const gross = days * rate;
+                const payable = Math.max(0, gross - deposit);
+
+                return (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[80]">
+                        <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
+                                        <FileText className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-base font-bold text-white">Manual Client Service Invoice</h2>
+                                        <p className="text-xs text-slate-400">Generate PDF, send WhatsApp, and add to Client Master</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={resetManualInvoice}
+                                    className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="p-5 space-y-5 overflow-y-auto">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Name</label>
+                                        <input
+                                            type="text"
+                                            value={manualInvoiceForm.clientName}
+                                            onChange={e => updateManualInvoiceForm({ clientName: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                            placeholder="e.g. Rajveer Kachiwala"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Phone Number</label>
+                                        <input
+                                            type="tel"
+                                            value={manualInvoiceForm.phone}
+                                            onChange={e => updateManualInvoiceForm({ phone: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                            placeholder="+91 90000 00000"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Full Address</label>
+                                    <textarea
+                                        value={manualInvoiceForm.address}
+                                        onChange={e => updateManualInvoiceForm({ address: e.target.value })}
+                                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30 min-h-[78px] resize-none"
+                                        placeholder="Full billing address"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="md:col-span-2">
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Service Name</label>
+                                        <input
+                                            type="text"
+                                            value={manualInvoiceForm.serviceName}
+                                            onChange={e => updateManualInvoiceForm({ serviceName: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                            placeholder="e.g. Old Age Care"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Service Hours</label>
+                                        <div className="grid grid-cols-2 gap-2 bg-slate-100 rounded-lg p-1">
+                                            {(['10', '24'] as const).map(hours => (
+                                                <button
+                                                    key={hours}
+                                                    type="button"
+                                                    onClick={() => updateManualInvoiceForm({ serviceHours: hours })}
+                                                    className={`py-1.5 rounded-md text-xs font-bold transition-colors ${manualInvoiceForm.serviceHours === hours ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                                                >
+                                                    {hours} hours
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
+                                        <input
+                                            type="date"
+                                            value={manualInvoiceForm.startDate}
+                                            onChange={e => updateManualInvoiceForm({ startDate: e.target.value, endDate: manualInvoiceForm.endDate && manualInvoiceForm.endDate < e.target.value ? e.target.value : manualInvoiceForm.endDate })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
+                                        <input
+                                            type="date"
+                                            min={manualInvoiceForm.startDate}
+                                            value={manualInvoiceForm.endDate}
+                                            onChange={e => updateManualInvoiceForm({ endDate: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Invoice Date</label>
+                                        <input value={invoiceDate} readOnly className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold bg-slate-50 text-slate-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Due Date</label>
+                                        <input value={dueDate} readOnly className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold bg-slate-50 text-slate-500" />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
+                                        <input value={days || ''} readOnly className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold bg-slate-50 text-slate-700" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={manualInvoiceForm.ratePerDay}
+                                            onChange={e => updateManualInvoiceForm({ ratePerDay: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                            placeholder="800"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Deposit Already Collected (₹)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={manualInvoiceForm.depositCollected}
+                                            onChange={e => updateManualInvoiceForm({ depositCollected: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">{days || 0} day{days !== 1 ? 's' : ''} x ₹{rate.toLocaleString('en-IN')}/day</span>
+                                        <span className="font-semibold text-slate-800">₹{gross.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">Deposit Collected</span>
+                                        <span className="font-semibold text-emerald-600">− ₹{deposit.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
+                                        <span className="text-slate-800">Amount Payable</span>
+                                        <span className="text-primary">₹{payable.toLocaleString('en-IN')}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3 shrink-0">
+                                <button
+                                    onClick={resetManualInvoice}
+                                    disabled={isManualInvoiceGenerating}
+                                    className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center disabled:opacity-60"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleManualInvoiceGenerate}
+                                    disabled={isManualInvoiceGenerating}
+                                    className="px-5 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                    {isManualInvoiceGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                    Generate & Send WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Manual Invoice Duplicate Choice Modal */}
+            {isDuplicateChoiceOpen && manualDuplicateMatches.length > 0 && (
+                <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-[90]">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100">
+                            <h2 className="text-lg font-bold text-slate-900">Matching Client Found</h2>
+                            <p className="text-sm text-slate-500 mt-1">This phone number already exists. Choose how to generate this invoice.</p>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            {manualDuplicateMatches.slice(0, 3).map(match => (
+                                <div key={`${match.source}-${match.id}`} className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                                    <p className="text-sm font-bold text-slate-900">{match.name}</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">{match.phone || manualInvoiceForm.phone}</p>
+                                    {match.stage && <p className="text-[11px] text-primary font-semibold mt-1">Stage: {match.stage}</p>}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="p-5 border-t border-slate-100 bg-slate-50 grid gap-3">
+                            <button
+                                onClick={() => generateManualInvoice('link', manualDuplicateMatches[0])}
+                                disabled={isManualInvoiceGenerating}
+                                className="w-full px-4 py-2.5 rounded-xl font-bold text-white bg-primary hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {isManualInvoiceGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                Link to existing client
+                            </button>
+                            <button
+                                onClick={() => generateManualInvoice('new', manualDuplicateMatches[0])}
+                                disabled={isManualInvoiceGenerating}
+                                className="w-full px-4 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60"
+                            >
+                                New independent lead
+                            </button>
+                            <button
+                                onClick={() => setIsDuplicateChoiceOpen(false)}
+                                disabled={isManualInvoiceGenerating}
+                                className="w-full px-4 py-2 rounded-xl font-semibold text-slate-500 hover:bg-slate-200 transition-colors disabled:opacity-60"
+                            >
+                                Back to edit
+                            </button>
                         </div>
                     </div>
                 </div>

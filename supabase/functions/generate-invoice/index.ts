@@ -64,7 +64,25 @@ serve(async (req) => {
     }
 
     try {
-        const { lead_id, deposit_amount, service_period, invoice_number: input_invoice_number, due_date, is_deposit } = await req.json();
+        const body = await req.json();
+        const {
+            lead_id,
+            deposit_amount,
+            service_period,
+            invoice_number: input_invoice_number,
+            due_date,
+            is_deposit,
+            manual_invoice,
+            client_name,
+            client_phone,
+            client_address,
+            service_name,
+            service_hours,
+            start_date,
+            end_date,
+            rate_per_day,
+            deposit_collected,
+        } = body;
         if (!lead_id) throw new Error('lead_id is required');
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -110,6 +128,11 @@ serve(async (req) => {
         const invoiceDate  = fmt(now);
         const dueDate      = fmt(due);
         const currentMonthYear = `${fullMonthNames[now.getMonth()]}(${now.getFullYear()})`;
+        const formatPeriodDate = (dateStr: string) => {
+            const parsed = new Date(`${dateStr}T00:00:00`);
+            if (isNaN(parsed.getTime())) return '';
+            return `${String(parsed.getDate()).padStart(2, '0')}/${String(parsed.getMonth() + 1).padStart(2, '0')}/${parsed.getFullYear()}`;
+        };
 
         // Parse structured data from notes if it exists
         const notesStr = lead.notes || '';
@@ -121,21 +144,31 @@ serve(async (req) => {
         const extractedShift   = shiftMatch ? shiftMatch[1].trim() : '24';
         const extractedLocation = locMatch ? locMatch[1].trim() : '';
 
-        const clientName   = lead.name || 'Client';
-        const clientPhone  = lead.phone || lead.whatsapp_number || '';
-        
-        const amount       = Number(deposit_amount || lead.quoted_monthly_rate || 15000);
-        
+        const clientName   = manual_invoice ? (client_name || lead.name || 'Client') : (lead.name || 'Client');
+        const clientPhone  = manual_invoice ? (client_phone || lead.phone || lead.whatsapp_number || '') : (lead.phone || lead.whatsapp_number || '');
+
         const rawShift = extractedShift.toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() || '24';
         const shift = `${rawShift}HRS`;
-        const service      = is_deposit ? 'Security Deposit' : `${shift} (${extractedService.toUpperCase()})`;
-        
-        const servicePeriod = service_period || 'As agreed';
-        
+        const manualServiceHours = String(service_hours || '10').replace(/\D/g, '') || '10';
+        const manualServiceName = String(service_name || extractedService || 'HOME CARE SERVICE').trim();
+        const service      = manual_invoice
+            ? `${manualServiceHours}-HOUR SHIFT HRS (${manualServiceName.toUpperCase()})`
+            : is_deposit ? 'Security Deposit' : `${shift} (${extractedService.toUpperCase()})`;
+
+        const servicePeriod = manual_invoice && start_date && end_date
+            ? `${formatPeriodDate(start_date)} To ${formatPeriodDate(end_date)}`
+            : service_period || 'As agreed';
+
         // Calculate number of days from servicePeriod (Format: "DD/MM/YYYY To DD/MM/YYYY")
         let numberOfDays = 1;
         try {
-            if (servicePeriod.includes(' To ')) {
+            if (manual_invoice && start_date && end_date) {
+                const start = new Date(`${start_date}T00:00:00`);
+                const end = new Date(`${end_date}T00:00:00`);
+                if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
+                    numberOfDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                }
+            } else if (servicePeriod.includes(' To ')) {
                 const [startStr, endStr] = servicePeriod.split(' To ');
                 const parseDate = (dStr: string) => {
                     const [d, m, y] = dStr.split('/');
@@ -152,9 +185,17 @@ serve(async (req) => {
         } catch (e) {
             // Ignore parse errors, fallback to 1
         }
-        
+
+        const grossAmount = manual_invoice
+            ? Math.max(0, numberOfDays * Number(rate_per_day || 0))
+            : Number(deposit_amount || lead.quoted_monthly_rate || 15000);
+        const depositCollected = manual_invoice ? Math.max(0, Number(deposit_collected || 0)) : 0;
+        const amount = manual_invoice ? Math.max(0, grossAmount - depositCollected) : grossAmount;
+
+        const grossAmountStr = grossAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const depositCollectedStr = depositCollected.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const amountStr    = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const amountWords  = `INR ${numberToWordsINR(amount)} Rupees Only.`;
+        const amountWords  = `INR ${numberToWordsINR(Math.round(amount))} Rupees Only.`;
 
         // ── Fetch Images ─────────────────────────────────────────
         const fetchImage = async (path: string) => {
@@ -244,7 +285,7 @@ serve(async (req) => {
         }
         
         // Add full address
-        const fullAddress = latestConsent?.address?.trim() || extractedLocation || 'Address not provided';
+        const fullAddress = (manual_invoice && client_address?.trim()) || latestConsent?.address?.trim() || extractedLocation || 'Address not provided';
         // Wrap address if it's too long
         const wrapAddress = (text: string, maxWidth: number) => {
             const words = text.split(' ');
@@ -310,8 +351,9 @@ serve(async (req) => {
         page.drawText(service, { x: COL_2, y: curY, size: 10, font: bold, color: DARK });
         page.drawText('-', { x: COL_3 + 20, y: curY, size: 10, font: regular, color: DARK });
         
-        const amtW = regular.widthOfTextAtSize(amountStr, 10);
-        page.drawText(amountStr, { x: COL_4 - amtW, y: curY, size: 10, font: regular, color: DARK });
+        const rowAmountStr = manual_invoice ? grossAmountStr : amountStr;
+        const amtW = regular.widthOfTextAtSize(rowAmountStr, 10);
+        page.drawText(rowAmountStr, { x: COL_4 - amtW, y: curY, size: 10, font: regular, color: DARK });
 
         curY -= 20;
         
@@ -324,10 +366,21 @@ serve(async (req) => {
         const totLblW = bold.widthOfTextAtSize(totLbl, 12);
         page.drawText(totLbl, { x: COL_3 + 10 - totLblW, y: curY, size: 12, font: bold, color: DARK });
         
-        const totValW = bold.widthOfTextAtSize(amountStr, 12);
-        page.drawText(`Rs. ${amountStr}`, { x: COL_4 - totValW - 5, y: curY, size: 12, font: bold, color: DARK });
+        const totalValue = `Rs. ${manual_invoice ? grossAmountStr : amountStr}`;
+        const totValW = bold.widthOfTextAtSize(totalValue, 12);
+        page.drawText(totalValue, { x: COL_4 - totValW, y: curY, size: 12, font: bold, color: DARK });
 
         curY -= 20;
+
+        if (manual_invoice && depositCollected > 0) {
+            const depLbl = 'Deposit Collected';
+            const depLblW = regular.widthOfTextAtSize(depLbl, 10);
+            page.drawText(depLbl, { x: COL_3 + 10 - depLblW, y: curY, size: 10, font: regular, color: GRAY });
+            const depVal = `- Rs. ${depositCollectedStr}`;
+            const depValW = regular.widthOfTextAtSize(depVal, 10);
+            page.drawText(depVal, { x: COL_4 - depValW, y: curY, size: 10, font: regular, color: GRAY });
+            curY -= 16;
+        }
 
         // Total Items & Words
         page.drawText('Total Items / Qty : 1 / 1', { x: 40, y: curY, size: 8, font: regular, color: GRAY });
@@ -344,8 +397,9 @@ serve(async (req) => {
         const pLblW = bold.widthOfTextAtSize(pLbl, 10);
         page.drawText(pLbl, { x: COL_3 + 10 - pLblW, y: curY, size: 10, font: bold, color: GRAY });
         
-        const pValW = bold.widthOfTextAtSize(amountStr, 10);
-        page.drawText(`Rs. ${amountStr}`, { x: COL_4 - pValW - 5, y: curY, size: 10, font: bold, color: DARK });
+        const payableValue = `Rs. ${amountStr}`;
+        const pValW = bold.widthOfTextAtSize(payableValue, 10);
+        page.drawText(payableValue, { x: COL_4 - pValW, y: curY, size: 10, font: bold, color: DARK });
 
         curY -= 40;
 
@@ -420,7 +474,7 @@ serve(async (req) => {
         const rawNoteLines = [
             `Thank you So much for appoint us.`,
             `We 99 care is part of 99FAS companies based on Services provider entities. Where we can supply all Building and maintenance related work. In our 99CARE we provide best care taker and nursing services at home.`,
-            `${amountStr}/- paid in advanced before work start for more than ${numberOfDays} days' work. And all bill has to paid on timely based. Advanced Will Settled in Last final bill.`,
+            `${manual_invoice && depositCollected > 0 ? depositCollectedStr : amountStr}/- paid in advanced before work start for more than ${numberOfDays} days' work. And all bill has to paid on timely based. Advanced Will Settled in Last final bill.`,
             `Please Rate us, your one vote is very important and precious for us.`,
             ``,
             `Falguni(Co-Founder)`,
