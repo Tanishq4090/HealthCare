@@ -7,7 +7,15 @@
  */
 
 import dotenv from 'dotenv';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 dotenv.config();
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+/** v6.1 INTAKE_FORM with init-value prefill — upload this JSON to your existing Flow in Meta */
+const FLOW_JSON = JSON.parse(readFileSync(join(__dirname, 'intake_form_flow.json'), 'utf8'));
 
 const META_SYSTEM_TOKEN = process.env.META_SYSTEM_TOKEN;
 const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID || process.env.META_PHONE_ID;
@@ -36,136 +44,6 @@ async function getWabaId() {
   console.log(`✅ Discovered WABA ID: ${wabaId}`);
   return wabaId;
 }
-
-// The WhatsApp Flow JSON schema
-const FLOW_JSON = {
-  version: "5.1",
-  screens: [
-    {
-      id: "INTAKE_FORM",
-      title: "99 Care — Service Enquiry",
-      terminal: true,
-      success: true,
-      data: {},
-      layout: {
-        type: "SingleColumnLayout",
-        children: [
-          {
-            type: "Form",
-            name: "intake_form",
-            children: [
-              {
-                type: "Dropdown",
-                label: "Service Required",
-                name: "service",
-                required: true,
-                "data-source": [
-                  { id: "Nursing Care", title: "Nursing Care" },
-                  { id: "Maternity Care", title: "Maternity Care" },
-                  { id: "New Born Baby Care", title: "New Born Baby Care" },
-                  { id: "Japa Care (Post-Delivery)", title: "Japa Care (Post-Delivery)" },
-                  { id: "Old Age Care", title: "Old Age Care" }
-                ]
-              },
-              {
-                type: "TextInput",
-                label: "Your Full Name",
-                name: "name",
-                required: true,
-                "input-type": "text",
-                "helper-text": "e.g. Rajesh Patel"
-              },
-              {
-                type: "Dropdown",
-                name: "country",
-                label: "Country",
-                required: true,
-                "data-source": [
-                  { id: "India", title: "India" },
-                  { id: "USA", title: "USA" },
-                  { id: "UK", title: "UK" },
-                  { id: "Canada", title: "Canada" },
-                  { id: "Australia", title: "Australia" },
-                  { id: "Other", title: "Other" }
-                ]
-              },
-              {
-                type: "Dropdown",
-                name: "state",
-                label: "State",
-                required: true,
-                "data-source": [
-                  { id: "Gujarat", title: "Gujarat" },
-                  { id: "Maharashtra", title: "Maharashtra" },
-                  { id: "Delhi", title: "Delhi" },
-                  { id: "Karnataka", title: "Karnataka" },
-                  { id: "Tamil Nadu", title: "Tamil Nadu" },
-                  { id: "Other", title: "Other" }
-                ]
-              },
-              {
-                type: "Dropdown",
-                name: "city",
-                label: "City",
-                required: true,
-                "data-source": [
-                  { id: "Surat", title: "Surat" },
-                  { id: "Ahmedabad", title: "Ahmedabad" },
-                  { id: "Vadodara", title: "Vadodara" },
-                  { id: "Rajkot", title: "Rajkot" },
-                  { id: "Mumbai", title: "Mumbai" },
-                  { id: "Other", title: "Other" }
-                ]
-              },
-              {
-                type: "TextInput",
-                name: "area",
-                "input-type": "text",
-                label: "Area / Pincode",
-                required: true
-              },
-              {
-                type: "RadioButtonsGroup",
-                label: "Shift Type",
-                name: "shift_type",
-                required: true,
-                "data-source": [
-                  { id: "10-Hour Shift", title: "10-Hour Shift" },
-                  { id: "24-Hour Shift", title: "24-Hour Shift" }
-                ]
-              },
-              {
-                type: "TextInput",
-                label: "Who is the care for?",
-                name: "care_for",
-                required: true,
-                "input-type": "text",
-                "helper-text": "e.g. Mother, Father, Spouse, Self"
-              },
-              {
-                type: "Footer",
-                label: "Submit Enquiry",
-                "on-click-action": {
-                  name: "complete",
-                  payload: {
-                    name: "${form.name}",
-                    service: "${form.service}",
-                    country: "${form.country}",
-                    state: "${form.state}",
-                    city: "${form.city}",
-                    area: "${form.area}",
-                    shift_type: "${form.shift_type}",
-                    care_for: "${form.care_for}"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    }
-  ]
-};
 
 async function createFlow(wabaId) {
   console.log('\n📋 Step 1: Creating WhatsApp Flow...');

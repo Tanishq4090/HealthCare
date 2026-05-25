@@ -10,6 +10,7 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
+import { buildVoiceCallIntakePrefill } from '../utils/voiceCallIntake';
 import {
     findClientMasterByPhone,
     isLegacyPipelineStage,
@@ -800,18 +801,15 @@ export default function CRM() {
                 return;
             }
 
-            // Step 2: Send the post_call_intake WhatsApp template.
-            // This template has the Flow button already attached in Meta Business Manager.
-            // It expects exactly 3 parameters: {{1}} Name, {{2}} Service, {{3}} Shift.
+            // Step 2: Send post_call_intake — template body + Flow prefill from Voice AI summary
+            const intakePrefill = buildVoiceCallIntakePrefill(call);
             const requestBody = {
                 phone: digits,
                 useTemplate: true,
                 templateName: 'post_call_intake',
-                templateParams: [
-                    firstName, 
-                    call.intent || 'Home Healthcare', 
-                    'General'
-                ],
+                leadName: firstName,
+                templateParams: intakePrefill.templateParams,
+                flowData: intakePrefill.flowData,
             };
 
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
@@ -850,6 +848,36 @@ export default function CRM() {
             await supabase.from('call_transcripts')
                 .update({ automation_error: 'GREETING_SENT' })
                 .eq('conversation_id', call.id);
+
+            // Sync parsed call details onto matching CRM lead (if any)
+            const { data: linkedLeads } = await supabase
+                .from('crm_leads')
+                .select('id, notes, service_interest, phone, whatsapp_number')
+                .is('deleted_at', null)
+                .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                .limit(3);
+            const linkedLead = (linkedLeads || []).find(
+                (l) => phonesMatch(l.phone, rawPhone) || phonesMatch(l.whatsapp_number, rawPhone)
+            );
+            if (linkedLead?.id) {
+                const noteLines = [
+                    `Service: ${intakePrefill.service}`,
+                    `Shift: ${intakePrefill.shiftType}`,
+                    intakePrefill.startDateDisplay ? `Start date: ${intakePrefill.startDateDisplay}` : null,
+                    'Source: AI Phone Call (WhatsApp greeting)',
+                ].filter(Boolean);
+                const priorNotes = linkedLead.notes?.trim() || '';
+                const mergedNotes = priorNotes
+                    ? `${priorNotes}\n${noteLines.join('\n')}`
+                    : noteLines.join('\n');
+                await supabase
+                    .from('crm_leads')
+                    .update({
+                        service_interest: intakePrefill.service,
+                        notes: mergedNotes,
+                    })
+                    .eq('id', linkedLead.id);
+            }
 
             setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
             if (deliveryConfirmed) {

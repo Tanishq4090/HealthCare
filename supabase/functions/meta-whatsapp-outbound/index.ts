@@ -211,8 +211,12 @@ serve(async (req) => {
       // Add flow button to post_call_intake or consent_form templates
       const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
       if ((templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
-        const initialScreen = templateName === "consent_form" ? "CONSENT_SCREEN" : "INTAKE_FORM";
-        
+        const flowPayload = flowData && typeof flowData === "object" ? { ...flowData } : {};
+        const screenOverride = typeof flowPayload.screen === "string" ? flowPayload.screen : null;
+        delete flowPayload.screen;
+        const defaultScreen = templateName === "consent_form" ? "CONSENT_SCREEN" : "INTAKE_FORM";
+        const initialScreen = screenOverride || defaultScreen;
+
         components.push({
           type: "button",
           sub_type: "flow",
@@ -224,7 +228,7 @@ serve(async (req) => {
                 flow_token: `flow_${digits}_${Date.now()}`,
                 flow_action_data: {
                   screen: initialScreen,
-                  ...(flowData || {})
+                  ...flowPayload
                 }
               }
             }
