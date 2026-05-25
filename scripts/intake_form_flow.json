@@ -16,7 +16,7 @@
         "shift_type": { "type": "string", "__default__": "", "__example__": "10-Hour Shift" },
         "care_for": { "type": "string", "__default__": "", "__example__": "Self" },
         "start_date": { "type": "string", "__default__": "", "__example__": "2026-05-20" },
-        "end_date": { "type": "string", "__default__": "", "__example__": "" }
+        "end_date": { "type": "string", "__default__": "", "__example__": "2026-06-20" }
       },
       "layout": {
         "type": "SingleColumnLayout",
@@ -24,13 +24,22 @@
           {
             "type": "Form",
             "name": "intake_form",
+            "init-values": {
+              "service": "${data.service}",
+              "name": "${data.name}",
+              "country": "${data.country}",
+              "state": "${data.state}",
+              "city": "${data.city}",
+              "area": "${data.area}",
+              "shift_type": "${data.shift_type}",
+              "care_for": "${data.care_for}"
+            },
             "children": [
               {
                 "type": "Dropdown",
                 "label": "Service Required",
                 "name": "service",
                 "required": true,
-                "init-value": "${data.service}",
                 "data-source": [
                   { "id": "Nursing Care", "title": "Nursing Care" },
                   { "id": "Maternity Care", "title": "Maternity Care" },
@@ -45,7 +54,6 @@
                 "name": "name",
                 "required": true,
                 "input-type": "text",
-                "init-value": "${data.name}",
                 "helper-text": "e.g. Rajesh Patel"
               },
               {
@@ -53,7 +61,6 @@
                 "name": "country",
                 "label": "Country",
                 "required": true,
-                "init-value": "${data.country}",
                 "data-source": [
                   { "id": "India", "title": "India" },
                   { "id": "USA", "title": "USA" },
@@ -68,7 +75,6 @@
                 "name": "state",
                 "label": "State",
                 "required": true,
-                "init-value": "${data.state}",
                 "data-source": [
                   { "id": "Gujarat", "title": "Gujarat" },
                   { "id": "Maharashtra", "title": "Maharashtra" },
@@ -83,7 +89,6 @@
                 "name": "city",
                 "label": "City",
                 "required": true,
-                "init-value": "${data.city}",
                 "data-source": [
                   { "id": "Surat", "title": "Surat" },
                   { "id": "Ahmedabad", "title": "Ahmedabad" },
@@ -98,15 +103,13 @@
                 "name": "area",
                 "input-type": "text",
                 "label": "Area / Pincode",
-                "required": true,
-                "init-value": "${data.area}"
+                "required": true
               },
               {
                 "type": "RadioButtonsGroup",
                 "label": "Shift Type",
                 "name": "shift_type",
                 "required": true,
-                "init-value": "${data.shift_type}",
                 "data-source": [
                   { "id": "10-Hour Shift", "title": "10-Hour Shift" },
                   { "id": "24-Hour Shift", "title": "24-Hour Shift" }
@@ -118,22 +121,19 @@
                 "name": "care_for",
                 "required": true,
                 "input-type": "text",
-                "init-value": "${data.care_for}",
                 "helper-text": "e.g. Mother, Father, Spouse, Self"
               },
               {
                 "type": "CalendarPicker",
                 "label": "Service Start Date",
                 "name": "start_date",
-                "required": true,
-                "init-value": "${data.start_date}"
+                "required": true
               },
               {
                 "type": "CalendarPicker",
                 "label": "Service End Date (optional)",
                 "name": "end_date",
-                "required": false,
-                "init-value": "${data.end_date}"
+                "required": false
               },
               {
                 "type": "Footer",

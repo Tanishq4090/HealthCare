@@ -157,7 +157,7 @@ export function buildVoiceCallIntakePrefill(call: {
     const fullName = (call.capturedName || '').trim();
     const firstName = fullName.split(/\s+/)[0] || 'there';
 
-    // Keys must match INTAKE_FORM screen `data` + init-value bindings (scripts/intake_form_flow.json)
+    // Form init-values: service, name, location, shift (dates are manual — CalendarPicker cannot prefill in v6.1)
     const flowData: Record<string, string> = {
         screen: 'INTAKE_FORM',
         service,
@@ -167,7 +167,6 @@ export function buildVoiceCallIntakePrefill(call: {
         city: 'Surat',
     };
     if (fullName) flowData.name = fullName;
-    if (startParsed?.iso) flowData.start_date = startParsed.iso;
 
     return {
         service,
