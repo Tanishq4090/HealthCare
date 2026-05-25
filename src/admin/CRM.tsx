@@ -14,6 +14,7 @@ import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/vo
 import {
     findClientMasterByPhone,
     isLegacyPipelineStage,
+    isManualInvoiceLead,
     isPipelineVisibleLead,
     NEW_LEAD_PIPELINE_STAGE,
     sanitizePipelineStages,
@@ -1237,7 +1238,7 @@ export default function CRM() {
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
-                    const fallbackRows = fallback || [];
+                    const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l));
                     const firstStage = NEW_LEAD_PIPELINE_STAGE;
                     const legacyIds = fallbackRows
                         .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
@@ -1264,7 +1265,7 @@ export default function CRM() {
                 }
                 throw error;
             }
-            const rows = data || [];
+            const rows = (data || []).filter((l) => !isManualInvoiceLead(l));
             const firstStage = NEW_LEAD_PIPELINE_STAGE;
             const legacyIds = rows
                 .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
@@ -2300,6 +2301,10 @@ export default function CRM() {
                 { event: 'UPDATE', schema: 'public', table: 'crm_leads' },
                 (payload) => {
                     const newLead = payload.new as any;
+                    if (isManualInvoiceLead(newLead)) {
+                        setLeads(prev => prev.filter(lead => lead.id !== newLead.id));
+                        return;
+                    }
                     // Merge the updated lead directly — preserves assigned_worker_name from DB
                     setLeads(prev => prev.map(lead => lead.id === newLead.id ? { ...lead, ...newLead } : lead));
 
@@ -2314,6 +2319,7 @@ export default function CRM() {
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'crm_leads' },
                 (payload) => {
+                    if (isManualInvoiceLead(payload.new as any)) return;
                     setLeads(prev => [payload.new as any, ...prev]);
                 }
             )

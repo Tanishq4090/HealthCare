@@ -116,13 +116,20 @@ export function normalizePipelineStage(
     return stage;
 }
 
+export function isManualInvoiceLead(lead: { source?: string | null; notes?: string | null }): boolean {
+    const source = (lead.source || '').toLowerCase();
+    const notes = (lead.notes || '').toLowerCase();
+    return source.includes('manual invoice') || notes.includes('manual invoice: true');
+}
+
 /** Active leads that should count for pipeline, search, and duplicate warnings */
 export function isPipelineVisibleLead(
-    lead: { pipeline_stage?: string | null; deleted_at?: string | null },
+    lead: { pipeline_stage?: string | null; deleted_at?: string | null; source?: string | null; notes?: string | null },
     pipelineStages: string[],
     clientStages: string[] = ['Active Client', 'Monthly Billing', 'Closed Won', 'Archived']
 ): boolean {
     if (lead.deleted_at) return false;
+    if (isManualInvoiceLead(lead)) return false;
     const stage = lead.pipeline_stage || '';
     if (isLegacyPipelineStage(stage)) return false;
     return new Set([...pipelineStages, ...clientStages]).has(stage);
