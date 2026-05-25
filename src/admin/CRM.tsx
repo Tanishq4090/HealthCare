@@ -3512,7 +3512,6 @@ export default function CRM() {
                                                                         e.stopPropagation();
                                                                         handleResendCallGreeting(call);
                                                                     }}
-                                                                    disabled={greetStatus === 'sending'}
                                                                     className="px-3 py-2 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-lg border border-emerald-100 flex items-center gap-1.5 shrink-0 hover:bg-emerald-100 transition-colors disabled:opacity-50"
                                                                 >
                                                                     <RotateCcw className="w-3.5 h-3.5" /> Sent (Resend?)
