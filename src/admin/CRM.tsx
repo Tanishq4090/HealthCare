@@ -728,15 +728,43 @@ export default function CRM() {
         }
     };
 
+    const upsertCallTranscriptStatus = async (
+        call: any,
+        phoneDigits: string,
+        automationError: string
+    ) => {
+        const { error } = await supabase.from('call_transcripts').upsert(
+            {
+                conversation_id: String(call.id),
+                phone_number: phoneDigits,
+                called_at: call.created_at || new Date().toISOString(),
+                lead_id: call.lead_id || null,
+                automation_error: automationError,
+            },
+            { onConflict: 'conversation_id' }
+        );
+        if (error) {
+            console.warn('[Greeting] call_transcripts upsert failed:', error.message);
+        }
+    };
+
+    const handleResendCallGreeting = (call: any) => {
+        processingCalls.current.delete(String(call.id));
+        void handleSendCallGreeting(call, true);
+    };
+
     // Send WhatsApp post_call_intake template manually from call log card
     const handleSendCallGreeting = async (call: any, isManual = false) => {
-        if (processingCalls.current.has(call.id)) return;
-        // ── LOCK IMMEDIATELY to close the race window ──────────────────────
-        processingCalls.current.add(call.id);
-        
+        const callKey = String(call.id);
+        if (processingCalls.current.has(callKey)) {
+            if (!isManual) return;
+            processingCalls.current.delete(callKey);
+        }
+        processingCalls.current.add(callKey);
+
         const rawPhone = call.capturedWhatsapp || call.phone;
         if (!rawPhone) {
-            processingCalls.current.delete(call.id);
+            processingCalls.current.delete(callKey);
             toast.error('No WhatsApp number found for this call.');
             return;
         }
@@ -744,50 +772,44 @@ export default function CRM() {
         let digits = rawPhone.replace(/\D/g, '');
         if (digits.length === 10) digits = `91${digits}`;
         if (digits.length < 11) {
-            processingCalls.current.delete(call.id);
+            processingCalls.current.delete(callKey);
             toast.error(`Invalid phone number: ${rawPhone}`);
             return;
         }
         const last10 = digits.slice(-10);
 
-        setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sending' }));
+        setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sending' }));
 
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
         const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
         const firstName = (call.capturedName || 'there').split(' ')[0];
+        const manualToastId = isManual
+            ? toast.loading(`Resending greeting to ${firstName}…`)
+            : undefined;
 
         try {
-            // ── DB-LEVEL IDEMPOTENCY CHECK ──────────────────────────────────
-            // Check call_transcripts directly so even a page-refresh or second
-            // component instance can't re-send while one is already in-flight.
-            const { data: transcriptRow } = await supabase
-                .from('call_transcripts')
-                .select('automation_error')
-                .eq('conversation_id', call.id)
-                .maybeSingle();
-
-            if (
-                !isManual &&
-                (transcriptRow?.automation_error === 'GREETING_SENT' ||
-                    transcriptRow?.automation_error === 'GREETING_PROCESSING')
-            ) {
-                console.log(`[Auto-Greet] DB lock found (${transcriptRow.automation_error}) for ${call.id} — skipping.`);
-                setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
-                return;
-            }
-
-            if (isManual && transcriptRow?.automation_error === 'GREETING_SENT') {
-                await supabase
+            if (!isManual) {
+                const { data: transcriptRow } = await supabase
                     .from('call_transcripts')
-                    .update({ automation_error: 'GREETING_RESENDING' })
-                    .eq('conversation_id', call.id);
+                    .select('automation_error')
+                    .eq('conversation_id', callKey)
+                    .maybeSingle();
+
+                if (
+                    transcriptRow?.automation_error === 'GREETING_SENT' ||
+                    transcriptRow?.automation_error === 'GREETING_PROCESSING'
+                ) {
+                    console.log(`[Auto-Greet] DB lock found (${transcriptRow.automation_error}) for ${callKey} — skipping.`);
+                    setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
+                    return;
+                }
             }
 
-            // Mark as in-progress in DB BEFORE the actual WhatsApp send
-            // so any concurrent invocation will see the lock and bail out
-            await supabase.from('call_transcripts')
-                .update({ automation_error: 'GREETING_PROCESSING' })
-                .eq('conversation_id', call.id);
+            await upsertCallTranscriptStatus(
+                call,
+                digits,
+                isManual ? 'GREETING_RESENDING' : 'GREETING_PROCESSING'
+            );
 
             // Step 1: Check if we already sent a greeting to this number recently (last 24h)
             // This is a real-time DB check — not just local state — to prevent duplicates on refresh
@@ -803,13 +825,13 @@ export default function CRM() {
 
             if (existingGreeting && !isManual) {
                 console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
-                await supabase.from('call_transcripts')
-                    .update({ automation_error: 'GREETING_SENT' })
-                    .eq('conversation_id', call.id);
-                setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
+                await upsertCallTranscriptStatus(call, digits, 'GREETING_SENT');
+                setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
                 toast.success(`✅ Greeting already sent to ${firstName}! Marked as done.`);
                 return;
             }
+
+            await upsertCallTranscriptStatus(call, digits, 'GREETING_PROCESSING');
 
             // Step 2: Send post_call_intake — template body + Flow prefill from Voice AI summary
             const intakePrefill = buildVoiceCallIntakePrefill(call);
@@ -852,12 +874,15 @@ export default function CRM() {
                 .limit(1)
                 .maybeSingle();
 
-            const deliveryConfirmed = verifyLog?.status === 'success';
+            const deliveryConfirmed =
+                verifyLog?.status === 'success' || verifyLog?.status === 'accepted_by_meta';
 
-            // Step 4: Persist to DB so status survives page refresh
-            await supabase.from('call_transcripts')
-                .update({ automation_error: 'GREETING_SENT' })
-                .eq('conversation_id', call.id);
+            await upsertCallTranscriptStatus(call, digits, 'GREETING_SENT');
+            setCalls((prev) =>
+                prev.map((c) =>
+                    String(c.id) === callKey ? { ...c, automation_error: 'GREETING_SENT' } : c
+                )
+            );
 
             // Sync parsed call details onto matching CRM lead (if any)
             const { data: linkedLeads } = await supabase
@@ -889,9 +914,10 @@ export default function CRM() {
                     .eq('id', linkedLead.id);
             }
 
-            setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'sent' }));
+            setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
             const prefillHint = `${intakePrefill.flowData.service || intakePrefill.service} · ${intakePrefill.shiftLabel}`;
             const resendNote = isManual ? ' (resent)' : '';
+            if (manualToastId) toast.dismiss(manualToastId);
             if (deliveryConfirmed) {
                 toast.success(`✅ Greeting sent to ${firstName}${resendNote}! Prefill: ${prefillHint}`);
             } else {
@@ -899,16 +925,18 @@ export default function CRM() {
             }
         } catch (err: any) {
             console.error('[Greeting Error]', err.message);
-            
-            // Persist error to DB to prevent infinite auto-retry loops on page refresh
-            await supabase.from('call_transcripts')
-                .update({ automation_error: `GREETING_ERROR: ${err.message?.slice(0, 200)}` })
-                .eq('conversation_id', call.id);
 
-            setCallGreetingStatus(prev => ({ ...prev, [call.id]: 'error' }));
+            const errCode = `GREETING_ERROR: ${err.message?.slice(0, 200)}`;
+            await upsertCallTranscriptStatus(call, digits, errCode);
+            setCalls((prev) =>
+                prev.map((c) => (String(c.id) === callKey ? { ...c, automation_error: errCode } : c))
+            );
+
+            setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'error' }));
+            if (manualToastId) toast.dismiss(manualToastId);
             toast.error(`❌ Greeting failed: ${err.message}`, { duration: 8000 });
         } finally {
-            processingCalls.current.delete(call.id);
+            processingCalls.current.delete(callKey);
         }
     };
 
@@ -3479,8 +3507,13 @@ export default function CRM() {
                                                             );
                                                             if (greetStatus === 'sent' || dbSent) return (
                                                                 <button 
-                                                                    onClick={() => handleSendCallGreeting(call, true)}
-                                                                    className="px-3 py-2 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-lg border border-emerald-100 flex items-center gap-1.5 shrink-0 hover:bg-emerald-100 transition-colors"
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleResendCallGreeting(call);
+                                                                    }}
+                                                                    disabled={greetStatus === 'sending'}
+                                                                    className="px-3 py-2 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-lg border border-emerald-100 flex items-center gap-1.5 shrink-0 hover:bg-emerald-100 transition-colors disabled:opacity-50"
                                                                 >
                                                                     <RotateCcw className="w-3.5 h-3.5" /> Sent (Resend?)
                                                                 </button>
