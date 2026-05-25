@@ -189,7 +189,7 @@ serve(async (req) => {
             await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: '[Form submitted]' }]);
 
 
-            const name = formData.name || formData.patient_name || contact?.profile?.name || 'Unknown';
+            const name = formData.relative_name || formData.name || contact?.profile?.name || 'Unknown';
             const service = formData.service
                 || formData.service_type
                 || formData.service_required
@@ -211,8 +211,17 @@ serve(async (req) => {
                 || formData['shift type']
                 || '';
             const careFor = formData.care_for || formData.careFor || formData.care_required || '';
-            const startDate = formData.start_date || formData.startDate || formData.service_start_date || '';
-            const endDate = formData.end_date || formData.endDate || formData.service_end_date || '';
+            
+            let startDate = formData.start_date || formData.startDate || formData.service_start_date || '';
+            let endDate = formData.end_date || formData.endDate || formData.service_end_date || '';
+            
+            // Convert timestamps from Flow Datepicker if present
+            if (startDate && /^\d+$/.test(startDate)) {
+                startDate = new Date(parseInt(startDate)).toISOString().split('T')[0];
+            }
+            if (endDate && /^\d+$/.test(endDate)) {
+                endDate = new Date(parseInt(endDate)).toISOString().split('T')[0];
+            }
 
             console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}, start=${startDate}, end=${endDate}`);
 
