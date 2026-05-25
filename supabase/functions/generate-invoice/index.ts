@@ -78,6 +78,16 @@ serve(async (req) => {
             .from('crm_leads').select('*').eq('id', lead_id).single();
         if (leadError || !lead) throw new Error(`Lead not found: ${leadError?.message || ''}`);
 
+        // Prefer the full address captured in the consent form. The intake form
+        // often stores only a short location in lead.notes.
+        const { data: latestConsent } = await supabase
+            .from('client_consents')
+            .select('address')
+            .eq('lead_id', lead_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
         // Invoice meta
         const invoiceNum   = input_invoice_number || `INV-${Date.now().toString().slice(-6)}`;
         const now          = new Date();
@@ -233,7 +243,7 @@ serve(async (req) => {
         }
         
         // Add full address
-        const fullAddress = extractedLocation || 'Address not provided';
+        const fullAddress = latestConsent?.address?.trim() || extractedLocation || 'Address not provided';
         // Wrap address if it's too long
         const wrapAddress = (text: string, maxWidth: number) => {
             const words = text.split(' ');
