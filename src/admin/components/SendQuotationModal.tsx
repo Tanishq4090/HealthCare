@@ -85,6 +85,44 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                 if (careForMatch && careForMatch[1]) {
                     setRecipientCondition(careForMatch[1].trim());
                 }
+
+                const startDateMatch = lead.notes.match(/Start Date:\s*(.+)/i);
+                let parsedStartDate: Date | null = null;
+                
+                if (startDateMatch && startDateMatch[1]) {
+                    const parsedStr = startDateMatch[1].trim();
+                    // If it's already YYYY-MM-DD format (like from the intake flow ISO)
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(parsedStr)) {
+                        setStartDate(parsedStr);
+                        parsedStartDate = new Date(parsedStr);
+                    } else {
+                        // Fallback parsing for other formats
+                        const parsedDate = new Date(parsedStr);
+                        if (!isNaN(parsedDate.getTime())) {
+                            setStartDate(parsedDate.toISOString().split('T')[0]);
+                            parsedStartDate = parsedDate;
+                        }
+                    }
+                }
+
+                const endDateMatch = lead.notes.match(/End Date:\s*(.+)/i);
+                if (endDateMatch && endDateMatch[1] && parsedStartDate) {
+                    const endParsedStr = endDateMatch[1].trim();
+                    const parsedEndDate = new Date(endParsedStr);
+                    
+                    if (!isNaN(parsedEndDate.getTime())) {
+                        const diffTime = Math.abs(parsedEndDate.getTime() - parsedStartDate.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        
+                        if (diffDays >= 170) {
+                            setDuration('6 months');
+                        } else if (diffDays >= 80) {
+                            setDuration('3 months');
+                        } else if (diffDays >= 25) {
+                            setDuration('1 month');
+                        }
+                    }
+                }
             }
         }
     }, [isOpen, lead]);
