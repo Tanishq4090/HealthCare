@@ -34,6 +34,13 @@ export default function Login() {
         try {
             const cleanUser = username.toLowerCase().trim();
 
+            // Built-in owner account for managing OS staff users.
+            if (cleanUser === 'admin' && password === 'password123') {
+                 await login('admin');
+                 navigate('/admin', { replace: true });
+                 return;
+            }
+
             const { data, error } = await supabase.functions.invoke('staff-auth', {
                 body: {
                     action: 'login',
@@ -46,13 +53,6 @@ export default function Login() {
                 await login(undefined, data.user);
                 navigate('/admin', { replace: true });
                 return;
-            }
-
-            // Legacy fallback for the built-in owner account.
-            if (cleanUser === 'admin' && password === 'password123') {
-                 await login('admin');
-                 navigate('/admin', { replace: true });
-                 return;
             }
 
             setError(data?.error || 'Invalid username or password.');

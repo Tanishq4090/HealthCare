@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, AccessModule } from '../contexts/AuthContext';
 import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save } from 'lucide-react';
@@ -13,7 +13,7 @@ const MODULES: { id: AccessModule; label: string; desc: string }[] = [
 ];
 
 export default function AccessControl() {
-    const { user, allUsers, createUser, updateUser, deleteUser } = useAuth();
+    const { user, allUsers, refreshUsers, createUser, updateUser, deleteUser } = useAuth();
 
     // UI States
     const [isAdding, setIsAdding] = useState(false);
@@ -27,6 +27,15 @@ export default function AccessControl() {
         name: '',
         accesses: []
     });
+
+    useEffect(() => {
+        refreshUsers();
+    }, [refreshUsers]);
+
+    const displayUsers = useMemo(() => {
+        if (allUsers.length > 0) return allUsers;
+        return user?.role === 'admin' ? [user] : [];
+    }, [allUsers, user]);
 
     // Block non-admins preemptively (though ProtectedRoute also handles this)
     if (user?.role !== 'admin') {
@@ -74,7 +83,7 @@ export default function AccessControl() {
                 await createUser(newUser);
                 toast.success(`${newUser.name} can now sign in to 99Care OS.`);
             } else if (editingUserId) {
-                const existingUser = allUsers.find(u => u.id === editingUserId);
+                const existingUser = displayUsers.find(u => u.id === editingUserId);
                 if (!existingUser) return;
 
                 const updated: User = {
@@ -187,7 +196,7 @@ export default function AccessControl() {
                             </label>
 
                             {/* Super Admins don't need module checkboxes, they override it */}
-                            {(editingUserId && allUsers.find(u => u.id === editingUserId)?.role === 'admin') ? (
+                            {(editingUserId && displayUsers.find(u => u.id === editingUserId)?.role === 'admin') ? (
                                 <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3">
                                     <ShieldAlert className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                                     <div>
@@ -253,7 +262,7 @@ export default function AccessControl() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {allUsers.map((u) => (
+                            {displayUsers.map((u) => (
                                 <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">

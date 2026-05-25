@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
@@ -48,7 +48,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [allUsers, setAllUsers] = useState<User[]>([]); 
     const [loading, setLoading] = useState(true);
 
-    const refreshUsers = async () => {
+    const refreshUsers = useCallback(async () => {
         try {
             const { data, error } = await supabase.functions.invoke('staff-auth', {
                 body: { action: 'list' }
@@ -60,7 +60,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.error('Failed to load OS staff users:', err);
             setAllUsers([adminUser]);
         }
-    };
+    }, []);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -120,22 +120,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data, error } = await supabase.functions.invoke('staff-auth', { body });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
-        await refreshUsers();
         return data;
     };
 
     const createUser = async (newUser: User) => {
-        await callStaffAuth({
+        const data = await callStaffAuth({
             action: 'create',
             username: newUser.username,
             password: newUser.password,
             name: newUser.name,
             accesses: newUser.accesses,
         });
+
+        if (data?.user) {
+            setAllUsers(prev => [adminUser, ...prev.filter(existing => existing.id !== adminUser.id), data.user]);
+        }
+
+        await refreshUsers();
     };
 
     const updateUser = async (updatedUser: User) => {
-        await callStaffAuth({
+        const data = await callStaffAuth({
             action: 'update',
             id: updatedUser.id,
             username: updatedUser.username,
@@ -144,15 +149,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             accesses: updatedUser.accesses,
         });
 
+        if (data?.user) {
+            setAllUsers(prev => prev.map(existing => existing.id === data.user.id ? data.user : existing));
+        }
+
         if (user?.id === updatedUser.id) {
-            const nextUser = { ...user, ...updatedUser, password: undefined };
+            const nextUser = { ...user, ...(data?.user || updatedUser), password: undefined };
             setUser(nextUser);
             localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(nextUser));
         }
+
+        await refreshUsers();
     };
 
     const deleteUser = async (userId: string) => {
         await callStaffAuth({ action: 'delete', id: userId });
+        setAllUsers(prev => prev.filter(existing => existing.id !== userId));
+        await refreshUsers();
     };
 
     return (
