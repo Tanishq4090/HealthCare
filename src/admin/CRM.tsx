@@ -379,10 +379,10 @@ export default function CRM() {
                 .select("role, content, created_at")
                 .ilike("phone", `%${phoneDigits.slice(-10)}%`);
 
-            // If it's a linked lead (duplicate_of_id exists), show the full shared history.
+            // If it's a linked lead (duplicate_of_lead_id exists), show the full shared history.
             // If it's an independent lead, only show history starting slightly before this lead was created,
             // isolating it from any previous distinct leads that share the same phone number.
-            if (!lead.duplicate_of_id && lead.created_at) {
+            if (!lead.duplicate_of_lead_id && lead.created_at) {
                 const leadCreationDate = new Date(lead.created_at);
                 leadCreationDate.setHours(leadCreationDate.getHours() - 1); // 1 hour buffer for inbound messages that triggered creation
                 query = query.gte("created_at", leadCreationDate.toISOString());
@@ -673,7 +673,7 @@ export default function CRM() {
             const lead = leads.find(l => l.id === location.state.openLeadId);
             if (lead && (!selectedInspectorLead || selectedInspectorLead.id !== lead.id)) {
                 setSelectedInspectorLead(lead);
-                fetchLeadActivity(lead.id, lead.duplicate_of_id);
+                fetchLeadActivity(lead.id, lead.duplicate_of_lead_id);
             }
         }
     }, [location.state?.openLeadId, leads]);
@@ -730,7 +730,7 @@ export default function CRM() {
                 metadata: { note: noteText.trim() }
             }]);
             // Refresh activity feed
-            fetchLeadActivity(leadId, selectedInspectorLead?.duplicate_of_id);
+            fetchLeadActivity(leadId, selectedInspectorLead?.duplicate_of_lead_id);
             setInspectorNoteDraft('');
             toast.success('Note saved!');
         } catch (err) {
@@ -1872,7 +1872,7 @@ export default function CRM() {
                     value: '₹' + quotationData.estimatedTotal + '/mo',
                     notes: updatedNotes
                 }));
-                fetchLeadActivity(quotationTargetLead.id, quotationTargetLead.duplicate_of_id);
+                fetchLeadActivity(quotationTargetLead.id, quotationTargetLead.duplicate_of_lead_id);
             }
 
             // Also update the main leads list
@@ -2234,7 +2234,7 @@ export default function CRM() {
                 
                 // Log the movement activity
                 await logActivity(id, 'stage_changed', `Pipeline moved: ${oldStage} → ${newStage}`, { from: oldStage, to: newStage });
-                fetchLeadActivity(id, selectedInspectorLead.duplicate_of_id);
+                fetchLeadActivity(id, selectedInspectorLead?.duplicate_of_lead_id);
             } else {
                 // Still log even if not selected in inspector
                 await logActivity(id, 'stage_changed', `Pipeline moved to ${newStage}`, { to: newStage });
@@ -3267,7 +3267,7 @@ export default function CRM() {
                                                                 onClick={async (e) => {
                                                                     e.stopPropagation();
                                                                     setSelectedInspectorLead(item);
-                                                                    fetchLeadActivity(item.id, item.duplicate_of_id);
+                                                                    fetchLeadActivity(item.id, item.duplicate_of_lead_id);
                                                                     if (item.needs_attention) {
                                                                         setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
                                                                         await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
