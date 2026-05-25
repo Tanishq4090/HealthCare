@@ -218,6 +218,11 @@ export function buildVoiceCallIntakePrefill(call: {
     };
     if (service) flowData.service = service;
     if (fullName) flowData.name = fullName;
+    if (startParsed?.iso) {
+        // Some WhatsApp flows expect 'start_date', others might expect 'startDate' or 'service_start_date'.
+        flowData.start_date = startParsed.iso;
+        flowData.service_start_date = startParsed.iso; // Duplicate for safety
+    }
 
     return {
         service: serviceLabel,

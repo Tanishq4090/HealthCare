@@ -203,8 +203,10 @@ serve(async (req) => {
                 || formData['shift type']
                 || '';
             const careFor = formData.care_for || formData.careFor || formData.care_required || '';
+            const startDate = formData.start_date || formData.startDate || formData.service_start_date || '';
+            const endDate = formData.end_date || formData.endDate || formData.service_end_date || '';
 
-            console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}`);
+            console.log(`[Flow] Parsed: name=${name}, service=${service}, shift=${shiftType}, start=${startDate}, end=${endDate}`);
 
             // ── Build location string FIRST (used both in notes and activity log) ──
             const locationStr = [area, city, state, country].filter(Boolean).join(', ');
@@ -232,13 +234,17 @@ serve(async (req) => {
             }
             const resolvedService = service !== 'Unknown' ? service
                 : (existingService !== 'Unknown' ? existingService : 'Unknown');
+                
+            let notesStr = `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`;
+            if (startDate) notesStr += `\nStart Date: ${startDate}`;
+            if (endDate) notesStr += `\nEnd Date: ${endDate}`;
 
             // Never overwrite source on existing leads — preserve AI Phone Call, WhatsApp Chat, Manual Add, etc.
             const leadPayload: any = {
                 name,
                 whatsapp_number: purePhone,
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
-                notes: `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`,
+                notes: notesStr,
                 last_greeted_at: new Date().toISOString(),
             };
 
@@ -265,14 +271,14 @@ serve(async (req) => {
                     lead_id: upsertedLeadId,
                     event_type: 'form_filled',
                     description: `Intake form submitted — Service: ${resolvedService}`,
-                    metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr }
+                    metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr, start_date: startDate, end_date: endDate }
                 }]);
                 if (actErr) console.error(`[Flow] Activity Insert Error:`, actErr);
             }
 
             // Send warm confirmation echoing back their details
             const firstName = name.split(' ')[0];
-            const confirmMsg = `Thank you ${firstName}! 🙏😊\n\nWe've received your details:\n✅ Service: ${resolvedService}\n${shiftType ? `⏱️ Shift: ${shiftType}\n` : ''}${locationStr ? `📍 Area: ${locationStr}\n` : ''}${careFor ? `👤 Care for: ${careFor}\n` : ''}\nOur 99 Care team will prepare your personalised quotation and share it with you shortly. We're excited to serve you! ✨`;
+            const confirmMsg = `Thank you ${firstName}! 🙏😊\n\nWe've received your details:\n✅ Service: ${resolvedService}\n${shiftType ? `⏱️ Shift: ${shiftType}\n` : ''}${locationStr ? `📍 Area: ${locationStr}\n` : ''}${careFor ? `👤 Care for: ${careFor}\n` : ''}${startDate ? `📅 Start: ${startDate}\n` : ''}${endDate ? `📅 End: ${endDate}\n` : ''}\nOur 99 Care team will prepare your personalised quotation and share it with you shortly. We're excited to serve you! ✨`;
 
             if (META_SYSTEM_TOKEN && META_PHONE_ID) {
                 await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
