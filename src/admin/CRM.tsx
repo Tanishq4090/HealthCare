@@ -1597,7 +1597,7 @@ export default function CRM() {
         }
     };
 
-    const openAgentModal = (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom') => {
+    const openAgentModal = async (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom') => {
         if (action === 'quotation') {
             setQuotationTargetLead(lead);
             setIsQuotationModalOpen(true);
@@ -1608,6 +1608,9 @@ export default function CRM() {
         setIsEditingTemplate(false);
         const draft = generateWhatsappDraft(lead.name, action, agentDraftLang, selectedWorker);
         setAgentDraftText(draft);
+        if (action === 'deposit' || action === 'billing') {
+            await prefillInvoiceFields(lead, action);
+        }
         setIsAgentModalOpen(true);
     };
 
@@ -1687,6 +1690,94 @@ export default function CRM() {
         if (!str) return 0;
         const matched = str.replace(/[^\d]/g, '');
         return parseFloat(matched) || 0;
+    };
+
+    const toDateInputValue = (value: any) => {
+        if (!value) return '';
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        const parsed = new Date(value);
+        return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
+    };
+
+    const addInclusivePeriod = (startValue: string, amount: number, unit: 'day' | 'month' | 'year') => {
+        const start = new Date(`${startValue}T00:00:00`);
+        if (isNaN(start.getTime())) return '';
+        if (unit === 'day') start.setDate(start.getDate() + amount - 1);
+        if (unit === 'month') start.setMonth(start.getMonth() + amount);
+        if (unit === 'year') start.setFullYear(start.getFullYear() + amount);
+        if (unit !== 'day') start.setDate(start.getDate() - 1);
+        return start.toISOString().split('T')[0];
+    };
+
+    const deriveInvoiceEndDate = (startValue: string, duration?: string | null) => {
+        if (!startValue) return '';
+        const raw = (duration || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+        const lower = raw.toLowerCase();
+        if (!lower || lower.includes('open') || lower.includes('ongoing') || lower.includes('indefinite')) {
+            return addInclusivePeriod(startValue, 1, 'month');
+        }
+
+        const match = lower.match(/(\d+)\s*(day|month|year)s?/);
+        if (!match) return addInclusivePeriod(startValue, 1, 'month');
+        return addInclusivePeriod(startValue, parseInt(match[1], 10), match[2] as 'day' | 'month' | 'year');
+    };
+
+    const prefillInvoiceFields = async (lead: any, action: 'deposit' | 'billing') => {
+        const today = new Date();
+        const due = new Date(today);
+        due.setDate(due.getDate() + 2);
+
+        let assignment: any = null;
+        let quote = getLatestByCreatedAt(lead?.crm_quotations);
+        let consent = getLatestByCreatedAt(lead?.client_consents);
+
+        if (lead?.id) {
+            const [{ data: asgn }, { data: latestQuote }, { data: latestConsent }] = await Promise.all([
+                supabase
+                    .from('worker_assignments')
+                    .select('*')
+                    .eq('client_id', lead.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+                supabase
+                    .from('crm_quotations')
+                    .select('*')
+                    .eq('lead_id', lead.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+                supabase
+                    .from('client_consents')
+                    .select('*')
+                    .eq('lead_id', lead.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+            ]);
+
+            assignment = asgn;
+            quote = latestQuote || quote;
+            consent = latestConsent || consent;
+        }
+
+        const startDate = toDateInputValue(
+            assignment?.start_date
+            || quote?.start_date
+            || consent?.service_start_date
+            || today
+        );
+        const endDate = toDateInputValue(assignment?.end_date) || deriveInvoiceEndDate(startDate, quote?.duration);
+        const amount = action === 'deposit'
+            ? assignment?.deposit_amount || quote?.deposit || lead?.quoted_monthly_rate || lead?.estimated_value_monthly || 15000
+            : assignment?.client_billing_rate || quote?.estimated_monthly_total || lead?.estimated_value_monthly || lead?.quoted_monthly_rate || 15000;
+
+        setInvoiceDepositAmount(String(amount || ''));
+        setInvoiceDueDate(due.toISOString().split('T')[0]);
+        setInvoiceStartDate(startDate);
+        setInvoiceEndDate(endDate);
     };
 
     const normalizeConsentOfferedTime = (value?: string | null) => {
