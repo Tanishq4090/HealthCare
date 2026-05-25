@@ -1223,7 +1223,7 @@ export default function CRM() {
         try {
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, created_at), client_consents(*)')
+                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
                 .is('deleted_at', null)
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
@@ -1233,7 +1233,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, created_at), client_consents(*)')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -1782,8 +1782,8 @@ export default function CRM() {
 
     const normalizeConsentOfferedTime = (value?: string | null) => {
         const raw = (value || '').trim().toLowerCase();
-        if (raw.includes('24')) return '24 Hours (Live-in)';
-        if (raw.includes('10')) return '10 Hours';
+        if (raw.includes('24') || raw.includes('live')) return '24 Hours (Live-in)';
+        if (raw.includes('10') || raw.includes('12') || raw.includes('day') || raw.includes('night')) return '10 Hours';
         return raw ? 'Other' : '';
     };
 
@@ -1810,7 +1810,7 @@ export default function CRM() {
             reference_by: consent?.reference_by || '',
             service_start_date: startDate ? String(startDate).split('T')[0] : '',
             service_category: consent?.service_category || quote?.service_category || quote?.service_name || '',
-            offered_time: normalizeConsentOfferedTime(consent?.offered_time || quote?.shift_type || ''),
+            offered_time: normalizeConsentOfferedTime(consent?.offered_time || quote?.hours_per_day || quote?.shift_type || ''),
             other_details: consent?.other_details || '',
             ...extra,
         };
@@ -4950,7 +4950,7 @@ export default function CRM() {
                                                                     flowData = {
                                                                         ...flowData,
                                                                         service_category: latestQuote.service_category || latestQuote.service_name || '',
-                                                                        offered_time: normalizeConsentOfferedTime(latestQuote.shift_type || ''),
+                                                                        offered_time: normalizeConsentOfferedTime(latestQuote.hours_per_day || latestQuote.shift_type || ''),
                                                                         service_start_date: latestQuote.start_date ? latestQuote.start_date.split('T')[0] : ''
                                                                     };
                                                                 }

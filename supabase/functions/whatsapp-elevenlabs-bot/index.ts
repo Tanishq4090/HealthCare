@@ -10,8 +10,8 @@ const WHATSAPP_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
 
 function normalizeConsentOfferedTime(value: unknown): string {
     const raw = String(value || '').trim().toLowerCase();
-    if (raw.includes('24')) return '24 Hours (Live-in)';
-    if (raw.includes('10')) return '10 Hours';
+    if (raw.includes('24') || raw.includes('live')) return '24 Hours (Live-in)';
+    if (raw.includes('10') || raw.includes('12') || raw.includes('day') || raw.includes('night')) return '10 Hours';
     return raw ? 'Other' : '';
 }
 
@@ -488,7 +488,7 @@ serve(async (req) => {
                             if (match && match[1]) extractedAddress = match[1].trim();
                         }
 
-                        const formattedShift = normalizeConsentOfferedTime(consent?.offered_time || quote?.shift_type || "");
+                        const formattedShift = normalizeConsentOfferedTime(consent?.offered_time || quote?.hours_per_day || quote?.shift_type || "");
 
                         const prefillData = {
                             patient_name: consent?.patient_name || "",
