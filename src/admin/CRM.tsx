@@ -4657,146 +4657,157 @@ export default function CRM() {
                                 View AI Chat History
                             </button>
                             
-                            {selectedInspectorLead.pipeline_stage === 'New Inquiry' && (
-                                <button
-                                    onClick={async () => {
-                                        openAgentModal(selectedInspectorLead, 'inquiry');
-                                    }}
-                                    className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                    Send Greeting Message
-                                </button>
-                            )}
+                            {(() => {
+                                const hasGreetingSent = inspectorActivity.some((evt: any) => evt.event_type === 'stage_changed' && evt.metadata?.to === 'In Discussion');
+                                const hasQuotationSent = inspectorActivity.some((evt: any) => evt.event_type === 'quotation_sent');
+                                const hasConsentSent = inspectorActivity.some((evt: any) => evt.event_type === 'consent_sent' || evt.event_type === 'quote_accepted' || (evt.event_type === 'whatsapp_message_sent' && evt.metadata?.flow === 'consent'));
+                                const hasDepositSent = inspectorActivity.some((evt: any) => evt.event_type === 'stage_changed' && evt.metadata?.to === 'Deposit Pending');
+                                const hasBillingSent = inspectorActivity.some((evt: any) => evt.event_type === 'stage_changed' && evt.metadata?.to === 'Monthly Billing');
+                                
+                                return (
+                                    <>
+                                        {selectedInspectorLead.pipeline_stage === 'New Inquiry' && (
+                                            <button
+                                                onClick={async () => {
+                                                    openAgentModal(selectedInspectorLead, 'inquiry');
+                                                }}
+                                                className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                            >
+                                                <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                {hasGreetingSent ? 'Resend Greeting Message' : 'Send Greeting Message'}
+                                            </button>
+                                        )}
 
-                            {selectedInspectorLead.pipeline_stage === 'In Discussion' && (
-                                <div className="flex flex-col gap-2">
-                                    <button
-                                        onClick={async () => {
-                                            openAgentModal(selectedInspectorLead, 'quotation');
-                                        }}
-                                        className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                        Send Quotation
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            const hasQuotationValue = selectedInspectorLead.quoted_monthly_rate > 0 || selectedInspectorLead.estimated_value_monthly > 0 || selectedInspectorLead.valueAmount > 0;
-                                            const hasQuotationLog = inspectorActivity.some((evt: any) => evt.event_type === 'quotation_sent');
-                                            
-                                            if (!hasQuotationValue && !hasQuotationLog) {
-                                                const confirmed = window.confirm("⚠️ Warning: You haven't sent a quotation to this lead on WhatsApp yet.\n\nAre you sure you want to bypass the quotation and send the consent form directly?");
-                                                if (!confirmed) return;
-                                            }
+                                        {selectedInspectorLead.pipeline_stage === 'In Discussion' && (
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        openAgentModal(selectedInspectorLead, 'quotation');
+                                                    }}
+                                                    className="w-full bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-100 text-amber-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                                >
+                                                    <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                    {hasQuotationSent ? 'Resend Quotation' : 'Send Quotation'}
+                                                </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        const hasQuotationValue = selectedInspectorLead.quoted_monthly_rate > 0 || selectedInspectorLead.estimated_value_monthly > 0 || selectedInspectorLead.valueAmount > 0;
+                                                        
+                                                        if (!hasQuotationValue && !hasQuotationSent) {
+                                                            const confirmed = window.confirm("⚠️ Warning: You haven't sent a quotation to this lead on WhatsApp yet.\n\nAre you sure you want to bypass the quotation and send the consent form directly?");
+                                                            if (!confirmed) return;
+                                                        }
 
-                                            const toastId = toast.loading("Approving quotation and sending consent form...");
-                                            try {
-                                                // 1. Move lead to Quotation Sent
-                                                await handleMoveLead(selectedInspectorLead.id, 'Quotation Sent');
-                                                
-                                                // Fetch latest quotation for autofill
-                                                const { data: latestQuote } = await supabase
-                                                    .from('crm_quotations')
-                                                    .select('*')
-                                                    .eq('lead_id', selectedInspectorLead.id)
-                                                    .order('created_at', { ascending: false })
-                                                    .limit(1)
-                                                    .maybeSingle();
+                                                        const toastId = toast.loading("Approving quotation and sending consent form...");
+                                                        try {
+                                                            // 1. Move lead to Quotation Sent
+                                                            await handleMoveLead(selectedInspectorLead.id, 'Quotation Sent');
+                                                            
+                                                            // Fetch latest quotation for autofill
+                                                            const { data: latestQuote } = await supabase
+                                                                .from('crm_quotations')
+                                                                .select('*')
+                                                                .eq('lead_id', selectedInspectorLead.id)
+                                                                .order('created_at', { ascending: false })
+                                                                .limit(1)
+                                                                .maybeSingle();
 
-                                                let flowData: any = {
-                                                    relative_name: selectedInspectorLead.name || '',
-                                                    patient_name: '',
-                                                    contact_number: (selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '').replace(/\D/g, '')
-                                                };
-                                                if (latestQuote) {
-                                                    flowData = {
-                                                        ...flowData,
-                                                        service_category: latestQuote.service_category || latestQuote.service_name || '',
-                                                        offered_time: latestQuote.shift_type || '',
-                                                        service_start_date: latestQuote.start_date ? latestQuote.start_date.split('T')[0] : ''
-                                                    };
-                                                }
-                                                
-                                                // 2. Dispatch Consent Form automatically with autofill data
-                                                await dispatchWhatsAppTemplate(selectedInspectorLead, 'consent', undefined, flowData);
-                                                
-                                                toast.success("✅ Quotation Approved! Consent form sent to client.", { id: toastId });
-                                                setSelectedInspectorLead(null);
-                                            } catch (err: any) {
-                                                console.error("[Approve Error]", err);
-                                                toast.error(`Failed to complete automation: ${err.message}`, { id: toastId });
-                                            }
-                                        }}
-                                        className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                    >
-                                        <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                        Quotation Approved
-                                    </button>
-                                </div>
-                            )}
+                                                            let flowData: any = {
+                                                                relative_name: selectedInspectorLead.name || '',
+                                                                patient_name: '',
+                                                                contact_number: (selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '').replace(/\D/g, '')
+                                                            };
+                                                            if (latestQuote) {
+                                                                flowData = {
+                                                                    ...flowData,
+                                                                    service_category: latestQuote.service_category || latestQuote.service_name || '',
+                                                                    offered_time: latestQuote.shift_type || '',
+                                                                    service_start_date: latestQuote.start_date ? latestQuote.start_date.split('T')[0] : ''
+                                                                };
+                                                            }
+                                                            
+                                                            // 2. Dispatch Consent Form automatically with autofill data
+                                                            await dispatchWhatsAppTemplate(selectedInspectorLead, 'consent', undefined, flowData);
+                                                            
+                                                            toast.success("✅ Quotation Approved! Consent form sent to client.", { id: toastId });
+                                                            setSelectedInspectorLead(null);
+                                                        } catch (err: any) {
+                                                            console.error("[Approve Error]", err);
+                                                            toast.error(`Failed to complete automation: ${err.message}`, { id: toastId });
+                                                        }
+                                                    }}
+                                                    className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                                >
+                                                    <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                    Quotation Approved
+                                                </button>
+                                            </div>
+                                        )}
 
-                            {selectedInspectorLead.pipeline_stage === 'Quotation Sent' && (
-                                <button
-                                    onClick={() => { openAgentModal(selectedInspectorLead, 'consent'); }}
-                                    className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                    Send Consent Form Link
-                                </button>
-                            )}
+                                        {selectedInspectorLead.pipeline_stage === 'Quotation Sent' && (
+                                            <button
+                                                onClick={() => { openAgentModal(selectedInspectorLead, 'consent'); }}
+                                                className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                            >
+                                                <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                {hasConsentSent ? 'Resend Consent Form Link' : 'Send Consent Form Link'}
+                                            </button>
+                                        )}
 
-                            {selectedInspectorLead.pipeline_stage === 'Form Submitted' && (
-                                <button
-                                    onClick={() => { openStaffPicker(selectedInspectorLead); setSelectedInspectorLead(null); }}
-                                    className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <Users className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                    Assign Staff Member
-                                </button>
-                            )}
+                                        {selectedInspectorLead.pipeline_stage === 'Form Submitted' && (
+                                            <button
+                                                onClick={() => { openStaffPicker(selectedInspectorLead); setSelectedInspectorLead(null); }}
+                                                className="w-full bg-purple-50 hover:bg-purple-500 hover:text-white border border-purple-100 text-purple-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                            >
+                                                <Users className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                Assign Staff Member
+                                            </button>
+                                        )}
 
-                            {selectedInspectorLead.pipeline_stage === 'Staff Assigned' && (
-                                <button
-                                    onClick={() => { openAgentModal(selectedInspectorLead, 'deposit'); }}
-                                    className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                    Send Deposit Invoice
-                                </button>
-                            )}
+                                        {selectedInspectorLead.pipeline_stage === 'Staff Assigned' && (
+                                            <button
+                                                onClick={() => { openAgentModal(selectedInspectorLead, 'deposit'); }}
+                                                className="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-100 text-orange-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                            >
+                                                <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                {hasDepositSent ? 'Resend Deposit Invoice' : 'Send Deposit Invoice'}
+                                            </button>
+                                        )}
 
-                            {selectedInspectorLead.pipeline_stage === 'Deposit Pending' && (
-                                <button
-                                    onClick={async () => {
-                                        const toastId = toast.loading('Confirming deposit and activating client...');
-                                        try {
-                                            await handleMoveLead(selectedInspectorLead.id, 'Active Client');
-                                            await logActivity(selectedInspectorLead.id, 'stage_changed', 'Deposit received — moved to Active Client');
-                                            toast.success('✅ Deposit confirmed! Lead moved to Active Client.', { id: toastId });
-                                            setSelectedInspectorLead(null);
-                                        } catch (err: any) {
-                                            toast.error(`Failed: ${err.message}`, { id: toastId });
-                                        }
-                                    }}
-                                    className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-200 text-emerald-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                    Deposit Received → Activate Client
-                                </button>
-                            )}
+                                        {selectedInspectorLead.pipeline_stage === 'Deposit Pending' && (
+                                            <button
+                                                onClick={async () => {
+                                                    const toastId = toast.loading('Confirming deposit and activating client...');
+                                                    try {
+                                                        await handleMoveLead(selectedInspectorLead.id, 'Active Client');
+                                                        await logActivity(selectedInspectorLead.id, 'stage_changed', 'Deposit received — moved to Active Client');
+                                                        toast.success('✅ Deposit confirmed! Lead moved to Active Client.', { id: toastId });
+                                                        setSelectedInspectorLead(null);
+                                                    } catch (err: any) {
+                                                        toast.error(`Failed: ${err.message}`, { id: toastId });
+                                                    }
+                                                }}
+                                                className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-200 text-emerald-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                            >
+                                                <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                Deposit Received → Activate Client
+                                            </button>
+                                        )}
 
-                            {selectedInspectorLead.pipeline_stage === 'Active Client' && (
-                                <button
-                                    onClick={() => {
-                                        openClientInvoiceGenerator(selectedInspectorLead);
-                                    }}
-                                    className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                >
-                                    <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                    Send Monthly Bill
-                                </button>
-                            )}
+                                        {selectedInspectorLead.pipeline_stage === 'Active Client' && (
+                                            <button
+                                                onClick={() => {
+                                                    openClientInvoiceGenerator(selectedInspectorLead);
+                                                }}
+                                                className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
+                                            >
+                                                <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                {hasBillingSent ? 'Resend Monthly Bill' : 'Send Monthly Bill'}
+                                            </button>
+                                        )}
+                                    </>
+                                );
+                            })()}
 
                             {selectedInspectorLead.pipeline_stage === 'Monthly Billing' && (
                                 <button
