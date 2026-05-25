@@ -18,6 +18,9 @@ export default function AdminLayout() {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isInputFocused, setIsInputFocused] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
+    const canSearchClients = hasAccess('crm') || hasAccess('clients');
+    const canSearchWorkers = hasAccess('hr');
+    const canSearchInvoices = hasAccess('finance');
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -41,30 +44,33 @@ export default function AdminLayout() {
             if (isInputFocused) setIsSearchOpen(true);
 
             try {
-                const [{ data: clients }, { data: workers }, { data: invoices }] = await Promise.all([
-                    supabase
+                const [clients, workers, invoices] = await Promise.all([
+                    canSearchClients ? supabase
                         .from('crm_leads')
                         .select('id, name, phone, pipeline_stage')
                         .is('deleted_at', null)
                         .or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
-                        .limit(5),
-                    supabase
+                        .limit(5)
+                        .then(({ data }) => data || []) : Promise.resolve([]),
+                    canSearchWorkers ? supabase
                         .from('employees')
                         .select('id, full_name, phone, job_title')
                         .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
-                        .limit(5),
-                    supabase
+                        .limit(5)
+                        .then(({ data }) => data || []) : Promise.resolve([]),
+                    canSearchInvoices ? supabase
                         .from('worker_assignments')
                         .select('id, final_invoice_number, clients(client_name)')
                         .not('final_invoice_number', 'is', null)
                         .ilike('final_invoice_number', `%${searchQuery}%`)
                         .limit(5)
+                        .then(({ data }) => data || []) : Promise.resolve([])
                 ]);
 
                 setSearchResults({
-                    clients: clients || [],
-                    workers: workers || [],
-                    invoices: invoices || []
+                    clients,
+                    workers,
+                    invoices
                 });
             } catch (error) {
                 console.error('Search error:', error);
@@ -75,7 +81,7 @@ export default function AdminLayout() {
 
         const debounceTimer = setTimeout(fetchResults, 300);
         return () => clearTimeout(debounceTimer);
-    }, [searchQuery, isInputFocused]);
+    }, [searchQuery, isInputFocused, canSearchClients, canSearchWorkers, canSearchInvoices]);
 
     // Navigation items linked to their required module (null means always visible)
     const navigation = [

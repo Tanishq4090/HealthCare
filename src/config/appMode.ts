@@ -2,7 +2,7 @@ export type AppMode = 'public' | 'os';
 
 export function getAppMode(): AppMode {
   // 1. Try environment variable first
-  const raw = (import.meta as any)?.env?.VITE_APP_MODE as string | undefined;
+  const raw = import.meta.env.VITE_APP_MODE as string | undefined;
   if (raw === 'os') return 'os';
   if (raw === 'public') return 'public';
 
@@ -21,4 +21,3 @@ export function getAppMode(): AppMode {
 }
 
 export const APP_MODE: AppMode = getAppMode();
-

@@ -31,6 +31,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'healthfirst_pure_token';
 const STAFF_SESSION_KEY = 'healthfirst_staff_user';
+const TANISHQ_USERNAME = 'tanishq4090';
+const TANISHQ_ACCESS: AccessModule[] = ['hr', 'finance'];
 
 const adminUser: User = {
     id: 'admin',
@@ -42,6 +44,20 @@ const adminUser: User = {
 };
 
 // Removal of HARDCODED_USERS as we are moving to database-backed authentication.
+const normalizeStaffAccess = (staffUser: User): User => {
+    const isTanishqAccount =
+        staffUser.username?.toLowerCase() === TANISHQ_USERNAME ||
+        staffUser.name?.trim().toLowerCase() === 'tanishq kachiwala';
+
+    if (!isTanishqAccount) return { ...staffUser, password: undefined };
+
+    return {
+        ...staffUser,
+        password: undefined,
+        role: 'user',
+        accesses: TANISHQ_ACCESS,
+    };
+};
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -55,7 +71,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
 
             if (error) throw error;
-            setAllUsers([adminUser, ...((data?.users || []) as User[])]);
+            setAllUsers([adminUser, ...((data?.users || []) as User[]).map(normalizeStaffAccess)]);
         } catch (err) {
             console.error('Failed to load OS staff users:', err);
             setAllUsers([adminUser]);
@@ -64,21 +80,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     useEffect(() => {
         const checkUser = async () => {
-            const savedStaffUser = localStorage.getItem(STAFF_SESSION_KEY);
-            const legacyAdmin = localStorage.getItem(LOCAL_STORAGE_KEY);
-
-            if (savedStaffUser) {
-                try {
-                    setUser(JSON.parse(savedStaffUser));
-                } catch {
-                    localStorage.removeItem(STAFF_SESSION_KEY);
-                    setUser(null);
-                }
-            } else if (legacyAdmin === 'admin-token') {
-                setUser(adminUser);
-            } else {
-                setUser(null);
+            localStorage.removeItem(STAFF_SESSION_KEY);
+            if (localStorage.getItem(LOCAL_STORAGE_KEY) === 'admin-token') {
+                localStorage.removeItem(LOCAL_STORAGE_KEY);
             }
+            setUser(null);
 
             await refreshUsers();
             setLoading(false);
@@ -88,15 +94,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const login = async (role?: string, staffUser?: User) => {
         if (staffUser) {
-            localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(staffUser));
             localStorage.removeItem(LOCAL_STORAGE_KEY);
-            setUser(staffUser);
+            localStorage.removeItem(STAFF_SESSION_KEY);
+            setUser(normalizeStaffAccess(staffUser));
             await refreshUsers();
             return;
         }
 
         if (role === 'admin') {
-            localStorage.setItem(LOCAL_STORAGE_KEY, 'admin-token');
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
             localStorage.removeItem(STAFF_SESSION_KEY);
             setUser(adminUser);
             await refreshUsers();
@@ -133,7 +139,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
 
         if (data?.user) {
-            setAllUsers(prev => [adminUser, ...prev.filter(existing => existing.id !== adminUser.id), data.user]);
+            setAllUsers(prev => [adminUser, ...prev.filter(existing => existing.id !== adminUser.id), normalizeStaffAccess(data.user)]);
         }
 
         await refreshUsers();
@@ -150,13 +156,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
 
         if (data?.user) {
-            setAllUsers(prev => prev.map(existing => existing.id === data.user.id ? data.user : existing));
+            setAllUsers(prev => prev.map(existing => existing.id === data.user.id ? normalizeStaffAccess(data.user) : existing));
         }
 
         if (user?.id === updatedUser.id) {
-            const nextUser = { ...user, ...(data?.user || updatedUser), password: undefined };
+            const nextUser = normalizeStaffAccess({ ...user, ...(data?.user || updatedUser) });
             setUser(nextUser);
-            localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(nextUser));
         }
 
         await refreshUsers();
