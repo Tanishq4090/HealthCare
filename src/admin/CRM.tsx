@@ -4784,10 +4784,13 @@ export default function CRM() {
                             </div>
                         </div>
 
+                    </div>
 
-                        <div className="border-t border-slate-100 pt-5 mt-2">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Actions & Processing</h3>
-                            <div className="flex flex-col gap-3">
+                    {/* Inspector Footer Actions */}
+                    <div className="p-5 border-t border-slate-100 bg-slate-50/95 mt-auto space-y-3 shrink-0 shadow-[0_-8px_24px_rgba(15,23,42,0.04)]">
+                        <div>
+                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Actions & Processing</h3>
+                            <div className="flex flex-col gap-2">
                                 <button
                                     onClick={() => { fetchWhatsappChat(selectedInspectorLead); setSelectedInspectorLead(null); }}
                                     className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
@@ -4959,10 +4962,6 @@ export default function CRM() {
                             </div>
                         </div>
 
-                    </div>
-
-                    {/* Inspector Footer Actions */}
-                    <div className="p-5 border-t border-slate-100 bg-slate-50/50 mt-auto space-y-2">
                         {/* Review request — only for active/billing clients */}
                         {['Active Client', 'Monthly Billing', 'Closed Won'].includes(selectedInspectorLead.pipeline_stage) && (
                             <button
