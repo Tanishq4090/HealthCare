@@ -92,6 +92,83 @@ const VoicePlayer = ({ src }: { src: string }) => {
     );
 };
 
+const ATTENTION_EVENT_TYPES = new Set([
+    'lead_created',
+    'form_filled',
+    'quote_question',
+    'quote_call_requested',
+    'needs_attention',
+    'call_received',
+    'automation_error',
+    'whatsapp_deposit_invoice_alert_failed',
+]);
+
+const buildAttentionNotification = (activity: any) => {
+    const metadata = activity?.metadata || {};
+    const leadName = metadata.lead_name || metadata.name || 'Lead';
+    const service = metadata.service || metadata.detected_service || metadata.service_category;
+    const source = metadata.source || 'CRM';
+    const messagePreview = metadata.message_preview ? ` Message: "${String(metadata.message_preview).slice(0, 80)}"` : '';
+
+    switch (activity?.event_type) {
+        case 'lead_created':
+            return {
+                title: source === 'AI Phone Call' ? 'New Voice Lead' : 'New Lead Needs Review',
+                body: `${leadName} from ${source}${service ? ` for ${service}` : ''}.`,
+            };
+        case 'form_filled':
+            return {
+                title: 'New Intake Form Submitted',
+                body: `${leadName}${service ? ` requested ${service}` : ' submitted service details'}.`,
+            };
+        case 'quote_question':
+            return {
+                title: 'Quote Question Needs Reply',
+                body: `${leadName} tapped Ask a question.${messagePreview}`,
+            };
+        case 'quote_call_requested':
+            return {
+                title: 'Call Requested From Quote',
+                body: `${leadName} tapped Schedule a call.${messagePreview}`,
+            };
+        case 'call_received':
+            return {
+                title: 'Voice Call Needs Review',
+                body: `${leadName} completed an AI call${service ? ` about ${service}` : ''}.`,
+            };
+        case 'automation_error':
+        case 'whatsapp_deposit_invoice_alert_failed':
+            return {
+                title: 'Automation Needs Attention',
+                body: activity.description || metadata.reason || 'An automated workflow failed.',
+            };
+        case 'needs_attention':
+            return {
+                title: 'Lead Needs Attention',
+                body: `${leadName}: ${metadata.reason || activity.description || 'Manual review required.'}`,
+            };
+        default:
+            return null;
+    }
+};
+
+const buildWhatsAppFailureNotification = (log: any) => {
+    const payload = log?.payload || {};
+    const template = payload.templateName || payload.type || 'WhatsApp message';
+    const recipient = payload.original_recipient || payload.phone || 'client';
+    return {
+        title: 'WhatsApp Send Failed',
+        body: `${template} failed for ${recipient}. ${log.error_message || 'Check delivery logs.'}`,
+    };
+};
+
+const formatNotificationTime = (createdAt: string) => {
+    const date = new Date(createdAt);
+    const now = new Date();
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toDateString() === now.toDateString() ? time : `${date.toLocaleDateString()}, ${time}`;
+};
+
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'clients' | 'automations' | 'voice' | 'trash'>(() => {
         return (localStorage.getItem('crmActiveTab') as any) || 'pipeline';
@@ -117,6 +194,8 @@ export default function CRM() {
     const [isSimulatingInquiry, setIsSimulatingInquiry] = useState(false);
 
     const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
+    const [attentionEvents, setAttentionEvents] = useState<any[]>([]);
+    const notifiedAttentionIds = useRef<Set<string>>(new Set());
 
     const fetchDeliveryLogs = async () => {
         try {
@@ -127,6 +206,31 @@ export default function CRM() {
                 .limit(20);
             if (data) setDeliveryLogs(data);
         } catch (err) { }
+    };
+
+    const fetchAttentionEvents = async () => {
+        try {
+            const { data } = await supabase
+                .from('crm_lead_activity')
+                .select('id, lead_id, event_type, description, metadata, created_at')
+                .in('event_type', Array.from(ATTENTION_EVENT_TYPES))
+                .order('created_at', { ascending: false })
+                .limit(20);
+            if (data) setAttentionEvents(data);
+        } catch (err) {
+            console.warn('Failed to fetch attention events:', err);
+        }
+    };
+
+    const notifyAttention = (key: string, title: string, body: string) => {
+        if (!key || notifiedAttentionIds.current.has(key)) return;
+        notifiedAttentionIds.current.add(key);
+
+        toast.success(title, { description: body, duration: 7000 });
+
+        if ("Notification" in window && Notification.permission === "granted") {
+            new Notification(title, { body, icon: '/favicon.ico' });
+        }
     };
 
 
@@ -187,11 +291,13 @@ export default function CRM() {
 
         fetchLeads();
         fetchDeliveryLogs();
+        fetchAttentionEvents();
         fetchAutomationSettings();
 
         const interval = setInterval(() => {
             fetchLeads();
             fetchDeliveryLogs();
+            fetchAttentionEvents();
             fetchVoiceData?.();
         }, 1000 * 30); // 30s auto-refresh
 
@@ -219,17 +325,24 @@ export default function CRM() {
         const activitySub = supabase.channel('realtime_activity_v2')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_lead_activity' }, (payload) => {
                 const activity = payload.new;
-                if (activity.event_type === 'form_filled') {
-                    toast.success(`📋 New Intake Form: ${activity.metadata?.service || 'Unknown Service'}`, { duration: 6000 });
-                    fetchLeads();
-
-                    // Trigger browser notification if supported and granted
-                    if ("Notification" in window && Notification.permission === "granted") {
-                        new Notification("New Intake Form Filled", {
-                            body: activity.description || 'A lead just submitted their requirements.',
-                            icon: '/favicon.ico'
-                        });
+                if (ATTENTION_EVENT_TYPES.has(activity.event_type)) {
+                    setAttentionEvents(prev => [activity, ...prev.filter(item => item.id !== activity.id)].slice(0, 20));
+                    const notification = buildAttentionNotification(activity);
+                    if (notification) {
+                        notifyAttention(`activity:${activity.id}`, notification.title, notification.body);
                     }
+                    fetchLeads();
+                }
+            })
+            .subscribe();
+
+        const whatsappFailureSub = supabase.channel('realtime_whatsapp_failures_v2')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_logs' }, (payload) => {
+                const log = payload.new;
+                if (log?.status === 'failed' || log?.status === 'error' || log?.error_message) {
+                    setDeliveryLogs(prev => [log, ...prev.filter(item => item.id !== log.id)].slice(0, 20));
+                    const notification = buildWhatsAppFailureNotification(log);
+                    notifyAttention(`whatsapp:${log.id}`, notification.title, notification.body);
                 }
             })
             .subscribe();
@@ -245,6 +358,7 @@ export default function CRM() {
             supabase.removeChannel(leadsSub);
             supabase.removeChannel(consentSub);
             supabase.removeChannel(activitySub);
+            supabase.removeChannel(whatsappFailureSub);
         };
     }, []);
 
@@ -304,6 +418,43 @@ export default function CRM() {
             };
         });
     }, [deliveryLogs]);
+
+    const attentionNotifications = useMemo(() => {
+        const activityItems = attentionEvents
+            .map((activity: any) => {
+                const notification = buildAttentionNotification(activity);
+                if (!notification) return null;
+                return {
+                    id: `activity-${activity.id}`,
+                    title: notification.title,
+                    desc: notification.body,
+                    time: formatNotificationTime(activity.created_at),
+                    created_at: activity.created_at,
+                    icon: activity.event_type === 'call_received' ? Phone : activity.event_type === 'form_filled' ? FileText : AlertTriangle,
+                    status: 'attention',
+                };
+            })
+            .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+        const failureItems = deliveryLogs
+            .filter((log: any) => log?.status === 'failed' || log?.status === 'error' || log?.error_message)
+            .map((log: any) => {
+                const notification = buildWhatsAppFailureNotification(log);
+                return {
+                    id: `whatsapp-${log.id}`,
+                    title: notification.title,
+                    desc: notification.body,
+                    time: formatNotificationTime(log.created_at),
+                    created_at: log.created_at,
+                    icon: AlertTriangle,
+                    status: 'error',
+                };
+            });
+
+        return [...activityItems, ...failureItems]
+            .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            .slice(0, 20);
+    }, [attentionEvents, deliveryLogs]);
 
     // AI WhatsApp Agent State
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
@@ -1844,7 +1995,7 @@ export default function CRM() {
 
         const templateMap: Record<string, string> = {
             inquiry: 'post_call_intake',
-            quotation: 'quote_client',
+            quotation: 'quote_client_v2',
             consent: 'consent_form',
             deposit: 'deposit_request',
             staff: 'staff_assignment'
@@ -2425,6 +2576,38 @@ export default function CRM() {
         return 0;
     };
 
+    const sendDepositCollectionAlert = async (lead: any, amount: number) => {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        let phoneDigits = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '');
+        if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+        if (!phoneDigits) throw new Error('No phone number found for this client.');
+
+        const firstName = lead.name?.split(/\s+/)[0] || 'there';
+        const formattedAmount = `₹${amount.toLocaleString('en-IN')}`;
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+                phone: phoneDigits,
+                leadId: lead.id,
+                message: `Deposit payment received from ${lead.name}: ${formattedAmount}`,
+                useTemplate: true,
+                templateName: 'deposit_invoice_alert',
+                templateParams: [firstName],
+            }),
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.success === false) {
+            throw new Error(data.error || `WhatsApp dispatch failed: HTTP ${resp.status}`);
+        }
+    };
+
     const handleDepositReceived = async (lead: any) => {
         if (!lead?.id) return;
 
@@ -2517,10 +2700,27 @@ export default function CRM() {
             setSelectedInspectorLead((prev: any) => prev?.id === lead.id ? { ...prev, pipeline_stage: 'Active Client' } : prev);
             await logActivity(lead.id, 'payment_recorded', `Deposit collection recorded: ₹${amount.toLocaleString('en-IN')}`, { amount, payment_type: 'deposit' });
             await logActivity(lead.id, 'stage_changed', 'Deposit received — moved to Active Client', { from: lead.pipeline_stage, to: 'Active Client' });
+
+            let alertSent = false;
+            try {
+                await sendDepositCollectionAlert(lead, amount);
+                alertSent = true;
+                await logActivity(lead.id, 'whatsapp_deposit_invoice_alert', `Deposit received alert sent to ${lead.name}`, { amount, templateName: 'deposit_invoice_alert' });
+            } catch (alertError: any) {
+                console.warn('Deposit received alert failed:', alertError);
+                await logActivity(lead.id, 'whatsapp_deposit_invoice_alert_failed', `Deposit received alert failed: ${alertError.message}`, { amount, templateName: 'deposit_invoice_alert' });
+                toast.warning(`Deposit recorded, but WhatsApp alert failed: ${alertError.message}`);
+            }
+
             fetchLeadActivity(lead.id, lead?.duplicate_of_lead_id);
             fetchLeads();
 
-            toast.success(`Deposit collection recorded. Finance invoice marked paid for ₹${amount.toLocaleString('en-IN')}.`, { id: toastId, duration: 5000 });
+            toast.success(
+                alertSent
+                    ? `Deposit collection recorded. Client notified for ₹${amount.toLocaleString('en-IN')}.`
+                    : `Deposit collection recorded. Finance invoice marked paid for ₹${amount.toLocaleString('en-IN')}.`,
+                { id: toastId, duration: 5000 }
+            );
             setSelectedInspectorLead(null);
         } catch (err: any) {
             console.error('Error recording deposit collection:', err);
@@ -3224,21 +3424,28 @@ export default function CRM() {
                             className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all relative group shadow-sm"
                         >
                             <Bot className="w-6 h-6 group-hover:scale-110 transition-transform text-primary" />
-                            <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
+                            {attentionNotifications.length > 0 && (
+                                <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
+                            )}
                         </button>
 
                         {isNotificationsOpen && (
                             <div className="absolute right-0 sm:right-0 -right-4 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
-                                    <h3 className="font-bold text-slate-900 text-sm">AI Agent Activity</h3>
-                                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">LIVE</span>
+                                    <h3 className="font-bold text-slate-900 text-sm">Needs Attention</h3>
+                                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{attentionNotifications.length} LIVE</span>
                                 </div>
                                 <div className="max-h-96 overflow-y-auto">
-                                    {automationLogs.map(log => (
+                                    {attentionNotifications.length === 0 ? (
+                                        <div className="p-6 text-center">
+                                            <p className="text-sm font-semibold text-slate-500">No active attention alerts.</p>
+                                            <p className="text-xs text-slate-400 mt-1">Routine automation logs stay in the full activity view.</p>
+                                        </div>
+                                    ) : attentionNotifications.map(log => (
                                         <div key={log.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer group">
                                             <div className="flex gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 group-hover:bg-white transition-colors border border-slate-200">
-                                                    <log.icon className="w-5 h-5 text-slate-600" />
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-white transition-colors border ${log.status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+                                                    <log.icon className={`w-5 h-5 ${log.status === 'error' ? 'text-red-600' : 'text-amber-600'}`} />
                                                 </div>
                                                 <div>
                                                     <p className="text-xs font-bold text-slate-900 leading-tight">{log.title}</p>
@@ -3451,7 +3658,7 @@ export default function CRM() {
                                                                     .filter((l) => l.payload?.lead_id === item.id)
                                                                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                                                                 return (
-                                                                    <div key={item.id} className="relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all cursor-default flex flex-col">
+                                                                    <div key={item.id} className={`relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                                         {item.needs_attention && (
                                                                             <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
                                                                         )}
@@ -3968,6 +4175,33 @@ export default function CRM() {
             {activeTab === 'automations' && (
                 /* AI Automations View */
                 <div className="flex-1 flex flex-col gap-6 pb-4 overflow-y-auto">
+                    <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                        <div className="p-5 border-b border-amber-100 bg-amber-50/60 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-900">Needs Attention</h2>
+                                <p className="text-sm text-slate-500 mt-1">Operational events that should be reviewed by staff.</p>
+                            </div>
+                            <span className="text-xs font-bold text-amber-700 bg-white border border-amber-200 px-3 py-1 rounded-full">{attentionNotifications.length} active</span>
+                        </div>
+                        <div className="p-5 grid md:grid-cols-2 gap-3">
+                            {attentionNotifications.length === 0 ? (
+                                <p className="text-sm text-slate-400 font-medium">No attention alerts right now.</p>
+                            ) : attentionNotifications.slice(0, 6).map((log: any) => (
+                                <div key={log.id} className={`rounded-lg border p-3 flex gap-3 ${log.status === 'error' ? 'bg-red-50/70 border-red-100' : 'bg-amber-50/70 border-amber-100'}`}>
+                                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${log.status === 'error' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        <log.icon className="w-4 h-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="text-sm font-bold text-slate-900 truncate">{log.title}</h4>
+                                            <span className="text-[10px] text-slate-400 shrink-0">{log.time}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-600 line-clamp-2 mt-1">{log.desc}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                     <div className="grid lg:grid-cols-2 gap-6">
                         {/* Active Workflows */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">

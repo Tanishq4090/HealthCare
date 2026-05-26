@@ -179,7 +179,7 @@ serve(async (req) => {
             // Robust lookup: find lead by last 10 digits regardless of format
             const { data: existingLeads } = await supabase
                 .from('crm_leads')
-                .select('id, pipeline_stage, name')
+                .select('id, pipeline_stage, name, service_interest, phone, whatsapp_number, notes')
                 .or(`phone.ilike.%${last10Caller}%,whatsapp_number.ilike.%${last10Caller}%`)
                 .order('created_at', { ascending: false })
                 .limit(1);
@@ -206,13 +206,25 @@ serve(async (req) => {
                     lead_id: existingLead.id,
                     event_type: 'call_received',
                     description: `AI call received (${Math.round(callDurationSecs)}s)`,
-                    metadata: { conversation_id: conversationId, duration_secs: callDurationSecs, detected_service: detectedService }
+                    metadata: {
+                        lead_name: existingLead.name,
+                        phone: effectivePhoneNumber || phoneForLookup,
+                        source: 'AI Phone Call',
+                        stage: updatePayload.pipeline_stage || existingLead.pipeline_stage,
+                        conversation_id: conversationId,
+                        duration_secs: callDurationSecs,
+                        service: detectedService,
+                        detected_service: detectedService,
+                        shift: detectedShift,
+                        reason: 'AI call ended and lead needs review'
+                    }
                 }]);
             } else {
                 // Auto-create a new lead for this caller — never miss a contact
                 console.log(`[Call Webhook] No existing lead. Auto-creating for ${phoneForLookup}`);
+                const newLeadName = detectedName !== 'Customer' ? detectedName : 'Unknown Caller';
                 const { data: newLead } = await supabase.from('crm_leads').insert([{
-                    name: detectedName !== 'Customer' ? detectedName : 'Unknown Caller',
+                    name: newLeadName,
                     phone: phoneForLookup,
                     whatsapp_number: effectivePhoneNumber || phoneForLookup,
                     source: 'AI Phone Call',
@@ -228,7 +240,18 @@ serve(async (req) => {
                         lead_id: newLead.id,
                         event_type: 'lead_created',
                         description: 'Lead created via AI phone call',
-                        metadata: { conversation_id: conversationId, source: 'AI Phone Call', detected_service: detectedService }
+                        metadata: {
+                            lead_name: newLeadName,
+                            phone: effectivePhoneNumber || phoneForLookup,
+                            source: 'AI Phone Call',
+                            stage: 'New Inquiry',
+                            conversation_id: conversationId,
+                            duration_secs: callDurationSecs,
+                            service: detectedService,
+                            detected_service: detectedService,
+                            shift: detectedShift,
+                            reason: 'New voice lead created'
+                        }
                     }]);
                 }
             }
@@ -246,4 +269,3 @@ serve(async (req) => {
         return new Response(JSON.stringify({ ok: false }), { status: 200 }); // Always 200 for ElevenLabs
     }
 });
-

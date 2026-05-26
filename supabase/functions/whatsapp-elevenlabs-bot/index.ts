@@ -298,7 +298,20 @@ serve(async (req) => {
                     lead_id: upsertedLeadId,
                     event_type: 'form_filled',
                     description: `Intake form submitted — Service: ${resolvedService}`,
-                    metadata: { service: resolvedService, shift_type: shiftType, care_for: careFor, location: locationStr, start_date: startDate, end_date: endDate, duration }
+                    metadata: {
+                        lead_name: name,
+                        phone: purePhone,
+                        source: existingLead ? 'WhatsApp Flow Update' : 'WhatsApp Flow',
+                        stage: shouldUpdateStage ? 'In Discussion' : currentStage,
+                        service: resolvedService,
+                        shift_type: shiftType,
+                        care_for: careFor,
+                        location: locationStr,
+                        start_date: startDate,
+                        end_date: endDate,
+                        duration,
+                        reason: existingLead ? 'WhatsApp intake updated' : 'New WhatsApp intake submitted'
+                    }
                 }]);
                 if (actErr) console.error(`[Flow] Activity Insert Error:`, actErr);
             }
@@ -425,7 +438,7 @@ serve(async (req) => {
         // --- 8. LOOKUP EXISTING CRM LEAD (ROBUST) ---
         const { data: earlyLeads } = await supabase
             .from('crm_leads')
-            .select('id, pipeline_stage, name, needs_attention, estimated_value_monthly')
+                .select('id, pipeline_stage, name, needs_attention, estimated_value_monthly')
             .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
             .order('created_at', { ascending: false })
             .limit(1);
@@ -560,9 +573,38 @@ serve(async (req) => {
                 replyMsg = `Of course! 😊 Yes, our 99 Care team will be happy to answer your questions — go ahead and ask, we're listening! 🙏`;
                 if (earlyLead?.id) {
                     await supabase.from('crm_leads').update({ needs_attention: true }).eq('id', earlyLead.id);
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: earlyLead.id,
+                        event_type: 'quote_question',
+                        description: `${earlyLead.name || 'Lead'} asked a question from the quote message`,
+                        metadata: {
+                            lead_name: earlyLead.name,
+                            phone: purePhone,
+                            source: 'WhatsApp Quote Button',
+                            stage: earlyLead.pipeline_stage,
+                            message_preview: rawBody,
+                            reason: 'Lead selected Ask a question'
+                        }
+                    }]);
                 }
             } else if (isScheduleCall) {
                 replyMsg = `Noted! 📞 The 99 Care team will get on a call with you shortly. Please stay available on this number. Thank you for your patience! 🙏`;
+                if (earlyLead?.id) {
+                    await supabase.from('crm_leads').update({ needs_attention: true }).eq('id', earlyLead.id);
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: earlyLead.id,
+                        event_type: 'quote_call_requested',
+                        description: `${earlyLead.name || 'Lead'} requested a call from the quote message`,
+                        metadata: {
+                            lead_name: earlyLead.name,
+                            phone: purePhone,
+                            source: 'WhatsApp Quote Button',
+                            stage: earlyLead.pipeline_stage,
+                            message_preview: rawBody,
+                            reason: 'Lead selected Schedule a call'
+                        }
+                    }]);
+                }
             }
 
             // Send the reply
@@ -609,13 +651,32 @@ serve(async (req) => {
             }
 
             // Truly new lead — create it
-            await supabase.from('crm_leads').insert([{
-                name: contact?.profile?.name || 'Unknown Lead',
+            const newLeadName = contact?.profile?.name || 'Unknown Lead';
+            const { data: newChatLead, error: newChatLeadError } = await supabase.from('crm_leads').insert([{
+                name: newLeadName,
                 whatsapp_number: purePhone,
                 source: 'WhatsApp Chat',
                 pipeline_stage: 'New Inquiry',
                 status: 'new'
-            }]);
+            }]).select('id').single();
+            if (newChatLeadError) {
+                console.error(`[WhatsApp Chat] Lead insert error:`, newChatLeadError);
+            }
+            if (newChatLead?.id) {
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: newChatLead.id,
+                    event_type: 'lead_created',
+                    description: 'New WhatsApp chat inquiry received',
+                    metadata: {
+                        lead_name: newLeadName,
+                        phone: purePhone,
+                        source: 'WhatsApp Chat',
+                        stage: 'New Inquiry',
+                        message_preview: rawBody,
+                        reason: 'New inbound WhatsApp inquiry'
+                    }
+                }]);
+            }
 
             if (META_SYSTEM_TOKEN && META_PHONE_ID && WHATSAPP_FLOW_ID) {
                 // Send native WhatsApp Flow form

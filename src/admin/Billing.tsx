@@ -362,6 +362,39 @@ export default function Billing() {
         console.warn('[Billing] handleGenerateDepositInvoice called but is deprecated. Use openAgentModal instead.');
     };
 
+    const sendDepositCollectionAlert = async (deposit: any, amount: number) => {
+        let phoneDigits = (deposit.client_phone || '').replace(/\D/g, '');
+        if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+        if (!phoneDigits) throw new Error('No phone number found for this client.');
+
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const firstName = deposit.client?.split(/\s+/)[0] || 'there';
+        const formattedAmount = `₹${amount.toLocaleString('en-IN')}`;
+
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+                phone: phoneDigits,
+                leadId: deposit.client_id,
+                message: `Deposit payment received from ${deposit.client}: ${formattedAmount}`,
+                useTemplate: true,
+                templateName: 'deposit_invoice_alert',
+                templateParams: [firstName],
+            }),
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.success === false) {
+            throw new Error(data.error || `WhatsApp dispatch failed: HTTP ${resp.status}`);
+        }
+    };
+
     const handleCollectDeposit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (activeDepositId) {
@@ -393,7 +426,14 @@ export default function Billing() {
 
                 // 3. Update local UI immediately
                 setDeposits(prev => prev.map(d => d.id === activeDepositId ? { ...d, status: 'Paid' } : d));
-                toast.success(`Deposit marked as paid via ${depositMethod}. Recorded in Collection History.`);
+
+                try {
+                    await sendDepositCollectionAlert(deposit, depositAmount);
+                    toast.success(`Deposit marked as paid via ${depositMethod}. Client notified on WhatsApp.`);
+                } catch (alertError: any) {
+                    console.warn('Deposit alert failed:', alertError);
+                    toast.warning(`Deposit recorded, but WhatsApp alert failed: ${alertError.message}`);
+                }
             } catch (err: any) {
                 console.error('Error recording deposit:', err);
                 toast.error('Failed to record payment in database');
