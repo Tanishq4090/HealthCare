@@ -796,6 +796,13 @@ export default function CRM() {
             return;
         }
         const last10 = digits.slice(-10);
+        const matchingLead = call.lead_id
+            ? leads.find(l => l.id === call.lead_id)
+            : leads.find(l => {
+                const leadPhone = `${l.phone || ''} ${l.whatsapp_number || ''}`.replace(/\D/g, '');
+                return leadPhone.endsWith(last10);
+            });
+        const resolvedLeadId = call.lead_id || matchingLead?.id;
 
         setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sending' }));
 
@@ -805,8 +812,16 @@ export default function CRM() {
         const manualToastId = isManual
             ? toast.loading(`Resending greeting to ${firstName}…`)
             : undefined;
+        const callForTranscript = resolvedLeadId ? { ...call, lead_id: resolvedLeadId } : call;
 
         try {
+            if (!resolvedLeadId) {
+                await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_ERROR_NO_LEAD');
+                setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'error' }));
+                toast.error('Greeting not sent because this call is not linked to a lead yet.');
+                return;
+            }
+
             if (!isManual) {
                 const { data: transcriptRow } = await supabase
                     .from('call_transcripts')
@@ -825,7 +840,7 @@ export default function CRM() {
             }
 
             await upsertCallTranscriptStatus(
-                call,
+                callForTranscript,
                 digits,
                 isManual ? 'GREETING_RESENDING' : 'GREETING_PROCESSING'
             );
@@ -844,21 +859,22 @@ export default function CRM() {
 
             if (existingGreeting && !isManual) {
                 console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
-                await upsertCallTranscriptStatus(call, digits, 'GREETING_SENT');
+                await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_SENT');
                 setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
                 toast.success(`✅ Greeting already sent to ${firstName}! Marked as done.`);
                 return;
             }
 
-            await upsertCallTranscriptStatus(call, digits, 'GREETING_PROCESSING');
+            await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_PROCESSING');
 
             // Step 2: Send post_call_intake — template body + Flow prefill from Voice AI summary
             const intakePrefill = buildVoiceCallIntakePrefill(call);
             const requestBody = {
                 phone: digits,
+                leadId: resolvedLeadId,
                 useTemplate: true,
                 templateName: 'post_call_intake',
-                leadName: intakePrefill.flowData.name || firstName,
+                leadName: intakePrefill.flowData.name || matchingLead?.name?.split(/\s+/)[0] || firstName,
                 templateParams: intakePrefill.templateParams,
                 flowData: intakePrefill.flowData,
             };
@@ -896,7 +912,7 @@ export default function CRM() {
             const deliveryConfirmed =
                 verifyLog?.status === 'success' || verifyLog?.status === 'accepted_by_meta';
 
-            await upsertCallTranscriptStatus(call, digits, 'GREETING_SENT');
+            await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_SENT');
             setCalls((prev) =>
                 prev.map((c) =>
                     String(c.id) === callKey ? { ...c, automation_error: 'GREETING_SENT' } : c
@@ -946,7 +962,7 @@ export default function CRM() {
             console.error('[Greeting Error]', err.message);
 
             const errCode = `GREETING_ERROR: ${err.message?.slice(0, 200)}`;
-            await upsertCallTranscriptStatus(call, digits, errCode);
+            await upsertCallTranscriptStatus(callForTranscript, digits, errCode);
             setCalls((prev) =>
                 prev.map((c) => (String(c.id) === callKey ? { ...c, automation_error: errCode } : c))
             );
