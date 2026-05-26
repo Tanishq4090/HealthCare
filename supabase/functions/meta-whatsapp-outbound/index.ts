@@ -203,6 +203,12 @@ serve(async (req) => {
     }
 
     const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId, flowData, sendInvoicePdf, invoicePdfUrl } = payload;
+    if (useTemplate && templateName === 'greeting_msg') {
+      throw new Error('Blocked deprecated greeting_msg template. Use lead-scoped post_call_intake instead.');
+    }
+    if (useTemplate && templateName === 'post_call_intake' && !leadId) {
+      throw new Error('Blocked lead-less intake greeting dispatch.');
+    }
     const META_SYSTEM_TOKEN = Deno.env.get('META_SYSTEM_TOKEN');
     const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 

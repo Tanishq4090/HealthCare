@@ -3974,14 +3974,9 @@ export default function CRM() {
                                         </button>
                                     </div>
                                     <p className="text-sm text-slate-500 mb-3">Automatically replies to inbound web chats and SMS. Classifies intent (Booking vs. Inquiry).</p>
-                                    <button
-                                        onClick={handleBulkGreeting}
-                                        disabled={isSimulatingInquiry}
-                                        className="text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shadow-sm mt-3"
-                                    >
-                                        {isSimulatingInquiry ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5 text-primary" />}
-                                        Send Greetings to Captured Leads
-                                    </button>
+                                    <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-md mt-3">
+                                        Bulk greeting dispatch is disabled. Send greetings from an individual lead card only.
+                                    </p>
                                 </div>
 
 
