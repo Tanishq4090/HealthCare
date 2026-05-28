@@ -1685,7 +1685,7 @@ export default function HR() {
                             </button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4 mb-2 mt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2 mt-4">
                         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Total Payables</p>
@@ -2167,7 +2167,7 @@ export default function HR() {
                                             </div>
                                             
                                             {formData.documents && formData.documents.length > 0 && (
-                                                <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                     {formData.documents.map((file, idx) => (
                                                         <div key={idx} className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all group/file">
                                                             <div className="flex items-center gap-3 overflow-hidden">
@@ -2241,7 +2241,7 @@ export default function HR() {
                                         className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed text-sm"
                                     />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-1">Hours Logged</label>
                                         <input
@@ -2395,7 +2395,7 @@ export default function HR() {
                                 </select>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
                                     <input
@@ -2622,7 +2622,7 @@ export default function HR() {
                             <hr className="border-slate-100" />
 
                             {/* Info Grid */}
-                            <div className="grid grid-cols-2 gap-6 text-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 text-xs">
                                 <div>
                                     <h4 className="font-bold text-slate-400 uppercase tracking-wider mb-2">Worker Portfolio</h4>
                                     <p className="font-bold text-slate-900 text-sm">{previewPayslip.worker}</p>
@@ -2684,7 +2684,7 @@ export default function HR() {
                             {/* Bank Details */}
                             <div className="bg-slate-50 rounded-2xl p-4 text-[10px] text-slate-500 space-y-1">
                                 <p className="font-bold text-slate-700 uppercase tracking-wider mb-1">Corporate Bank Transfer Details</p>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <p><span className="font-medium text-slate-600">Bank Name:</span> The Sutex Co-Operative Bank Ltd.</p>
                                         <p><span className="font-medium text-slate-600">Account Name:</span> 99 CARE HOME HEALTHCARE SERVICE</p>

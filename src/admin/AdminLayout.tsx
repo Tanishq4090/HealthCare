@@ -221,29 +221,86 @@ export default function AdminLayout() {
                                         <X className="w-5 h-5" />
                                     </button>
                                 </div>
-                                <nav className="flex-1 p-4 space-y-1">
-                                    {filteredNavigation.map((item) => {
-                                        const isActive = location.pathname === item.href;
-                                        return (
-                                            <Link
-                                                key={item.name}
-                                                to={item.href}
-                                                onClick={() => setIsMobileMenuOpen(false)}
-                                                className={`flex items-center justify-between px-3 py-3 rounded-xl font-semibold transition-all ${isActive
-                                                    ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
-                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                                                    }`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
-                                                    {item.name}
+                                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                                    {/* Mobile Search (in Drawer) */}
+                                    <div className="mb-4 sm:hidden">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                                            <input
+                                                type="text"
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                onFocus={() => {
+                                                    setIsInputFocused(true);
+                                                    if (searchQuery.length >= 2) setIsSearchOpen(true);
+                                                }}
+                                                onBlur={() => {
+                                                    setTimeout(() => {
+                                                        setIsInputFocused(false);
+                                                        setIsSearchOpen(false);
+                                                    }, 150);
+                                                }}
+                                                placeholder="Search OS..."
+                                                className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                            />
+                                            {isSearchOpen && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 max-h-[300px] overflow-y-auto z-[110]">
+                                                    {isSearching ? (
+                                                        <div className="p-4 flex items-center justify-center text-slate-500">
+                                                            <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                                                            <span className="text-sm font-medium">Searching...</span>
+                                                        </div>
+                                                    ) : (searchResults.clients.length === 0 && searchResults.workers.length === 0 && searchResults.invoices.length === 0) ? (
+                                                        <div className="p-4 text-center text-slate-500 text-sm font-medium">
+                                                            No results found for "{searchQuery}"
+                                                        </div>
+                                                    ) : (
+                                                        <div className="py-2">
+                                                            {/* We only render clients and workers for brevity in mobile search */}
+                                                            {searchResults.clients.length > 0 && (
+                                                                <div className="mb-2">
+                                                                    <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">Clients</div>
+                                                                    {searchResults.clients.map(client => (
+                                                                        <button
+                                                                            key={client.id}
+                                                                            onClick={() => {
+                                                                                setIsSearchOpen(false);
+                                                                                setIsMobileMenuOpen(false);
+                                                                                navigate('/admin/crm', { state: { openLeadId: client.id } });
+                                                                            }}
+                                                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                                        >
+                                                                            <span className="text-sm font-semibold text-slate-900">{client.name}</span>
+                                                                            <span className="text-xs text-slate-500">{client.phone}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {searchResults.workers.length > 0 && (
+                                                                <div>
+                                                                    <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">Workers</div>
+                                                                    {searchResults.workers.map(worker => (
+                                                                        <button
+                                                                            key={worker.id}
+                                                                            onClick={() => {
+                                                                                setIsSearchOpen(false);
+                                                                                setIsMobileMenuOpen(false);
+                                                                                navigate('/admin/hr', { state: { searchWorker: worker.full_name } });
+                                                                            }}
+                                                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                                        >
+                                                                            <span className="text-sm font-semibold text-slate-900">{worker.full_name}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                {(item as any).status === 'construction' && (
-                                                    <span className="text-[9px] font-bold tracking-wider uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md">Coming Soon</span>
-                                                )}
-                                            </Link>
-                                        );
-                                    })}
+                                            )}
+                                        </div>
+                                    </div>
+
                                     {user?.role === 'admin' && (
                                         <Link
                                             to="/admin/settings"
@@ -257,7 +314,7 @@ export default function AdminLayout() {
                                             Access Control
                                         </Link>
                                     )}
-                                    <hr className="my-4 border-slate-100" />
+                                    <hr className="my-2 border-slate-100" />
                                     <Link 
                                         to="/" 
                                         target="_blank" 
@@ -446,9 +503,33 @@ export default function AdminLayout() {
                 </header>
 
                 {/* Dynamic Page Content */}
-                <div className="flex-1 overflow-auto">
+                <div className="flex-1 overflow-auto pb-16 lg:pb-0">
                     <Outlet />
                 </div>
+
+                {/* Mobile Bottom Navigation */}
+                <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 pb-safe z-50 h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                    {filteredNavigation.map((item) => {
+                        const isActive = location.pathname === item.href || (item.href !== '/admin' && location.pathname.startsWith(item.href));
+                        // Simplify names for mobile space
+                        let mobileName = item.name;
+                        if (mobileName === 'Dashboard') mobileName = 'Home';
+                        else if (mobileName.startsWith('AI ')) mobileName = mobileName.replace('AI ', '');
+
+                        return (
+                            <Link
+                                key={item.name}
+                                to={item.href}
+                                className={`flex flex-col items-center justify-center flex-1 h-full py-1 ${isActive ? 'text-primary' : 'text-slate-500 hover:text-slate-900'}`}
+                            >
+                                <div className={`p-1.5 rounded-full mb-0.5 transition-colors ${isActive ? 'bg-primary/10' : ''}`}>
+                                    <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
+                                </div>
+                                <span className={`text-[10px] truncate w-full text-center transition-all ${isActive ? 'font-bold' : 'font-medium'}`}>{mobileName}</span>
+                            </Link>
+                        );
+                    })}
+                </nav>
             </main>
         </div>
     );

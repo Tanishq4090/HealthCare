@@ -3538,9 +3538,9 @@ export default function CRM() {
                                     const hasMore = col.items.length > limit;
 
                                     return (
-                                        <div key={idx} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-300 ${isExpanded ? 'flex-row items-stretch' : 'flex-col'}`}>
+                                        <div key={idx} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-300 ${isExpanded ? 'flex-col sm:flex-row sm:items-stretch' : 'flex-col'}`}>
                                             <div
-                                                className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'w-[280px] sm:w-[320px] rounded-l-xl border-r border-slate-200' : 'rounded-xl'}`}
+                                                className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[280px] lg:w-[320px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
                                                 onClick={() => toggleStage(col.title)}
                                             >
                                                 {/* Stage Header w/ Edit toggle */}

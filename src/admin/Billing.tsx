@@ -1419,6 +1419,7 @@ export default function Billing() {
                                             </p>
                                         </div>
                                     ) : (
+                                        <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse">
                                             <thead>
                                                 <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
@@ -1459,6 +1460,7 @@ export default function Billing() {
                                                 ))}
                                             </tbody>
                                         </table>
+                                        </div>
                                     )}
                                 </div>
                             );
@@ -1585,7 +1587,7 @@ export default function Billing() {
                                         <FileText className="w-4 h-4 text-emerald-600" />
                                         <span className="text-xs font-bold text-slate-700">Invoice Details (Auto-generated PDF)</span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Deposit Amount (₹)</label>
                                             <input 
@@ -2083,7 +2085,7 @@ export default function Billing() {
                                         <p>Attendance is not yet marked or verified by HR for this period. Days of service may be inaccurate.</p>
                                     </div>
                                 )}
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
                                         <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
@@ -2093,7 +2095,7 @@ export default function Billing() {
                                         <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
                                         <input type="number" min="0" step="0.5" value={ciDays} onChange={e => setCiDays(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />

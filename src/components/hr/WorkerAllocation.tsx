@@ -270,7 +270,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               <Input className="mt-1" placeholder="e.g. Anita Sharma" value={form.full_name}
                 onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium text-slate-700">Job Title <span className="text-red-400">*</span></label>
                 <Input className="mt-1" placeholder="e.g. Registered Nurse" value={form.job_title}
@@ -320,7 +320,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium text-slate-700">Aadhaar</label>
                 <Input className="mt-1" placeholder="0000 0000 0000" value={form.aadhaar_number ?? ''}
@@ -334,7 +334,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
             </div>
 
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium text-slate-700">Residential Address</label>
                 <Input className="mt-1" placeholder="Full Address" value={form.address ?? ''}
@@ -372,7 +372,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 border-b border-slate-100">
                <div>
                 <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Payment Scheme</label>
                 <select 
@@ -711,7 +711,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               <p className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" /> Assignment Period
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-600">Start Date <span className="text-red-400">*</span></label>
                   <Input type="date" className="mt-1 text-sm border-slate-200" value={startDate}
@@ -724,7 +724,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                     onChange={e => setEndDate(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-600">Security Deposit (₹)</label>
                   <Input type="number" className="mt-1 text-sm border-slate-200" placeholder="0"
@@ -898,7 +898,7 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                   <div className="p-1.5 bg-primary/10 rounded-lg"><Briefcase className="w-4 h-4 text-primary" /></div>
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Financial Meta</h4>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                    <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">
                       {employee.preferred_payment_type === 'hourly' 
@@ -1078,7 +1078,7 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Address</label>
             <Input className="mt-1" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
           </div>
-          <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 border-b border-slate-100">
              <div>
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment Scheme</label>
               <select

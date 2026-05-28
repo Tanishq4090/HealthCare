@@ -280,7 +280,7 @@ export default function Dashboard() {
 
             <div className="grid lg:grid-cols-3 gap-6 lg:h-[400px]">
                 {/* Revenue Chart */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[300px] lg:h-auto">
                     <div className="mb-4">
                         <h2 className="font-bold text-slate-900 text-lg">Monthly Recurring Revenue (MRR)</h2>
                         <p className="text-xs text-slate-500">Projected trajectory based on active worker deployments.</p>
@@ -306,7 +306,7 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[400px] lg:h-auto">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h2 className="font-bold text-slate-900">Recent AI Activity</h2>
                         <span className="text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2 py-1 rounded-md">Live Stream</span>
