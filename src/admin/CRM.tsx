@@ -4921,6 +4921,28 @@ export default function CRM() {
                             </select>
                         </div>
 
+                        {/* ── Appointment Schedule ──────────────────────── */}
+                        {selectedInspectorLead.appointment_datetime && (
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Appointment Schedule</p>
+                                <div className="bg-emerald-50 rounded-xl border border-emerald-100 p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 border border-emerald-100 shadow-sm">
+                                            <Calendar className="w-4 h-4 text-emerald-500" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <p className="text-sm font-bold text-slate-900">
+                                                {new Date(selectedInspectorLead.appointment_datetime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            </p>
+                                            <p className="text-xs font-semibold text-emerald-600 mt-0.5">
+                                                {new Date(selectedInspectorLead.appointment_datetime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* ── Service Timeline ────────────────────────────── */}
                         {(selectedInspectorLead.plannedStart || selectedInspectorLead.plannedDuration) && (
                             <div>
