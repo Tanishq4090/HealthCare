@@ -1009,39 +1009,12 @@ export default function CRM() {
 
             callForTranscript = finalLeadId ? { ...call, lead_id: finalLeadId } : call;
 
-            if (!finalLeadId && isManual) {
-                const createdLead = await createLeadFromVoiceCall(
-                    {
-                        id: call.id,
-                        phone: call.phone,
-                        capturedName: call.capturedName,
-                        capturedWhatsapp: call.capturedWhatsapp,
-                        capturedValue: call.capturedValue,
-                    },
-                    { skipReturningCheck: true }
+            if (finalLeadId) {
+                setCalls((prev) =>
+                    prev.map((c) => (String(c.id) === callKey ? { ...c, lead_id: finalLeadId } : c))
                 );
-                if (createdLead?.id) {
-                    finalLeadId = createdLead.id;
-                    callForTranscript = { ...call, lead_id: finalLeadId };
-                }
             }
-
-            if (!finalLeadId) {
-                await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_PENDING_LEAD_LINK');
-                setCallGreetingStatus(prev => {
-                    const next = { ...prev };
-                    delete next[callKey];
-                    return next;
-                });
-                dismissToast(manualToastId);
-                toast.error('Greeting paused because this call is still not linked to a lead. It will retry when the lead link updates.');
-                return;
-            }
-
-            setCalls((prev) =>
-                prev.map((c) => (String(c.id) === callKey ? { ...c, lead_id: finalLeadId } : c))
-            );
-            const matchingLead = leads.find(l => l.id === finalLeadId);
+            const matchingLead = finalLeadId ? leads.find(l => l.id === finalLeadId) : null;
 
             if (!isManual) {
                 const { data: transcriptRow } = await supabase
