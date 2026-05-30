@@ -347,7 +347,11 @@ serve(async (req) => {
         const { data: settings } = await supabase
             .from('automation_settings').select('greeting_enabled').eq('id', 'global').maybeSingle();
         console.log(`[Settings] greeting_enabled=${settings?.greeting_enabled}`);
-        if (settings !== null && settings?.greeting_enabled === false) {
+        
+        const rawBodyLowerForCheck = rawBody.toLowerCase().trim();
+        const isSystemQuickReply = ['accept this quote', 'ask a question', 'schedule a call'].includes(rawBodyLowerForCheck);
+
+        if (settings !== null && settings?.greeting_enabled === false && !isSystemQuickReply) {
             console.log(`[Settings] Disabled. Skipping chat reply for ${purePhone}`);
             // Still log the user's message to show in CRM chat history
             await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
