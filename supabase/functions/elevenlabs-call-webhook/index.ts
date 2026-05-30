@@ -219,6 +219,9 @@ serve(async (req) => {
                         reason: 'AI call ended and lead needs review'
                     }
                 }]);
+                
+                // CRITICAL FIX: Link the transcript to the existing lead to prevent UI race conditions
+                await supabase.from('call_transcripts').update({ lead_id: existingLead.id }).eq('conversation_id', conversationId);
             } else {
                 // Auto-create a new lead for this caller — never miss a contact
                 console.log(`[Call Webhook] No existing lead. Auto-creating for ${phoneForLookup}`);
@@ -253,6 +256,9 @@ serve(async (req) => {
                             reason: 'New voice lead created'
                         }
                     }]);
+                    
+                    // CRITICAL FIX: Link the transcript to the new lead to prevent UI race conditions
+                    await supabase.from('call_transcripts').update({ lead_id: newLead.id }).eq('conversation_id', conversationId);
                 }
             }
         } // end if (phoneForLookup)

@@ -1096,6 +1096,7 @@ export default function CRM() {
                     .update({
                         service_interest: intakePrefill.service,
                         notes: mergedNotes,
+                        last_greeted_at: new Date().toISOString(),
                     })
                     .eq('id', linkedLead.id);
             }

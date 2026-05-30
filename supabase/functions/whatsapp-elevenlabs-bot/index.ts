@@ -72,27 +72,13 @@ serve(async (req) => {
         const last10 = purePhone.slice(-10);
         const wamid = incomingMsg.id;
 
-        // --- 2. CHECK AUTOMATION SETTINGS ---
-        const { data: settings } = await supabase
-            .from('automation_settings').select('greeting_enabled').eq('id', 'global').maybeSingle();
-        console.log(`[Settings] greeting_enabled=${settings?.greeting_enabled}`);
-        if (settings !== null && settings?.greeting_enabled === false) {
-            console.log(`[Settings] Disabled. Skipping ${purePhone}`);
-            // Still log the user's message to show in CRM chat history
-            const inboundText = incomingMsg.text?.body
-                || incomingMsg.interactive?.button_reply?.title
-                || incomingMsg.interactive?.list_reply?.title
-                || incomingMsg.button?.text
-                || null;
-            if (inboundText) {
-                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: inboundText }]);
-            }
-            return new Response('EVENT_RECEIVED', { status: 200 });
-        }
-
         // --- 3. HANDLE WHATSAPP FLOW FORM SUBMISSION (nfm_reply) ---
+        // IMPORTANT: Flow form submissions must be handled BEFORE the greeting_enabled gate.
+        // The greeting flag controls outbound automated greeting sending, NOT inbound form responses.
+        // Blocking flow responses would silently drop user-submitted data.
         if (incomingMsg.type === 'interactive' && incomingMsg.interactive?.type === 'nfm_reply') {
             console.log(`[Flow] Form submission received from ${purePhone}`);
+
 
             let formData: any = {};
             try {
@@ -353,6 +339,18 @@ serve(async (req) => {
 
         if (!rawBody) {
             console.log("Non-text message, ignoring.");
+            return new Response('EVENT_RECEIVED', { status: 200 });
+        }
+
+        // --- 2. CHECK AUTOMATION SETTINGS (for regular chat messages only) ---
+        // Note: Flow form submissions are handled above and are always processed regardless of this flag.
+        const { data: settings } = await supabase
+            .from('automation_settings').select('greeting_enabled').eq('id', 'global').maybeSingle();
+        console.log(`[Settings] greeting_enabled=${settings?.greeting_enabled}`);
+        if (settings !== null && settings?.greeting_enabled === false) {
+            console.log(`[Settings] Disabled. Skipping chat reply for ${purePhone}`);
+            // Still log the user's message to show in CRM chat history
+            await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
             return new Response('EVENT_RECEIVED', { status: 200 });
         }
 
