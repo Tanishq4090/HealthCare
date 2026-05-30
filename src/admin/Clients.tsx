@@ -246,42 +246,36 @@ export default function Clients() {
                 clientData = data || [];
             }
 
-            // 3. Fetch all employees to derive worker counts
-            const { data: employeeData, error: empError } = await supabase
-                .from('employees')
-                .select('id, full_name, assigned_client, status');
-            
-            if (empError) throw empError;
+            // 3. Fetch worker_assignments with employee status — this is the source of truth
+            const { data: allAssignmentsData, error: assignAllError } = await supabase
+                .from('worker_assignments')
+                .select('client_id, assignment_status, employee_id, deposit_amount, deposit_paid, employees(status)');
 
-            // 4. Fetch assignment/payment data to show the actual collected deposit.
-            const [assignmentsResult, paymentsResult] = await Promise.all([
-                supabase
-                    .from('worker_assignments')
-                    .select('client_id, deposit_amount, deposit_paid'),
-                supabase
-                    .from('payments')
-                    .select('client_name, amount, payment_type')
-                    .eq('payment_type', 'deposit'),
-            ]);
+            if (assignAllError) throw assignAllError;
 
-            if (assignmentsResult.error) throw assignmentsResult.error;
-            if (paymentsResult.error) throw paymentsResult.error;
+            // 4. Fetch payment data for deposit fallback
+            const { data: depositPaymentsData, error: paymentsError } = await supabase
+                .from('payments')
+                .select('client_name, amount, payment_type')
+                .eq('payment_type', 'deposit');
 
-            const assignments = assignmentsResult.data || [];
-            const depositPayments = paymentsResult.data || [];
+            if (paymentsError) throw paymentsError;
 
-            // Group employees by client name
+            const assignments = allAssignmentsData || [];
+            const depositPayments = depositPaymentsData || [];
+
+            // Build workerMap keyed by client_id from worker_assignments (reliable source of truth)
             const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
-            (employeeData || []).forEach(w => {
-                if (!w.assigned_client) return;
-                
-                if (!workerMap[w.assigned_client]) {
-                    workerMap[w.assigned_client] = { workerCount: 0, activeWorkerCount: 0 };
+            assignments.forEach((a: any) => {
+                if (!a.client_id) return;
+                if (!workerMap[a.client_id]) {
+                    workerMap[a.client_id] = { workerCount: 0, activeWorkerCount: 0 };
                 }
-                
-                workerMap[w.assigned_client].workerCount++;
-                if (w.status === 'assigned' || w.status === 'Active') {
-                    workerMap[w.assigned_client].activeWorkerCount++;
+                workerMap[a.client_id].workerCount++;
+                // Count as active if assignment is active AND employee is still assigned/active
+                const empStatus = a.employees?.status;
+                if (a.assignment_status === 'active' && (empStatus === 'assigned' || empStatus === 'Active' || empStatus === 'available')) {
+                    workerMap[a.client_id].activeWorkerCount++;
                 }
             });
 
@@ -313,8 +307,8 @@ export default function Clients() {
                 email: c.email || '-',
                 contact: c.client_name,
                 status: stageMap[c.id] || 'Active',
-                workerCount: workerMap[c.client_name]?.workerCount || 0,
-                activeWorkerCount: workerMap[c.client_name]?.activeWorkerCount || 0,
+                workerCount: workerMap[c.id]?.workerCount || 0,
+                activeWorkerCount: workerMap[c.id]?.activeWorkerCount || 0,
                 lifetimeValue: '₹0',
                 securityDeposit: paidDepositByClientId[c.id]
                     || paidDepositByClientName[normalizeClientName(c.client_name)]
