@@ -58,15 +58,21 @@ serve(async (req) => {
       });
     }
 
-    const reviews = (data.reviews || []).map((review: any) => ({
-      name: review.authorAttribution?.displayName || 'Google user',
-      photoUri: review.authorAttribution?.photoUri || null,
-      uri: review.authorAttribution?.uri || null,
-      rating: review.rating || 0,
-      text: review.text?.text || review.originalText?.text || '',
-      relativePublishTimeDescription: review.relativePublishTimeDescription || '',
-      publishTime: review.publishTime || null,
-    }));
+    const reviews = (data.reviews || [])
+      .map((review: any) => ({
+        name: review.authorAttribution?.displayName || 'Google user',
+        photoUri: review.authorAttribution?.photoUri || null,
+        uri: review.authorAttribution?.uri || null,
+        rating: review.rating || 0,
+        text: review.text?.text || review.originalText?.text || '',
+        relativePublishTimeDescription: review.relativePublishTimeDescription || '',
+        publishTime: review.publishTime || null,
+      }))
+      .sort((a: any, b: any) => {
+        if (!a.publishTime) return 1;
+        if (!b.publishTime) return -1;
+        return new Date(b.publishTime).getTime() - new Date(a.publishTime).getTime();
+      });
 
     return new Response(JSON.stringify({
       success: true,
