@@ -171,6 +171,16 @@ const formatNotificationTime = (createdAt: string) => {
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const isRetryableGreetingError = (error?: string | null) => {
+    if (!error) return false;
+    return (
+        error === 'GREETING_PENDING_LEAD_LINK' ||
+        error === 'GREETING_ERROR_NO_LEAD' ||
+        error.includes('lead-less intake greeting dispatch') ||
+        error.includes('not linked to a lead')
+    );
+};
+
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'clients' | 'automations' | 'voice' | 'trash'>(() => {
         return (localStorage.getItem('crmActiveTab') as any) || 'pipeline';
@@ -1854,13 +1864,21 @@ export default function CRM() {
             calls.forEach((call: any) => {
                 if (call.automation_error === 'GREETING_SENT') {
                     initialStatus[call.id] = 'sent';
-                } else if (call.automation_error?.startsWith('GREETING_ERROR')) {
+                } else if (call.automation_error?.startsWith('GREETING_ERROR') && !isRetryableGreetingError(call.automation_error)) {
                     initialStatus[call.id] = 'error';
                 }
             });
 
             // Update UI state with DB data
-            setCallGreetingStatus(prev => ({ ...initialStatus, ...prev }));
+            setCallGreetingStatus(prev => {
+                const next = { ...prev };
+                calls.forEach((call: any) => {
+                    if (isRetryableGreetingError(call.automation_error) && next[call.id] === 'error') {
+                        delete next[call.id];
+                    }
+                });
+                return { ...initialStatus, ...next };
+            });
 
             // Step 2: AUTO-TRIGGER — only for the SINGLE most recent ungreeted call.
             const fiveMinsAgo = Date.now() - (5 * 60 * 1000);
@@ -1870,11 +1888,12 @@ export default function CRM() {
                 const digits = phone.replace(/\D/g, '');
                 const isToday = new Date(call.created_at).toDateString() === new Date().toDateString();
                 const callTime = new Date(call.created_at).getTime();
-                const isRecent = callTime > fiveMinsAgo;
+                const canRetryOldLeadLinkError = isRetryableGreetingError(call.automation_error);
+                const isRecent = callTime > fiveMinsAgo || canRetryOldLeadLinkError;
 
                 // CRITICAL: Check local UI state + the mutex ref to avoid double-firing
                 const alreadyHandled = !!callGreetingStatus[call.id] || processingCalls.current.has(call.id);
-                const dbAlreadyLogged = !!call.automation_error && call.automation_error !== 'GREETING_PENDING_LEAD_LINK';
+                const dbAlreadyLogged = !!call.automation_error && !isRetryableGreetingError(call.automation_error);
                 const lead = leads.find(l => l.id === call.lead_id);
                 const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
 
@@ -3997,7 +4016,11 @@ export default function CRM() {
                                                     });
                                                     const isProcessed = call.status === 'Processed' || isAlreadyInPipeline;
 
-                                                    if (call.automation_error && call.automation_error !== 'GREETING_SENT') {
+                                                    if (
+                                                        call.automation_error &&
+                                                        call.automation_error !== 'GREETING_SENT' &&
+                                                        !isRetryableGreetingError(call.automation_error)
+                                                    ) {
                                                         return (
                                                             <span className="flex items-center gap-1.5 px-2 py-1 bg-rose-50 border border-rose-100 text-rose-600 rounded text-[10px] font-bold" title={call.automation_error}>
                                                                 <AlertTriangle className="w-3 h-3" /> AUTOMATION FAILED
