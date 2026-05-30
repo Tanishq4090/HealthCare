@@ -4,6 +4,10 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
+const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
+const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
+const GOOGLE_MAPS_URL = `https://www.google.com/maps/place/?q=place_id:${GOOGLE_PLACE_ID}`;
+
 export default function Clients() {
     const navigate = useNavigate();
     const [clients, setClients] = useState<any[]>([]);
@@ -32,6 +36,8 @@ export default function Clients() {
     const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
     // Track which clients have had review sent this session
     const [reviewSentIds, setReviewSentIds] = useState<Set<string>>(new Set());
+    const [googleReviews, setGoogleReviews] = useState<any>(null);
+    const [isLoadingGoogleReviews, setIsLoadingGoogleReviews] = useState(false);
 
     const toggleWorkflow = (key: keyof typeof workflows) => {
         setWorkflows(prev => ({ ...prev, [key]: !prev[key] }));
@@ -324,8 +330,23 @@ export default function Clients() {
         }
     };
 
+    const fetchGoogleReviews = async () => {
+        setIsLoadingGoogleReviews(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('get-google-reviews');
+            if (error) throw error;
+            setGoogleReviews(data);
+        } catch (error) {
+            console.warn('Google reviews unavailable:', error);
+            setGoogleReviews({ success: false, error: 'Unable to load Google reviews.' });
+        } finally {
+            setIsLoadingGoogleReviews(false);
+        }
+    };
+
     useEffect(() => {
         fetchClients();
+        fetchGoogleReviews();
     }, []);
 
     return (
@@ -501,33 +522,87 @@ export default function Clients() {
                                 <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                                 Google Reviews
                             </h3>
-                            <a href="https://g.page/r/CVxFhJ1HNBxfEAE/review" target="_blank" rel="noopener noreferrer"
+                            <a href={googleReviews?.googleMapsUri || GOOGLE_MAPS_URL} target="_blank" rel="noopener noreferrer"
                                 className="text-xs font-bold text-primary hover:underline">
                                 View All →
                             </a>
                         </div>
-                        {/* Google Reviews - direct link card since Maps embed requires Place ID */}
                         <div className="p-5 space-y-3">
                             <div className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200">
                                 <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center shrink-0">
                                     <Star className="w-6 h-6 text-amber-400 fill-amber-400" />
                                 </div>
                                 <div className="flex-1">
-                                    <p className="font-bold text-slate-900 text-sm">99 Care — Google Reviews</p>
-                                    <p className="text-xs text-slate-500 mt-0.5">View all client reviews on Google</p>
+                                    <p className="font-bold text-slate-900 text-sm">{googleReviews?.displayName || '99 Care'} — Google Reviews</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        {isLoadingGoogleReviews ? (
+                                            <span className="text-xs text-slate-500">Loading live reviews...</span>
+                                        ) : googleReviews?.success ? (
+                                            <>
+                                                <span className="text-sm font-bold text-slate-900">{Number(googleReviews.rating || 0).toFixed(1)}</span>
+                                                <span className="flex items-center gap-0.5">
+                                                    {[1, 2, 3, 4, 5].map((star) => (
+                                                        <Star
+                                                            key={star}
+                                                            className={`w-3.5 h-3.5 ${star <= Math.round(googleReviews.rating || 0) ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}`}
+                                                        />
+                                                    ))}
+                                                </span>
+                                                <span className="text-xs text-slate-500">{googleReviews.userRatingCount || 0} reviews</span>
+                                            </>
+                                        ) : (
+                                            <span className="text-xs text-slate-500">Connect Google API key to show live reviews</span>
+                                        )}
+                                    </div>
                                 </div>
-                                <a href="https://g.page/r/CVxFhJ1HNBxfEAE/review" target="_blank" rel="noopener noreferrer"
+                                <a href={googleReviews?.googleMapsUri || GOOGLE_MAPS_URL} target="_blank" rel="noopener noreferrer"
                                     className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors shrink-0">
                                     Open
                                 </a>
                             </div>
-                            <p className="text-[11px] text-slate-400 text-center">
-                                To embed live Google reviews, enable the Maps Embed API in Google Cloud Console and add the Place ID.
-                            </p>
+
+                            {googleReviews?.success && googleReviews.reviews?.length > 0 ? (
+                                <div className="space-y-3">
+                                    {googleReviews.reviews.slice(0, 3).map((review: any, index: number) => (
+                                        <div key={`${review.publishTime || index}-${review.name}`} className="p-4 bg-white rounded-xl border border-slate-200">
+                                            <div className="flex items-start gap-3">
+                                                {review.photoUri ? (
+                                                    <img src={review.photoUri} alt={review.name} className="w-9 h-9 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                                ) : (
+                                                    <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                                                        {String(review.name || 'G').charAt(0)}
+                                                    </div>
+                                                )}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="text-sm font-bold text-slate-900 truncate">{review.name}</p>
+                                                        <span className="text-[10px] text-slate-400 shrink-0">{review.relativePublishTimeDescription}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-0.5 mt-1">
+                                                        {[1, 2, 3, 4, 5].map((star) => (
+                                                            <Star
+                                                                key={star}
+                                                                className={`w-3 h-3 ${star <= Number(review.rating || 0) ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}`}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                    {review.text && (
+                                                        <p className="text-xs text-slate-600 leading-relaxed mt-2 line-clamp-3">"{review.text}"</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-[11px] text-slate-400 text-center">
+                                    {googleReviews?.error || 'Live Google reviews will appear here after the Google Places API key is configured.'}
+                                </p>
+                            )}
                         </div>
                         <div className="p-3 bg-white border-t border-slate-100 flex items-center justify-between">
                             <p className="text-xs text-slate-500">Tap "View All" to see all Google reviews</p>
-                            <a href="https://g.page/r/CVxFhJ1HNBxfEAE/review" target="_blank" rel="noopener noreferrer"
+                            <a href={GOOGLE_REVIEW_URL} target="_blank" rel="noopener noreferrer"
                                 className="px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
                                 <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> Leave a Review
                             </a>
