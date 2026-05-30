@@ -169,6 +169,8 @@ const formatNotificationTime = (createdAt: string) => {
     return date.toDateString() === now.toDateString() ? time : `${date.toLocaleDateString()}, ${time}`;
 };
 
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function CRM() {
     const [activeTab, setActiveTab] = useState<'pipeline' | 'clients' | 'automations' | 'voice' | 'trash'>(() => {
         return (localStorage.getItem('crmActiveTab') as any) || 'pipeline';
@@ -306,7 +308,13 @@ export default function CRM() {
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_transcripts' }, (payload) => {
                 const call = payload.new;
                 toast.success(`Voice Call Ended: ${call.phone_number}`);
-                fetchVoiceData?.();
+                window.setTimeout(() => fetchVoiceData?.(), 1200);
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'call_transcripts' }, (payload) => {
+                const call = payload.new;
+                if (call?.lead_id || call?.automation_error === 'GREETING_PENDING_LEAD_LINK') {
+                    fetchVoiceData?.();
+                }
             })
             .subscribe();
 
@@ -923,6 +931,32 @@ export default function CRM() {
         void handleSendCallGreeting(call, true);
     };
 
+    const resolveCallLeadId = async (call: any, last10: string) => {
+        if (call.lead_id) return call.lead_id;
+
+        const localLead = leads.find(l => {
+            const leadPhone = `${l.phone || ''} ${l.whatsapp_number || ''}`.replace(/\D/g, '');
+            return leadPhone.endsWith(last10);
+        });
+        if (localLead?.id) return localLead.id;
+
+        const { data: transcriptRow } = await supabase
+            .from('call_transcripts')
+            .select('lead_id')
+            .eq('conversation_id', String(call.id))
+            .maybeSingle();
+        if (transcriptRow?.lead_id) return transcriptRow.lead_id;
+
+        const { data: dbLeads } = await supabase
+            .from('crm_leads')
+            .select('id')
+            .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        return dbLeads?.[0]?.id ?? null;
+    };
+
     // Send WhatsApp post_call_intake template manually from call log card
     const handleSendCallGreeting = async (call: any, isManual = false) => {
         const callKey = String(call.id);
@@ -947,13 +981,6 @@ export default function CRM() {
             return;
         }
         const last10 = digits.slice(-10);
-        const matchingLead = call.lead_id
-            ? leads.find(l => l.id === call.lead_id)
-            : leads.find(l => {
-                const leadPhone = `${l.phone || ''} ${l.whatsapp_number || ''}`.replace(/\D/g, '');
-                return leadPhone.endsWith(last10);
-            });
-        const resolvedLeadId = call.lead_id || matchingLead?.id;
 
         setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sending' }));
 
@@ -968,30 +995,31 @@ export default function CRM() {
         let callForTranscript: any = call;
 
         try {
-            // If no lead found in local React state, do a live DB lookup by phone.
-            // This handles the race condition where the webhook-created lead hasn't
-            // appeared in local state yet (CRM hasn't refreshed since the call ended).
-            let finalLeadId = resolvedLeadId;
-            if (!finalLeadId) {
-                const { data: dbLeads } = await supabase
-                    .from('crm_leads')
-                    .select('id, pipeline_stage')
-                    .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
-                    .is('deleted_at', null)
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-                finalLeadId = dbLeads?.[0]?.id ?? null;
-                console.log(`[Auto-Greet] Live DB fallback lookup for ${last10}: lead=${finalLeadId}`);
+            let finalLeadId: string | null = null;
+            for (let attempt = 1; attempt <= 6; attempt += 1) {
+                finalLeadId = await resolveCallLeadId(call, last10);
+                if (finalLeadId) break;
+                console.log(`[Auto-Greet] Lead not linked yet for ${last10}; retry ${attempt}/6`);
+                await wait(attempt === 1 ? 700 : 1200);
             }
 
-            const callForTranscript = finalLeadId ? { ...call, lead_id: finalLeadId } : call;
+            callForTranscript = finalLeadId ? { ...call, lead_id: finalLeadId } : call;
 
             if (!finalLeadId) {
-                await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_ERROR_NO_LEAD');
-                setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'error' }));
-                toast.error('Greeting not sent because this call is not linked to a lead yet.');
+                await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_PENDING_LEAD_LINK');
+                setCallGreetingStatus(prev => {
+                    const next = { ...prev };
+                    delete next[callKey];
+                    return next;
+                });
+                toast.error('Greeting paused because this call is still not linked to a lead. It will retry when the lead link updates.');
                 return;
             }
+
+            setCalls((prev) =>
+                prev.map((c) => (String(c.id) === callKey ? { ...c, lead_id: finalLeadId } : c))
+            );
+            const matchingLead = leads.find(l => l.id === finalLeadId);
 
             if (!isManual) {
                 const { data: transcriptRow } = await supabase
@@ -1100,14 +1128,15 @@ export default function CRM() {
             const linkedLead = (linkedLeads || []).find(
                 (l) => phonesMatch(l.phone, rawPhone) || phonesMatch(l.whatsapp_number, rawPhone)
             );
-            if (linkedLead?.id) {
+            const leadToUpdateId = linkedLead?.id || finalLeadId;
+            if (leadToUpdateId) {
                 const noteLines = [
                     `Service: ${intakePrefill.service}`,
                     `Shift: ${intakePrefill.shiftType}`,
                     intakePrefill.startDateDisplay ? `Start date: ${intakePrefill.startDateDisplay}` : null,
                     'Source: AI Phone Call (WhatsApp greeting)',
                 ].filter(Boolean);
-                const priorNotes = linkedLead.notes?.trim() || '';
+                const priorNotes = linkedLead?.notes?.trim() || '';
                 const mergedNotes = priorNotes
                     ? `${priorNotes}\n${noteLines.join('\n')}`
                     : noteLines.join('\n');
@@ -1118,7 +1147,7 @@ export default function CRM() {
                         notes: mergedNotes,
                         last_greeted_at: new Date().toISOString(),
                     })
-                    .eq('id', linkedLead.id);
+                    .eq('id', leadToUpdateId);
             }
 
             setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
@@ -1845,7 +1874,7 @@ export default function CRM() {
 
                 // CRITICAL: Check local UI state + the mutex ref to avoid double-firing
                 const alreadyHandled = !!callGreetingStatus[call.id] || processingCalls.current.has(call.id);
-                const dbAlreadyLogged = !!call.automation_error;
+                const dbAlreadyLogged = !!call.automation_error && call.automation_error !== 'GREETING_PENDING_LEAD_LINK';
                 const lead = leads.find(l => l.id === call.lead_id);
                 const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
 

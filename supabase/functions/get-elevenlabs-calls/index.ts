@@ -100,7 +100,7 @@ serve(async (req) => {
     // Initialize Supabase with Service Role to check which calls are already 'Processed' in CRM Pipeline
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     );
 
     // Fetch which conversation_ids have ALREADY been explicitly added to the CRM pipeline
@@ -285,4 +285,3 @@ serve(async (req) => {
     });
   }
 });
-
