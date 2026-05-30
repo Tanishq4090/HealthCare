@@ -129,7 +129,6 @@ serve(async (req) => {
                         service_start_date: formData.service_start_date,
                         service_category: formData.service_category,
                         offered_time: normalizeConsentOfferedTime(formData.offered_time),
-                        other_details: formData.other_details,
                         terms_accepted: formData.terms_accepted === 'on' || formData.terms_accepted === true
                     }]);
 
