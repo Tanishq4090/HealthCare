@@ -963,10 +963,30 @@ export default function CRM() {
         const manualToastId = isManual
             ? toast.loading(`Resending greeting to ${firstName}…`)
             : undefined;
-        const callForTranscript = resolvedLeadId ? { ...call, lead_id: resolvedLeadId } : call;
+
+        // Declare callForTranscript before try so the catch block can reference it
+        let callForTranscript: any = call;
 
         try {
-            if (!resolvedLeadId) {
+            // If no lead found in local React state, do a live DB lookup by phone.
+            // This handles the race condition where the webhook-created lead hasn't
+            // appeared in local state yet (CRM hasn't refreshed since the call ended).
+            let finalLeadId = resolvedLeadId;
+            if (!finalLeadId) {
+                const { data: dbLeads } = await supabase
+                    .from('crm_leads')
+                    .select('id, pipeline_stage')
+                    .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                    .is('deleted_at', null)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                finalLeadId = dbLeads?.[0]?.id ?? null;
+                console.log(`[Auto-Greet] Live DB fallback lookup for ${last10}: lead=${finalLeadId}`);
+            }
+
+            const callForTranscript = finalLeadId ? { ...call, lead_id: finalLeadId } : call;
+
+            if (!finalLeadId) {
                 await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_ERROR_NO_LEAD');
                 setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'error' }));
                 toast.error('Greeting not sent because this call is not linked to a lead yet.');
@@ -1022,7 +1042,7 @@ export default function CRM() {
             const intakePrefill = buildVoiceCallIntakePrefill(call);
             const requestBody = {
                 phone: digits,
-                leadId: resolvedLeadId,
+                leadId: finalLeadId,
                 useTemplate: true,
                 templateName: 'post_call_intake',
                 leadName: intakePrefill.flowData.name || matchingLead?.name?.split(/\s+/)[0] || firstName,
