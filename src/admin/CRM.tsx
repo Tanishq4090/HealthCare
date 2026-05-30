@@ -926,6 +926,10 @@ export default function CRM() {
         }
     };
 
+    const dismissToast = (toastId?: string | number) => {
+        if (toastId !== undefined) toast.dismiss(toastId);
+    };
+
     const handleResendCallGreeting = (call: any) => {
         processingCalls.current.delete(String(call.id));
         void handleSendCallGreeting(call, true);
@@ -1005,6 +1009,23 @@ export default function CRM() {
 
             callForTranscript = finalLeadId ? { ...call, lead_id: finalLeadId } : call;
 
+            if (!finalLeadId && isManual) {
+                const createdLead = await createLeadFromVoiceCall(
+                    {
+                        id: call.id,
+                        phone: call.phone,
+                        capturedName: call.capturedName,
+                        capturedWhatsapp: call.capturedWhatsapp,
+                        capturedValue: call.capturedValue,
+                    },
+                    { skipReturningCheck: true }
+                );
+                if (createdLead?.id) {
+                    finalLeadId = createdLead.id;
+                    callForTranscript = { ...call, lead_id: finalLeadId };
+                }
+            }
+
             if (!finalLeadId) {
                 await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_PENDING_LEAD_LINK');
                 setCallGreetingStatus(prev => {
@@ -1012,6 +1033,7 @@ export default function CRM() {
                     delete next[callKey];
                     return next;
                 });
+                dismissToast(manualToastId);
                 toast.error('Greeting paused because this call is still not linked to a lead. It will retry when the lead link updates.');
                 return;
             }
@@ -1034,6 +1056,7 @@ export default function CRM() {
                 ) {
                     console.log(`[Auto-Greet] DB lock found (${transcriptRow.automation_error}) for ${callKey} — skipping.`);
                     setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
+                    dismissToast(manualToastId);
                     return;
                 }
             }
@@ -1060,6 +1083,7 @@ export default function CRM() {
                 console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
                 await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_SENT');
                 setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
+                dismissToast(manualToastId);
                 toast.success(`✅ Greeting already sent to ${firstName}! Marked as done.`);
                 return;
             }
@@ -1078,6 +1102,8 @@ export default function CRM() {
                 flowData: intakePrefill.flowData,
             };
 
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 25000);
             const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
                 headers: {
@@ -1086,9 +1112,10 @@ export default function CRM() {
                     'apikey': SUPABASE_ANON_KEY,
                 },
                 body: JSON.stringify(requestBody),
-            });
+                signal: controller.signal,
+            }).finally(() => window.clearTimeout(timeoutId));
 
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
 
             if (!res.ok) {
                 throw new Error(`Edge Function error: HTTP ${res.status}`);
@@ -1153,7 +1180,7 @@ export default function CRM() {
             setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
             const prefillHint = `${intakePrefill.flowData.service || intakePrefill.service} · ${intakePrefill.shiftLabel}`;
             const resendNote = isManual ? ' (resent)' : '';
-            if (manualToastId) toast.dismiss(manualToastId);
+            dismissToast(manualToastId);
             if (deliveryConfirmed) {
                 toast.success(`✅ Greeting sent to ${firstName}${resendNote}! Prefill: ${prefillHint}`);
             } else {
@@ -1169,7 +1196,7 @@ export default function CRM() {
             );
 
             setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'error' }));
-            if (manualToastId) toast.dismiss(manualToastId);
+            dismissToast(manualToastId);
             toast.error(`❌ Greeting failed: ${err.message}`, { duration: 8000 });
         } finally {
             processingCalls.current.delete(callKey);
@@ -3195,7 +3222,7 @@ export default function CRM() {
                             },
                         },
                     });
-                    return;
+                    return null;
                 }
             } catch (lookupErr: any) {
                 console.warn('Client master lookup failed:', lookupErr?.message || lookupErr);
@@ -3258,6 +3285,7 @@ export default function CRM() {
             setActiveTab('pipeline');
             setSelectedInspectorLead(newLead);
             toast.success(`Added ${call.capturedName || 'Lead'} to ${NEW_LEAD_PIPELINE_STAGE}!`, { id: toastId });
+            return newLead;
         } catch (error: any) {
             console.error('Error creating lead from call:', error);
             toast.error(`Failed to create lead: ${error.message}`, { id: toastId });
