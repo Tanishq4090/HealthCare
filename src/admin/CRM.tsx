@@ -4650,35 +4650,42 @@ export default function CRM() {
                                                         type="number"
                                                         value={invoiceDepositAmount}
                                                         onChange={e => setInvoiceDepositAmount(e.target.value)}
-                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]"
+                                                        className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
                                                         placeholder={agentTargetLead?.quoted_monthly_rate || '15000'}
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Due Date</label>
                                                     <input
-                                                        type="date"
+                                                        type="text"
                                                         value={invoiceDueDate}
                                                         onChange={e => setInvoiceDueDate(e.target.value)}
-                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]"
+                                                        className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
+                                                        placeholder="YYYY-MM-DD"
+                                                        pattern="\d{4}-\d{2}-\d{2}"
+                                                        onFocus={e => { if (!e.target.value) { const d = new Date(); d.setDate(d.getDate()+7); e.target.value = d.toISOString().split('T')[0]; setInvoiceDueDate(d.toISOString().split('T')[0]); } }}
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Start Date</label>
                                                     <input
-                                                        type="date"
+                                                        type="text"
                                                         value={invoiceStartDate}
                                                         onChange={e => setInvoiceStartDate(e.target.value)}
-                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]"
+                                                        className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
+                                                        placeholder="YYYY-MM-DD"
+                                                        pattern="\d{4}-\d{2}-\d{2}"
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
                                                     <input
-                                                        type="date"
+                                                        type="text"
                                                         value={invoiceEndDate}
                                                         onChange={e => setInvoiceEndDate(e.target.value)}
-                                                        className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]"
+                                                        className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
+                                                        placeholder="YYYY-MM-DD"
+                                                        pattern="\d{4}-\d{2}-\d{2}"
                                                     />
                                                 </div>
                                             </div>
@@ -5663,7 +5670,7 @@ export default function CRM() {
                                 <>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
-                                        <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
+                                        <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Hours</label>
@@ -5682,7 +5689,7 @@ export default function CRM() {
                                     <div className="flex gap-3 items-start">
                                         <div className="flex-1">
                                             <label className="block text-sm font-semibold text-slate-700 mb-1">Start Date</label>
-                                            <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
+                                             <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
                                                 setServiceStartDate(e.target.value);
                                                 if (serviceEndDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(serviceEndDate).getTime() - new Date(e.target.value).getTime()) / (1000 * 3600 * 24)) + 1);
@@ -5693,7 +5700,7 @@ export default function CRM() {
                                         <div className="flex-1">
                                             <label className="block text-sm font-semibold text-slate-700 mb-1">End Date</label>
                                             <p className="text-[11px] text-slate-400 mb-1">Optional — leave blank for open-ended</p>
-                                            <input type="date" min={serviceStartDate} className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceEndDate} onChange={e => {
+                                            <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceEndDate} onChange={e => {
                                                 setServiceEndDate(e.target.value);
                                                 if (serviceStartDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
@@ -5885,11 +5892,11 @@ export default function CRM() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
-                                        <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                        <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
-                                        <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
+                                        <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
