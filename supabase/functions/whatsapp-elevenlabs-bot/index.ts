@@ -351,7 +351,21 @@ serve(async (req) => {
         const rawBodyLowerForCheck = rawBody.toLowerCase().trim();
         const isSystemQuickReply = ['accept this quote', 'ask a question', 'schedule a call'].includes(rawBodyLowerForCheck);
 
+        // Quick needs_attention check — do a lightweight lookup so that flagged leads
+        // always get the support intercept reply even when greeting_enabled is false.
+        let needsAttentionBypass = false;
         if (settings !== null && settings?.greeting_enabled === false && !isSystemQuickReply) {
+            const { data: attentionLeads } = await supabase
+                .from('crm_leads')
+                .select('id, needs_attention')
+                .or(`phone.eq.${purePhone},whatsapp_number.eq.${purePhone},phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                .eq('needs_attention', true)
+                .limit(1);
+            needsAttentionBypass = (attentionLeads?.length ?? 0) > 0;
+            console.log(`[Settings] needs_attention bypass=${needsAttentionBypass} for ${purePhone}`);
+        }
+
+        if (settings !== null && settings?.greeting_enabled === false && !isSystemQuickReply && !needsAttentionBypass) {
             console.log(`[Settings] Disabled. Skipping chat reply for ${purePhone}`);
             // Still log the user's message to show in CRM chat history
             await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: rawBody }]);
