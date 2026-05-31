@@ -5679,9 +5679,9 @@ export default function CRM() {
                                 </>
                             ) : (
                                 <>
-                                    <div className="flex gap-3">
+                                    <div className="flex gap-3 items-start">
                                         <div className="flex-1">
-                                            <label className="block text-sm font-semibold text-slate-700 mb-2">Start Date</label>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Start Date</label>
                                             <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
                                                 setServiceStartDate(e.target.value);
                                                 if (serviceEndDate) {
@@ -5691,8 +5691,9 @@ export default function CRM() {
                                             }} />
                                         </div>
                                         <div className="flex-1">
-                                            <label className="block text-sm font-semibold text-slate-700 mb-2">End Date <span className="font-normal text-slate-400">(optional — leave blank for open-ended)</span></label>
-                                            <input type="date" min={serviceStartDate} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceEndDate} onChange={e => {
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">End Date</label>
+                                            <p className="text-[11px] text-slate-400 mb-1">Optional — leave blank for open-ended</p>
+                                            <input type="date" min={serviceStartDate} className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceEndDate} onChange={e => {
                                                 setServiceEndDate(e.target.value);
                                                 if (serviceStartDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
