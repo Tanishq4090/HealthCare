@@ -5663,11 +5663,11 @@ export default function CRM() {
                                 <>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
-                                        <input type="date" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
+                                        <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Hours</label>
-                                        <input type="number" min="1" max="24" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceHours} onChange={e => {
+                                        <input type="number" min="1" max="24" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceHours} onChange={e => {
                                             const h = parseInt(e.target.value) || 1;
                                             setServiceHours(h);
                                             // Pro-rate the daily rate based on 12h standard
@@ -5682,7 +5682,7 @@ export default function CRM() {
                                     <div className="flex gap-3">
                                         <div className="flex-1">
                                             <label className="block text-sm font-semibold text-slate-700 mb-2">Start Date</label>
-                                            <input type="date" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceStartDate} onChange={e => {
+                                            <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
                                                 setServiceStartDate(e.target.value);
                                                 if (serviceEndDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(serviceEndDate).getTime() - new Date(e.target.value).getTime()) / (1000 * 3600 * 24)) + 1);
@@ -5715,7 +5715,7 @@ export default function CRM() {
                                     </div>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Shift Hours</label>
-                                        <input type="number" min="1" max="24" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={serviceHours} onChange={e => setServiceHours(parseInt(e.target.value) || 12)} />
+                                        <input type="number" min="1" max="24" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceHours} onChange={e => setServiceHours(parseInt(e.target.value) || 12)} />
                                     </div>
                                 </>
                             )}
