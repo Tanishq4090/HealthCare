@@ -4657,35 +4657,29 @@ export default function CRM() {
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Due Date</label>
                                                     <input
-                                                        type="text"
+                                                        type="date"
                                                         value={invoiceDueDate}
                                                         onChange={e => setInvoiceDueDate(e.target.value)}
                                                         className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
-                                                        placeholder="YYYY-MM-DD"
-                                                        pattern="\d{4}-\d{2}-\d{2}"
                                                         onFocus={e => { if (!e.target.value) { const d = new Date(); d.setDate(d.getDate()+7); e.target.value = d.toISOString().split('T')[0]; setInvoiceDueDate(d.toISOString().split('T')[0]); } }}
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Start Date</label>
                                                     <input
-                                                        type="text"
+                                                        type="date"
                                                         value={invoiceStartDate}
                                                         onChange={e => setInvoiceStartDate(e.target.value)}
                                                         className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
-                                                        placeholder="YYYY-MM-DD"
-                                                        pattern="\d{4}-\d{2}-\d{2}"
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
                                                     <input
-                                                        type="text"
+                                                        type="date"
                                                         value={invoiceEndDate}
                                                         onChange={e => setInvoiceEndDate(e.target.value)}
                                                         className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
-                                                        placeholder="YYYY-MM-DD"
-                                                        pattern="\d{4}-\d{2}-\d{2}"
                                                     />
                                                 </div>
                                             </div>
