@@ -4513,7 +4513,7 @@ export default function CRM() {
             {/* AI WhatsApp Draft Modal */}
             {isAgentModalOpen && agentTargetLead && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[100] transition-all">
-                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-visible animate-in zoom-in-95 duration-200 flex flex-col">
                         <div className="p-5 border-b border-slate-100 bg-[#1AA6A8]/10 flex justify-between items-center">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-[#EAFBFB] rounded-full flex items-center justify-center">
@@ -5633,7 +5633,7 @@ export default function CRM() {
             {/* Service Period Modal */}
             {isServicePeriodOpen && selectedWorker && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-visible flex flex-col border border-slate-200">
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
                                 <Calendar className="w-5 h-5 text-primary" />
@@ -5670,7 +5670,7 @@ export default function CRM() {
                                 <>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
-                                        <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
+                                        <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-2">Hours</label>
@@ -5689,7 +5689,7 @@ export default function CRM() {
                                     <div className="flex gap-3 items-start">
                                         <div className="flex-1">
                                             <label className="block text-sm font-semibold text-slate-700 mb-1">Start Date</label>
-                                             <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
+                                             <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
                                                 setServiceStartDate(e.target.value);
                                                 if (serviceEndDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(serviceEndDate).getTime() - new Date(e.target.value).getTime()) / (1000 * 3600 * 24)) + 1);
@@ -5700,7 +5700,7 @@ export default function CRM() {
                                         <div className="flex-1">
                                             <label className="block text-sm font-semibold text-slate-700 mb-1">End Date</label>
                                             <p className="text-[11px] text-slate-400 mb-1">Optional — leave blank for open-ended</p>
-                                            <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceEndDate} onChange={e => {
+                                            <input type="date" min={serviceStartDate} className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceEndDate} onChange={e => {
                                                 setServiceEndDate(e.target.value);
                                                 if (serviceStartDate) {
                                                     const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
@@ -5892,11 +5892,11 @@ export default function CRM() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
-                                        <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
+                                        <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
-                                        <input type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
+                                        <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
