@@ -683,7 +683,7 @@ export default function Billing() {
 
                 toast.success(`Deposit Invoice dispatched to ${agentTargetBill.client}!`, { id: toastId, duration: 4000 });
                 
-                setDeposits(prev => prev.map(d => d.id === agentTargetBill.id ? { ...d, status: 'Invoice Sent', invoice_pdf_url: invoicePdfUrl } : d));
+                setDeposits(prev => prev.map(d => d.id === agentTargetBill.id ? { ...d, status: 'Invoice Sent', invoice_pdf_url: invoicePdfUrl, amount: `₹${Number(invoiceDepositAmount) || 15000}` } : d));
 
             } catch (error: any) {
                 console.error('Dispatch error:', error);
