@@ -344,8 +344,9 @@ serve(async (req) => {
     console.log(`[Meta] Dispatching to ${digits} using template: ${templateName || 'None'}`);
     console.log(`[Meta] Payload: ${JSON.stringify(metaBody, null, 2)}`);
 
-    // If PDF invoice is requested, send client_invoice_pdf template FIRST (has document header)
-    if (sendInvoicePdf && invoicePdfUrl) {
+    // If a generic invoice PDF is requested, send client_invoice_pdf first.
+    // Worker payslips attach their document directly to the worker_payslip template above.
+    if (sendInvoicePdf && invoicePdfUrl && templateName !== "worker_payslip") {
       console.log(`[Meta] Sending client_invoice_pdf template to ${digits}. URL: ${invoicePdfUrl}`);
       const pdfTemplateBody = {
         messaging_product: "whatsapp",

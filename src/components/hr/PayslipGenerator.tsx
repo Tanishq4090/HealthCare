@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, X, Loader2, Download, Send } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -53,8 +53,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   } else if (emp?.preferred_payment_type === 'short_term') {
     dailyRate = emp.short_term_daily_rate || 0;
   } else {
-    // monthly daily rate: divide by 30 days to get per-day rate
-    dailyRate = (emp?.monthly_daily_rate || 0) / 30;
+    dailyRate = emp?.monthly_daily_rate || 0;
   }
 
   const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
@@ -94,7 +93,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   };
 
   // Auto-fetch on mount
-  useState(() => { fetchAttendance(); });
+  useEffect(() => { fetchAttendance(); }, [assignment.id]);
 
   const getLogo = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -344,6 +343,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       // Update the existing record instead
       await supabase.from('payroll').update({
         days_worked: daysWorked,
+        daily_rate: dailyRate,
         total_amount: totalEarning,
         advance_amount: advanceDeduction,
         net_balance: netPayable,
