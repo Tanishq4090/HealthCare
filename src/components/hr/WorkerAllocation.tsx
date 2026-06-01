@@ -96,7 +96,7 @@ function getPaymentScheme(employee: Employee) {
       label: 'Hourly',
       rateLabel: 'Hourly Rate',
       amount: employee.hourly_rate ?? 0,
-      duty: `${employee.shift_hours ?? '—'} HRS (Day)`,
+      duty: 'Per client shift',
     };
   }
   if (type === 'monthly') {
@@ -453,22 +453,9 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
               </div>
               
               {form.preferred_payment_type === 'hourly' && (
-                <div className="col-span-2 pt-2 border-t border-slate-100">
-                  <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">
-                    Shift Duration (Hours / Day) <span className="text-red-400">*</span>
-                  </label>
-                  <select 
-                    className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    value={form.shift_hours || ''}
-                    onChange={e => setForm(f => ({ ...f, shift_hours: Number(e.target.value) }))}
-                  >
-                    <option value="" disabled>Select shift duration...</option>
-                    <option value={8}>8 Hours</option>
-                    <option value={10}>10 Hours</option>
-                    <option value={12}>12 Hours</option>
-                    <option value={24}>24 Hours</option>
-                  </select>
-                </div>
+                <p className="col-span-2 text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  Shift hours are set when you assign this worker to a client (e.g. 10-hour shift).
+                </p>
               )}
             </div>
           </div>
@@ -504,6 +491,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const [depositPaid, setDepositPaid] = useState<number>(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [hoursPerDay, setHoursPerDay] = useState<number>(10);
   const [clientBillingRate, setClientBillingRate] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ url: string; whatsappSent: boolean; whatsappError?: string } | null>(null);
@@ -527,7 +515,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   useEffect(() => {
     if (!open) {
       setResult(null); setSelectedClient(null); setNotes(''); setClientSearch('');
-      setShowNewClient(false); setStartDate(''); setEndDate(''); setDepositPaid(0); setClientBillingRate(0);
+      setShowNewClient(false); setStartDate(''); setEndDate(''); setHoursPerDay(10); setDepositPaid(0); setClientBillingRate(0);
     }
   }, [open]);
 
@@ -586,6 +574,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
           startDate,
           endDate: endDate || undefined,
           serviceType: endDate ? 'date_range' : 'one_day',
+          hoursPerDay: hoursPerDay || 10,
           totalBillAmount: 0,
         }
       );
@@ -595,6 +584,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         await supabase.from('worker_assignments').update({
           start_date: startDate,
           end_date: endDate || null,
+          hours_per_day: hoursPerDay || 10,
           deposit_amount: depositPaid,
           client_billing_rate: clientBillingRate || employee.monthly_daily_rate || 0,
         }).eq('id', res.assignment.id);
@@ -775,6 +765,25 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                   <Input type="number" className="mt-1 text-sm border-slate-200" placeholder={String(employee?.monthly_daily_rate || 0)}
                     value={clientBillingRate || ''} onChange={e => setClientBillingRate(Number(e.target.value) || 0)} />
                   <p className="text-[10px] text-slate-400 mt-0.5">Rate charged to client per day.</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">
+                    Shift Hours / Day <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    className="mt-1 w-full flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    value={hoursPerDay}
+                    onChange={e => setHoursPerDay(Number(e.target.value))}
+                  >
+                    <option value={8}>8 Hours</option>
+                    <option value={10}>10 Hours</option>
+                    <option value={12}>12 Hours</option>
+                    <option value={24}>24 Hours (live-in)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Used for hourly pay: rate × these hours × days worked.
+                    {employee.preferred_payment_type !== 'hourly' && ' Stored on assignment for records.'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1019,7 +1028,6 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
     monthly_daily_rate: 0,
     hourly_rate: 0,
     short_term_daily_rate: 0,
-    shift_hours: 0,
     job_title: '',
     phone: '',
     address: '',
@@ -1028,7 +1036,6 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
     monthly_daily_rate: number;
     hourly_rate: number;
     short_term_daily_rate: number;
-    shift_hours: number;
     job_title: string;
     phone: string;
     address: string;
@@ -1043,7 +1050,6 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
         monthly_daily_rate: employee.monthly_daily_rate ?? 0,
         hourly_rate: employee.hourly_rate ?? 0,
         short_term_daily_rate: employee.short_term_daily_rate ?? 0,
-        shift_hours: employee.shift_hours ?? 8,
         job_title: employee.job_title ?? '',
         phone: employee.phone ?? '',
         address: employee.address ?? '',
@@ -1063,7 +1069,6 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
           monthly_daily_rate: form.monthly_daily_rate,
           hourly_rate: form.hourly_rate,
           short_term_daily_rate: form.short_term_daily_rate,
-          shift_hours: form.shift_hours,
           job_title: form.job_title,
           phone: form.phone || null,
           address: form.address || null,
@@ -1150,22 +1155,9 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
             </div>
             
             {form.preferred_payment_type === 'hourly' && (
-              <div className="col-span-2 pt-2 border-t border-slate-100">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Shift Duration (Hours / Day)
-                </label>
-                <select 
-                  className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                  value={form.shift_hours || ''}
-                  onChange={e => setForm(f => ({ ...f, shift_hours: Number(e.target.value) }))}
-                >
-                  <option value="" disabled>Select shift duration...</option>
-                  <option value={8}>8 Hours</option>
-                  <option value={10}>10 Hours</option>
-                  <option value={12}>12 Hours</option>
-                  <option value={24}>24 Hours</option>
-                </select>
-              </div>
+              <p className="col-span-2 text-xs text-slate-500">
+                Shift hours are configured per client assignment, not on the employee profile.
+              </p>
             )}
           </div>
         </div>

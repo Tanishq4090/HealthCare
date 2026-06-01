@@ -173,7 +173,7 @@ export async function assignWorkerToClient(
       start_date:        billingData?.startDate || new Date().toISOString(),
       end_date:          billingData?.endDate || (billingData?.serviceType === 'one_day' ? billingData?.startDate : null),
       service_type:      billingData?.serviceType || 'one_day',
-      hours_per_day:     billingData?.hoursPerDay || 0,
+      hours_per_day:     billingData?.hoursPerDay ?? 10,
       total_bill_amount: billingData?.totalBillAmount || 0,
       invoice_number:    `INV-${Date.now().toString().slice(-6)}`,
     })

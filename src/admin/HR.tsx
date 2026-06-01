@@ -10,6 +10,13 @@ import { format } from 'date-fns';
 import WorkerAllocation from '../components/hr/WorkerAllocation';
 import AssignmentAttendancePanel from '../components/hr/AssignmentAttendancePanel';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
+import {
+    calculateWorkerPay,
+    grossFromPayrollItem,
+    netFromPayrollItem,
+    periodDaysInclusive,
+    daysInCalendarMonth,
+} from '../utils/workerPayroll';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
@@ -205,29 +212,30 @@ export default function HR() {
                     const clientObj = a.clients;
                     const start = a.start_date ? new Date(a.start_date) : null;
                     const end = a.end_date ? new Date(a.end_date) : new Date();
-                    const days = start ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) : 1;
-                    
-                    // Compute daily rate based on payment type
-                    const payType = emp?.preferred_payment_type;
-                    const dailyRate = payType === 'hourly'
-                        ? (emp?.hourly_rate || 0) * (emp?.shift_hours || 8)
-                        : payType === 'monthly'
-                        ? (emp?.monthly_daily_rate || emp?.short_term_daily_rate || 0) // flat monthly salary, not per-day
-                        : payType === 'short_term'
-                        ? (emp?.short_term_daily_rate || 0)
-                        : (emp?.monthly_daily_rate || a.worker_daily_rate || 0); // 'daily' — direct rate
-                    
-                    // Determine client name
+                    const days = start ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 1;
+                    const periodDays = start ? periodDaysInclusive(start, end) : daysInCalendarMonth();
+
+                    const pay = calculateWorkerPay({
+                        preferred_payment_type: emp?.preferred_payment_type,
+                        monthly_daily_rate: emp?.monthly_daily_rate ?? a.worker_daily_rate,
+                        short_term_daily_rate: emp?.short_term_daily_rate,
+                        hourly_rate: emp?.hourly_rate,
+                        daysWorked: days,
+                        periodDays,
+                        hoursPerDay: a.hours_per_day,
+                    });
+
                     const clientName = clientObj?.client_name || emp?.assigned_client || 'Unassigned';
-                    
+
                     return {
                         id: `synth-${a.id}`,
                         assignment_id: a.id,
                         worker: emp?.full_name || 'Unknown Worker',
                         worker_id: a.employee_id,
                         client_name: clientName,
-                        client: clientName, // Fallback for any legacy code expecting client
-                        daily_rate: dailyRate,
+                        client: clientName,
+                        daily_rate: pay.dailyRateForDisplay,
+                        total_amount: pay.gross,
                         days_worked: days,
                         advance_amount: a.advance_paid || 0,
                         status: a.assignment_status === 'completed' ? 'Pending Payment' : 'Active',
@@ -235,7 +243,8 @@ export default function HR() {
                         payroll_type: 'payslip',
                         start_date: a.start_date,
                         end_date: a.end_date || new Date().toISOString().split('T')[0],
-                        hours_per_day: a.hours_per_day || 8,
+                        hours_per_day: a.hours_per_day,
+                        preferred_payment_type: emp?.preferred_payment_type,
                         worker_assignments: { assignment_status: a.assignment_status },
                         _isSynthetic: true
                     };
@@ -879,12 +888,28 @@ export default function HR() {
             doc.text(`Payslip #: ${payslipNo}`, 130, 56);
             doc.text(`Issue Date: ${dateNow}`, 130, 62);
             doc.text(`Service Period: ${period}`, 130, 68);
-            doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
+            if (worker?.preferred_payment_type === 'hourly' && hoursPerDay > 0) {
+                doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
+            }
 
             const days = getDays(item);
-            const totalEarning = days * item.daily_rate;
+            let periodDays = daysInCalendarMonth();
+            if (item.start_date && item.end_date) {
+                periodDays = periodDaysInclusive(new Date(item.start_date), new Date(item.end_date));
+            }
+            const pay = calculateWorkerPay({
+                preferred_payment_type: worker?.preferred_payment_type,
+                monthly_daily_rate: worker?.monthly_daily_rate ?? item.daily_rate,
+                short_term_daily_rate: worker?.short_term_daily_rate,
+                hourly_rate: worker?.hourly_rate,
+                daysWorked: days,
+                periodDays,
+                hoursPerDay: item.hours_per_day ?? hoursPerDay,
+            });
+            const totalEarning = item.total_amount != null ? Number(item.total_amount) : pay.gross;
             const advance = item.advance_amount || 0;
             const netBalance = totalEarning - advance;
+            const earningsLabel = pay.earningsLine.replace(/₹/g, 'Rs. ');
 
             autoTable(doc, {
                 startY: 84,
@@ -892,7 +917,7 @@ export default function HR() {
                 headStyles: { fillColor: [60, 120, 216], textColor: 255, fontStyle: 'bold' },
                 head: [['Attendance Summary', 'Value']],
                 body: [
-                    ['Total Days in Period', `${days} days`],
+                    ['Total Days in Period', `${periodDays} days`],
                     ['Days Present', `${days} days`],
                     ['Half Days', `0 days`],
                     ['Days Absent', `0 days`],
@@ -909,7 +934,7 @@ export default function HR() {
                 headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
                 head: [['Earning Breakdown', 'Amount']],
                 body: [
-                    [`Daily Rate (for ${hoursPerDay}h shift) × ${days} Days`, `Rs. ${item.daily_rate.toFixed(2)} × ${days} = Rs. ${totalEarning.toFixed(2)}`],
+                    [earningsLabel, `Rs. ${totalEarning.toFixed(2)}`],
                     ['Advance Paid / Deductions', `- Rs. ${advance.toFixed(2)}`],
                 ],
                 columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
@@ -1062,25 +1087,23 @@ export default function HR() {
                 const worker = workers.find(w => w.id === workerId);
 
                 if (worker) {
-                    let appliedRate = 0;
-                    let totalCost = 0;
-
-                    if (worker.preferred_payment_type === 'hourly') {
-                        appliedRate = worker.hourly_rate || 0;
-                        const hoursPerDay = worker.shift_hours || 8;
-                        totalCost = daysWorked * hoursPerDay * appliedRate;
-                    } else if (worker.preferred_payment_type === 'monthly') {
-                        // Fixed monthly salary — flat amount regardless of days
-                        appliedRate = worker.monthly_daily_rate || worker.short_term_daily_rate || 0;
-                        totalCost = appliedRate;
-                    } else if (worker.preferred_payment_type === 'short_term') {
-                        appliedRate = worker.short_term_daily_rate || 0;
-                        totalCost = appliedRate; // Per-service flat
-                    } else {
-                        // 'daily' — straightforward daily rate x days worked
-                        appliedRate = worker.monthly_daily_rate || 0;
-                        totalCost = daysWorked * appliedRate;
+                    const activeAssignment = activeAssignments.find((a: any) => a.employee_id === workerId);
+                    const assignmentHours = activeAssignment?.hours_per_day;
+                    const pay = calculateWorkerPay({
+                        preferred_payment_type: worker.preferred_payment_type,
+                        monthly_daily_rate: worker.monthly_daily_rate,
+                        short_term_daily_rate: worker.short_term_daily_rate,
+                        hourly_rate: worker.hourly_rate,
+                        daysWorked,
+                        periodDays: daysInCalendarMonth(),
+                        hoursPerDay: assignmentHours,
+                    });
+                    if (worker.preferred_payment_type === 'hourly' && !assignmentHours) {
+                        toast.error(`${worker.name}: assign shift hours on client assignment before payroll.`);
+                        continue;
                     }
+                    const appliedRate = pay.dailyRateForDisplay;
+                    const totalCost = pay.gross;
                     const deposit = worker.deposit_received || 0;
                     const netBalance = totalCost - deposit;
 
@@ -1089,6 +1112,7 @@ export default function HR() {
                         client_name: worker.assigned_client || '99Care Internal',
                         days_worked: daysWorked,
                         daily_rate: appliedRate,
+                        total_amount: totalCost,
                         deposit_received: deposit,
                         net_balance: netBalance,
                         status: netBalance > 0 ? 'Pending Payment' : (netBalance < 0 ? 'Refund Due' : 'Settled'),
@@ -1173,7 +1197,7 @@ export default function HR() {
                         head: [['Earning Breakdown', 'Value']],
                         body: [
                             ['Working Days', `${daysWorked} days`],
-                            ['Salary Per Day', `Rs. ${appliedRate.toFixed(2)}`],
+                            ['Earnings', pay.earningsLine.replace(/₹/g, 'Rs. ')],
                             ['Total Amount', `Rs. ${totalCost.toFixed(2)}`],
                             ['Advance / Deductions', `- Rs. ${deposit.toFixed(2)}`],
                         ],
@@ -1385,36 +1409,36 @@ export default function HR() {
             const worker = workers.find(w => w.id === manualPayrollData.worker_id);
             if (!worker) throw new Error("Worker not found");
 
-            let appliedRate = 0;
-            let totalCost = 0;
+            const periodDays = periodDaysInclusive(new Date(start), new Date(end));
+            const activeAssignment = activeAssignments.find((a: any) => a.employee_id === worker.id);
+            const assignmentHours =
+                manualPayrollData.shiftHoursOverride ||
+                activeAssignment?.hours_per_day ||
+                null;
 
+            const payInput = {
+                preferred_payment_type: worker.preferred_payment_type,
+                monthly_daily_rate: worker.monthly_daily_rate,
+                short_term_daily_rate: worker.short_term_daily_rate,
+                hourly_rate: worker.hourly_rate,
+                daysWorked,
+                periodDays,
+                hoursPerDay: assignmentHours,
+            };
             if (manualPayrollData.dailyRateOverride) {
-                appliedRate = Number(manualPayrollData.dailyRateOverride);
-                if (worker.preferred_payment_type === 'hourly') {
-                    const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
-                    totalCost = daysWorked * hours * appliedRate;
-                } else if (worker.preferred_payment_type === 'short_term') {
-                    totalCost = appliedRate; // Fixed Flat
-                } else {
-                    totalCost = daysWorked * appliedRate; 
-                }
-            } else {
-                if (worker.preferred_payment_type === 'hourly') {
-                    appliedRate = worker.hourly_rate || 0;
-                    const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
-                    totalCost = daysWorked * hours * appliedRate;
-                } else if (worker.preferred_payment_type === 'monthly') {
-                    // Fixed monthly salary — flat amount
-                    appliedRate = worker.monthly_daily_rate || worker.short_term_daily_rate || 0;
-                    totalCost = appliedRate;
-                } else if (worker.preferred_payment_type === 'short_term') {
-                    appliedRate = worker.short_term_daily_rate || 0;
-                    totalCost = appliedRate; // Per-service flat
-                } else {
-                    // 'daily' — direct daily rate x days
-                    appliedRate = worker.monthly_daily_rate || 0;
-                    totalCost = daysWorked * appliedRate;
-                }
+                const ov = Number(manualPayrollData.dailyRateOverride);
+                if (worker.preferred_payment_type === 'hourly') payInput.hourly_rate = ov;
+                else if (worker.preferred_payment_type === 'short_term') payInput.short_term_daily_rate = ov;
+                else payInput.monthly_daily_rate = ov;
+            }
+            const pay = calculateWorkerPay(payInput);
+            const appliedRate = pay.dailyRateForDisplay;
+            const totalCost = pay.gross;
+
+            if (worker.preferred_payment_type === 'hourly' && !assignmentHours) {
+                toast.error('Set shift hours on the client assignment (or enter hours below) for hourly workers.');
+                setIsGenerating(false);
+                return;
             }
 
             const advance = Number(manualPayrollData.advanceAmount) || 0;
@@ -1427,6 +1451,7 @@ export default function HR() {
                 client_name: manualPayrollData.clientNameOverride || worker.assigned_client || 'No Active Client',
                 days_worked: daysWorked,
                 daily_rate: appliedRate,
+                total_amount: totalCost,
                 deposit_received: deposit,
                 advance_amount: advance,
                 net_balance: netBalance,
@@ -1751,7 +1776,7 @@ export default function HR() {
                         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Total Payables</p>
-                                <p className="text-2xl font-black text-slate-900">Rs. {payrollItems.reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-slate-900">Rs. {payrollItems.reduce((sum, item) => sum + netFromPayrollItem(item), 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center">
                                 <Users className="w-5 h-5" />
@@ -1760,7 +1785,7 @@ export default function HR() {
                         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-1">Unpaid Dues</p>
-                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid' && i.status !== 'Settled').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid' && i.status !== 'Settled').reduce((sum, item) => sum + netFromPayrollItem(item), 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center">
                                 <AlertTriangle className="w-5 h-5" />
@@ -1769,7 +1794,7 @@ export default function HR() {
                         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-4 shadow-md flex items-center justify-between text-white">
                             <div>
                                 <p className="text-xs text-slate-300 font-bold uppercase tracking-wider mb-1">Paid Amount</p>
-                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid' || i.status === 'Settled').reduce((sum, item) => sum + ((getDays(item) * item.daily_rate) - (item.advance_amount || 0)), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid' || i.status === 'Settled').reduce((sum, item) => sum + netFromPayrollItem(item), 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
                                 <CheckCircle2 className="w-5 h-5 text-green-400" />
@@ -1794,7 +1819,7 @@ export default function HR() {
                                 ) : (
                                     payrollItems.filter(item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type).map((item) => {
                                         const days = getDays(item);
-                                        const amount = days * item.daily_rate;
+                                        const amount = grossFromPayrollItem(item);
                                         return (
                                             <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
                                                 <div className="flex justify-between items-center">
@@ -2417,7 +2442,8 @@ export default function HR() {
                                         setManualPayrollData({
                                             ...manualPayrollData, 
                                             worker_id: e.target.value,
-                                            shiftHoursOverride: w?.shift_hours || 8
+                                            shiftHoursOverride:
+                                                activeAssignments.find((a: any) => a.employee_id === e.target.value)?.hours_per_day || 10
                                         });
                                     }}
                                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white"
@@ -2503,7 +2529,7 @@ export default function HR() {
                                         placeholder="e.g. 10"
                                         required
                                     />
-                                    <p className="text-[10px] text-slate-500 mt-1">This overrides the worker's default shift length for this specific payslip.</p>
+                                    <p className="text-[10px] text-slate-500 mt-1">Hours from the client assignment (e.g. 10h shift). Override only if needed.</p>
                                 </div>
                             )}
                             <div>

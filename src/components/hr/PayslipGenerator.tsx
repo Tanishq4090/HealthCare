@@ -5,6 +5,7 @@ import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { format, eachDayOfInterval, parseISO, isAfter } from 'date-fns';
+import { calculateWorkerPay, resolveAssignmentHoursPerDay } from '../../utils/workerPayroll';
 
 interface PayslipGeneratorProps {
   assignment: {
@@ -44,29 +45,32 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const emp = assignment.employees || (assignment as any).employee;
   const client = assignment.clients || (assignment as any).client;
 
-  // Calculate hours per day and daily rate based on type
-  const hoursPerDay = assignment.hours_per_day || emp?.shift_hours || 12;
-  let dailyRate = emp?.monthly_daily_rate || 0;
-
-  if (emp?.preferred_payment_type === 'hourly') {
-    dailyRate = (emp.hourly_rate || 0) * hoursPerDay;
-  } else if (emp?.preferred_payment_type === 'short_term') {
-    dailyRate = emp.short_term_daily_rate || 0;
-  } else {
-    dailyRate = emp?.monthly_daily_rate || 0;
-  }
-
   const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
   const startDate = parseISO(fallbackStart);
   const endDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
   const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
 
   const totalPeriodDays = eachDayOfInterval({ start: safeStartDate, end: endDate }).length;
-
+  const assignmentHours = resolveAssignmentHoursPerDay(assignment.hours_per_day);
   const daysWorked = attendanceSummary ? parseFloat(attendanceSummary.days_present || 0) : 0;
-  const totalEarning = daysWorked * dailyRate;
+
+  const payCalc = calculateWorkerPay({
+    preferred_payment_type: emp?.preferred_payment_type,
+    monthly_daily_rate: emp?.monthly_daily_rate,
+    short_term_daily_rate: emp?.short_term_daily_rate,
+    hourly_rate: emp?.hourly_rate,
+    daysWorked,
+    periodDays: totalPeriodDays,
+    hoursPerDay: assignmentHours,
+  });
+
+  const hoursPerDay = payCalc.hoursPerDay;
+  const dailyRate = payCalc.dailyRateForDisplay;
+  const totalEarning = payCalc.gross;
   const advanceDeduction = parseFloat(advanceAmount) || 0;
   const netPayable = totalEarning - advanceDeduction;
+  const hourlyMissingHours =
+    emp?.preferred_payment_type === 'hourly' && assignmentHours == null;
 
   const fetchAttendance = async () => {
     setIsLoadingAttendance(true);
@@ -123,6 +127,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   };
 
   const generatePayslipPDF = async () => {
+    if (hourlyMissingHours) {
+      toast.error('Set shift hours on this assignment (Assign to Client) before generating payslip.');
+      return null;
+    }
     const doc = new jsPDF();
     const dateNow = format(new Date(), 'dd MMM yyyy');
     const period = `${format(startDate, 'dd MMM yyyy')} – ${format(endDate, 'dd MMM yyyy')}`;
@@ -194,7 +202,11 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     doc.text(`Payslip #: PS-${Date.now().toString().slice(-6)}`, 130, 56);
     doc.text(`Issue Date: ${dateNow}`, 130, 62);
     doc.text(`Service Period: ${period}`, 130, 68);
-    doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
+    if (hoursPerDay != null && hoursPerDay > 0) {
+      doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
+    } else if (emp?.preferred_payment_type === 'hourly') {
+      doc.text('Shift Hours: set on assignment', 130, 74);
+    }
 
     // Attendance Summary Table
     autoTable(doc, {
@@ -221,7 +233,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
       head: [['Earning Breakdown', 'Amount']],
       body: [
-        [`Daily Rate (for ${hoursPerDay}h shift) × ${daysWorked} Days`, `Rs. ${dailyRate.toFixed(2)} × ${daysWorked} = Rs. ${totalEarning.toFixed(2)}`],
+        [payCalc.earningsLine.replace(/₹/g, 'Rs. '), `Rs. ${totalEarning.toFixed(2)}`],
         ['Advance Paid / Deductions', `- Rs. ${advanceDeduction.toFixed(2)}`],
       ],
       columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' } },
@@ -357,6 +369,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     setIsGenerating(true);
     try {
       const doc = await generatePayslipPDF();
+      if (!doc) return;
       doc.save(`Payslip_${emp?.full_name?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
       await savePayslipToDB();
       toast.success('Worker payslip generated and saved!');
@@ -382,6 +395,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     setIsGenerating(true);
     try {
       const doc = await generatePayslipPDF();
+      if (!doc) return;
       const pdfBlob = doc.output('blob');
       const fileName = `payslip-${(emp?.full_name || 'worker').replace(/\s+/g, '-')}-${Date.now()}.pdf`;
 
@@ -458,7 +472,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
               { label: 'Start Date', value: format(startDate, 'dd MMM yyyy') },
               { label: 'End Date', value: assignment.end_date ? format(endDate, 'dd MMM yyyy') : 'Ongoing' },
               { label: 'Period (Days)', value: `${totalPeriodDays} days` },
-              { label: 'Staff Rate/Day', value: `₹${Math.round(dailyRate).toLocaleString('en-IN')}` },
+              {
+                label: emp?.preferred_payment_type === 'monthly' ? 'Implied Daily (÷ period)' : 'Staff Rate/Day',
+                value: `₹${Math.round(dailyRate).toLocaleString('en-IN')}`,
+              },
             ].map(({ label, value }) => (
               <div key={label} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                 <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">{label}</p>
@@ -522,8 +539,14 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
               </h3>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between text-slate-600"><span>Assigned Client</span><span className="font-semibold text-slate-800">{client?.client_name || 'N/A'}</span></div>
-                <div className="flex justify-between text-slate-600"><span>Shift Hours</span><span className="font-semibold text-slate-800">{hoursPerDay} hours/day</span></div>
-                <div className="flex justify-between text-slate-600"><span>{daysWorked} days × ₹{Math.round(dailyRate)}/day</span><span>₹{totalEarning.toFixed(2)}</span></div>
+                {hoursPerDay != null && hoursPerDay > 0 && (
+                  <div className="flex justify-between text-slate-600"><span>Shift Hours (assignment)</span><span className="font-semibold text-slate-800">{hoursPerDay} hours/day</span></div>
+                )}
+                {hourlyMissingHours && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">Hourly worker: set shift hours on the assignment before generating.</p>
+                )}
+                <div className="flex justify-between text-slate-600"><span>{payCalc.schemeLabel}</span><span className="text-xs text-slate-500">{payCalc.earningsLine}</span></div>
+                <div className="flex justify-between font-medium text-slate-800"><span>Gross</span><span>₹{totalEarning.toFixed(2)}</span></div>
                 <div className="flex justify-between text-red-500"><span>Advance deduction</span><span>- ₹{advanceDeduction.toFixed(2)}</span></div>
                 <div className="flex justify-between font-bold text-slate-900 border-t border-slate-100 pt-1.5">
                   <span>Net Payable</span><span className="text-emerald-600">₹{Math.abs(netPayable).toFixed(2)}</span>
