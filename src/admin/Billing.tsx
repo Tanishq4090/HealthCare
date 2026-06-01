@@ -259,7 +259,7 @@ export default function Billing() {
                     const clientId = (asgn as any).clients?.id;
                     const clientName = (asgn as any).clients?.client_name || 'Unknown';
                     const quote = quotesMap[clientId];
-                    const billingRate = resolveClientBillingRatePerDay(asgn, quote);
+                    const billingRate = resolveClientBillingRatePerDay(asgn as any, quote);
                     let status: string;
                     if (paidClients.has(clientName)) {
                         status = 'Paid';
