@@ -7,6 +7,7 @@ const RupeeIcon = ({ className }: { className?: string }) => (
 );
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import { resolveClientBillingRatePerDay } from '../utils/billingRate';
 
 type ManualInvoiceForm = {
     clientName: string;
@@ -177,7 +178,10 @@ export default function Billing() {
                     .neq('assignment_status', 'cancelled')
                     .order('assigned_at', { ascending: false }),
                 supabase.from('crm_leads').select('id, estimated_value_monthly'),
-                supabase.from('crm_quotations').select('lead_id, complete_month_rate, start_date, deposit').order('created_at', { ascending: true }),
+                supabase
+                    .from('crm_quotations')
+                    .select('lead_id, complete_month_rate, incomplete_month_rate, duration, start_date, deposit')
+                    .order('created_at', { ascending: true }),
                 supabase.from('payments').select('client_name').eq('payment_type', 'service'),
                 supabase
                     .from('crm_leads')
@@ -254,7 +258,8 @@ export default function Billing() {
                 const assignmentBills = activeAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
                     const clientName = (asgn as any).clients?.client_name || 'Unknown';
-                    const billingRate = asgn.client_billing_rate || quotesMap[clientId]?.complete_month_rate || 0;
+                    const quote = quotesMap[clientId];
+                    const billingRate = resolveClientBillingRatePerDay(asgn, quote);
                     let status: string;
                     if (paidClients.has(clientName)) {
                         status = 'Paid';
@@ -274,7 +279,7 @@ export default function Billing() {
                         month: new Date(asgn.assigned_at).toLocaleString('default', { month: 'long' }),
                         invoice_no: asgn.final_invoice_number || "",
                         invoice_pdf_url: asgn.invoice_pdf_url || "",
-                        rawAssignment: { ...asgn, _quote: quotesMap[clientId] }
+                        rawAssignment: { ...asgn, _quote: quote }
                     };
                 });
 
@@ -1254,7 +1259,7 @@ export default function Billing() {
                                                 <button onClick={() => {
                                                     const asgn = bill.rawAssignment;
                                                     setClientInvoiceBill(bill);
-                                                    setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
+                                                    setCiRate(resolveClientBillingRatePerDay(asgn, asgn._quote));
                                                     setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
                                                     const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
                                                     setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
@@ -1292,7 +1297,7 @@ export default function Billing() {
                                                 <button onClick={() => {
                                                     const asgn = bill.rawAssignment;
                                                     setClientInvoiceBill(bill);
-                                                    setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
+                                                    setCiRate(resolveClientBillingRatePerDay(asgn, asgn._quote));
                                                     setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
                                                     const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
                                                     setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
@@ -1324,7 +1329,7 @@ export default function Billing() {
                                             <button onClick={() => {
                                                 const asgn = bill.rawAssignment;
                                                 setClientInvoiceBill(bill);
-                                                setCiRate(asgn.client_billing_rate || asgn._quote?.complete_month_rate || 0);
+                                                setCiRate(resolveClientBillingRatePerDay(asgn, asgn._quote));
                                                 setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
                                                 const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
                                                 setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
