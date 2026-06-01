@@ -29,7 +29,9 @@ import {
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
-
+const RupeeIcon = ({ className }: { className?: string }) => (
+    <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
+);
 // --- CUSTOM AUDIO PLAYER COMPONENT ---
 const VoicePlayer = ({ src }: { src: string }) => {
     const [isPlaying, setIsPlaying] = useState(false);
@@ -513,6 +515,9 @@ export default function CRM() {
 
     // Staff Picker State
     const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+    const [depositMethod, setDepositMethod] = useState('Online Transfer');
+    const [depositLeadTarget, setDepositLeadTarget] = useState<any>(null);
     const [staffPickerTargetLead, setStaffPickerTargetLead] = useState<any>(null);
     const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
     const [allWorkers, setAllWorkers] = useState<any[]>([]); // All employees for Kanban badge
@@ -2693,8 +2698,18 @@ export default function CRM() {
         }
     };
 
-    const handleDepositReceived = async (lead: any) => {
+    const handleDepositReceived = (lead: any) => {
         if (!lead?.id) return;
+        setDepositLeadTarget(lead);
+        setDepositMethod('Online Transfer');
+        setIsDepositModalOpen(true);
+    };
+
+    const confirmDepositReceived = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const lead = depositLeadTarget;
+        if (!lead?.id) return;
+        setIsDepositModalOpen(false);
 
         if (lead.id.length < 10) {
             setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, pipeline_stage: 'Active Client' } : item));
@@ -2751,7 +2766,7 @@ export default function CRM() {
                     amount,
                     client_name: lead.name,
                     recorded_by: 'admin',
-                    transaction_ref: `CRM-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`,
+                    transaction_ref: `${depositMethod.toUpperCase().replace(/\s+/g, '-')}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`,
                     payment_date: new Date().toISOString(),
                     payment_type: 'deposit'
                 }]);
@@ -5622,6 +5637,43 @@ export default function CRM() {
                     </div>,
                     document.body
                 )}
+
+            {/* Deposit Collection Modal */}
+            {isDepositModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[250] transition-all">
+                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-white/50 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <RupeeIcon className="w-5 h-5 text-emerald-500 text-lg" /> Record Deposit
+                            </h2>
+                        </div>
+                        <form onSubmit={confirmDepositReceived} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">Payment Method</label>
+                                <select
+                                    value={depositMethod}
+                                    onChange={(e) => setDepositMethod(e.target.value)}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
+                                >
+                                    <option value="Online Transfer">Online Transfer (NEFT/RTGS)</option>
+                                    <option value="UPI">UPI Setup</option>
+                                    <option value="Cheque">Cheque</option>
+                                    <option value="Cash">Cash</option>
+                                </select>
+                            </div>
+                            <p className="text-xs text-slate-500">Upon recording this payment, a formal receipt and dynamic thank-you greeting will be automatically sent to the client via Email/SMS.</p>
+                            <div className="pt-2 flex gap-3">
+                                <button type="button" onClick={() => setIsDepositModalOpen(false)} className="flex-1 py-2 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                                    Cancel
+                                </button>
+                                <button type="submit" className="flex-1 py-2 rounded-lg font-semibold text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-sm">
+                                    Confirm Payment
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Delete Choice Modal */}
             {deleteChoiceModal && (

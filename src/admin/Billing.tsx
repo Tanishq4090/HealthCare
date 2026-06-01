@@ -681,6 +681,13 @@ export default function Billing() {
                     })
                     .eq('id', agentTargetBill.id);
 
+                if (agentTargetBill.client_id) {
+                    await supabase
+                        .from('crm_leads')
+                        .update({ pipeline_stage: 'Deposit Pending' })
+                        .eq('id', agentTargetBill.client_id);
+                }
+
                 toast.success(`Deposit Invoice dispatched to ${agentTargetBill.client}!`, { id: toastId, duration: 4000 });
                 
                 setDeposits(prev => prev.map(d => d.id === agentTargetBill.id ? { ...d, status: 'Invoice Sent', invoice_pdf_url: invoicePdfUrl, amount: `₹${Number(invoiceDepositAmount) || 15000}` } : d));
