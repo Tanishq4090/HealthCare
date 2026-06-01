@@ -321,6 +321,44 @@ export default function Billing() {
         }
     };
 
+    /** Save client rate/day from Prepare Invoice so the billing list stays in sync. */
+    const persistClientBillingRate = async (bill: any, ratePerDay: number) => {
+        const rate = Math.max(0, Number(ratePerDay) || 0);
+        if (!bill?.id || rate <= 0) return;
+
+        const amountLabel = `₹${rate.toLocaleString('en-IN')}/day`;
+        const isManual = bill.rawAssignment?.isManualInvoice || String(bill.id).startsWith('manual-');
+
+        if (!isManual) {
+            const { error } = await supabase
+                .from('worker_assignments')
+                .update({ client_billing_rate: rate })
+                .eq('id', bill.id);
+            if (error) throw error;
+        }
+
+        setMonthlyBills(prev =>
+            prev.map(b =>
+                b.id === bill.id
+                    ? {
+                          ...b,
+                          amount: amountLabel,
+                          rawAssignment: b.rawAssignment
+                              ? { ...b.rawAssignment, client_billing_rate: rate }
+                              : b.rawAssignment,
+                      }
+                    : b,
+            ),
+        );
+    };
+
+    const commitClientInvoiceDraft = async () => {
+        if (!clientInvoiceBill) return;
+        await persistClientBillingRate(clientInvoiceBill, ciRate);
+        setInvoiceStartDate(ciStartDate);
+        setInvoiceEndDate(ciEndDate);
+    };
+
     const fetchPayments = async () => {
         setIsLoading(true);
         try {
@@ -656,15 +694,51 @@ export default function Billing() {
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
             const formatDateStr = (ds: string) => { if (!ds) return ''; const [y, m, d] = ds.split('-'); return `${d}/${m}/${y}`; };
-            const formattedPeriod = (invoiceStartDate && invoiceEndDate)
-                ? `${formatDateStr(invoiceStartDate)} To ${formatDateStr(invoiceEndDate)}`
+            const startDate = invoiceStartDate || agentTargetBill.startDate || '';
+            const endDate = invoiceEndDate || agentTargetBill.endDate || '';
+            const formattedPeriod = (startDate && endDate)
+                ? `${formatDateStr(startDate)} To ${formatDateStr(endDate)}`
                 : 'As agreed';
-            const billAmount = invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '') || '0';
+            const ratePerDay = Number(agentTargetBill.rate ?? invoiceData?.rate ?? 0);
+            const serviceDays = Number(agentTargetBill.days ?? invoiceData?.days ?? 1);
+            const depositCollected = Number(
+                agentTargetBill.depositCollected ?? invoiceData?.depositCollected ?? ciDeposit ?? 0,
+            );
+            const netPayable = Number(
+                invoiceDepositAmount || agentTargetBill.amount?.toString().replace(/[^0-9.]/g, '') || '0',
+            );
+
+            if (ratePerDay > 0 && !agentTargetBill.rawAssignment?.isManualInvoice) {
+                await persistClientBillingRate(agentTargetBill, ratePerDay);
+            }
+
+            const useStructuredInvoice = ratePerDay > 0 && startDate && endDate;
             // 1. Generate PDF
             const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-                body: JSON.stringify({ lead_id: agentTargetBill.client_id, deposit_amount: billAmount, service_period: formattedPeriod, due_date: invoiceDueDate, is_deposit: false })
+                body: JSON.stringify(
+                    useStructuredInvoice
+                        ? {
+                              lead_id: agentTargetBill.client_id,
+                              manual_invoice: true,
+                              rate_per_day: ratePerDay,
+                              start_date: startDate,
+                              end_date: endDate,
+                              deposit_collected: depositCollected,
+                              service_period: formattedPeriod,
+                              due_date: invoiceDueDate,
+                              invoice_number: agentTargetBill.invoice_no,
+                              is_deposit: false,
+                          }
+                        : {
+                              lead_id: agentTargetBill.client_id,
+                              deposit_amount: netPayable,
+                              service_period: formattedPeriod,
+                              due_date: invoiceDueDate,
+                              is_deposit: false,
+                          },
+                ),
             });
             const invRespText = await invResp.text();
             if (!invResp.ok) throw new Error(invRespText);
@@ -685,7 +759,7 @@ export default function Billing() {
                     leadId: agentTargetBill.client_id,
                     useTemplate: true,
                     templateName: 'client_monthly_invoice',
-                    templateParams: [agentTargetBill.client || 'there', String(billAmount)],
+                    templateParams: [agentTargetBill.client || 'there', String(netPayable)],
                     sendInvoicePdf: true,
                     invoicePdfUrl: invoicePdfUrl,
                 })
@@ -698,6 +772,8 @@ export default function Billing() {
                 .update({
                     final_invoice_generated: true,
                     invoice_pdf_url: invoicePdfUrl,
+                    final_invoice_number: agentTargetBill.invoice_no || undefined,
+                    ...(ratePerDay > 0 ? { client_billing_rate: ratePerDay } : {}),
                 })
                 .eq('id', agentTargetBill.id);
             // 4. Move lead to Monthly Billing stage in CRM
@@ -707,7 +783,21 @@ export default function Billing() {
                     .update({ pipeline_stage: 'Monthly Billing' })
                     .eq('id', agentTargetBill.client_id);
             }
-            setMonthlyBills(prev => prev.map(b => b.id === agentTargetBill.id ? { ...b, status: 'Sent', invoice_pdf_url: invoicePdfUrl } : b));
+            setMonthlyBills(prev =>
+                prev.map(b =>
+                    b.id === agentTargetBill.id
+                        ? {
+                              ...b,
+                              status: 'Sent',
+                              invoice_pdf_url: invoicePdfUrl,
+                              amount: ratePerDay > 0 ? `₹${ratePerDay.toLocaleString('en-IN')}/day` : b.amount,
+                              rawAssignment: b.rawAssignment
+                                  ? { ...b.rawAssignment, client_billing_rate: ratePerDay || b.rawAssignment.client_billing_rate }
+                                  : b.rawAssignment,
+                          }
+                        : b,
+                ),
+            );
             toast.success(`Invoice sent to ${agentTargetBill.client} on WhatsApp! ✅`, { id: billToastId, duration: 4000 });
         } catch (err: any) {
             toast.error(err.message || 'Failed to send invoice', { id: billToastId });
@@ -2102,7 +2192,21 @@ export default function Billing() {
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
-                                        <input type="number" min="0" value={ciRate} onChange={e => setCiRate(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={ciRate}
+                                            onChange={e => setCiRate(parseFloat(e.target.value) || 0)}
+                                            onBlur={async () => {
+                                                if (!clientInvoiceBill || ciRate <= 0) return;
+                                                try {
+                                                    await persistClientBillingRate(clientInvoiceBill, ciRate);
+                                                } catch {
+                                                    /* ignore blur save errors */
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
                                     </div>
                                 </div>
                                 <div>
@@ -2130,10 +2234,26 @@ export default function Billing() {
                                 <button onClick={() => { setIsClientInvoiceOpen(false); setClientInvoiceBill(null); }} className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-colors w-full sm:w-auto text-center">Cancel</button>
                                 <div className="flex gap-3 flex-1 sm:flex-none w-full sm:w-auto">
                                     <button
-                                        onClick={() => {
+                                        onClick={async () => {
+                                            try {
+                                                await commitClientInvoiceDraft();
+                                            } catch (e: any) {
+                                                toast.error(e.message || 'Failed to save rate');
+                                                return;
+                                            }
                                             setIsClientInvoiceOpen(false);
                                             const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
-                                            const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo, amount: net.toString(), totalAmount: total, days: ciDays, rate: ciRate };
+                                            const targetBill = {
+                                                ...clientInvoiceBill,
+                                                invoice_no: invoiceNo,
+                                                amount: net.toString(),
+                                                totalAmount: total,
+                                                days: ciDays,
+                                                rate: ciRate,
+                                                startDate: ciStartDate,
+                                                endDate: ciEndDate,
+                                                depositCollected: ciDeposit,
+                                            };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
@@ -2145,7 +2265,7 @@ export default function Billing() {
                                                 date: new Date().toISOString(),
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
-                                                rate: ciRate
+                                                rate: ciRate,
                                             });
                                             setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
                                             setInvoiceDepositAmount(net.toString());
@@ -2156,10 +2276,26 @@ export default function Billing() {
                                         <FileText className="w-4 h-4" /> Preview
                                     </button>
                                     <button
-                                        onClick={() => {
+                                        onClick={async () => {
+                                            try {
+                                                await commitClientInvoiceDraft();
+                                            } catch (e: any) {
+                                                toast.error(e.message || 'Failed to save rate');
+                                                return;
+                                            }
                                             setIsClientInvoiceOpen(false);
                                             const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
-                                            const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo, amount: net.toString(), totalAmount: total, days: ciDays, rate: ciRate };
+                                            const targetBill = {
+                                                ...clientInvoiceBill,
+                                                invoice_no: invoiceNo,
+                                                amount: net.toString(),
+                                                totalAmount: total,
+                                                days: ciDays,
+                                                rate: ciRate,
+                                                startDate: ciStartDate,
+                                                endDate: ciEndDate,
+                                                depositCollected: ciDeposit,
+                                            };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
@@ -2171,7 +2307,7 @@ export default function Billing() {
                                                 date: new Date().toISOString(),
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
-                                                rate: ciRate
+                                                rate: ciRate,
                                             });
                                             const draft = generateWhatsappDraft(targetBill, agentDraftLang);
                                             setAgentDraftText(draft);
