@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar as CalendarIcon, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { CARE_SERVICES } from '../../constants/services';
-import { computeQuotationEstimate } from '../../utils/quotationEstimate';
+import {
+    computeInclusiveDaysFromDates,
+    computeQuotationEstimate,
+    formatDurationLabel,
+} from '../../utils/quotationEstimate';
 
 interface SendQuotationModalProps {
     isOpen: boolean;
@@ -55,11 +59,21 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
         setEstimateDetail(result.detail);
     }, [completeMonthRate, incompleteMonthRate, startDate, endDate, durationValue]);
 
+    // Keep duration in sync with the date pickers (multi-day range). Same-day allows manual override (e.g. "5 days").
     useEffect(() => {
-        if (startDate && endDate && startDate === endDate && !durationValue.trim()) {
+        if (!startDate || !endDate) return;
+        const days = computeInclusiveDaysFromDates(startDate, endDate);
+        if (days == null) return;
+
+        if (startDate !== endDate) {
+            setDurationValue(formatDurationLabel(days));
+            return;
+        }
+
+        if (!durationValue.trim()) {
             setDurationValue('1 day');
         }
-    }, [startDate, endDate, durationValue]);
+    }, [startDate, endDate]);
 
     useEffect(() => {
         if (isOpen && lead) {

@@ -15,6 +15,19 @@ export function parseDurationDays(durationText: string): number | null {
     return null;
 }
 
+/** Inclusive calendar days between two YYYY-MM-DD values (both ends counted). */
+export function computeInclusiveDaysFromDates(startDate: string, endDate: string): number | null {
+    if (!startDate || !endDate) return null;
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+    return Math.max(1, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1);
+}
+
+export function formatDurationLabel(days: number): string {
+    return days === 1 ? '1 day' : `${days} days`;
+}
+
 /** Inclusive service days from dates, duration text, or default full month (30). */
 export function computeServiceDays(
     startDate: string,
@@ -24,14 +37,8 @@ export function computeServiceDays(
     const fromDuration = parseDurationDays(durationValue);
     if (fromDuration != null) return fromDuration;
 
-    if (startDate && endDate) {
-        const start = new Date(`${startDate}T00:00:00`);
-        const end = new Date(`${endDate}T00:00:00`);
-        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start) {
-            const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
-            return Math.max(1, days);
-        }
-    }
+    const fromDates = computeInclusiveDaysFromDates(startDate, endDate);
+    if (fromDates != null) return fromDates;
 
     return 30;
 }
