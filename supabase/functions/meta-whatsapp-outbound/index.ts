@@ -358,7 +358,6 @@ serve(async (req) => {
 
         const actionPayload: Record<string, unknown> = {
           flow_token: `flow_${digits}_${Date.now()}`,
-          flow_action: 'navigate',
         };
 
         if (templateName === "post_call_intake") {
