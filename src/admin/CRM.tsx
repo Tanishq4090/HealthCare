@@ -19,6 +19,12 @@ import {
     NEW_LEAD_PIPELINE_STAGE,
     sanitizePipelineStages,
 } from '../utils/crm';
+import {
+    formatLeadValueDisplay,
+    getLeadServiceDays,
+    getLeadValueLabel,
+    isShortTermService,
+} from '../utils/quotationEstimate';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -2142,9 +2148,16 @@ export default function CRM() {
             if (quotationData.deposit) msgText += `Deposit: ₹${quotationData.deposit}\n`;
 
             if (quotationData.isShortTerm) {
-                msgText += `\n*Estimated total: ₹${quotationData.estimatedTotal}* (${quotationData.serviceDays || 1} day service)\n\n`;
+                const days = quotationData.serviceDays || 1;
+                const rate = quotationData.incompleteMonthRate || 0;
+                msgText += `\n*Estimated service total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')}*\n`;
+                if (rate > 0) {
+                    msgText += `${days} day${days !== 1 ? 's' : ''} × ₹${Number(rate).toLocaleString('en-IN')}/day\n\n`;
+                } else {
+                    msgText += `${days} day${days !== 1 ? 's' : ''} service\n\n`;
+                }
             } else {
-                msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal} / mo*\n\n`;
+                msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')} / mo*\n\n`;
             }
 
             if (quotationData.inclusions && quotationData.inclusions.length > 0) {
@@ -2184,8 +2197,8 @@ export default function CRM() {
 
             // 2. Send the template with buttons using a newline-free summary
             const summaryParam = quotationData.isShortTerm
-                ? `Total Estimate: ₹${quotationData.estimatedTotal} (${quotationData.serviceDays || 1} day)`
-                : `Total Estimate: ₹${quotationData.estimatedTotal}/mo`;
+                ? `Estimated service total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')} (${quotationData.serviceDays || 1} days)`
+                : `Estimated monthly total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')}/mo`;
             const templateLogText = `Hello, please find the quotation details for your care request below:\n${summaryParam}\nPlease use the buttons below to respond or schedule a follow-up. We look forward to assisting your family.`;
 
             const payload = {
@@ -2253,24 +2266,28 @@ export default function CRM() {
 
             // Sync UI: Update Lead Value, Notes and Activity Timeline
             if (selectedInspectorLead && selectedInspectorLead.id === quotationTargetLead.id) {
+                const serviceDays = quotationData.serviceDays || 1;
                 setSelectedInspectorLead((prev: any) => ({
                     ...prev,
                     estimated_value_monthly: quotationData.estimatedTotal,
                     valueAmount: quotationData.estimatedTotal,
-                    value: quotationData.isShortTerm
-                        ? '₹' + quotationData.estimatedTotal + ` (${quotationData.serviceDays || 1}d)`
-                        : '₹' + quotationData.estimatedTotal + '/mo',
+                    serviceDays,
+                    isShortTermQuote: quotationData.isShortTerm,
+                    value: formatLeadValueDisplay(quotationData.estimatedTotal, serviceDays),
                     notes: updatedNotes
                 }));
                 fetchLeadActivity(quotationTargetLead.id, quotationTargetLead.duplicate_of_lead_id);
             }
 
             // Also update the main leads list
+            const serviceDays = quotationData.serviceDays || 1;
             setLeads(prev => prev.map(l => l.id === quotationTargetLead.id ? {
                 ...l,
                 estimated_value_monthly: quotationData.estimatedTotal,
                 valueAmount: quotationData.estimatedTotal,
-                value: '₹' + quotationData.estimatedTotal + '/mo',
+                serviceDays,
+                isShortTermQuote: quotationData.isShortTerm,
+                value: formatLeadValueDisplay(quotationData.estimatedTotal, serviceDays),
                 notes: updatedNotes
             } : l));
 
@@ -3047,11 +3064,17 @@ export default function CRM() {
                 plannedDuration = latestQuote.duration;
             }
 
+            const serviceDays = getLeadServiceDays(l);
+            const isShortTermQuote = isShortTermService(serviceDays);
+            const valueAmount = l.estimated_value_monthly || 0;
+
             return {
                 ...l,
                 time: new Date(l.created_at).toLocaleDateString(),
-                valueAmount: l.estimated_value_monthly,
-                value: l.estimated_value_monthly ? "₹" + l.estimated_value_monthly + "/mo" : "₹0/mo",
+                valueAmount,
+                serviceDays,
+                isShortTermQuote,
+                value: formatLeadValueDisplay(valueAmount, serviceDays),
                 priority: l.priority || 'medium',
                 isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false,
                 plannedStart,
@@ -5215,9 +5238,15 @@ export default function CRM() {
                         <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Lead Value</p>
                             <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
-                                {/* Monthly value */}
+                                {/* Service or monthly value */}
+                                {(() => {
+                                    const inspectorServiceDays = selectedInspectorLead.serviceDays ?? getLeadServiceDays(selectedInspectorLead);
+                                    const inspectorIsShortTerm = selectedInspectorLead.isShortTermQuote ?? isShortTermService(inspectorServiceDays);
+                                    const valueLabel = getLeadValueLabel(inspectorServiceDays);
+
+                                    return (
                                 <div className="flex items-center justify-between px-4 py-3">
-                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Monthly value</span>
+                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> {valueLabel}</span>
                                     {editingLeadValueId === selectedInspectorLead.id ? (
                                         <div className="flex items-center gap-1.5">
                                             <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden">
@@ -5229,7 +5258,12 @@ export default function CRM() {
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             handleUpdateLeadValue(selectedInspectorLead.id);
-                                                            setSelectedInspectorLead((prev: any) => prev ? { ...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹' + editingLeadValueAmount + '/mo' } : null);
+                                                            const amt = parseFloat(editingLeadValueAmount) || 0;
+                                                            setSelectedInspectorLead((prev: any) => prev ? {
+                                                                ...prev,
+                                                                valueAmount: amt,
+                                                                value: formatLeadValueDisplay(amt, inspectorServiceDays),
+                                                            } : null);
                                                         }
                                                         if (e.key === 'Escape') setEditingLeadValueId(null);
                                                     }}
@@ -5240,7 +5274,12 @@ export default function CRM() {
                                             <button
                                                 onClick={() => {
                                                     handleUpdateLeadValue(selectedInspectorLead.id);
-                                                    setSelectedInspectorLead((prev: any) => prev ? { ...prev, valueAmount: parseFloat(editingLeadValueAmount), value: '₹' + editingLeadValueAmount + '/mo' } : null);
+                                                    const amt = parseFloat(editingLeadValueAmount) || 0;
+                                                    setSelectedInspectorLead((prev: any) => prev ? {
+                                                        ...prev,
+                                                        valueAmount: amt,
+                                                        value: formatLeadValueDisplay(amt, inspectorServiceDays),
+                                                    } : null);
                                                 }}
                                                 className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
                                             >
@@ -5253,15 +5292,19 @@ export default function CRM() {
                                             title="Double-tap to edit"
                                             onDoubleClick={() => { setEditingLeadValueId(selectedInspectorLead.id); setEditingLeadValueAmount(selectedInspectorLead.valueAmount?.toString() || '0'); }}
                                         >
-                                            {selectedInspectorLead.value || '₹0/mo'}
+                                            {selectedInspectorLead.value || formatLeadValueDisplay(0, inspectorServiceDays)}
                                         </span>
                                     )}
                                 </div>
-                                {/* Est. Annual */}
+                                    );
+                                })()}
+                                {/* Est. Annual — only for monthly assignments */}
+                                {!(selectedInspectorLead.isShortTermQuote ?? isShortTermService(selectedInspectorLead.serviceDays ?? getLeadServiceDays(selectedInspectorLead))) && (
                                 <div className="flex items-center justify-between px-4 py-3">
                                     <span className="flex items-center gap-2 text-sm text-slate-500"><Calendar className="w-3.5 h-3.5 text-slate-400" /> Est. annual</span>
                                     <span className="text-sm font-bold text-slate-800">₹{((selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0) * 12).toLocaleString('en-IN')}</span>
                                 </div>
+                                )}
                                 {/* Priority */}
                                 <div className="flex items-center justify-between px-4 py-3">
                                     <span className="flex items-center gap-2 text-sm text-slate-500"><Star className="w-3.5 h-3.5 text-slate-400" /> Priority</span>

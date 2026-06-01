@@ -21,6 +21,9 @@ export function computeServiceDays(
     endDate: string,
     durationValue: string,
 ): number {
+    const fromDuration = parseDurationDays(durationValue);
+    if (fromDuration != null) return fromDuration;
+
     if (startDate && endDate) {
         const start = new Date(`${startDate}T00:00:00`);
         const end = new Date(`${endDate}T00:00:00`);
@@ -30,10 +33,45 @@ export function computeServiceDays(
         }
     }
 
-    const fromDuration = parseDurationDays(durationValue);
-    if (fromDuration != null) return fromDuration;
-
     return 30;
+}
+
+export function getLatestQuotation(lead: { crm_quotations?: { created_at: string }[] } | null): any | null {
+    const quotes = lead?.crm_quotations;
+    if (!quotes?.length) return null;
+    return [...quotes].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+}
+
+/** Service days for a lead from latest quote or notes duration. */
+export function getLeadServiceDays(lead: any): number {
+    const quote = getLatestQuotation(lead);
+    if (quote) {
+        return computeServiceDays(quote.start_date || '', '', quote.duration || '');
+    }
+    const durMatch = lead?.notes?.match(/Duration:\s*(.+)/i);
+    if (durMatch?.[1]) {
+        const fromNotes = parseDurationDays(durMatch[1].trim());
+        if (fromNotes != null) return fromNotes;
+    }
+    return 30;
+}
+
+export function isShortTermService(serviceDays: number): boolean {
+    return serviceDays < 30;
+}
+
+export function getLeadValueLabel(serviceDays: number): string {
+    return isShortTermService(serviceDays) ? 'Service value' : 'Monthly value';
+}
+
+export function formatLeadValueDisplay(amount: number, serviceDays: number): string {
+    if (!amount) return isShortTermService(serviceDays) ? '₹0' : '₹0/mo';
+    const formatted = amount.toLocaleString('en-IN');
+    return isShortTermService(serviceDays)
+        ? `₹${formatted} (${serviceDays}d)`
+        : `₹${formatted}/mo`;
 }
 
 export interface QuotationEstimateResult {
