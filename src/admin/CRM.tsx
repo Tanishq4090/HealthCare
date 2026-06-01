@@ -3147,6 +3147,7 @@ export default function CRM() {
                 client_name: leadName,
                 phone_number: lead?.phone || lead?.whatsapp_number || null,
                 email: lead?.email || null,
+                source: lead?.source || null,
             }]);
 
             // Ignore duplicate key error — client may already exist

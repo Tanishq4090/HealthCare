@@ -267,9 +267,25 @@ serve(async (req) => {
                 if (updErr) console.error(`[Flow] DB Update Error for lead ${existingLead.id}:`, updErr);
                 else console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'}, source unchanged)`);
             } else {
+                // Check if this phone had a prior AI voice call — if so, preserve that as the true original source
+                let resolvedSource = 'WhatsApp Flow';
+                try {
+                    const { data: priorCalls } = await supabase
+                        .from('call_transcripts')
+                        .select('id')
+                        .ilike('phone_number', `%${last10}%`)
+                        .limit(1);
+                    if (priorCalls && priorCalls.length > 0) {
+                        resolvedSource = 'AI Phone Call';
+                        console.log(`[Flow] Prior voice call detected for ${purePhone} — assigning source as 'AI Phone Call'`);
+                    }
+                } catch (sourceCheckErr) {
+                    console.warn('[Flow] Could not check call_transcripts for source resolution:', sourceCheckErr);
+                }
+
                 const { data: newLead, error: insErr } = await supabase.from('crm_leads').insert([{
                     ...leadPayload,
-                    source: 'WhatsApp Flow',
+                    source: resolvedSource,
                     pipeline_stage: 'In Discussion',
                     status: 'new',
                 }]).select('id').single();
