@@ -7,13 +7,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { downloadIDCardAsPDF, downloadIDCardAsPNG } from '../../utils/downloadIDCard';
 import type { Employee } from '../../types/hr';
+import { formatIdCardDuty } from '../../utils/employeeIdCard';
 
 // ── Types ─────────────────────────────────────────────────
 
 type PageState = 'loading' | 'valid' | 'expired' | 'invalid' | 'error';
 
 interface CardData {
-  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number' | 'address' | 'dob' | 'preferred_payment_type' | 'shift_hours' | 'experience' | 'gender'>;
+  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number' | 'address' | 'dob' | 'preferred_payment_type' | 'hourly_rate' | 'monthly_daily_rate' | 'short_term_daily_rate' | 'experience' | 'gender'>;
 }
 
 // ── Skeleton ──────────────────────────────────────────────
@@ -119,7 +120,7 @@ export default function PublicIDCard() {
       // 4. Fetch employee details (only safe, non-sensitive fields)
       const { data: employee, error: empError } = await supabase
         .from('employees')
-        .select('full_name, employee_id, job_title, photo_url, aadhaar_number, address, dob, preferred_payment_type, shift_hours, experience, gender')
+        .select('full_name, employee_id, job_title, photo_url, aadhaar_number, address, dob, preferred_payment_type, hourly_rate, monthly_daily_rate, short_term_daily_rate, experience, gender')
         .eq('id', link.employee_id)
         .single();
 
@@ -177,13 +178,7 @@ export default function PublicIDCard() {
               aadhaarNumber={cardData.employee.aadhaar_number}
               address={cardData.employee.address}
               dob={cardData.employee.dob}
-              duty={cardData.employee.preferred_payment_type === 'hourly'
-                ? `${cardData.employee.shift_hours ?? '—'} HRS (Day)`
-                : cardData.employee.preferred_payment_type === 'monthly'
-                ? 'Fixed Monthly'
-                : cardData.employee.preferred_payment_type === 'short_term'
-                ? 'Per Service'
-                : 'Daily Rate'}
+              duty={formatIdCardDuty(cardData.employee)}
               experience={cardData.employee.experience as any}
               gender={cardData.employee.gender}
               variant="public"

@@ -45,6 +45,7 @@ import { supabase } from '../../lib/supabase';
 import { EmployeeIDCard } from '../hr/EmployeeIDCard';
 import PayslipGenerator from './PayslipGenerator';
 import type { Employee, EmployeeStatus, CreateEmployeeInput } from '../../types/hr';
+import { formatIdCardDuty } from '../../utils/employeeIdCard';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -96,7 +97,7 @@ function getPaymentScheme(employee: Employee) {
       label: 'Hourly',
       rateLabel: 'Hourly Rate',
       amount: employee.hourly_rate ?? 0,
-      duty: 'Per client shift',
+      duty: formatIdCardDuty(employee),
     };
   }
   if (type === 'monthly') {

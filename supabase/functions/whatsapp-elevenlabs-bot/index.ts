@@ -541,7 +541,7 @@ serve(async (req) => {
                             service_category: consent?.service_category || quote?.service_category || quote?.service_name || "",
                             service_start_date: consent?.service_start_date || (quote?.start_date ? quote.start_date.split('T')[0] : ""),
                             offered_time: formattedShift,
-                            relative_name: consent?.relative_name || earlyLead.name || "",
+                            relative_name: (earlyLead.name || '').trim() || consent?.relative_name || "",
                             age: consent?.age || "",
                             weight: consent?.weight || "",
                             alternate_contact_number: consent?.alternate_contact_number || "",

@@ -235,6 +235,11 @@ export function buildVoiceCallIntakePrefill(call: {
     };
 }
 
+/** Full name shown on CRM lead cards (crm_leads.name). */
+export function resolveLeadDisplayName(lead: { name?: string | null } | null | undefined): string {
+    return (lead?.name || '').trim();
+}
+
 /** Prefill from CRM lead card (pipeline greeting). */
 export function buildLeadIntakePrefill(lead: {
     name?: string;
@@ -252,7 +257,7 @@ export function buildLeadIntakePrefill(lead: {
         ? { shiftType: shiftFromNotes, shiftLabel: shiftFromNotes }
         : (parseShiftFromText(notes) || { shiftType: '10-Hour Shift', shiftLabel: '10 Hour Shift' });
     const startParsed = parseStartDateFromSummary(notes);
-    const fullName = (lead.name || '').trim();
+    const fullName = resolveLeadDisplayName(lead);
     const firstName = fullName.split(/\s+/)[0] || 'there';
 
     const flowData: Record<string, string> = {

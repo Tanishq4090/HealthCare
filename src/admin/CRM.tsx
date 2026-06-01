@@ -10,7 +10,7 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
-import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
+import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill, resolveLeadDisplayName } from '../utils/voiceCallIntake';
 import {
     findClientMasterByPhone,
     isLegacyPipelineStage,
@@ -2034,10 +2034,11 @@ export default function CRM() {
         const quote = getLatestByCreatedAt(lead?.crm_quotations);
         const phone = (lead?.whatsapp_number || lead?.phone || '').replace(/\D/g, '');
         const startDate = consent?.service_start_date || quote?.start_date || '';
+        const leadDisplayName = resolveLeadDisplayName(lead);
 
         return {
             screen: 'CONSENT_SCREEN',
-            relative_name: consent?.relative_name || lead?.name || '',
+            relative_name: leadDisplayName || consent?.relative_name || '',
             patient_name: consent?.patient_name || '',
             age: consent?.age || '',
             weight: consent?.weight || '',
@@ -2081,9 +2082,10 @@ export default function CRM() {
                 phone: phoneDigits,
                 leadId: lead.id,
                 leadName: lead.name?.split(/\s+/)[0] || 'there',
+                leadFullName: resolveLeadDisplayName(lead) || undefined,
                 useTemplate: true,
                 templateName: templateMap[action],
-                templateParams: params || (action === 'inquiry' ? buildLeadIntakePrefill(lead).templateParams : [lead.name.split(' ')[0] || 'there']),
+                templateParams: params || (action === 'inquiry' ? buildLeadIntakePrefill(lead).templateParams : [lead.name?.split(' ')[0] || 'there']),
                 flowData: flowData || (action === 'inquiry' ? buildLeadIntakePrefill(lead).flowData : action === 'consent' ? buildConsentFlowPrefill(lead) : undefined),
             })
         });
@@ -2358,6 +2360,7 @@ export default function CRM() {
                 body: JSON.stringify({
                     phone: phoneDigits,
                     leadName: inquiryPrefill?.flowData?.name || agentTargetLead?.name?.split(/\s+/)[0] || 'there',
+                    leadFullName: agentTargetLead ? resolveLeadDisplayName(agentTargetLead) || undefined : undefined,
                     message: finalLogMessage,
                     leadId: agentTargetLead?.id,
                     sendInvoicePdf: agentTargetAction === 'deposit' || agentTargetAction === 'billing',

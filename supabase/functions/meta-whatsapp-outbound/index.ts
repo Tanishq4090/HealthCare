@@ -38,6 +38,7 @@ function buildConsentFlowPayload(
   flowData: unknown,
   bodyParams: { text: string }[],
   leadName?: string,
+  leadFullName?: string,
 ): Record<string, string> {
   const out: Record<string, string> = {
     screen: 'CONSENT_SCREEN',
@@ -48,6 +49,11 @@ function buildConsentFlowPayload(
       if (!CONSENT_FLOW_KEYS.has(key) || val == null || val === '') continue;
       out[key] = key === 'offered_time' ? normalizeConsentOfferedTime(val) : String(val);
     }
+  }
+
+  const fullFromLead = (leadFullName || '').trim();
+  if (fullFromLead && fullFromLead !== 'there') {
+    out.relative_name = fullFromLead;
   }
 
   const firstName = bodyParams[0]?.text?.trim();
@@ -202,7 +208,7 @@ serve(async (req) => {
         return new Response('ok', { status: 200, headers: corsHeaders });
     }
 
-    const { phone, leadName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId, flowData, sendInvoicePdf, invoicePdfUrl } = payload;
+    const { phone, leadName, leadFullName, message, useTemplate, leadId, templateName, templateParams, sendFlow, flowId, flowData, sendInvoicePdf, invoicePdfUrl } = payload;
     if (useTemplate && templateName === 'greeting_msg') {
       throw new Error('Blocked deprecated greeting_msg template. Use lead-scoped post_call_intake instead.');
     }
@@ -310,7 +316,7 @@ serve(async (req) => {
           // Always send screen data — logs showed flowData:null so prefill never reached Meta
           actionPayload.flow_action_data = buildIntakeFlowPayload(flowData, parameters, leadName);
         } else {
-          actionPayload.flow_action_data = buildConsentFlowPayload(flowData, parameters, leadName);
+          actionPayload.flow_action_data = buildConsentFlowPayload(flowData, parameters, leadName, leadFullName);
         }
 
         components.push({
