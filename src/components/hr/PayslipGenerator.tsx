@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { format, eachDayOfInterval, parseISO, isAfter } from 'date-fns';
 import { calculateWorkerPay, resolveAssignmentHoursPerDay } from '../../utils/workerPayroll';
+import { PAYSLIP_SENT_STATUS } from '../../utils/payrollDispatch';
 
 interface PayslipGeneratorProps {
   assignment: {
@@ -320,47 +321,52 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     return doc;
   };
 
-  const savePayslipToDB = async () => {
+  const savePayslipToDB = async (opts?: { whatsappSent?: boolean }) => {
     await supabase.from('worker_assignments').update({
       payslip_generated: true,
       advance_paid: advanceDeduction,
     }).eq('id', assignment.id);
 
-    // Check for existing payroll entry for this assignment to prevent duplicates
+    const status = opts?.whatsappSent
+      ? PAYSLIP_SENT_STATUS
+      : netPayable > 0
+        ? 'Pending Payment'
+        : 'Settled';
+
     const { data: existing } = await supabase
       .from('payroll')
       .select('id')
       .eq('assignment_id', assignment.id)
       .maybeSingle();
 
+    const row = {
+      days_worked: daysWorked,
+      daily_rate: dailyRate,
+      total_amount: totalEarning,
+      advance_amount: advanceDeduction,
+      net_balance: netPayable,
+      status,
+      worker_phone: emp?.phone || '',
+      updated_at: new Date().toISOString(),
+    };
+
     if (!existing) {
-      await supabase.from('payroll').insert([{
+      const { error } = await supabase.from('payroll').insert([{
         worker: emp?.full_name || 'Staff',
         worker_id: assignment.employee_id,
         assignment_id: assignment.id,
         client_name: client?.client_name || 'N/A',
-        days_worked: daysWorked,
-        daily_rate: dailyRate,
-        total_amount: totalEarning,
         deposit_received: 0,
-        advance_amount: advanceDeduction,
-        net_balance: netPayable,
-        worker_phone: emp?.phone || '',
         payslip_type: 'worker',
-        status: netPayable > 0 ? 'Pending Payment' : 'Settled',
+        payroll_type: 'payslip',
         period_start: assignment.start_date,
         period_end: assignment.end_date || new Date().toISOString(),
+        ...row,
       }]);
+      if (error) throw error;
     } else {
-      // Update the existing record instead
-      await supabase.from('payroll').update({
-        days_worked: daysWorked,
-        daily_rate: dailyRate,
-        total_amount: totalEarning,
-        advance_amount: advanceDeduction,
-        net_balance: netPayable,
-        status: netPayable > 0 ? 'Pending Payment' : 'Settled',
-      }).eq('id', existing.id);
+      const { error } = await supabase.from('payroll').update(row).eq('id', existing.id);
+      if (error) throw error;
     }
   };
 
@@ -419,7 +425,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       if (waError) throw waError;
       if (waData && waData.success === false) throw new Error(waData.error || 'Meta API rejected the message.');
 
-      await savePayslipToDB();
+      await savePayslipToDB({ whatsappSent: true });
       toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });
       
       if (autoCloseAssignmentOnGenerate) {

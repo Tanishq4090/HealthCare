@@ -45,7 +45,7 @@ import { supabase } from '../../lib/supabase';
 import { EmployeeIDCard } from '../hr/EmployeeIDCard';
 import PayslipGenerator from './PayslipGenerator';
 import type { Employee, EmployeeStatus, CreateEmployeeInput } from '../../types/hr';
-import { formatIdCardDuty } from '../../utils/employeeIdCard';
+import { formatIdCardDuty, isHourlyEmployee, normalizeEmployeePaymentType } from '../../utils/employeeIdCard';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -91,8 +91,8 @@ function statusBadge(status: EmployeeStatus) {
 }
 
 function getPaymentScheme(employee: Employee) {
-  const type = employee.preferred_payment_type || 'daily';
-  if (type === 'hourly') {
+  const type = normalizeEmployeePaymentType(employee.preferred_payment_type);
+  if (isHourlyEmployee(employee)) {
     return {
       label: 'Hourly',
       rateLabel: 'Hourly Rate',
@@ -819,8 +819,28 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 // ── ID Card Preview Dialog ────────────────────────────────
 
 function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee | null; open: boolean; onClose: () => void }) {
+  const [cardEmployee, setCardEmployee] = useState<Employee | null>(employee);
+
+  useEffect(() => {
+    if (!employee) {
+      setCardEmployee(null);
+      return;
+    }
+    setCardEmployee(employee);
+    if (!open || !employee.id) return;
+    supabase
+      .from('employees')
+      .select('*')
+      .eq('id', employee.id)
+      .single()
+      .then(({ data }) => {
+        if (data) setCardEmployee(data as Employee);
+      });
+  }, [open, employee]);
+
   if (!employee) return null;
-  const paymentScheme = getPaymentScheme(employee);
+  const emp = cardEmployee ?? employee;
+  const dutyLabel = formatIdCardDuty(emp);
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-sm">
@@ -832,16 +852,16 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
         <div className="flex flex-col items-center py-4 gap-6">
           <div id="id-card-capture">
             <EmployeeIDCard
-              employeeName={employee.full_name}
-              employeeId={employee.employee_id}
-              jobTitle={employee.job_title}
-              photoUrl={employee.photo_url}
-              aadhaarNumber={employee.aadhaar_number}
-              address={employee.address}
-              dob={employee.dob}
-              duty={paymentScheme.duty}
-              experience={employee.experience}
-              gender={employee.gender}
+              employeeName={emp.full_name}
+              employeeId={emp.employee_id}
+              jobTitle={emp.job_title}
+              photoUrl={emp.photo_url}
+              aadhaarNumber={emp.aadhaar_number}
+              address={emp.address}
+              dob={emp.dob}
+              duty={dutyLabel}
+              experience={emp.experience}
+              gender={emp.gender}
               variant="preview"
             />
           </div>

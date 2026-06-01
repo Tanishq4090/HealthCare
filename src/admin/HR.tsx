@@ -17,6 +17,7 @@ import {
     periodDaysInclusive,
     daysInCalendarMonth,
 } from '../utils/workerPayroll';
+import { markPayslipDispatched, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
@@ -1038,17 +1039,31 @@ export default function HR() {
                 if (error) throw error;
                 if (waData && waData.success === false) throw new Error(waData.error || 'Meta API rejected the message.');
 
-                await supabase
-                    .from('payroll')
-                    .update({
-                        status: 'Paid',
-                        net_balance: netBalance,
-                        total_amount: totalEarning,
-                        daily_rate: item.daily_rate,
-                    })
-                    .eq('id', item.id);
+                const savedId = await markPayslipDispatched(item, {
+                    netBalance,
+                    totalEarning,
+                    dailyRate: pay.dailyRateForDisplay,
+                    workerPhone: options.phone,
+                });
 
-                setPayrollItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'Paid', net_balance: netBalance, total_amount: totalEarning } : p));
+                setPayrollItems(prev =>
+                    prev.map(p => {
+                        const sameRow =
+                            p.id === item.id ||
+                            (item.assignment_id && p.assignment_id === item.assignment_id) ||
+                            (savedId && p.id === savedId);
+                        if (!sameRow) return p;
+                        return {
+                            ...p,
+                            id: savedId || p.id,
+                            status: PAYSLIP_SENT_STATUS,
+                            net_balance: netBalance,
+                            total_amount: totalEarning,
+                            daily_rate: pay.dailyRateForDisplay,
+                            _isSynthetic: false,
+                        };
+                    }),
+                );
                 toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
                 fetchData();
                 return;
@@ -1831,6 +1846,7 @@ export default function HR() {
                                                             <div className="flex items-center gap-2">
                                                                 <p className="font-bold text-slate-900">{item.worker}</p>
                                                                 {(item.status === 'Paid' || item.status === 'Settled') && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
+                                                                {item.status === PAYSLIP_SENT_STATUS && <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Sent</span>}
                                                                 {item.status === 'Pending Payment' && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>}
                                                             </div>
                                                             {item.client_name && item.client_name !== 'N/A' && (
