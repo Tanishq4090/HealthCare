@@ -9,7 +9,7 @@
  * (the flow attached to your consent_form message template — NOT the intake flow).
  *
  * Requires in .env: META_SYSTEM_TOKEN
- * Optional: WHATSAPP_CONSENT_FLOW_ID
+ * Optional: WHATSAPP_CONSENT_FLOW_ID (production consent flow: 1275385071403126)
  */
 import dotenv from 'dotenv';
 import { readFileSync } from 'node:fs';
