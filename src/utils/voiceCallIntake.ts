@@ -3,6 +3,10 @@
  * Maps to WhatsApp Flow field names: service, shift_type, name, start_date.
  */
 
+import { resolveLeadDisplayName } from './consentFlow';
+
+export { resolveLeadDisplayName };
+
 const SERVICE_OPTIONS = [
     'Nursing Care',
     'Maternity Care',
@@ -234,8 +238,6 @@ export function buildVoiceCallIntakePrefill(call: {
         flowData,
     };
 }
-
-export { resolveLeadDisplayName } from './consentFlow';
 
 /** Prefill from CRM lead card (pipeline greeting). */
 export function buildLeadIntakePrefill(lead: {
