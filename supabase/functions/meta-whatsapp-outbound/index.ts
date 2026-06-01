@@ -34,38 +34,46 @@ const CONSENT_FLOW_KEYS = new Set([
   'other_details',
 ]);
 
+function isUsablePersonName(value: string): boolean {
+  const t = (value || '').trim();
+  if (!t) return false;
+  const lower = t.toLowerCase();
+  return lower !== 'there' && lower !== 'unknown lead';
+}
+
 function resolveConsentRelativeName(
   flowData: unknown,
   bodyParams: { text: string }[],
   leadName?: string,
   leadFullName?: string,
+  leadNotes?: string,
 ): string {
+  const careFor = (leadNotes || '').match(/Care for:\s*(.+)/i)?.[1]?.trim() || '';
   const candidates = [
     (leadFullName || '').trim(),
     flowData && typeof flowData === 'object'
       ? String((flowData as Record<string, unknown>).relative_name || '').trim()
       : '',
+    careFor,
     (leadName || '').trim(),
     bodyParams[0]?.text?.trim() || '',
   ];
 
   for (const name of candidates) {
-    if (name && name.toLowerCase() !== 'there' && name.toLowerCase() !== 'unknown lead') {
-      return name;
-    }
+    if (isUsablePersonName(name)) return name;
   }
   return '';
 }
 
+/** flow_action_data: screen + data keys (no empty strings — Meta ignores empty prefill). */
 function buildConsentFlowPayload(
   flowData: unknown,
   bodyParams: { text: string }[],
   leadName?: string,
   leadFullName?: string,
+  leadNotes?: string,
 ): Record<string, string> {
-  const out: Record<string, string> = {
-    screen: 'CONSENT_SCREEN',
-  };
+  const out: Record<string, string> = {};
 
   if (flowData && typeof flowData === 'object') {
     for (const [key, val] of Object.entries(flowData as Record<string, unknown>)) {
@@ -74,10 +82,20 @@ function buildConsentFlowPayload(
     }
   }
 
-  const relativeName = resolveConsentRelativeName(flowData, bodyParams, leadName, leadFullName);
+  const relativeName = resolveConsentRelativeName(
+    flowData,
+    bodyParams,
+    leadName,
+    leadFullName,
+    leadNotes,
+  );
   if (relativeName) out.relative_name = relativeName;
 
-  return out;
+  // Meta template flow button: screen id + non-empty data object
+  return {
+    screen: 'CONSENT_SCREEN',
+    ...out,
+  };
 }
 
 /** Build INTAKE_FORM screen data for flow_action_data (keys must match Flow JSON `data` schema). */
@@ -326,34 +344,41 @@ serve(async (req) => {
       const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
       if ((templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
         let consentLeadFullName = (leadFullName || '').trim();
+        let consentLeadNotes = '';
         if (templateName === "consent_form" && leadId) {
           const { data: leadRow } = await supabase
             .from('crm_leads')
-            .select('name')
+            .select('name, notes')
             .eq('id', leadId)
             .maybeSingle();
           const dbName = (leadRow?.name || '').trim();
-          if (dbName && dbName.toLowerCase() !== 'unknown lead') {
-            consentLeadFullName = dbName;
-          }
+          if (isUsablePersonName(dbName)) consentLeadFullName = dbName;
+          consentLeadNotes = (leadRow?.notes || '').trim();
         }
 
         const actionPayload: Record<string, unknown> = {
           flow_token: `flow_${digits}_${Date.now()}`,
+          flow_action: 'navigate',
         };
 
         if (templateName === "post_call_intake") {
           // Always send screen data — logs showed flowData:null so prefill never reached Meta
-          actionPayload.flow_action_data = buildIntakeFlowPayload(flowData, parameters, leadName);
+          actionPayload.flow_action_data = {
+            screen: 'INTAKE_FORM',
+            ...buildIntakeFlowPayload(flowData, parameters, leadName),
+          };
         } else {
           actionPayload.flow_action_data = buildConsentFlowPayload(
             flowData,
             parameters,
             leadName,
             consentLeadFullName || leadFullName,
+            consentLeadNotes,
           );
           const consentActionData = actionPayload.flow_action_data as Record<string, string>;
-          console.log(`[Meta] Consent flow_action_data relative_name=${consentActionData?.relative_name || '(empty)'}`);
+          console.log(
+            `[Meta] Consent flow_action_data screen=${consentActionData?.screen} relative_name=${consentActionData?.relative_name || '(empty)'}`,
+          );
         }
 
         components.push({
