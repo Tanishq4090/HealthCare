@@ -89,6 +89,40 @@ function statusBadge(status: EmployeeStatus) {
   );
 }
 
+function getPaymentScheme(employee: Employee) {
+  const type = employee.preferred_payment_type || 'daily';
+  if (type === 'hourly') {
+    return {
+      label: 'Hourly',
+      rateLabel: 'Hourly Rate',
+      amount: employee.hourly_rate ?? 0,
+      duty: `${employee.shift_hours ?? '—'} HRS (Day)`,
+    };
+  }
+  if (type === 'monthly') {
+    return {
+      label: 'Fixed Monthly',
+      rateLabel: 'Monthly Salary',
+      amount: employee.monthly_daily_rate ?? 0,
+      duty: 'Fixed Monthly',
+    };
+  }
+  if (type === 'short_term') {
+    return {
+      label: 'Per Service',
+      rateLabel: 'Per Service Charge',
+      amount: employee.short_term_daily_rate ?? 0,
+      duty: 'Per Service',
+    };
+  }
+  return {
+    label: 'Daily Rate',
+    rateLabel: 'Daily Rate',
+    amount: employee.monthly_daily_rate ?? 0,
+    duty: 'Daily Rate',
+  };
+}
+
 function useDebounce<T>(value: T, delay = 300): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -157,7 +191,7 @@ interface AddEmployeeDialogProps {
 function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps) {
   const [form, setForm] = useState<CreateEmployeeInput>({ 
     full_name: '', job_title: '', 
-    preferred_payment_type: 'monthly', services: [],
+    preferred_payment_type: 'daily', services: [],
     phone: '', aadhaar_number: '', address: '', dob: '',
     hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
     username: '', password: '', documents: []
@@ -209,7 +243,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
       // Reset form but keep the newly created emp for preview
       setForm({ 
         full_name: '', job_title: '',
-        preferred_payment_type: 'monthly', services: [],
+        preferred_payment_type: 'daily', services: [],
         phone: '', aadhaar_number: '', address: '', dob: '',
         hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
         username: '', password: '', documents: []
@@ -383,20 +417,23 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                     setForm(f => ({ ...f, preferred_payment_type: newType }));
                   }}
                 >
-                  <option value="monthly">Daily Rate</option>
+                  <option value="daily">Daily Rate</option>
                   <option value="hourly">Hourly Rate</option>
-                  <option value="short_term">Fixed Monthly Salary</option>
+                  <option value="monthly">Fixed Monthly Salary</option>
+                  <option value="short_term">Per Service</option>
                 </select>
               </div>
                <div>
                 <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">
                   {form.preferred_payment_type === 'hourly' ? 'Hourly Rate (₹)' : 
-                   form.preferred_payment_type === 'short_term' ? 'Fixed Monthly Rate (₹)' : 
+                   form.preferred_payment_type === 'monthly' ? 'Fixed Monthly Rate (₹)' :
+                   form.preferred_payment_type === 'short_term' ? 'Per Service Rate (₹)' :
                    'Daily Rate (₹)'}
                 </label>
                 <Input type="number" className="mt-1" 
                   value={
                     form.preferred_payment_type === 'hourly' ? form.hourly_rate :
+                    form.preferred_payment_type === 'monthly' ? form.monthly_daily_rate :
                     form.preferred_payment_type === 'short_term' ? form.short_term_daily_rate :
                     form.monthly_daily_rate
                   }
@@ -404,6 +441,8 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
                     const val = Number(e.target.value);
                     if (form.preferred_payment_type === 'hourly') {
                         setForm(f => ({ ...f, hourly_rate: val }));
+                    } else if (form.preferred_payment_type === 'monthly') {
+                        setForm(f => ({ ...f, monthly_daily_rate: val }));
                     } else if (form.preferred_payment_type === 'short_term') {
                         setForm(f => ({ ...f, short_term_daily_rate: val }));
                     } else {
@@ -771,6 +810,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
 function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee | null; open: boolean; onClose: () => void }) {
   if (!employee) return null;
+  const paymentScheme = getPaymentScheme(employee);
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-sm">
@@ -789,11 +829,7 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
               aadhaarNumber={employee.aadhaar_number}
               address={employee.address}
               dob={employee.dob}
-              duty={employee.preferred_payment_type === 'hourly'
-                ? `${employee.shift_hours ?? '—'} HRS (Day)`
-                : employee.preferred_payment_type === 'monthly'
-                ? 'Monthly'
-                : 'Short Term'}
+              duty={paymentScheme.duty}
               experience={employee.experience}
               gender={employee.gender}
               variant="preview"
@@ -833,6 +869,7 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
   }, [open, employee]);
 
   if (!employee) return null;
+  const paymentScheme = getPaymentScheme(employee);
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -901,29 +938,16 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                    <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">
-                      {employee.preferred_payment_type === 'hourly' 
-                        ? 'Hourly Rate' 
-                        : employee.preferred_payment_type === 'short_term' 
-                          ? 'Per Service Charge' 
-                          : employee.preferred_payment_type === 'monthly'
-                            ? 'Monthly Salary'
-                            : 'Daily Rate'}
+                      {paymentScheme.rateLabel}
                     </p>
                     <p className="text-sm font-bold text-slate-900">
-                      ₹{
-                        (employee.preferred_payment_type === 'hourly' 
-                          ? employee.hourly_rate 
-                          : employee.preferred_payment_type === 'short_term' 
-                            ? employee.short_term_daily_rate 
-                            : employee.monthly_daily_rate
-                        )?.toLocaleString('en-IN') || 0
-                      }
+                      ₹{paymentScheme.amount.toLocaleString('en-IN') || 0}
                     </p>
                   </div>
                   <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Payment Scheme</p>
                     <p className="text-sm border border-primary/20 bg-primary/10 px-2 py-0.5 rounded-full inline-block font-bold text-primary uppercase tracking-widest text-[10px]">
-                      {employee.preferred_payment_type === 'hourly' ? 'Hourly' : employee.preferred_payment_type === 'short_term' ? 'Per Service' : employee.preferred_payment_type === 'monthly' ? 'Fixed Monthly' : 'Daily Rate'}
+                      {paymentScheme.label}
                     </p>
                   </div>
                 </div>
@@ -1013,10 +1037,9 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
 
   useEffect(() => {
     if (employee) {
-      // Normalise legacy 'monthly' stored before this fix to 'daily'
       const ppt = employee.preferred_payment_type ?? 'daily';
       setForm({
-        preferred_payment_type: (ppt === 'monthly' ? 'daily' : ppt) as any,
+        preferred_payment_type: ppt as any,
         monthly_daily_rate: employee.monthly_daily_rate ?? 0,
         hourly_rate: employee.hourly_rate ?? 0,
         short_term_daily_rate: employee.short_term_daily_rate ?? 0,
@@ -1769,7 +1792,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                           </div>
                           <div className="flex items-center gap-1.5 mt-1">
                             <span className="text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
-                              {emp.preferred_payment_type === 'hourly' ? 'Hourly' : emp.preferred_payment_type === 'short_term' ? 'Per Service' : emp.preferred_payment_type === 'monthly' ? 'Fixed Monthly' : 'Daily Rate'}
+                              {getPaymentScheme(emp).label}
                             </span>
                           </div>
                         </div>

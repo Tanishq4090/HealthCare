@@ -120,7 +120,7 @@ export async function createEmployee(
         aadhaar_number: data.aadhaar_number?.trim() ?? null,
         address: data.address?.trim() ?? null,
         dob: data.dob ?? null,
-        preferred_payment_type: data.preferred_payment_type ?? 'monthly',
+        preferred_payment_type: data.preferred_payment_type ?? 'daily',
         services: data.services ?? [],
         hourly_rate: data.hourly_rate ?? 0,
         monthly_daily_rate: data.monthly_daily_rate ?? 0,
@@ -468,4 +468,3 @@ export async function getEmployeeDocuments(employeeId: string): Promise<any[]> {
     return [];
   }
 }
-

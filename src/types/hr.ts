@@ -15,7 +15,7 @@ export interface Employee {
   aadhaar_number: string | null;
   address: string | null;
   dob: string | null;
-  preferred_payment_type: 'hourly' | 'monthly' | 'short_term';
+  preferred_payment_type: 'hourly' | 'daily' | 'monthly' | 'short_term';
   services: string[];
   hourly_rate: number;
   monthly_daily_rate: number;
@@ -47,7 +47,7 @@ export interface CreateEmployeeInput {
   aadhaar_number?: string;
   address?: string;
   dob?: string;
-  preferred_payment_type?: 'hourly' | 'monthly' | 'short_term';
+  preferred_payment_type?: 'hourly' | 'daily' | 'monthly' | 'short_term';
   services?: string[];
   hourly_rate?: number;
   monthly_daily_rate?: number;

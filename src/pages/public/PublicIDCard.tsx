@@ -180,8 +180,10 @@ export default function PublicIDCard() {
               duty={cardData.employee.preferred_payment_type === 'hourly'
                 ? `${cardData.employee.shift_hours ?? '—'} HRS (Day)`
                 : cardData.employee.preferred_payment_type === 'monthly'
-                ? 'Monthly'
-                : 'Short Term'}
+                ? 'Fixed Monthly'
+                : cardData.employee.preferred_payment_type === 'short_term'
+                ? 'Per Service'
+                : 'Daily Rate'}
               experience={cardData.employee.experience as any}
               gender={cardData.employee.gender}
               variant="public"
