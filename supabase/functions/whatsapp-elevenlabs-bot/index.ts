@@ -226,11 +226,12 @@ serve(async (req) => {
             // Upsert into CRM leads
             const { data: existingLeads } = await supabase
                 .from('crm_leads')
-                .select('id, pipeline_stage, notes')
+                .select('id, pipeline_stage, notes, source')
                 .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
                 .order('created_at', { ascending: false })
                 .limit(1);
             const existingLead = existingLeads?.[0] ?? null;
+            let resolvedSource = existingLead?.source || 'WhatsApp Flow';
 
             // Only move to 'In Discussion' if lead is still in early stages.
             // Never overwrite a downstream stage like 'Quotation Sent', 'Staff Assigned' etc.
@@ -268,7 +269,6 @@ serve(async (req) => {
                 else console.log(`[Flow] Updated existing lead: ${existingLead.id} (stage preserved: ${!shouldUpdateStage ? currentStage : 'In Discussion'}, source unchanged)`);
             } else {
                 // Check if this phone had a prior AI voice call — if so, preserve that as the true original source
-                let resolvedSource = 'WhatsApp Flow';
                 try {
                     const { data: priorCalls } = await supabase
                         .from('call_transcripts')
@@ -303,7 +303,7 @@ serve(async (req) => {
                     metadata: {
                         lead_name: name,
                         phone: purePhone,
-                        source: existingLead ? 'WhatsApp Flow Update' : 'WhatsApp Flow',
+                        source: existingLead ? `${resolvedSource} Update` : resolvedSource,
                         stage: shouldUpdateStage ? 'In Discussion' : currentStage,
                         service: resolvedService,
                         shift_type: shiftType,
