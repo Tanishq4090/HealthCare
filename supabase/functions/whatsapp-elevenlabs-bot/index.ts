@@ -541,7 +541,14 @@ serve(async (req) => {
                             service_category: consent?.service_category || quote?.service_category || quote?.service_name || "",
                             service_start_date: consent?.service_start_date || (quote?.start_date ? quote.start_date.split('T')[0] : ""),
                             offered_time: formattedShift,
-                            relative_name: (earlyLead.name || '').trim() || consent?.relative_name || "",
+                            relative_name: (() => {
+                                const fromLead = (earlyLead.name || '').trim();
+                                if (fromLead && fromLead.toLowerCase() !== 'unknown lead') return fromLead;
+                                const fromConsent = (consent?.relative_name || '').trim();
+                                if (fromConsent) return fromConsent;
+                                const careFor = (earlyLead.notes || '').match(/Care for:\s*(.+)/i)?.[1]?.trim();
+                                return careFor || fromLead;
+                            })(),
                             age: consent?.age || "",
                             weight: consent?.weight || "",
                             alternate_contact_number: consent?.alternate_contact_number || "",

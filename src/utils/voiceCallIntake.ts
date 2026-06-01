@@ -235,10 +235,7 @@ export function buildVoiceCallIntakePrefill(call: {
     };
 }
 
-/** Full name shown on CRM lead cards (crm_leads.name). */
-export function resolveLeadDisplayName(lead: { name?: string | null } | null | undefined): string {
-    return (lead?.name || '').trim();
-}
+export { resolveLeadDisplayName } from './consentFlow';
 
 /** Prefill from CRM lead card (pipeline greeting). */
 export function buildLeadIntakePrefill(lead: {

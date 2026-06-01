@@ -34,6 +34,29 @@ const CONSENT_FLOW_KEYS = new Set([
   'other_details',
 ]);
 
+function resolveConsentRelativeName(
+  flowData: unknown,
+  bodyParams: { text: string }[],
+  leadName?: string,
+  leadFullName?: string,
+): string {
+  const candidates = [
+    (leadFullName || '').trim(),
+    flowData && typeof flowData === 'object'
+      ? String((flowData as Record<string, unknown>).relative_name || '').trim()
+      : '',
+    (leadName || '').trim(),
+    bodyParams[0]?.text?.trim() || '',
+  ];
+
+  for (const name of candidates) {
+    if (name && name.toLowerCase() !== 'there' && name.toLowerCase() !== 'unknown lead') {
+      return name;
+    }
+  }
+  return '';
+}
+
 function buildConsentFlowPayload(
   flowData: unknown,
   bodyParams: { text: string }[],
@@ -46,19 +69,13 @@ function buildConsentFlowPayload(
 
   if (flowData && typeof flowData === 'object') {
     for (const [key, val] of Object.entries(flowData as Record<string, unknown>)) {
-      if (!CONSENT_FLOW_KEYS.has(key) || val == null || val === '') continue;
+      if (key === 'screen' || !CONSENT_FLOW_KEYS.has(key) || val == null || val === '') continue;
       out[key] = key === 'offered_time' ? normalizeConsentOfferedTime(val) : String(val);
     }
   }
 
-  const fullFromLead = (leadFullName || '').trim();
-  if (fullFromLead && fullFromLead !== 'there') {
-    out.relative_name = fullFromLead;
-  }
-
-  const firstName = bodyParams[0]?.text?.trim();
-  if (!out.relative_name && leadName?.trim() && leadName !== 'there') out.relative_name = leadName.trim();
-  if (!out.relative_name && firstName && firstName !== 'there') out.relative_name = firstName;
+  const relativeName = resolveConsentRelativeName(flowData, bodyParams, leadName, leadFullName);
+  if (relativeName) out.relative_name = relativeName;
 
   return out;
 }
@@ -308,6 +325,19 @@ serve(async (req) => {
       // Add flow button to post_call_intake or consent_form templates
       const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
       if ((templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
+        let consentLeadFullName = (leadFullName || '').trim();
+        if (templateName === "consent_form" && leadId) {
+          const { data: leadRow } = await supabase
+            .from('crm_leads')
+            .select('name')
+            .eq('id', leadId)
+            .maybeSingle();
+          const dbName = (leadRow?.name || '').trim();
+          if (dbName && dbName.toLowerCase() !== 'unknown lead') {
+            consentLeadFullName = dbName;
+          }
+        }
+
         const actionPayload: Record<string, unknown> = {
           flow_token: `flow_${digits}_${Date.now()}`,
         };
@@ -316,7 +346,14 @@ serve(async (req) => {
           // Always send screen data — logs showed flowData:null so prefill never reached Meta
           actionPayload.flow_action_data = buildIntakeFlowPayload(flowData, parameters, leadName);
         } else {
-          actionPayload.flow_action_data = buildConsentFlowPayload(flowData, parameters, leadName, leadFullName);
+          actionPayload.flow_action_data = buildConsentFlowPayload(
+            flowData,
+            parameters,
+            leadName,
+            consentLeadFullName || leadFullName,
+          );
+          const consentActionData = actionPayload.flow_action_data as Record<string, string>;
+          console.log(`[Meta] Consent flow_action_data relative_name=${consentActionData?.relative_name || '(empty)'}`);
         }
 
         components.push({

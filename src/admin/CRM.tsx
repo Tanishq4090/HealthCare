@@ -10,7 +10,8 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
-import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill, resolveLeadDisplayName } from '../utils/voiceCallIntake';
+import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
+import { buildConsentFlowActionData, resolveLeadDisplayName } from '../utils/consentFlow';
 import {
     findClientMasterByPhone,
     isLegacyPipelineStage,
@@ -2035,30 +2036,13 @@ export default function CRM() {
         return [...items].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
     };
 
-    const buildConsentFlowPrefill = (lead: any, extra: Record<string, any> = {}) => {
-        const consent = getLatestByCreatedAt(lead?.client_consents);
-        const quote = getLatestByCreatedAt(lead?.crm_quotations);
-        const phone = (lead?.whatsapp_number || lead?.phone || '').replace(/\D/g, '');
-        const startDate = consent?.service_start_date || quote?.start_date || '';
-        const leadDisplayName = resolveLeadDisplayName(lead);
-
-        return {
-            screen: 'CONSENT_SCREEN',
-            relative_name: leadDisplayName || consent?.relative_name || '',
-            patient_name: consent?.patient_name || '',
-            age: consent?.age || '',
-            weight: consent?.weight || '',
-            contact_number: consent?.contact_number || phone,
-            alternate_contact_number: consent?.alternate_contact_number || '',
-            address: consent?.address || '',
-            reference_by: consent?.reference_by || '',
-            service_start_date: startDate ? String(startDate).split('T')[0] : '',
-            service_category: consent?.service_category || quote?.service_category || quote?.service_name || '',
-            offered_time: normalizeConsentOfferedTime(consent?.offered_time || quote?.hours_per_day || quote?.shift_type || ''),
-            other_details: consent?.other_details || '',
-            ...extra,
-        };
-    };
+    const buildConsentFlowPrefill = (lead: any, extra: Record<string, string> = {}) =>
+        buildConsentFlowActionData(lead, {
+            consent: getLatestByCreatedAt(lead?.client_consents),
+            quote: getLatestByCreatedAt(lead?.crm_quotations),
+            normalizeOfferedTime: normalizeConsentOfferedTime,
+            extra,
+        });
 
     // Helper to dispatch WhatsApp templates programmatically
     const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[], flowData?: any) => {
@@ -2406,7 +2390,11 @@ export default function CRM() {
                             ]
                             : agentTargetAction === 'inquiry' && inquiryPrefill
                                 ? inquiryPrefill.templateParams
-                                : (agentTargetAction === 'consent' ? [(agentTargetLead?.name || 'there')] : agentTargetAction === 'deposit' || agentTargetAction === 'billing' ? [(agentTargetLead?.name || 'there'), String(invoiceDepositAmount || '')] : undefined),
+                                : (agentTargetAction === 'consent'
+                                    ? [resolveLeadDisplayName(agentTargetLead) || agentTargetLead?.name?.split(/\s+/)[0] || 'there']
+                                    : agentTargetAction === 'deposit' || agentTargetAction === 'billing'
+                                        ? [(agentTargetLead?.name || 'there'), String(invoiceDepositAmount || '')]
+                                        : undefined),
                     flowData: inquiryPrefill?.flowData || consentPrefill || undefined,
                 })
             });
