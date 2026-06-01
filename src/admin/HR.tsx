@@ -773,8 +773,14 @@ export default function HR() {
         });
     };
 
-    const handleGenerateSinglePayslip = async (item: any) => {
-        toast.loading("Generating worker payslip...", { id: 'single-payslip-gen' });
+    const handleGenerateSinglePayslip = async (
+        item: any,
+        options?: { mode?: 'download' | 'whatsapp'; phone?: string; toastId?: string | number }
+    ) => {
+        const toastId = options?.toastId || 'single-payslip-gen';
+        if (options?.mode !== 'whatsapp') {
+            toast.loading("Generating worker payslip...", { id: toastId });
+        }
         try {
             const worker = workers.find(w => w.id === item.worker_id || w.name === item.worker);
             
@@ -981,11 +987,53 @@ export default function HR() {
             doc.setTextColor(148, 163, 184);
             doc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
 
+            if (options?.mode === 'whatsapp') {
+                if (!options.phone) throw new Error('No phone number found for this worker.');
+                const pdfBlob = doc.output('blob');
+                const fileName = `payslip-${item.worker.replace(/\s+/g, '-')}-${payslipNo}-${Date.now()}.pdf`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('payslips')
+                    .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: false });
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabase.storage.from('payslips').getPublicUrl(fileName);
+
+                const { data: waData, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                    body: {
+                        phone: options.phone,
+                        sendInvoicePdf: true,
+                        invoicePdfUrl: publicUrl,
+                        useTemplate: true,
+                        templateName: 'worker_payslip',
+                        templateParams: [item.worker]
+                    }
+                });
+
+                if (error) throw error;
+                if (waData && waData.success === false) throw new Error(waData.error || 'Meta API rejected the message.');
+
+                await supabase
+                    .from('payroll')
+                    .update({
+                        status: 'Paid',
+                        net_balance: netBalance,
+                        total_amount: totalEarning,
+                        daily_rate: item.daily_rate,
+                    })
+                    .eq('id', item.id);
+
+                setPayrollItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'Paid', net_balance: netBalance, total_amount: totalEarning } : p));
+                toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
+                fetchData();
+                return;
+            }
+
             doc.save(`Payslip_${item.worker.replace(/\s+/g, '_')}_${payslipNo}.pdf`);
-            toast.success("Payslip generated successfully", { id: 'single-payslip-gen' });
+            toast.success("Payslip generated successfully", { id: toastId });
         } catch (err: any) {
             console.error(err);
-            toast.error("Failed to generate payslip: " + err.message, { id: 'single-payslip-gen' });
+            toast.error(`${options?.mode === 'whatsapp' ? 'Failed to dispatch payslip: ' : 'Failed to generate payslip: '}${err.message}`, { id: toastId });
         }
     };
 
@@ -1757,7 +1805,7 @@ export default function HR() {
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <p className="font-bold text-slate-900">{item.worker}</p>
-                                                                {(item.status === 'Paid' || item.status === 'Settled') && item.worker_assignments?.assignment_status === 'completed' && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
+                                                                {(item.status === 'Paid' || item.status === 'Settled') && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>}
                                                                 {item.status === 'Pending Payment' && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>}
                                                             </div>
                                                             {item.client_name && item.client_name !== 'N/A' && (
@@ -1821,32 +1869,7 @@ export default function HR() {
                                                                     
                                                                     const toastId = toast.loading("Generating payslip and dispatching...");
                                                                     try {
-                                                                        // Generate payslip PDF inline using jsPDF
-                                                                        const doc = new jsPDF();
-                                                                        doc.setFontSize(16);
-                                                                        doc.text('99 CARE - Worker Payslip', 14, 20);
-                                                                        doc.setFontSize(11);
-                                                                        doc.text(`Worker: ${item.worker}`, 14, 35);
-                                                                        doc.text(`Month: ${item.month || new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}`, 14, 43);
-                                                                        doc.text(`Days Worked: ${item.daysWorked || 0}`, 14, 51);
-                                                                        doc.text(`Daily Rate: Rs. ${item.dailyRate || 0}`, 14, 59);
-                                                                        doc.text(`Total Earnings: Rs. ${item.totalEarnings || 0}`, 14, 67);
-                                                                        doc.text(`Net Payable: Rs. ${item.netPayable || item.amount || 0}`, 14, 75);
-                                                                        const pdfBlob = doc.output('blob');
-                                                                        const fileName = `payslip-${item.worker.replace(/\s+/g, '-')}-${Date.now()}.pdf`;
-                                                                        
-                                                                        const { error: uploadError } = await supabase.storage.from('payslips').upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: false });
-                                                                        if (uploadError) throw uploadError;
-                                                                        
-                                                                        const { data: { publicUrl } } = supabase.storage.from('payslips').getPublicUrl(fileName);
-                                                                        
-                                                                        const { data: waData, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
-                                                                            body: { phone, sendInvoicePdf: true, invoicePdfUrl: publicUrl, useTemplate: true, templateName: 'worker_payslip', templateParams: [item.worker] }
-                                                                        });
-                                                                        
-                                                                        if (error) throw error;
-                                                                        if (waData && waData.success === false) throw new Error(waData.error || 'Meta API rejected the message.');
-                                                                        toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
+                                                                        await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
                                                                     } catch (err: any) {
                                                                         toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
                                                                     }
