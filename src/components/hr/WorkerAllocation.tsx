@@ -905,7 +905,9 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                         ? 'Hourly Rate' 
                         : employee.preferred_payment_type === 'short_term' 
                           ? 'Per Service Charge' 
-                          : 'Monthly Rate'}
+                          : employee.preferred_payment_type === 'monthly'
+                            ? 'Monthly Salary'
+                            : 'Daily Rate'}
                     </p>
                     <p className="text-sm font-bold text-slate-900">
                       ₹{
@@ -921,7 +923,7 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                   <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                     <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Payment Scheme</p>
                     <p className="text-sm border border-primary/20 bg-primary/10 px-2 py-0.5 rounded-full inline-block font-bold text-primary uppercase tracking-widest text-[10px]">
-                      {employee.preferred_payment_type === 'hourly' ? 'Hourly' : employee.preferred_payment_type === 'short_term' ? 'Per Service' : 'Monthly Base'}
+                      {employee.preferred_payment_type === 'hourly' ? 'Hourly' : employee.preferred_payment_type === 'short_term' ? 'Per Service' : employee.preferred_payment_type === 'monthly' ? 'Fixed Monthly' : 'Daily Rate'}
                     </p>
                   </div>
                 </div>
@@ -989,7 +991,7 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
   onSaved: (emp: Employee) => void;
 }) {
   const [form, setForm] = useState({
-    preferred_payment_type: 'monthly' as 'monthly' | 'hourly' | 'short_term',
+    preferred_payment_type: 'daily' as 'daily' | 'monthly' | 'hourly' | 'short_term',
     monthly_daily_rate: 0,
     hourly_rate: 0,
     short_term_daily_rate: 0,
@@ -998,7 +1000,7 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
     phone: '',
     address: '',
   } as {
-    preferred_payment_type: 'hourly' | 'monthly' | 'short_term';
+    preferred_payment_type: 'daily' | 'hourly' | 'monthly' | 'short_term';
     monthly_daily_rate: number;
     hourly_rate: number;
     short_term_daily_rate: number;
@@ -1011,8 +1013,10 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
 
   useEffect(() => {
     if (employee) {
+      // Normalise legacy 'monthly' stored before this fix to 'daily'
+      const ppt = employee.preferred_payment_type ?? 'daily';
       setForm({
-        preferred_payment_type: employee.preferred_payment_type ?? 'monthly',
+        preferred_payment_type: (ppt === 'monthly' ? 'daily' : ppt) as any,
         monthly_daily_rate: employee.monthly_daily_rate ?? 0,
         hourly_rate: employee.hourly_rate ?? 0,
         short_term_daily_rate: employee.short_term_daily_rate ?? 0,
@@ -1086,20 +1090,23 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
                 value={form.preferred_payment_type}
                 onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
               >
-                <option value="monthly">Daily Rate</option>
+                <option value="daily">Daily Rate</option>
                 <option value="hourly">Hourly Rate</option>
-                <option value="short_term">Fixed Monthly Salary</option>
+                <option value="monthly">Fixed Monthly Salary</option>
+                <option value="short_term">Per Service</option>
               </select>
             </div>
              <div>
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 {form.preferred_payment_type === 'hourly' ? 'Hourly Rate (₹)' : 
-                 form.preferred_payment_type === 'short_term' ? 'Fixed Monthly Rate (₹)' : 
+                 form.preferred_payment_type === 'monthly' ? 'Fixed Monthly Rate (₹)' : 
+                 form.preferred_payment_type === 'short_term' ? 'Per Service Rate (₹)' :
                  'Daily Rate (₹)'}
               </label>
               <Input type="number" className="mt-1" 
                 value={
                   form.preferred_payment_type === 'hourly' ? form.hourly_rate :
+                  form.preferred_payment_type === 'monthly' ? form.monthly_daily_rate :
                   form.preferred_payment_type === 'short_term' ? form.short_term_daily_rate :
                   form.monthly_daily_rate
                 }
@@ -1107,9 +1114,12 @@ function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
                   const val = Number(e.target.value);
                   if (form.preferred_payment_type === 'hourly') {
                       setForm(f => ({ ...f, hourly_rate: val }));
+                  } else if (form.preferred_payment_type === 'monthly') {
+                      setForm(f => ({ ...f, monthly_daily_rate: val }));
                   } else if (form.preferred_payment_type === 'short_term') {
                       setForm(f => ({ ...f, short_term_daily_rate: val }));
                   } else {
+                      // daily
                       setForm(f => ({ ...f, monthly_daily_rate: val }));
                   }
                 }} 
@@ -1759,7 +1769,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                           </div>
                           <div className="flex items-center gap-1.5 mt-1">
                             <span className="text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
-                              {emp.preferred_payment_type === 'hourly' ? 'Hourly' : emp.preferred_payment_type === 'short_term' ? 'Per Service' : 'Monthly Base'}
+                              {emp.preferred_payment_type === 'hourly' ? 'Hourly' : emp.preferred_payment_type === 'short_term' ? 'Per Service' : emp.preferred_payment_type === 'monthly' ? 'Fixed Monthly' : 'Daily Rate'}
                             </span>
                           </div>
                         </div>

@@ -189,14 +189,15 @@ export default function HR() {
             const existingPayrollAssignmentIds = new Set((payrollData || []).map((p: any) => p.assignment_id).filter(Boolean));
             
             const syntheticItems = (assignmentsData || [])
-                // Exclude assignments without an employee and those already represented in payroll
-                // Also, exclude unassigned workers and non-active assignments
+                // Include both active AND completed assignments that don't yet have a payroll record.
+                // This ensures that when an assignment is auto-completed after the last attendance mark,
+                // the worker still appears in payroll so the payslip can be generated.
                 .filter((a: any) => {
-                    // Only process active assignments for synthetic items to prevent ghost entries from historical data
-                    if (a.assignment_status !== 'active') return false;
+                    const isActiveOrCompleted = a.assignment_status === 'active' || a.assignment_status === 'completed';
+                    if (!isActiveOrCompleted) return false;
                     if (!a.employee_id || existingPayrollAssignmentIds.has(a.id)) return false;
                     const emp = a.employees;
-                    if (!emp || emp.status === 'available') return false; // Hide unassigned workers from synthetic payroll
+                    if (!emp) return false;
                     return true;
                 })
                 .map((a: any) => {
@@ -206,9 +207,15 @@ export default function HR() {
                     const end = a.end_date ? new Date(a.end_date) : new Date();
                     const days = start ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) : 1;
                     
-                    // Compute daily rate: use strictly derived monthly rate first, then short_term, then explicitly set daily rate
-                    const monthlySalary = emp?.monthly_daily_rate;
-                    const dailyRate = (monthlySalary && monthlySalary > 0) ? Math.round(monthlySalary / 30) : (emp?.short_term_daily_rate || a.worker_daily_rate || 0);
+                    // Compute daily rate based on payment type
+                    const payType = emp?.preferred_payment_type;
+                    const dailyRate = payType === 'hourly'
+                        ? (emp?.hourly_rate || 0) * (emp?.shift_hours || 8)
+                        : payType === 'monthly'
+                        ? (emp?.monthly_daily_rate || emp?.short_term_daily_rate || 0) // flat monthly salary, not per-day
+                        : payType === 'short_term'
+                        ? (emp?.short_term_daily_rate || 0)
+                        : (emp?.monthly_daily_rate || a.worker_daily_rate || 0); // 'daily' — direct rate
                     
                     // Determine client name
                     const clientName = clientObj?.client_name || emp?.assigned_client || 'Unassigned';
@@ -223,7 +230,7 @@ export default function HR() {
                         daily_rate: dailyRate,
                         days_worked: days,
                         advance_amount: a.advance_paid || 0,
-                        status: a.assignment_status === 'completed' ? 'Pending' : 'Active',
+                        status: a.assignment_status === 'completed' ? 'Pending Payment' : 'Active',
                         month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'May 2026',
                         payroll_type: 'payslip',
                         start_date: a.start_date,
@@ -234,12 +241,9 @@ export default function HR() {
                     };
                 });
 
-            // Filter existing DB payroll rows: keep only entries with a matching worker in the current workforce
-            const validDbPayroll = (payrollData || []).filter((p: any) => {
-                // Ensure the worker is in the current workforce and the item has a client
-                const pClient = p.client_name || p.client;
-                return p.worker && pClient && finalWorkers.some((w: any) => w.name === p.worker || w.full_name === p.worker);
-            });
+            // Show ALL payroll records from DB — do not filter by active workforce.
+            // Records persist even if the worker is no longer in the employees table.
+            const validDbPayroll = (payrollData || []).filter((p: any) => !!p.worker);
 
             // Deduplicate across DB and synthetic: DB entries take precedence
             const seenKeys = new Set<string>();
@@ -1015,14 +1019,19 @@ export default function HR() {
 
                     if (worker.preferred_payment_type === 'hourly') {
                         appliedRate = worker.hourly_rate || 0;
-                        const hoursPerDay = worker.shift_hours || 8; // Fallback to 8 only if absent
-                        totalCost = daysWorked * hoursPerDay * appliedRate; 
+                        const hoursPerDay = worker.shift_hours || 8;
+                        totalCost = daysWorked * hoursPerDay * appliedRate;
+                    } else if (worker.preferred_payment_type === 'monthly') {
+                        // Fixed monthly salary — flat amount regardless of days
+                        appliedRate = worker.monthly_daily_rate || worker.short_term_daily_rate || 0;
+                        totalCost = appliedRate;
                     } else if (worker.preferred_payment_type === 'short_term') {
                         appliedRate = worker.short_term_daily_rate || 0;
-                        totalCost = appliedRate; // Fixed Flat Monthly Salary
+                        totalCost = appliedRate; // Per-service flat
                     } else {
-                        appliedRate = (worker.monthly_daily_rate || 0) / 30;
-                        totalCost = daysWorked * appliedRate; // Pro-rated Daily Rate
+                        // 'daily' — straightforward daily rate x days worked
+                        appliedRate = worker.monthly_daily_rate || 0;
+                        totalCost = daysWorked * appliedRate;
                     }
                     const deposit = worker.deposit_received || 0;
                     const netBalance = totalCost - deposit;
@@ -1346,12 +1355,17 @@ export default function HR() {
                     appliedRate = worker.hourly_rate || 0;
                     const hours = manualPayrollData.shiftHoursOverride || worker.shift_hours || 8;
                     totalCost = daysWorked * hours * appliedRate;
+                } else if (worker.preferred_payment_type === 'monthly') {
+                    // Fixed monthly salary — flat amount
+                    appliedRate = worker.monthly_daily_rate || worker.short_term_daily_rate || 0;
+                    totalCost = appliedRate;
                 } else if (worker.preferred_payment_type === 'short_term') {
                     appliedRate = worker.short_term_daily_rate || 0;
-                    totalCost = appliedRate; // Fixed Flat
+                    totalCost = appliedRate; // Per-service flat
                 } else {
-                    appliedRate = (worker.monthly_daily_rate || 0) / 30;
-                    totalCost = daysWorked * appliedRate; 
+                    // 'daily' — direct daily rate x days
+                    appliedRate = worker.monthly_daily_rate || 0;
+                    totalCost = daysWorked * appliedRate;
                 }
             }
 

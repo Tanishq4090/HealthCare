@@ -2133,7 +2133,8 @@ export default function Billing() {
                                         onClick={() => {
                                             setIsClientInvoiceOpen(false);
                                             const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
-                                            setAgentTargetBill({ ...clientInvoiceBill, invoice_no: invoiceNo });
+                                            const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo, amount: net.toString(), totalAmount: total, days: ciDays, rate: ciRate };
+                                            setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
                                                 phone: clientInvoiceBill.client_phone || '',
@@ -2146,7 +2147,8 @@ export default function Billing() {
                                                 days: ciDays,
                                                 rate: ciRate
                                             });
-                                            setAgentDraftText(generateWhatsappDraft(clientInvoiceBill, agentDraftLang));
+                                            setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
+                                            setInvoiceDepositAmount(net.toString());
                                             setIsInvoiceOpen(true);
                                         }}
                                         className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
@@ -2157,7 +2159,7 @@ export default function Billing() {
                                         onClick={() => {
                                             setIsClientInvoiceOpen(false);
                                             const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
-                                            const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo };
+                                            const targetBill = { ...clientInvoiceBill, invoice_no: invoiceNo, amount: net.toString(), totalAmount: total, days: ciDays, rate: ciRate };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
@@ -2173,6 +2175,7 @@ export default function Billing() {
                                             });
                                             const draft = generateWhatsappDraft(targetBill, agentDraftLang);
                                             setAgentDraftText(draft);
+                                            setInvoiceDepositAmount(net.toString());
                                             setIsAgentModalOpen(true);
                                         }}
                                         className="flex-[1.5] sm:flex-none px-5 py-2.5 rounded-xl font-bold text-white bg-[#25D366] hover:bg-[#1ebd5a] transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
