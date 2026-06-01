@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar as CalendarIcon, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { CARE_SERVICES } from '../../constants/services';
+import { computeQuotationEstimate } from '../../utils/quotationEstimate';
 
 interface SendQuotationModalProps {
     isOpen: boolean;
@@ -32,6 +33,8 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     
     // Auto-calculated
     const [estimatedTotal, setEstimatedTotal] = useState(0);
+    const [estimateLabel, setEstimateLabel] = useState('Estimated monthly total');
+    const [estimateDetail, setEstimateDetail] = useState('');
 
     // Messaging
     const [messageTemplate, setMessageTemplate] = useState('Standard quotation');
@@ -40,12 +43,23 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     const [validUntil, setValidUntil] = useState('');
 
     useEffect(() => {
-        if (completeMonthRate && !isNaN(Number(completeMonthRate))) {
-            setEstimatedTotal(Number(completeMonthRate) * 30); // Simple estimation, can be customized
-        } else {
-            setEstimatedTotal(0);
+        const result = computeQuotationEstimate(
+            Number(completeMonthRate) || 0,
+            Number(incompleteMonthRate) || 0,
+            startDate,
+            endDate,
+            durationValue,
+        );
+        setEstimatedTotal(result.total);
+        setEstimateLabel(result.label);
+        setEstimateDetail(result.detail);
+    }, [completeMonthRate, incompleteMonthRate, startDate, endDate, durationValue]);
+
+    useEffect(() => {
+        if (startDate && endDate && startDate === endDate && !durationValue.trim()) {
+            setDurationValue('1 day');
         }
-    }, [completeMonthRate]);
+    }, [startDate, endDate, durationValue]);
 
     useEffect(() => {
         if (isOpen && lead) {
@@ -145,6 +159,14 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
         if (!incompleteMonthRate) return toast.error('Please enter the Incomplete Month Rate.');
         if (!validUntil) return toast.error('Please select a Quote Valid Until date.');
 
+        const estimate = computeQuotationEstimate(
+            Number(completeMonthRate) || 0,
+            Number(incompleteMonthRate) || 0,
+            startDate,
+            endDate,
+            durationValue,
+        );
+
         onDispatch({
             serviceName,
             serviceCategory,
@@ -153,11 +175,14 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
             daysPerWeek: Number(daysPerWeek) || null,
             shiftType,
             startDate,
+            endDate: endDate || null,
             duration: durationValue || (endDate ? endDate : 'Open-ended'),
             completeMonthRate: Number(completeMonthRate) || null,
             incompleteMonthRate: Number(incompleteMonthRate) || null,
             deposit: Number(deposit) || 0,
-            estimatedTotal,
+            estimatedTotal: estimate.total,
+            serviceDays: estimate.serviceDays,
+            isShortTerm: estimate.isShortTerm,
             inclusions: selectedInclusions,
             messageTemplate,
             language,
@@ -340,12 +365,14 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                             <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="e.g. ₹5,000" className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf]" />
                         </div>
 
-                        <div className="bg-[#168a8b]/10 border border-[#168a8b]/20 rounded-lg p-3 flex justify-between items-center">
+                        <div className="bg-[#168a8b]/10 border border-[#168a8b]/20 rounded-lg p-3 flex justify-between items-center gap-3">
                             <div>
-                                <p className="text-sm font-medium text-slate-200">Estimated monthly total</p>
-                                <p className="text-xs text-slate-500">auto-calculated from above</p>
+                                <p className="text-sm font-medium text-slate-200">{estimateLabel}</p>
+                                <p className="text-xs text-slate-500">
+                                    {estimateDetail || 'auto-calculated from rates & duration'}
+                                </p>
                             </div>
-                            <span className="text-lg font-bold text-[#2dd4bf]">₹{estimatedTotal.toLocaleString()}</span>
+                            <span className="text-lg font-bold text-[#2dd4bf] shrink-0">₹{estimatedTotal.toLocaleString('en-IN')}</span>
                         </div>
                     </section>
 

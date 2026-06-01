@@ -2141,7 +2141,11 @@ export default function CRM() {
             msgText += `Rate (partial month): ₹${quotationData.incompleteMonthRate} / day\n`;
             if (quotationData.deposit) msgText += `Deposit: ₹${quotationData.deposit}\n`;
 
-            msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal} / mo*\n\n`;
+            if (quotationData.isShortTerm) {
+                msgText += `\n*Estimated total: ₹${quotationData.estimatedTotal}* (${quotationData.serviceDays || 1} day service)\n\n`;
+            } else {
+                msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal} / mo*\n\n`;
+            }
 
             if (quotationData.inclusions && quotationData.inclusions.length > 0) {
                 msgText += `*What is included*\n${quotationData.inclusions.join(', ')}\n\n`;
@@ -2179,7 +2183,9 @@ export default function CRM() {
             });
 
             // 2. Send the template with buttons using a newline-free summary
-            const summaryParam = `Total Estimate: ₹${quotationData.estimatedTotal}/mo`;
+            const summaryParam = quotationData.isShortTerm
+                ? `Total Estimate: ₹${quotationData.estimatedTotal} (${quotationData.serviceDays || 1} day)`
+                : `Total Estimate: ₹${quotationData.estimatedTotal}/mo`;
             const templateLogText = `Hello, please find the quotation details for your care request below:\n${summaryParam}\nPlease use the buttons below to respond or schedule a follow-up. We look forward to assisting your family.`;
 
             const payload = {
@@ -2214,7 +2220,7 @@ export default function CRM() {
             await logActivity(
                 quotationTargetLead.id,
                 'quotation_sent',
-                `Quotation dispatched via WhatsApp: ₹${quotationData.estimatedTotal}/mo for ${quotationData.serviceName}`
+                `Quotation dispatched via WhatsApp: ₹${quotationData.estimatedTotal}${quotationData.isShortTerm ? '' : '/mo'} for ${quotationData.serviceName}`
             );
 
             // 5. Update Lead Value in DB
@@ -2251,7 +2257,9 @@ export default function CRM() {
                     ...prev,
                     estimated_value_monthly: quotationData.estimatedTotal,
                     valueAmount: quotationData.estimatedTotal,
-                    value: '₹' + quotationData.estimatedTotal + '/mo',
+                    value: quotationData.isShortTerm
+                        ? '₹' + quotationData.estimatedTotal + ` (${quotationData.serviceDays || 1}d)`
+                        : '₹' + quotationData.estimatedTotal + '/mo',
                     notes: updatedNotes
                 }));
                 fetchLeadActivity(quotationTargetLead.id, quotationTargetLead.duplicate_of_lead_id);
