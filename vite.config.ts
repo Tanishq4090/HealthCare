@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { ViteImageOptimizer } from 'vite-plugin-image-optimizer'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -77,10 +78,56 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: process.env.VERCEL ? 'dist' : (appMode === 'os' ? 'dist-os' : 'dist-public'),
       emptyOutDir: true,
+      sourcemap: false,
+      cssCodeSplit: true,
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            // PDF & canvas libs — only needed in billing/reports, load lazily
+            if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('pdf-parse')) {
+              return 'pdf-libs';
+            }
+            // Charting — check BEFORE react to avoid circular dependency
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
+              return 'charts';
+            }
+            // Animation lib
+            if (id.includes('framer-motion')) {
+              return 'animation';
+            }
+            // Radix UI components
+            if (id.includes('@radix-ui')) {
+              return 'radix-ui';
+            }
+            // Supabase client
+            if (id.includes('@supabase')) {
+              return 'supabase';
+            }
+            // React core — checked last so recharts doesn't get pulled in
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
+              return 'react-vendor';
+            }
+          },
+        },
+      },
     },
     plugins: [
       inspectAttr(),
       react(),
+      ViteImageOptimizer({
+        // Compress PNGs → WebP (60-80% smaller, same quality)
+        png: { quality: 82 },
+        jpeg: { quality: 82 },
+        jpg: { quality: 82 },
+        webp: { lossless: false, quality: 82 },
+        svg: {
+          plugins: [
+            { name: 'removeViewBox', active: false },
+            { name: 'cleanupNumericValues', active: true },
+          ],
+        },
+        logStats: true,
+      }),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.svg'],
