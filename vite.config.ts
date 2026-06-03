@@ -78,36 +78,16 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: process.env.VERCEL ? 'dist' : (appMode === 'os' ? 'dist-os' : 'dist-public'),
       emptyOutDir: true,
-      sourcemap: false,
+      sourcemap: true, minify: false,
       cssCodeSplit: true,
       rollupOptions: {
         output: {
           manualChunks: (id) => {
-            // PDF & canvas libs — only needed in billing/reports, load lazily
+            // Only split out heavy PDF libs, let Vite handle React & charts automatically to prevent circular chunk errors
             if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('pdf-parse')) {
               return 'pdf-libs';
             }
-            // Charting — check BEFORE react to avoid circular dependency
-            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
-              return 'charts';
-            }
-            // Animation lib
-            if (id.includes('framer-motion')) {
-              return 'animation';
-            }
-            // Radix UI components
-            if (id.includes('@radix-ui')) {
-              return 'radix-ui';
-            }
-            // Supabase client
-            if (id.includes('@supabase')) {
-              return 'supabase';
-            }
-            // React core — checked last so recharts doesn't get pulled in
-            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
-              return 'react-vendor';
-            }
-          },
+          }
         },
       },
     },
@@ -130,7 +110,7 @@ export default defineConfig(({ mode }) => {
           enabled: false, // Disable SW in dev to prevent stale cache issues
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB limit
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MiB limit
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           runtimeCaching: [
             {
