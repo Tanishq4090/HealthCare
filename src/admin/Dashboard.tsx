@@ -166,13 +166,13 @@ export default function Dashboard() {
                     return overlapsCurrentMonth ? sum + amount : sum;
                 }, 0);
 
-                const mrr = serviceRevenue + assignmentRevenue;
+                const mrr = 0; // serviceRevenue + assignmentRevenue;
 
-                // Generate a realistic looking trend over the last 6 months peaking at current MRR
+                // Generate a flat 0 trend over the last 6 months
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-                const generatedRevenue = months.map((month, idx) => ({
+                const generatedRevenue = months.map((month) => ({
                     name: month,
-                    revenue: Math.floor(mrr * (0.3 + (idx * 0.14))) // Scales up to current MRR roughly
+                    revenue: 0
                 }));
 
                 setStats({
