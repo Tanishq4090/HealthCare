@@ -420,7 +420,7 @@ export default function AdminLayout() {
                 <div className="h-20 flex items-center px-6 border-b border-slate-100">
                     <Link to="/admin" className="flex items-center gap-3" title="Dashboard">
                         <img 
-                            src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+                            src="/99care-logo.svg"
                             alt="99Care Logo" 
                             className="w-10 h-10 object-contain"
                         />
@@ -513,7 +513,7 @@ export default function AdminLayout() {
                                 <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100">
                                     <div className="flex items-center gap-3">
                                         <img 
-                                            src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+                                            src="/99care-logo.svg"
                                             alt="99Care Logo" 
                                             className="w-10 h-10 object-contain"
                                         />

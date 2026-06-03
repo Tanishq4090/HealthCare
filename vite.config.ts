@@ -45,13 +45,13 @@ export default defineConfig(({ mode }) => {
           start_url: '/',
           icons: [
             {
-              src: 'https://99care.org/wp-content/uploads/2024/01/99care-logo.svg',
+              src: '/99care-logo.svg',
               sizes: '192x192',
               type: 'image/svg+xml',
               purpose: 'any maskable',
             },
             {
-              src: 'https://99care.org/wp-content/uploads/2024/01/99care-logo.svg',
+              src: '/99care-logo.svg',
               sizes: '512x512',
               type: 'image/svg+xml',
               purpose: 'any maskable',

@@ -62,7 +62,7 @@ export function PWAInstallBanner() {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center flex-shrink-0">
                 <img 
-                  src="https://99care.org/wp-content/uploads/2024/01/99care-logo.svg" 
+                  src="/99care-logo.svg"
                   alt="99 Care" 
                   className="w-8 h-8"
                 />
