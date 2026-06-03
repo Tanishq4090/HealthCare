@@ -218,7 +218,6 @@ export default function Dashboard() {
     const statCards = [
         { label: 'Active Leads', value: stats.activeLeads.value, trend: stats.activeLeads.trend, icon: <TrendingUp className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'Active Deployments', value: stats.activeWorkers.value, trend: stats.activeWorkers.trend, icon: <Users className="w-5 h-5 text-emerald-500"/>, bg: 'bg-emerald-50' },
-        { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'AI Voice Calls', value: stats.aiVoiceCalls.value, trend: stats.aiVoiceCalls.trend, icon: <Phone className="w-5 h-5 text-amber-500"/>, bg: 'bg-amber-50' },
     ];
 
@@ -279,34 +278,7 @@ export default function Dashboard() {
             </div>
 
             <div className="grid lg:grid-cols-3 gap-6 lg:h-[400px]">
-                {/* Revenue Chart */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[300px] lg:h-auto">
-                    <div className="mb-4">
-                        <h2 className="font-bold text-slate-900 text-lg">Monthly Recurring Revenue (MRR)</h2>
-                        <p className="text-xs text-slate-500">Projected trajectory based on active worker deployments.</p>
-                    </div>
-                    <div className="flex-1 w-full min-h-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#1aa6a8" stopOpacity={0.4}/>
-                                    <stop offset="95%" stopColor="#1aa6a8" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value/1000}k`} />
-                                <Tooltip 
-                                    formatter={(value: number) => [`₹${value.toLocaleString()}`, 'MRR']} 
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }} 
-                                />
-                                <Area type="monotone" dataKey="revenue" stroke="#1aa6a8" strokeWidth={4} fillOpacity={1} fill="url(#colorRevenue)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[400px] lg:h-auto">
+                <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[400px] lg:h-auto">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h2 className="font-bold text-slate-900">Recent AI Activity</h2>
                         <span className="text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2 py-1 rounded-md">Live Stream</span>
