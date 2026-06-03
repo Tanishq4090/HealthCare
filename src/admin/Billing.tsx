@@ -1145,6 +1145,11 @@ export default function Billing() {
                     >
                         Monthly Billing
                     </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                        Collection History
                     </button>
                 </div>
             </div>
@@ -1364,6 +1369,204 @@ export default function Billing() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            ) : (
+                /* Collection History View */
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                            <History className="w-5 h-5 text-primary" />
+                            <h2 className="font-semibold text-slate-900">Recorded Collection Log</h2>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Month navigator with left/right arrows */}
+                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden">
+                                <button
+                                    onClick={() => {
+                                        const [y, m] = selectedMonth.split('-').map(Number);
+                                        const prev = new Date(y, m - 2);
+                                        setSelectedMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+                                    }}
+                                    className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-bold"
+                                >
+                                    ‹
+                                </button>
+                                <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[110px] text-center border-x border-slate-200">
+                                    {new Date(Number(selectedMonth.split('-')[0]), Number(selectedMonth.split('-')[1]) - 1)
+                                        .toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        const [y, m] = selectedMonth.split('-').map(Number);
+                                        const next = new Date(y, m);
+                                        const now = new Date();
+                                        const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                                        const nextKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+                                        if (nextKey <= nowKey) setSelectedMonth(nextKey);
+                                    }}
+                                    className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-bold disabled:opacity-30"
+                                    disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; })()}
+                                >
+                                    ›
+                                </button>
+                            </div>
+                            {/* Sub-tab switcher */}
+                            <div className="flex items-center p-1 bg-white border border-slate-200 rounded-lg shrink-0">
+                                <button
+                                    onClick={() => setHistorySubTab('deposit')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'deposit' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    Deposit Invoice
+                                </button>
+                                <button
+                                    onClick={() => setHistorySubTab('service')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${historySubTab === 'service' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    Service Invoice
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-auto">
+                        {isLoading ? (
+                            <div className="flex flex-col items-center justify-center py-20">
+                                <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+                                <span className="text-slate-500 font-medium">Loading collection records...</span>
+                            </div>
+                        ) : payments.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-center">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                    <RupeeIcon className="w-8 h-8 text-slate-400 text-3xl" />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">No Payments Recorded</h3>
+                                <p className="text-slate-500 max-w-xs">Use the "Record Payment" buttons in the other tabs to log collections here.</p>
+                            </div>
+                        ) : (() => {
+                            const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH')));
+                            const servicePayments = payments.filter(p => p.payment_type === 'service' || (!p.payment_type && p.transaction_ref?.startsWith('TXN')));
+
+                            // Filter by selected month
+                            const filterByMonth = (rows: any[]) => rows.filter(p => {
+                                const d = new Date(p.payment_date);
+                                const rowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                                return rowMonth === selectedMonth;
+                            });
+
+                            const rows = filterByMonth(historySubTab === 'deposit' ? depositPayments : servicePayments);
+                            const color = historySubTab === 'deposit' ? 'blue' : 'emerald';
+
+                            // Build list of available months from all payments for the nav
+                            const allRows = historySubTab === 'deposit' ? depositPayments : servicePayments;
+                            const availableMonths = [...new Set(allRows.map(p => {
+                                const d = new Date(p.payment_date);
+                                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            }))].sort((a, b) => b.localeCompare(a));
+
+                            const monthLabel = (m: string) => {
+                                const [y, mo] = m.split('-');
+                                return new Date(Number(y), Number(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                            };
+
+                            // Total for selected month
+                            const monthTotal = rows.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+                            return (
+                                <div>
+                                    {/* Record count bar with month summary */}
+                                    <div className={`px-6 py-3 flex items-center gap-3 border-b flex-wrap ${color === 'blue' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
+                                        <span className={`text-xs font-bold uppercase tracking-widest ${color === 'blue' ? 'text-blue-700' : 'text-emerald-700'}`}>
+                                            {historySubTab === 'deposit' ? 'Deposit Invoice History' : 'Service Invoice History'}
+                                        </span>
+                                        <span className="text-xs text-slate-500 font-medium">— {monthLabel(selectedMonth)}</span>
+                                        <span className={`ml-auto flex items-center gap-3 text-xs font-semibold ${color === 'blue' ? 'text-blue-600' : 'text-emerald-600'}`}>
+                                            <span>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
+                                            {rows.length > 0 && <span className="font-bold">₹{monthTotal.toLocaleString('en-IN')}</span>}
+                                        </span>
+                                    </div>
+
+                                    {/* Quick month navigation pills */}
+                                    {availableMonths.length > 1 && (
+                                        <div className="px-6 py-2 flex items-center gap-2 flex-wrap border-b border-slate-100 bg-slate-50/50">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Jump to:</span>
+                                            {availableMonths.map(m => (
+                                                <button
+                                                    key={m}
+                                                    onClick={() => setSelectedMonth(m)}
+                                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${selectedMonth === m
+                                                        ? (color === 'blue' ? 'bg-blue-500 text-white' : 'bg-emerald-500 text-white')
+                                                        : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    {monthLabel(m)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {rows.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                                            <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
+                                                <RupeeIcon className={`text-2xl ${color === 'blue' ? 'text-blue-300' : 'text-emerald-300'}`} />
+                                            </div>
+                                            <h3 className="text-base font-bold text-slate-900 mb-1">No Records for {monthLabel(selectedMonth)}</h3>
+                                            <p className="text-slate-500 text-sm max-w-xs">
+                                                {availableMonths.length > 0
+                                                    ? 'Try selecting a different month above.'
+                                                    : historySubTab === 'deposit'
+                                                        ? 'Record a deposit collection from the Deposit Entries tab.'
+                                                        : 'Record a service payment from the Monthly Billing tab.'}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="border-b border-slate-200 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                                                    <th className="py-3 px-6">Date</th>
+                                                    <th className="py-3 px-6">Client</th>
+                                                    <th className="py-3 px-6">Reference ID</th>
+                                                    <th className="py-3 px-6">Amount</th>
+                                                    <th className="py-3 px-6 text-right">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {rows.map(payment => (
+                                                    <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                                                        <td className="py-4 px-6 text-sm text-slate-600">
+                                                            {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                        </td>
+                                                        <td className="py-4 px-6">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                                    {(payment.client_name || '?').charAt(0)}
+                                                                </div>
+                                                                <span className="text-sm font-semibold text-slate-900">{payment.client_name || <span className="text-slate-400 italic">Unknown Client</span>}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-6">
+                                                            <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
+                                                        </td>
+                                                        <td className="py-4 px-6">
+                                                            <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
+                                                        </td>
+                                                        <td className="py-4 px-6 text-right">
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                                Collected
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
