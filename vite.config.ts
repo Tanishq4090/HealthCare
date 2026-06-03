@@ -83,11 +83,15 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: (id) => {
+            // React core — move to top to prevent circular deps
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
+              return 'react-vendor';
+            }
             // PDF & canvas libs — only needed in billing/reports, load lazily
             if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('pdf-parse')) {
               return 'pdf-libs';
             }
-            // Charting — check BEFORE react to avoid circular dependency
+            // Charting
             if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
               return 'charts';
             }
@@ -102,10 +106,6 @@ export default defineConfig(({ mode }) => {
             // Supabase client
             if (id.includes('@supabase')) {
               return 'supabase';
-            }
-            // React core — checked last so recharts doesn't get pulled in
-            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
-              return 'react-vendor';
             }
           },
         },
