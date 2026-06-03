@@ -115,17 +115,12 @@ export default defineConfig(({ mode }) => {
       inspectAttr(),
       react(),
       ViteImageOptimizer({
-        // Compress PNGs → WebP (60-80% smaller, same quality)
+        // Compress PNGs/JPEGs — skip SVG (svgo not in lockfile)
         png: { quality: 82 },
         jpeg: { quality: 82 },
         jpg: { quality: 82 },
         webp: { lossless: false, quality: 82 },
-        svg: {
-          plugins: [
-            { name: 'removeViewBox', active: false },
-            { name: 'cleanupNumericValues', active: true },
-          ],
-        },
+        includePublic: true,
         logStats: true,
       }),
       VitePWA({
