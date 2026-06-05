@@ -232,6 +232,38 @@ serve(async (req) => {
         };
     });
 
+    const linkedLeadIds = Array.from(
+        new Set((dbTranscripts || []).map((t: any) => t.lead_id).filter(Boolean))
+    );
+    const leadContactMap: Record<string, { phone: string | null; whatsapp_number: string | null }> = {};
+    if (linkedLeadIds.length > 0) {
+        const { data: linkedLeads } = await supabaseClient
+            .from('crm_leads')
+            .select('id, phone, whatsapp_number')
+            .in('id', linkedLeadIds);
+        (linkedLeads || []).forEach((lead: any) => {
+            leadContactMap[lead.id] = {
+                phone: lead.phone || null,
+                whatsapp_number: lead.whatsapp_number || null,
+            };
+        });
+    }
+
+    const greetingRecipientByLeadId: Record<string, string> = {};
+    const { data: recentGreetingLogs } = await supabaseClient
+        .from('whatsapp_logs')
+        .select('payload, created_at')
+        .filter('payload->>templateName', 'eq', 'post_call_intake')
+        .order('created_at', { ascending: false })
+        .limit(100);
+    (recentGreetingLogs || []).forEach((log: any) => {
+        const payload = log.payload || {};
+        const leadId = payload.lead_id;
+        if (!leadId || greetingRecipientByLeadId[leadId]) return;
+        const recipient = normalizeIndianMobile(payload.original_recipient || payload.phone);
+        if (recipient) greetingRecipientByLeadId[leadId] = recipient;
+    });
+
     // Format calls for CRM Dashboard
     const formattedLogs = detailedCalls.filter(Boolean).map((c: any) => {
         let capturedName = null;
@@ -341,6 +373,16 @@ serve(async (req) => {
         // A call is only 'Processed' if it was EXPLICITLY added to the pipeline via the button
         const dbInfo = dbDataMap[c.conversation_id];
         const isProcessed = dbInfo?.lead_id !== null && dbInfo?.lead_id !== undefined;
+        const linkedLeadContact = dbInfo?.lead_id ? leadContactMap[dbInfo.lead_id] : null;
+        const loggedGreetingRecipient = dbInfo?.lead_id ? greetingRecipientByLeadId[dbInfo.lead_id] : '';
+        const resolvedWhatsapp =
+            loggedGreetingRecipient ||
+            normalizeIndianMobile(linkedLeadContact?.whatsapp_number) ||
+            normalizeIndianMobile(capturedWhatsapp);
+        const resolvedCaller =
+            normalizeIndianMobile(callerPhone || metadataPhone) ||
+            normalizeIndianMobile(linkedLeadContact?.phone) ||
+            resolvedWhatsapp;
 
         return {
            id: c.conversation_id,
@@ -350,9 +392,9 @@ serve(async (req) => {
            summary: summaryStr,
            transcript: transcriptStr,
            recording_url: null,
-           phone_number: callerPhone || metadataPhone || capturedWhatsapp || null,
+           phone_number: resolvedCaller || null,
            capturedName: capturedName,
-           capturedWhatsapp: capturedWhatsapp || null,
+           capturedWhatsapp: resolvedWhatsapp || null,
            lead_id: dbInfo?.lead_id || null,
            automation_error: dbInfo?.error || null
         };

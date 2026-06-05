@@ -1139,7 +1139,9 @@ export default function CRM() {
             await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_SENT');
             setCalls((prev) =>
                 prev.map((c) =>
-                    String(c.id) === callKey ? { ...c, automation_error: 'GREETING_SENT' } : c
+                    String(c.id) === callKey
+                        ? { ...c, capturedWhatsapp: digits, automation_error: 'GREETING_SENT' }
+                        : c
                 )
             );
 
