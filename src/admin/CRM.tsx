@@ -992,7 +992,7 @@ export default function CRM() {
         }
         processingCalls.current.add(callKey);
 
-        const rawPhone = call.capturedWhatsapp || call.phone;
+        const rawPhone = call.capturedWhatsapp;
         if (!rawPhone) {
             processingCalls.current.delete(callKey);
             toast.error('No WhatsApp number found for this call.');
@@ -1007,6 +1007,9 @@ export default function CRM() {
             return;
         }
         const last10 = digits.slice(-10);
+        const callPhoneDigits = normalizePhoneDigits(
+            call.phone && call.phone !== 'Unknown Number' ? call.phone : rawPhone
+        );
 
         setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sending' }));
 
@@ -1058,7 +1061,7 @@ export default function CRM() {
 
             await upsertCallTranscriptStatus(
                 callForTranscript,
-                digits,
+                callPhoneDigits || digits,
                 isManual ? 'GREETING_RESENDING' : 'GREETING_PROCESSING'
             );
 
@@ -1076,14 +1079,14 @@ export default function CRM() {
 
             if (existingGreeting && !isManual) {
                 console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
-                await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_SENT');
+                await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_SENT');
                 setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
                 dismissToast(manualToastId);
                 toast.success(`✅ Greeting already sent to ${firstName}! Marked as done.`);
                 return;
             }
 
-            await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_PROCESSING');
+            await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_PROCESSING');
 
             // Step 2: Send post_call_intake — template body + Flow prefill from Voice AI summary
             const intakePrefill = buildVoiceCallIntakePrefill(call);
@@ -1133,7 +1136,7 @@ export default function CRM() {
             const deliveryConfirmed =
                 verifyLog?.status === 'success' || verifyLog?.status === 'accepted_by_meta';
 
-            await upsertCallTranscriptStatus(callForTranscript, digits, 'GREETING_SENT');
+            await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_SENT');
             setCalls((prev) =>
                 prev.map((c) =>
                     String(c.id) === callKey ? { ...c, automation_error: 'GREETING_SENT' } : c
@@ -1166,6 +1169,7 @@ export default function CRM() {
                     .from('crm_leads')
                     .update({
                         service_interest: intakePrefill.service,
+                        whatsapp_number: digits,
                         notes: mergedNotes,
                         last_greeted_at: new Date().toISOString(),
                     })
@@ -1185,7 +1189,7 @@ export default function CRM() {
             console.error('[Greeting Error]', err.message);
 
             const errCode = `GREETING_ERROR: ${err.message?.slice(0, 200)}`;
-            await upsertCallTranscriptStatus(callForTranscript, digits, errCode);
+            await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, errCode);
             setCalls((prev) =>
                 prev.map((c) => (String(c.id) === callKey ? { ...c, automation_error: errCode } : c))
             );
@@ -1257,7 +1261,7 @@ export default function CRM() {
                     summary: call.summary || "No summary available.",
                     recordingUrl: call.recording_url,
                     capturedName: call.lead_id ? (call.capturedName || "Known Lead") : call.capturedName,
-                    capturedWhatsapp: call.capturedWhatsapp || call.phone_number || null,
+                    capturedWhatsapp: call.capturedWhatsapp || null,
                     status: callStatus,
                     transcript: call.transcript,
                     lead_id: call.lead_id,
@@ -1896,7 +1900,7 @@ export default function CRM() {
             const fiveMinsAgo = Date.now() - (5 * 60 * 1000);
 
             const targetCall = calls.find((call: any) => {
-                const phone = (call.capturedWhatsapp || call.phone || '').toString();
+                const phone = (call.capturedWhatsapp || '').toString();
                 const digits = phone.replace(/\D/g, '');
                 const isToday = new Date(call.created_at).toDateString() === new Date().toDateString();
                 const callTime = new Date(call.created_at).getTime();
@@ -4105,7 +4109,7 @@ export default function CRM() {
                                                         {(() => {
                                                             const greetStatus = callGreetingStatus[call.id];
                                                             const dbSent = call.automation_error === 'GREETING_SENT';
-                                                            const phone = call.capturedWhatsapp || call.phone;
+                                                            const phone = call.capturedWhatsapp;
                                                             if (!phone) return null;
                                                             if (greetStatus === 'sending') return (
                                                                 <button disabled className="px-3 py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 cursor-not-allowed">

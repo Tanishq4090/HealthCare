@@ -1,6 +1,0 @@
-
-> my-app@0.0.0 build
-> tsc -b && vite build
-
-Terminate batch job (Y/N)? Terminate batch job (Y/N)? 
-^C

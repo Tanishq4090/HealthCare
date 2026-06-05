@@ -6,6 +6,121 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const normalizeIndianMobile = (value: string | null | undefined) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    const last10 = digits.slice(-10);
+    return /^[6-9]\d{9}$/.test(last10) ? `+91${last10}` : '';
+};
+
+const extractIndianMobileMatches = (text: string) => {
+    const matches: { phone: string; index: number }[] = [];
+    const re = /\+?\d[\d\s().-]{8,16}\d/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(String(text || ''))) !== null) {
+        const phone = normalizeIndianMobile(match[0]);
+        if (phone) matches.push({ phone, index: match.index });
+    }
+    if (matches.length === 0) {
+        const compact = String(text || '').replace(/\D/g, '');
+        const chunkSize = compact.startsWith('91') && compact.length % 12 === 0 ? 12 : 10;
+        if (compact.length >= chunkSize && compact.length % chunkSize === 0) {
+            for (let index = 0; index < compact.length; index += chunkSize) {
+                const phone = normalizeIndianMobile(compact.slice(index, index + chunkSize));
+                if (phone) matches.push({ phone, index });
+            }
+        }
+    }
+    return matches;
+};
+
+const isWhatsappQuestion = (text: string) =>
+    /whats\s*app|whatsapp|व्हाट्स\s*ऐप|व्हाट्सएप|वॉट्स\s*ऐप|वॉट्सएप/i.test(text || '');
+
+const isPositiveWhatsappReply = (text: string) =>
+    /\b(?:yes|yeah|yep|yup|same|haan|han|ha|ji|hanji|haa)\b|हाँ|हां|जी/i.test(text || '');
+
+const isNegativeWhatsappReply = (text: string) =>
+    /\b(?:no|nope|nah|nahi|nahin|nai|wrong|incorrect|galat|alag|different)\b|नहीं|नही|गलत/i.test(text || '');
+
+const correctionCueIndex = (text: string) => {
+    const match = String(text || '').search(/\b(?:no|nope|nah|nahi|nahin|nai|wrong|incorrect|galat|wait|ruk|rukiye|correct|sahi)\b|नहीं|नही|गलत|रुक|सही/i);
+    return match >= 0 ? match : -1;
+};
+
+function resolveWhatsappNumber(
+    transcript: any[],
+    callerPhone: string | null,
+    metadataPhone: string | null,
+    dataCollectionPhone: string | null
+) {
+    const callerWhatsapp = normalizeIndianMobile(metadataPhone || callerPhone);
+    const structuredWhatsapp = normalizeIndianMobile(dataCollectionPhone);
+    let resolved = '';
+    let askedWhatsapp = false;
+    let waitingForDifferentNumber = false;
+    let structuredRejected = false;
+
+    for (let i = 0; i < transcript.length; i++) {
+        const turn = transcript[i];
+        const msg = String(turn?.message || '');
+        const msgLower = msg.toLowerCase();
+
+        if (turn?.role === 'agent' && isWhatsappQuestion(msgLower)) {
+            askedWhatsapp = true;
+            waitingForDifferentNumber = false;
+            continue;
+        }
+
+        if (turn?.role !== 'user') continue;
+
+        const phoneMatches = extractIndianMobileMatches(msg);
+        const phones = phoneMatches.map((match) => match.phone);
+        const hasNegative = isNegativeWhatsappReply(msgLower);
+        const hasPositive = isPositiveWhatsappReply(msgLower);
+        const cueIndex = correctionCueIndex(msg);
+
+        if (askedWhatsapp || waitingForDifferentNumber) {
+            if (phones.length > 0) {
+                // Latest valid mobile after the WhatsApp question wins. This catches
+                // corrections even when the caller does not say "wrong", "wait", etc.
+                if (hasNegative && cueIndex >= 0) {
+                    structuredRejected = true;
+                    const afterCorrection = phoneMatches.filter((match) => match.index > cueIndex);
+                    if (afterCorrection.length > 0) {
+                        resolved = afterCorrection[afterCorrection.length - 1].phone;
+                        waitingForDifferentNumber = false;
+                    } else {
+                        resolved = '';
+                        waitingForDifferentNumber = true;
+                    }
+                } else {
+                    resolved = phones[phones.length - 1];
+                    waitingForDifferentNumber = false;
+                }
+                continue;
+            }
+            if (hasNegative) {
+                resolved = '';
+                waitingForDifferentNumber = true;
+                structuredRejected = true;
+                continue;
+            }
+            if (hasPositive && callerWhatsapp) {
+                resolved = callerWhatsapp;
+                waitingForDifferentNumber = false;
+                continue;
+            }
+        }
+
+        // Correction cue outside the WhatsApp-question window: use the latest valid mobile.
+        if (phones.length > 0 && (hasNegative || /\b(?:wait|ruk|rukiye|likhiye|write|correct|sahi)\b|रुक|लिख|सही/i.test(msgLower))) {
+            resolved = phones[phones.length - 1];
+        }
+    }
+
+    return resolved || (structuredRejected ? callerWhatsapp : structuredWhatsapp) || callerWhatsapp || '';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -120,7 +235,9 @@ serve(async (req) => {
     // Format calls for CRM Dashboard
     const formattedLogs = detailedCalls.filter(Boolean).map((c: any) => {
         let capturedName = null;
-        let capturedPhone = null;
+        let dataCollectionPhone = null;
+        let callerPhone = null;
+        let capturedWhatsapp = null;
         let intent = c.metadata?.call_summary_title || "Inquiry";
         const transcriptStr = (c.transcript || []).map((t: any) => `${t.role === 'agent' ? 'AI' : 'User'}: ${t.message}`).join('\n');
         const summaryStr = c.analysis?.transcript_summary || c.metadata?.call_summary_title || "Call completed.";
@@ -130,7 +247,7 @@ serve(async (req) => {
         if (c.analysis && c.analysis.data_collection_results) {
             const dc = c.analysis.data_collection_results;
             capturedName = dc.customer_name?.value || dc.name?.value || null;
-            capturedPhone = dc.contact_number?.value || dc.phone_number?.value || dc.whatsapp?.value || null;
+            dataCollectionPhone = dc.contact_number?.value || dc.phone_number?.value || dc.whatsapp?.value || null;
             if (dc.service_of_interest?.value) intent = dc.service_of_interest.value;
             else if (dc.service_type?.value) intent = dc.service_type.value;
         }
@@ -173,27 +290,27 @@ serve(async (req) => {
         }
 
         // Layer 2: Metadata phone_number (set by ElevenLabs for actual phone/SIP calls)
-        if (!capturedPhone && c.metadata?.phone_number) {
-            capturedPhone = c.metadata.phone_number;
+        if (c.metadata?.phone_number) {
+            callerPhone = c.metadata.phone_number;
         }
 
         // Layer 2.5: Vobiz CDR Timestamp Cross-Reference
         // Match this ElevenLabs call's start time against Vobiz CDR records to get real caller phone
-        if (!capturedPhone && Object.keys(vobizCallerMap).length > 0) {
+        if (!callerPhone && Object.keys(vobizCallerMap).length > 0) {
             const callStartMs = c.metadata?.start_time_unix_secs
                 ? c.metadata.start_time_unix_secs * 1000
                 : null;
             if (callStartMs) {
                 const key = Math.floor(callStartMs / 10000).toString();
                 if (vobizCallerMap[key]) {
-                    capturedPhone = vobizCallerMap[key];
-                    console.log(`[Vobiz CDR] Matched caller: ${capturedPhone} for call at ${new Date(callStartMs).toISOString()}`);
+                    callerPhone = vobizCallerMap[key];
+                    console.log(`[Vobiz CDR] Matched caller: ${callerPhone} for call at ${new Date(callStartMs).toISOString()}`);
                 }
             }
         }
 
         // Layer 3: Dynamic wildcard SIP Header parsing
-        let metadataPhone = capturedPhone || c.metadata?.phone_number || c.metadata?.caller_id || null;
+        let metadataPhone = callerPhone || c.metadata?.phone_number || c.metadata?.caller_id || null;
         if (!metadataPhone && c.metadata) {
             for (const key in c.metadata) {
                 if (typeof c.metadata[key] === 'string') {
@@ -206,44 +323,13 @@ serve(async (req) => {
             }
         }
 
-        // Layer 4: Scan transcript for Boolean confirmations to WhatsApp query (English/Hinglish/Hindi natively)
-        if (!capturedPhone && c.transcript && c.transcript.length > 0) {
-            for (let i = 0; i < c.transcript.length; i++) {
-                const turn = c.transcript[i];
-                const msg = turn.message?.toLowerCase() || '';
-
-                if (turn.role === 'agent' && msg.includes('whatsapp')) {
-                    // Check user's next reply
-                    if (i + 1 < c.transcript.length && c.transcript[i+1].role === 'user') {
-                        const userReply = c.transcript[i+1].message?.toLowerCase() || '';
-                        if (['yes', 'haan', 'ji', 'yep', 'hanji', 'ha', 'same', 'yup', 'हाँ', 'जी', 'हां'].some(word => userReply.includes(word))) {
-                            // Use real metadata phone if available; otherwise leave null (cannot know number without SIP CallerID)
-                            capturedPhone = metadataPhone || null;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Layer 5: Scan user (Lead) lines in transcript for dictated Indian mobile numbers
-        if (!capturedPhone && c.transcript) {
-            const userLines = (c.transcript as any[])
-                .filter((t: any) => t.role === 'user')
-                .map((t: any) => t.message || '')
-                .join(' ');
-            const phoneMatches = userLines.match(/(?:\+?91[\s\-]?)?([6-9]\d{9})/g);
-            if (phoneMatches && phoneMatches.length > 0) {
-                // Take last confirmed match (user typically confirms at end of call)
-                capturedPhone = phoneMatches[phoneMatches.length - 1].replace(/[\s\-]/g, '');
-                // Normalize to +91 format
-                if (capturedPhone.length === 10) capturedPhone = '+91' + capturedPhone;
-            }
-        }
+        // Layer 4: Resolve WhatsApp number from the WhatsApp question/reply flow.
+        capturedWhatsapp = resolveWhatsappNumber(c.transcript || [], callerPhone, metadataPhone, dataCollectionPhone);
 
         // Layer 6: Fallback — scan summary text
-        if (!capturedPhone && summaryStr) {
+        if (!capturedWhatsapp && summaryStr) {
             const phoneMatch = summaryStr.match(/(?:\+?91[\s\-]?)?([6-9]\d{9})/);
-            if (phoneMatch) capturedPhone = (phoneMatch[1].length === 10 ? '+91' : '') + phoneMatch[1].replace(/[\s\-]/g, '');
+            if (phoneMatch) capturedWhatsapp = normalizeIndianMobile(phoneMatch[0]);
         }
 
         // Name fallback from summary
@@ -264,9 +350,9 @@ serve(async (req) => {
            summary: summaryStr,
            transcript: transcriptStr,
            recording_url: null,
-           phone_number: capturedPhone || null,
+           phone_number: callerPhone || metadataPhone || capturedWhatsapp || null,
            capturedName: capturedName,
-           capturedWhatsapp: capturedPhone || null,
+           capturedWhatsapp: capturedWhatsapp || null,
            lead_id: dbInfo?.lead_id || null,
            automation_error: dbInfo?.error || null
         };

@@ -8,6 +8,121 @@ const META_PHONE_ID = Deno.env.get('META_PHONE_ID');
 const WHATSAPP_FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
 const FLOW_TEMPLATE_NAME = "post_call_intake";
 
+const normalizeIndianMobile = (value: string | null | undefined) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    const last10 = digits.slice(-10);
+    return /^[6-9]\d{9}$/.test(last10) ? `+91${last10}` : '';
+};
+
+const extractIndianMobileMatches = (text: string) => {
+    const matches: { phone: string; index: number }[] = [];
+    const re = /\+?\d[\d\s().-]{8,16}\d/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(String(text || ''))) !== null) {
+        const phone = normalizeIndianMobile(match[0]);
+        if (phone) matches.push({ phone, index: match.index });
+    }
+    if (matches.length === 0) {
+        const compact = String(text || '').replace(/\D/g, '');
+        const chunkSize = compact.startsWith('91') && compact.length % 12 === 0 ? 12 : 10;
+        if (compact.length >= chunkSize && compact.length % chunkSize === 0) {
+            for (let index = 0; index < compact.length; index += chunkSize) {
+                const phone = normalizeIndianMobile(compact.slice(index, index + chunkSize));
+                if (phone) matches.push({ phone, index });
+            }
+        }
+    }
+    return matches;
+};
+
+const isWhatsappQuestion = (text: string) =>
+    /whats\s*app|whatsapp|व्हाट्स\s*ऐप|व्हाट्सएप|वॉट्स\s*ऐप|वॉट्सएप/i.test(text || '');
+
+const isPositiveWhatsappReply = (text: string) =>
+    /\b(?:yes|yeah|yep|yup|same|haan|han|ha|ji|hanji|haa)\b|हाँ|हां|जी/i.test(text || '');
+
+const isNegativeWhatsappReply = (text: string) =>
+    /\b(?:no|nope|nah|nahi|nahin|nai|wrong|incorrect|galat|alag|different)\b|नहीं|नही|गलत/i.test(text || '');
+
+const correctionCueIndex = (text: string) => {
+    const match = String(text || '').search(/\b(?:no|nope|nah|nahi|nahin|nai|wrong|incorrect|galat|wait|ruk|rukiye|correct|sahi)\b|नहीं|नही|गलत|रुक|सही/i);
+    return match >= 0 ? match : -1;
+};
+
+function resolveWhatsappNumber(
+    transcript: any[],
+    callerPhone: string,
+    metadataPhone: string | null,
+    dataCollectionPhone: string
+) {
+    const callerWhatsapp = normalizeIndianMobile(metadataPhone || callerPhone);
+    const structuredWhatsapp = normalizeIndianMobile(dataCollectionPhone);
+    let resolved = '';
+    let askedWhatsapp = false;
+    let waitingForDifferentNumber = false;
+    let structuredRejected = false;
+
+    for (let i = 0; i < transcript.length; i++) {
+        const turn = transcript[i];
+        const msg = String(turn?.message || '');
+        const msgLower = msg.toLowerCase();
+
+        if (turn?.role === 'agent' && isWhatsappQuestion(msgLower)) {
+            askedWhatsapp = true;
+            waitingForDifferentNumber = false;
+            continue;
+        }
+
+        if (turn?.role !== 'user') continue;
+
+        const phoneMatches = extractIndianMobileMatches(msg);
+        const phones = phoneMatches.map((match) => match.phone);
+        const hasNegative = isNegativeWhatsappReply(msgLower);
+        const hasPositive = isPositiveWhatsappReply(msgLower);
+        const cueIndex = correctionCueIndex(msg);
+
+        if (askedWhatsapp || waitingForDifferentNumber) {
+            if (phones.length > 0) {
+                // Latest valid mobile after the WhatsApp question wins. This catches
+                // corrections even when the caller does not say "wrong", "wait", etc.
+                if (hasNegative && cueIndex >= 0) {
+                    structuredRejected = true;
+                    const afterCorrection = phoneMatches.filter((match) => match.index > cueIndex);
+                    if (afterCorrection.length > 0) {
+                        resolved = afterCorrection[afterCorrection.length - 1].phone;
+                        waitingForDifferentNumber = false;
+                    } else {
+                        resolved = '';
+                        waitingForDifferentNumber = true;
+                    }
+                } else {
+                    resolved = phones[phones.length - 1];
+                    waitingForDifferentNumber = false;
+                }
+                continue;
+            }
+            if (hasNegative) {
+                resolved = '';
+                waitingForDifferentNumber = true;
+                structuredRejected = true;
+                continue;
+            }
+            if (hasPositive && callerWhatsapp) {
+                resolved = callerWhatsapp;
+                waitingForDifferentNumber = false;
+                continue;
+            }
+        }
+
+        // Correction cue outside the WhatsApp-question window: use the latest valid mobile.
+        if (phones.length > 0 && (hasNegative || /\b(?:wait|ruk|rukiye|likhiye|write|correct|sahi)\b|रुक|लिख|सही/i.test(msgLower))) {
+            resolved = phones[phones.length - 1];
+        }
+    }
+
+    return resolved || (structuredRejected ? callerWhatsapp : structuredWhatsapp) || callerWhatsapp || '';
+}
+
 serve(async (req) => {
     // Must return 200 quickly or ElevenLabs will retry/disable the webhook
     if (req.method === 'OPTIONS') {
@@ -49,16 +164,7 @@ serve(async (req) => {
             .join('\n');
             
         // --- WHATSAPP NUMBER EXTRACTION LOGIC ---
-        let finalWhatsappNumber = '';
-
-        // 1. Check Data Collection (from ElevenLabs AI agent native data collection structure)
-        // This mirrors exactly how the UI grabs the phone number from the API
-        if (analysis.data_collection_results) {
-            const dc = analysis.data_collection_results;
-            finalWhatsappNumber = dc.contact_number?.value || dc.phone_number?.value || dc.whatsapp?.value || '';
-        }
-
-        // 2. Dynamic wildcard SIP Header parsing
+        // Dynamic wildcard SIP Header parsing for the caller/calling number.
         let metadataPhone = metadata?.phone_number || metadata?.caller_id || null;
         if (!metadataPhone && metadata) {
             for (const key in metadata) {
@@ -72,37 +178,18 @@ serve(async (req) => {
             }
         }
 
-        // 3. Transcript Analysis for "Yes" confirmation or dictated number
-        if (!finalWhatsappNumber && transcript.length > 0) {
-            for (let i = 0; i < transcript.length; i++) {
-                const turn = transcript[i];
-                const msg = turn.message?.toLowerCase() || '';
-
-                // If user dictates a 10 digit number anywhere, grab it
-                if (turn.role === 'user') {
-                    const phoneMatch = msg.replace(/[\s\-\.]/g, '').match(/(?:\+?91)?([6-9]\d{9})/);
-                    if (phoneMatch) {
-                        finalWhatsappNumber = '+91' + phoneMatch[1];
-                    }
-                }
-
-                // If agent asks if this is their WhatsApp number natively in English or Hindi
-                if (turn.role === 'agent' && msg.includes('whatsapp')) {
-                    if (i + 1 < transcript.length && transcript[i+1].role === 'user') {
-                        const userReply = transcript[i+1].message?.toLowerCase() || '';
-                        if (['yes', 'haan', 'ji', 'yep', 'hanji', 'ha', 'same', 'yup', 'हाँ', 'जी', 'हां'].some(word => userReply.includes(word))) {
-                            finalWhatsappNumber = metadataPhone || callerPhone || "Confirmed (No Caller ID)";
-                        }
-                    }
-                }
-            }
+        let dataCollectionWhatsapp = '';
+        if (analysis.data_collection_results) {
+            const dc = analysis.data_collection_results;
+            dataCollectionWhatsapp = dc.contact_number?.value || dc.phone_number?.value || dc.whatsapp?.value || '';
         }
 
-        // Fallback chain: Extracted WA → Caller ID
-        let effectivePhoneNumber = finalWhatsappNumber || callerPhone;
-        if (effectivePhoneNumber === "Confirmed (No Caller ID)") {
-            effectivePhoneNumber = ""; // clear invalid text so we don't spam errors
-        }
+        // Transcript wins over data_collection because callers often correct numbers after the first capture.
+        const finalWhatsappNumber = resolveWhatsappNumber(transcript, callerPhone, metadataPhone, dataCollectionWhatsapp);
+
+        // Store the calling number separately from the WhatsApp messaging target.
+        const effectivePhoneNumber = finalWhatsappNumber || callerPhone;
+        const callLogPhoneNumber = callerPhone || metadataPhone || effectivePhoneNumber;
         const startTime = startTimeRaw;
         
         console.log(`[Webhook] Call from callerPhone="${callerPhone}" | extractedWA="${finalWhatsappNumber}" | effective="${effectivePhoneNumber}" | duration=${callDurationSecs}s`);
@@ -158,7 +245,7 @@ serve(async (req) => {
             .upsert({
                 conversation_id: conversationId,
                 agent_id: agentId,
-                phone_number: effectivePhoneNumber,
+                phone_number: callLogPhoneNumber,
                 transcript_text: transcriptText,
                 transcript_json: transcript,
                 call_duration_secs: callDurationSecs,
@@ -197,8 +284,11 @@ serve(async (req) => {
                     updatePayload.pipeline_stage = 'In Discussion';
                 }
                 await supabase.from('crm_leads').update(updatePayload).eq('id', existingLead.id);
-                // Always update WhatsApp number if transcript extracted a different/new one
-                if (finalWhatsappNumber && finalWhatsappNumber !== callerPhone) {
+                // Always update WhatsApp number when the transcript resolved one, including "same as caller".
+                if (
+                    finalWhatsappNumber &&
+                    normalizeIndianMobile(existingLead.whatsapp_number) !== normalizeIndianMobile(finalWhatsappNumber)
+                ) {
                     await supabase.from('crm_leads').update({ whatsapp_number: finalWhatsappNumber }).eq('id', existingLead.id);
                 }
                 // Log call_received activity
