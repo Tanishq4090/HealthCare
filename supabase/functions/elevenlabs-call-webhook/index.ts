@@ -200,10 +200,12 @@ serve(async (req) => {
         let detectedName = "Customer";
 
         const serviceKeywords: Record<string, string[]> = {
-            "Baby Care": ["baby", "child", "infant", "newborn", "japa", "bachcha", "baccha"],
-            "Old Age Care": ["old age", "elderly", "senior", "parent", "mother", "father", "dadi", "dada", "nana", "nani"],
-            "Nursing Care": ["nursing", "medical", "hospital", "patient", "nurse", "injection", "wound"],
-            "Physiotherapy": ["physio", "exercise", "therapy", "rehab", "back pain", "paralysis"]
+            "New Born Baby Care": ["newborn", "new born", "neonatal", "nawajaata", "nav janam"],
+            "Baby Care": ["baby", "infant", "toddler", "bachcha", "baccha", "shishu"],
+            "Japa Care (Post-Delivery)": ["japa", "post delivery", "post-delivery", "prasav ke baad"],
+            "Maternity Care": ["maternity", "pregnant", "pregnancy", "prasav", "delivery", "garbhavati"],
+            "Old Age Care": ["old age", "elderly", "senior citizen", "geriatric", "budhapa", "buddhe"],
+            "Nursing Care": ["nursing", "nurse", "injection", "wound", "dressing", "iv drip", "medical"],
         };
 
         const shiftKeywords: Record<string, string[]> = {
