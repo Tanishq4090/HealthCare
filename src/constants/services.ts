@@ -6,6 +6,7 @@ export const CARE_SERVICES = [
   'Nursing Care',
   'Maternity Care',
   'New Born Baby Care',
+  'Baby Care',
   'Japa Care (Post-Delivery)',
   'Old Age Care',
 ] as const;

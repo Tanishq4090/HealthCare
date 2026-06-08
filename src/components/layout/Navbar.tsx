@@ -12,6 +12,7 @@ const SERVICES = [
   { name: 'Nursing Care', path: '/services/nursing-services-on-demand' },
   { name: 'Maternity Care', path: '/services/maternity-care' },
   { name: 'New Born Baby Care', path: '/services/new-born-baby-care' },
+  { name: 'Baby Care', path: '/services/baby-care' },
   { name: 'Japa Care (Post-Delivery)', path: '/services/maternity-care' },
   { name: 'Old Age Care', path: '/services/old-age-person-care' },
 ];

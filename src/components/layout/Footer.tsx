@@ -63,6 +63,7 @@ export default function Footer() {
               <Link to="/services/nursing-services-on-demand" className="text-gray-400 hover:text-white transition-colors w-fit">Nursing Care</Link>
               <Link to="/services/maternity-care" className="text-gray-400 hover:text-white transition-colors w-fit">Maternity Care</Link>
               <Link to="/services/new-born-baby-care" className="text-gray-400 hover:text-white transition-colors w-fit">New Born Baby Care</Link>
+              <Link to="/services/baby-care" className="text-gray-400 hover:text-white transition-colors w-fit">Baby Care</Link>
               <Link to="/services/maternity-care" className="text-gray-400 hover:text-white transition-colors w-fit">Japa Care (Post-Delivery)</Link>
               <Link to="/services/old-age-person-care" className="text-gray-400 hover:text-white transition-colors w-fit">Old Age Care</Link>
             </div>

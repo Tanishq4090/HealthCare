@@ -5196,7 +5196,7 @@ export default function CRM() {
                                         <div className="flex items-center justify-between gap-4 px-4 py-3">
                                             <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
                                             <span className="text-sm font-semibold text-slate-800 text-right">
-                                                {consent?.age ? `${consent.age} yrs` : '—'}
+                                                {consent?.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}` : '—'}
                                                 {consent?.weight ? `, ${consent.weight} kg` : ''}
                                             </span>
                                         </div>

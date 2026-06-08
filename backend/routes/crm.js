@@ -63,6 +63,24 @@ const crmConfig = {
       ]
     },
     {
+      id: "baby_care",
+      name: "Baby Care",
+      questions: [
+        "Patient Name (Child's name)",
+        "City",
+        "Area in Surat",
+        "Single or Twins?",
+        "Age of baby",
+        "Any medical problems?",
+        "Service type (Day/Night/24h)",
+        "Work details for baby",
+        "Language preferred (Gujarati/Hindi/Marathi/English)",
+        "Age of baby sitter needed",
+        "Start date",
+        "Special requirements"
+      ]
+    },
+    {
       id: "japa_care",
       name: "Japa Care (Post-Delivery)",
       questions: [

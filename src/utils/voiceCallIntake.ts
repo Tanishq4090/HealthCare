@@ -11,6 +11,7 @@ const SERVICE_OPTIONS = [
     'Nursing Care',
     'Maternity Care',
     'New Born Baby Care',
+    'Baby Care',
     'Japa Care (Post-Delivery)',
     'Old Age Care',
 ] as const;
@@ -27,14 +28,15 @@ const INTENT_TO_SERVICE: Record<string, string> = {
     'newborn baby care': 'New Born Baby Care',
     'newborn care': 'New Born Baby Care',
     'new born care': 'New Born Baby Care',
-    'baby care': 'New Born Baby Care',
+    'baby care': 'Baby Care',
     'japa care': 'Japa Care (Post-Delivery)',
     'japa care (post-delivery)': 'Japa Care (Post-Delivery)',
 };
 
 /** Order matters: more specific phrases before generic (e.g. newborn before "care"). */
 const SERVICE_SIGNALS: { service: string; re: RegExp }[] = [
-    { service: 'New Born Baby Care', re: /\b(?:new\s*born|newborn|neonat(?:al|e)?|baby\s*care)\b/i },
+    { service: 'New Born Baby Care', re: /\b(?:new\s*born|newborn|neonat(?:al|e)?)\b/i },
+    { service: 'Baby Care', re: /\b(?:baby\s*care|infant|toddler)\b/i },
     { service: 'Japa Care (Post-Delivery)', re: /\b(?:japa|post[\s-]*delivery)\b/i },
     { service: 'Maternity Care', re: /\b(?:maternity|pregnant|pregnancy|postpartum)\b/i },
     { service: 'Nursing Care', re: /\b(?:nursing|nurse|patient\s+care)\b/i },

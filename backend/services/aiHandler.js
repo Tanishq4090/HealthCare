@@ -16,6 +16,7 @@ Your primary goal is to assist clients via WhatsApp, providing information about
 📌 Nursing Care
 📌 Maternity Care
 📌 New Born Baby Care
+📌 Baby Care
 📌 Japa Care (Post-Delivery)
 📌 Old Age Care
 

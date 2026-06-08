@@ -85,7 +85,8 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                     setServiceName(sName);
                     // Guess category
                     const nameLower = sName.toLowerCase();
-                    if (nameLower.includes('baby') || nameLower.includes('new born')) setServiceCategory('New Born Baby Care');
+                    if (nameLower.includes('new born')) setServiceCategory('New Born Baby Care');
+                    else if (nameLower.includes('baby')) setServiceCategory('Baby Care');
                     else if (nameLower.includes('japa') || nameLower.includes('post-delivery') || nameLower.includes('mother')) setServiceCategory('Japa Care (Post-Delivery)');
                     else if (nameLower.includes('maternity')) setServiceCategory('Maternity Care');
                     else if (nameLower.includes('elder') || nameLower.includes('old age')) setServiceCategory('Old Age Care');

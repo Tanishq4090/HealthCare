@@ -22,6 +22,7 @@ export default function TermsPage() {
         "Nursing Care",
         "Maternity Care",
         "New Born Baby Care",
+        "Baby Care",
         "Japa Care (Post-Delivery)",
         "Old Age Care"
       ]

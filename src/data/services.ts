@@ -216,6 +216,40 @@ export const services: Service[] = [
     ],
   },
   {
+    slug: 'baby-care',
+    title: 'Baby Care',
+    category: 'caretaker',
+    icon: 'baby',
+    image: '/images/services/new-born-baby-care.jpg',
+    shortDesc: 'Expert baby care at home — giving your child the best support and attention.',
+    description: [
+      'A growing baby requires attentive care, engaging activities, and expert support. At 99 Care, our trained caretakers bring professional baby care expertise directly to your home, ensuring your child receives the attention they need in a safe and loving environment.',
+      'Our baby care services cover feeding, diapering, bathing, establishing routines, and engaging in age-appropriate developmental activities. Our caretakers are vigilant and attentive to your baby\'s evolving needs.',
+      'We understand that every baby is unique. Our caretakers adapt to your parenting style and family environment, providing support that complements your routine. Whether you need full-day support, flexible hourly help, or specialized care, we are here for you.',
+    ],
+    benefits: [
+      'Bathing, diapering, and personal care by trained caregivers',
+      'Feeding assistance and mealtime routine support',
+      'Engaging in developmental and play activities',
+      'Maintaining sleep routines and a safe environment',
+      'Flexible scheduling to give parents peace of mind',
+    ],
+    whyUs: [
+      {
+        title: 'Trained Childcare Specialists',
+        text: 'Our baby caretakers are trained in childcare best practices, ensuring your baby is safe and well cared for.',
+      },
+      {
+        title: 'Engaging & Patient Care',
+        text: 'Our caretakers are selected for their patience, energy, and genuine love for childcare.',
+      },
+      {
+        title: 'Flexible Scheduling',
+        text: 'From full-day support to part-time care, we offer scheduling options that fit your family\'s needs.',
+      },
+    ],
+  },
+  {
     slug: 'old-age-person-care',
     title: 'Old Age Person Care',
     category: 'caretaker',
@@ -263,6 +297,7 @@ export const APPOINTMENT_SERVICES = [
   { slug: 'nursing-services-on-demand', title: 'Nursing Care' },
   { slug: 'maternity-care',             title: 'Maternity Care' },
   { slug: 'new-born-baby-care',         title: 'New Born Baby Care' },
+  { slug: 'baby-care',                  title: 'Baby Care' },
   { slug: 'maternity-care',             title: 'Japa Care (Post-Delivery)' },
   { slug: 'old-age-person-care',        title: 'Old Age Care' },
 ];

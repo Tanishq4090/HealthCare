@@ -12,6 +12,7 @@
         "relative_name": { "type": "string", "__default__": "", "__example__": "Jane Doe" },
         "patient_name": { "type": "string", "__default__": "", "__example__": "John Doe" },
         "age": { "type": "string", "__default__": "", "__example__": "72" },
+        "age_unit": { "type": "string", "__default__": "Years", "__example__": "Years" },
         "weight": { "type": "string", "__default__": "", "__example__": "65" },
         "contact_number": { "type": "string", "__default__": "", "__example__": "9876543210" },
         "alternate_contact_number": { "type": "string", "__default__": "", "__example__": "9876543211" },
@@ -29,6 +30,17 @@
           { "type": "TextInput", "name": "relative_name", "label": "Relative Name", "init-value": "${data.relative_name}", "required": true },
           { "type": "TextInput", "name": "patient_name", "label": "Patient Name", "init-value": "${data.patient_name}", "required": true },
           { "type": "TextInput", "name": "age", "label": "Age", "input-type": "number", "init-value": "${data.age}", "required": true },
+          {
+            "type": "Dropdown",
+            "name": "age_unit",
+            "label": "Age in (Years/Months)",
+            "init-value": "${data.age_unit}",
+            "required": true,
+            "data-source": [
+              { "id": "Years", "title": "Years" },
+              { "id": "Months", "title": "Months" }
+            ]
+          },
           { "type": "TextInput", "name": "weight", "label": "Weight (kg)", "input-type": "number", "init-value": "${data.weight}", "required": true },
           { "type": "TextInput", "name": "contact_number", "label": "Contact Number (10 digits)", "input-type": "phone", "init-value": "${data.contact_number}", "required": true },
           { "type": "TextInput", "name": "alternate_contact_number", "label": "Alt. Contact", "input-type": "phone", "init-value": "${data.alternate_contact_number}", "required": true },
@@ -59,6 +71,7 @@
               { "id": "Nursing Care", "title": "Nursing Care" },
               { "id": "Maternity Care", "title": "Maternity Care" },
               { "id": "New Born Baby Care", "title": "New Born Baby Care" },
+              { "id": "Baby Care", "title": "Baby Care" },
               { "id": "Japa Care (Post-Delivery)", "title": "Japa Care (Post-Delivery)" },
               { "id": "Old Age Care", "title": "Old Age Care" }
             ]
@@ -88,6 +101,7 @@
                 "relative_name": "${form.relative_name}",
                 "patient_name": "${form.patient_name}",
                 "age": "${form.age}",
+                "age_unit": "${form.age_unit}",
                 "weight": "${form.weight}",
                 "contact_number": "${form.contact_number}",
                 "alternate_contact_number": "${form.alternate_contact_number}",

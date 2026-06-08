@@ -42,6 +42,7 @@ export function buildConsentFlowData(
         relative_name: leadDisplayName || String(consent?.relative_name || '').trim(),
         patient_name: String(consent?.patient_name || '').trim(),
         age: consent?.age != null ? String(consent.age) : '',
+        age_unit: consent?.age_unit != null ? String(consent.age_unit) : 'Years',
         weight: consent?.weight != null ? String(consent.weight) : '',
         contact_number: String(consent?.contact_number || phone || '').trim(),
         alternate_contact_number: String(consent?.alternate_contact_number || '').trim(),
