@@ -375,21 +375,8 @@ export default function CRM() {
             .subscribe();
 
         const workFormSub = supabase.channel('realtime_client_work_forms_v1')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'client_work_forms' }, (payload) => {
-                const workForm = payload.new as any;
-                if (!workForm?.lead_id) return;
-                setLeads((prev) =>
-                    prev.map((l) => {
-                        if (l.id !== workForm.lead_id) return l;
-                        const existing = l.client_work_forms || [];
-                        const updatedLead = { ...l, client_work_forms: [...existing, workForm] };
-                        // Also refresh the inspector panel if this lead is open
-                        setSelectedInspectorLead((prevIns: any) =>
-                            prevIns?.id === updatedLead.id ? updatedLead : prevIns
-                        );
-                        return updatedLead;
-                    })
-                );
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'client_work_forms' }, () => {
+                fetchLeads();
             })
             .subscribe();
 
@@ -1532,21 +1519,32 @@ export default function CRM() {
         try {
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), client_work_forms(*)')
+                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
                 .is('deleted_at', null)
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
+
+            // Separately fetch work forms (avoids PostgREST schema cache issues with new FK)
+            const { data: workForms } = await supabase
+                .from('client_work_forms')
+                .select('*')
+                .order('created_at', { ascending: true });
+            const workFormsByLead: Record<string, any[]> = {};
+            for (const wf of (workForms || [])) {
+                if (!workFormsByLead[wf.lead_id]) workFormsByLead[wf.lead_id] = [];
+                workFormsByLead[wf.lead_id].push(wf);
+            }
 
             if (error) {
                 // If deleted_at column doesn't exist yet, fall back to fetching all leads
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), client_work_forms(*)')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
-                    const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l));
+                    const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l)).map((l) => ({ ...l, client_work_forms: workFormsByLead[l.id] || [] }));
                     const firstStage = NEW_LEAD_PIPELINE_STAGE;
                     const legacyIds = fallbackRows
                         .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
@@ -1573,7 +1571,7 @@ export default function CRM() {
                 }
                 throw error;
             }
-            const rows = (data || []).filter((l) => !isManualInvoiceLead(l));
+            const rows = (data || []).filter((l) => !isManualInvoiceLead(l)).map((l) => ({ ...l, client_work_forms: workFormsByLead[l.id] || [] }));
             const firstStage = NEW_LEAD_PIPELINE_STAGE;
             const legacyIds = rows
                 .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
