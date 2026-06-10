@@ -2063,7 +2063,63 @@ export default function CRM() {
             extra,
         });
 
-    // Helper to dispatch WhatsApp templates programmatically
+    const buildPatientCareFlowPrefill = (lead: any, extra: Record<string, string> = {}) =>
+        buildPatientCareFlowActionData(lead, {
+            consent: getLatestByCreatedAt(lead?.client_consents),
+            quote: getLatestByCreatedAt(lead?.crm_quotations),
+            extra,
+        });
+
+    // Resolves lead service and dispatches the correct secondary work form
+    const dispatchWorkFormForLead = async (lead: any, refQuote?: any) => {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        let phoneDigits = (lead.whatsapp_number || lead.phone || '').replace(/\D/g, '');
+        if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+        if (!phoneDigits) return;
+
+        // Resolve service from provided quote, then latest quotation, then latest consent
+        const quote = refQuote || getLatestByCreatedAt(lead?.crm_quotations);
+        const consent = getLatestByCreatedAt(lead?.client_consents);
+        const service = String(
+            quote?.service_category || quote?.service_name ||
+            consent?.service_category || consent?.service_name ||
+            lead?.service_category || ''
+        ).toLowerCase();
+
+        console.log('[WorkForm] Resolving service for secondary dispatch:', service);
+
+        let templateName: string | null = null;
+        let flowData: any = null;
+
+        if (/baby care|new born baby care|maternity care|jhapa care|japa care/.test(service)) {
+            templateName = 'baby_care_form';
+            flowData = buildBabyCareFlowPrefill(lead);
+        } else if (/old age care|nursing care/.test(service)) {
+            templateName = 'patient_care_form';
+            flowData = buildPatientCareFlowPrefill(lead);
+        } else {
+            console.warn('[WorkForm] No matching service category for work form dispatch. Service was:', service);
+            return;
+        }
+
+        await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+            body: JSON.stringify({
+                phone: phoneDigits,
+                leadName: lead?.name?.split(/\s+/)[0] || 'there',
+                leadId: lead.id,
+                useTemplate: true,
+                templateName,
+                flowData,
+            })
+        });
+        toast.success(`Work Form dispatched to ${lead.name}!`);
+    };
+
+
     const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[], flowData?: any) => {
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
         const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -2462,50 +2518,8 @@ export default function CRM() {
                 else if (agentTargetAction === 'consent') {
                     await logActivity(agentTargetLead.id, 'consent_sent', 'Consent form link sent');
                     toast.success(`Consent Form dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
-
-                    // Handle Secondary Dispatch of Work Form Based on Service
-                    try {
-                        const consentObj = getLatestByCreatedAt(agentTargetLead.client_consents) || getLatestByCreatedAt(agentTargetLead.crm_quotations);
-                        const service = String(consentObj?.service_category || consentObj?.service_name || '').toLowerCase();
-
-                        if (service.match(/baby care|new born baby care|maternity care|jhapa care/i)) {
-                            setTimeout(async () => {
-                                const flowData = buildBabyCareFlowActionData(agentTargetLead, { consent: consentObj });
-                                await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
-                                    body: JSON.stringify({
-                                        phone: phoneDigits,
-                                        leadName: agentTargetLead?.name?.split(/\s+/)[0] || 'there',
-                                        leadId: agentTargetLead.id,
-                                        useTemplate: true,
-                                        templateName: 'baby_care_form',
-                                        flowData: flowData
-                                    })
-                                });
-                                toast.success('Baby Care Work Form also dispatched!');
-                            }, 1500);
-                        } else if (service.match(/old age care|nursing care/i)) {
-                            setTimeout(async () => {
-                                const flowData = buildPatientCareFlowActionData(agentTargetLead, { consent: consentObj });
-                                await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
-                                    body: JSON.stringify({
-                                        phone: phoneDigits,
-                                        leadName: agentTargetLead?.name?.split(/\s+/)[0] || 'there',
-                                        leadId: agentTargetLead.id,
-                                        useTemplate: true,
-                                        templateName: 'patient_care_form',
-                                        flowData: flowData
-                                    })
-                                });
-                                toast.success('Patient Care Work Form also dispatched!');
-                            }, 1500);
-                        }
-                    } catch (err) {
-                        console.error('Secondary Work Form dispatch failed', err);
-                    }
+                    // Dispatch secondary work form after 1.5s
+                    setTimeout(() => { dispatchWorkFormForLead(agentTargetLead).catch(e => console.error('Work form dispatch failed', e)); }, 1500);
                 }
                 // If staff assignment -> move to Staff Assigned
                 else if (agentTargetAction === 'staff' && (selectedWorker || agentTargetLead.assigned_staff)) {
@@ -5565,6 +5579,11 @@ export default function CRM() {
 
                                                                 // 2. Dispatch Consent Form automatically with autofill data
                                                                 await dispatchWhatsAppTemplate(selectedInspectorLead, 'consent', undefined, flowData);
+
+                                                                // 3. Dispatch the secondary Work Form after 1.5s
+                                                                setTimeout(() => {
+                                                                    dispatchWorkFormForLead(selectedInspectorLead, latestQuote).catch(e => console.error('Work form dispatch failed', e));
+                                                                }, 1500);
 
                                                                 toast.success("✅ Quotation Approved! Consent form sent to client.", { id: toastId });
                                                                 setSelectedInspectorLead(null);
