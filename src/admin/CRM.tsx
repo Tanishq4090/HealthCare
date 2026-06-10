@@ -5494,7 +5494,7 @@ export default function CRM() {
                                     <p className="text-sm text-slate-400 italic py-2">No activity yet.</p>
                                 ) : (
                                     <>
-                                        {(showFullTimeline ? inspectorActivity : inspectorActivity.slice(0, 3)).map((evt, i, arr) => {
+                                        {(showFullTimeline ? inspectorActivity : inspectorActivity.slice(-3)).map((evt, i, arr) => {
                                             const isLast = i === arr.length - 1 && (!showFullTimeline && inspectorActivity.length > 3 ? false : true);
                                             const dotColor = evt.event_type === 'lead_created' ? 'bg-teal-500'
                                                 : evt.event_type === 'greeting_sent' ? 'bg-blue-500'
