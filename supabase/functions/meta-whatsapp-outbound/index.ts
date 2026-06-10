@@ -283,8 +283,8 @@ serve(async (req) => {
               type: "text",
               text: (message || "Here is your quotation.").trim()
           });
-      } else if (templateName === "post_call_intake" || !templateName) {
-          // Fallback to post_call_intake parameter
+      } else if (templateName === "post_call_intake" || templateName === "baby_care_form" || templateName === "patient_care_form" || !templateName) {
+          // Fallback to sending the lead's name as the first parameter
           parameters.push({
               type: "text",
               text: leadName ? leadName.trim() : 'there'
