@@ -514,6 +514,7 @@ export default function CRM() {
     const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
     const [ciLeadId, setCiLeadId] = useState('');
     const [addLeadConfirmDuplicate, setAddLeadConfirmDuplicate] = useState(false);
+    const [showFullTimeline, setShowFullTimeline] = useState(false);
 
     // Staff Picker State
     const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
@@ -5492,29 +5493,42 @@ export default function CRM() {
                                 ) : inspectorActivity.length === 0 ? (
                                     <p className="text-sm text-slate-400 italic py-2">No activity yet.</p>
                                 ) : (
-                                    inspectorActivity.map((evt, i) => {
-                                        const isLast = i === inspectorActivity.length - 1;
-                                        const dotColor = evt.event_type === 'lead_created' ? 'bg-teal-500'
-                                            : evt.event_type === 'greeting_sent' ? 'bg-blue-500'
-                                                : evt.event_type === 'form_filled' ? 'bg-purple-500'
-                                                    : evt.event_type === 'stage_changed' ? 'bg-amber-500'
-                                                        : evt.event_type === 'quotation_sent' ? 'bg-orange-500'
-                                                            : evt.event_type === 'call_received' ? 'bg-emerald-500'
-                                                                : evt.event_type === 'note_added' ? 'bg-indigo-500'
-                                                                    : 'bg-slate-400';
-                                        return (
-                                            <div key={evt.id} className="flex gap-3">
-                                                <div className="flex flex-col items-center">
-                                                    <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dotColor}`} />
-                                                    {!isLast && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+                                    <>
+                                        {(showFullTimeline ? inspectorActivity : inspectorActivity.slice(0, 3)).map((evt, i, arr) => {
+                                            const isLast = i === arr.length - 1 && (!showFullTimeline && inspectorActivity.length > 3 ? false : true);
+                                            const dotColor = evt.event_type === 'lead_created' ? 'bg-teal-500'
+                                                : evt.event_type === 'greeting_sent' ? 'bg-blue-500'
+                                                    : evt.event_type === 'form_filled' ? 'bg-purple-500'
+                                                        : evt.event_type === 'stage_changed' ? 'bg-amber-500'
+                                                            : evt.event_type === 'quotation_sent' ? 'bg-orange-500'
+                                                                : evt.event_type === 'call_received' ? 'bg-emerald-500'
+                                                                    : evt.event_type === 'note_added' ? 'bg-indigo-500'
+                                                                        : 'bg-slate-400';
+                                            return (
+                                                <div key={evt.id} className="flex gap-3">
+                                                    <div className="flex flex-col items-center">
+                                                        <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dotColor}`} />
+                                                        {!isLast && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+                                                    </div>
+                                                    <div className={`pb-4 min-w-0 ${isLast ? '' : ''}`}>
+                                                        <p className="text-sm font-semibold text-slate-800 leading-tight">{evt.description}</p>
+                                                        <p className="text-[11px] text-slate-400 mt-0.5">{formatActivityTime(evt.created_at)}</p>
+                                                    </div>
                                                 </div>
-                                                <div className={`pb-4 min-w-0 ${isLast ? '' : ''}`}>
-                                                    <p className="text-sm font-semibold text-slate-800 leading-tight">{evt.description}</p>
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">{formatActivityTime(evt.created_at)}</p>
-                                                </div>
+                                            );
+                                        })}
+                                        {inspectorActivity.length > 3 && (
+                                            <div className="flex gap-3 -mt-2 mb-2 relative z-10">
+                                                <div className="flex flex-col items-center w-2.5 shrink-0 ml-1.5" />
+                                                <button
+                                                    onClick={() => setShowFullTimeline(!showFullTimeline)}
+                                                    className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                                                >
+                                                    {showFullTimeline ? 'Show less' : `View ${inspectorActivity.length - 3} more past events...`}
+                                                </button>
                                             </div>
-                                        );
-                                    })
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
