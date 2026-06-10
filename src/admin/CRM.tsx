@@ -374,11 +374,7 @@ export default function CRM() {
             })
             .subscribe();
 
-        const workFormSub = supabase.channel('realtime_client_work_forms_v1')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'client_work_forms' }, () => {
-                fetchLeads();
-            })
-            .subscribe();
+
 
         // Request browser notification permission
         if ("Notification" in window && Notification.permission === "default") {
@@ -392,7 +388,6 @@ export default function CRM() {
             supabase.removeChannel(consentSub);
             supabase.removeChannel(activitySub);
             supabase.removeChannel(whatsappFailureSub);
-            supabase.removeChannel(workFormSub);
         };
     }, []);
 
@@ -1524,17 +1519,6 @@ export default function CRM() {
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
 
-            // Separately fetch work forms (avoids PostgREST schema cache issues with new FK)
-            const { data: workForms } = await supabase
-                .from('client_work_forms')
-                .select('*')
-                .order('created_at', { ascending: true });
-            const workFormsByLead: Record<string, any[]> = {};
-            for (const wf of (workForms || [])) {
-                if (!workFormsByLead[wf.lead_id]) workFormsByLead[wf.lead_id] = [];
-                workFormsByLead[wf.lead_id].push(wf);
-            }
-
             if (error) {
                 // If deleted_at column doesn't exist yet, fall back to fetching all leads
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
@@ -1544,7 +1528,7 @@ export default function CRM() {
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
-                    const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l)).map((l) => ({ ...l, client_work_forms: workFormsByLead[l.id] || [] }));
+                    const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l));
                     const firstStage = NEW_LEAD_PIPELINE_STAGE;
                     const legacyIds = fallbackRows
                         .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
@@ -1571,7 +1555,7 @@ export default function CRM() {
                 }
                 throw error;
             }
-            const rows = (data || []).filter((l) => !isManualInvoiceLead(l)).map((l) => ({ ...l, client_work_forms: workFormsByLead[l.id] || [] }));
+            const rows = (data || []).filter((l) => !isManualInvoiceLead(l));
             const firstStage = NEW_LEAD_PIPELINE_STAGE;
             const legacyIds = rows
                 .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
@@ -5371,8 +5355,8 @@ export default function CRM() {
                         })()}
 
                         {/* ── Work Form Details ──────────────────────────── */}
-                        {selectedInspectorLead.client_work_forms && selectedInspectorLead.client_work_forms.length > 0 && (() => {
-                            const workForm = getLatestByCreatedAt(selectedInspectorLead.client_work_forms);
+                        {selectedInspectorLead.work_form_data && (() => {
+                            const workForm = selectedInspectorLead.work_form_data;
                             const dutiesCount = workForm?.duties?.length || 0;
                             const title = workForm?.form_type === 'baby_care_form' ? 'Baby Care Work Form' : 'Patient Care Work Form';
                             
@@ -5389,6 +5373,11 @@ export default function CRM() {
                                             </span>
                                             <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
                                         </div>
+                                        {workForm?.updated_at && (
+                                            <span className="text-[10px] text-slate-500 font-medium">
+                                                Last updated: {new Date(workForm.updated_at).toLocaleString()}
+                                            </span>
+                                        )}
                                         <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                                             <CheckSquare className="w-3.5 h-3.5" />
                                             <span>{dutiesCount} duties specified</span>

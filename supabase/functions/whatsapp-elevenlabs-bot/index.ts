@@ -194,17 +194,19 @@ serve(async (req) => {
                 if (existingLead) {
                     const dutiesArray = typeof formData.duties === 'string' ? formData.duties.split(',') : (formData.duties || []);
                     
-                    const { error } = await supabase.from('client_work_forms').insert([{
-                            lead_id: existingLead.id,
+                    const { error } = await supabase.from('crm_leads').update({
+                        work_form_data: {
                             form_type: formData.flow_type,
                             patient_name: formData.baby_name || formData.full_name || '',
                             duties: dutiesArray,
-                            other_work: formData.other_work || ''
-                        }]);
+                            other_work: formData.other_work || '',
+                            updated_at: new Date().toISOString()
+                        }
+                    }).eq('id', existingLead.id);
                     workError = error;
 
                     if (workError) {
-                        console.error('[Flow] Error inserting work form:', workError);
+                        console.error('[Flow] Error updating lead with work form:', workError);
                     }
 
                     // Log activity event
