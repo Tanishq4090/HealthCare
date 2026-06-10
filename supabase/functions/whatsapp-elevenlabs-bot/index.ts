@@ -189,17 +189,19 @@ serve(async (req) => {
                     .order('created_at', { ascending: false })
                     .limit(1);
                 const existingLead = existingLeads?.[0] ?? null;
+                let workError = null;
 
                 if (existingLead) {
                     const dutiesArray = typeof formData.duties === 'string' ? formData.duties.split(',') : (formData.duties || []);
                     
-                    const { error: workError } = await supabase.from('client_work_forms').insert([{
-                        lead_id: existingLead.id,
-                        form_type: formData.flow_type,
-                        patient_name: formData.baby_name || formData.full_name || '',
-                        duties: dutiesArray,
-                        other_work: formData.other_work || ''
-                    }]);
+                    const { error } = await supabase.from('client_work_forms').insert([{
+                            lead_id: existingLead.id,
+                            form_type: formData.flow_type,
+                            patient_name: formData.baby_name || formData.full_name || '',
+                            duties: dutiesArray,
+                            other_work: formData.other_work || ''
+                        }]);
+                    workError = error;
 
                     if (workError) {
                         console.error('[Flow] Error inserting work form:', workError);
@@ -215,6 +217,11 @@ serve(async (req) => {
                     if (actError) console.error('[Flow] Error inserting activity:', actError);
                 } else {
                     console.warn(`[Flow] Work Form received but no CRM Lead found for ${purePhone}!`);
+                }
+
+                let finalPayload = { type: `flow_submission_${formData.flow_type}`, original_recipient: fromPhone };
+                if (typeof workError !== 'undefined' && workError) {
+                    finalPayload.error = workError;
                 }
 
                 const confirmMsg = `Thank you! 🙏😊\n\nWe have successfully received the work duties checklist. This helps us ensure the best care possible! ✨`;
@@ -235,7 +242,7 @@ serve(async (req) => {
                 await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
                 await supabase.from('whatsapp_logs').insert([{
                     sid: wamid, status: 'success',
-                    payload: { type: `flow_submission_${formData.flow_type}`, original_recipient: fromPhone }
+                    payload: finalPayload
                 }]);
 
                 await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: `[${formData.flow_type === 'baby_care_form' ? 'Baby Care' : 'Patient Care'} form submitted]` }]);

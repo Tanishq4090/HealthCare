@@ -374,6 +374,25 @@ export default function CRM() {
             })
             .subscribe();
 
+        const workFormSub = supabase.channel('realtime_client_work_forms_v1')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'client_work_forms' }, (payload) => {
+                const workForm = payload.new as any;
+                if (!workForm?.lead_id) return;
+                setLeads((prev) =>
+                    prev.map((l) => {
+                        if (l.id !== workForm.lead_id) return l;
+                        const existing = l.client_work_forms || [];
+                        const updatedLead = { ...l, client_work_forms: [...existing, workForm] };
+                        // Also refresh the inspector panel if this lead is open
+                        setSelectedInspectorLead((prevIns: any) =>
+                            prevIns?.id === updatedLead.id ? updatedLead : prevIns
+                        );
+                        return updatedLead;
+                    })
+                );
+            })
+            .subscribe();
+
         // Request browser notification permission
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
@@ -386,6 +405,7 @@ export default function CRM() {
             supabase.removeChannel(consentSub);
             supabase.removeChannel(activitySub);
             supabase.removeChannel(whatsappFailureSub);
+            supabase.removeChannel(workFormSub);
         };
     }, []);
 
@@ -680,6 +700,48 @@ export default function CRM() {
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
     const [selectedInspectorLead, setSelectedInspectorLead] = useState<any | null>(null);
     const [showWorkFormModal, setShowWorkFormModal] = useState<any | null>(null);
+
+    const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
+        pateint_bath: 'Patient Bath',
+        massage: 'Massage',
+        diaper_change: 'Diaper Change',
+        feeding: 'Feeding',
+        medication: 'Medication',
+        exercise: 'Exercise',
+        clean_room: 'Clean Room',
+        cut_nails: 'Grooming (Hair/Nails)',
+        changing_cloths: 'Change/Wash Clothes',
+        change_bedshit: 'Change Bedsheet',
+        take_into_hospital: 'Take to Hospital',
+        take_in_washroom: 'Take to Washroom',
+        urine_bag: 'Urine Bag Care',
+        dressing: 'Wound Dressing',
+        feed_rt_tube: 'RT Tube Feeding',
+        sponge_bath: 'Sponge Bath',
+    };
+
+    const BABY_CARE_DUTY_LABELS: Record<string, string> = {
+        sponge_bath: 'Sponge Bath',
+        massage: 'Massage',
+        diaper_change: 'Diaper Change',
+        feeding: 'Feeding',
+        medication: 'Medication',
+        exercise: 'Exercise',
+        clean_room: 'Clean Room',
+        cut_nails: 'Grooming (Hair/Nails)',
+        changing_cloths: 'Change/Wash Clothes',
+        change_bedshit: 'Change Bedsheet',
+        pateint_bath: 'Baby Bath',
+        take_in_washroom: 'Take to Washroom',
+        urine_bag: 'Urine Bag Care',
+        dressing: 'Wound Dressing',
+        feed_rt_tube: 'RT Tube Feeding',
+    };
+
+    const getDutyLabel = (dutyId: string, formType: string): string => {
+        const map = formType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+        return map[dutyId] || dutyId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
 
     // Inspector editing state for new fields
     const [inspectorActivity, setInspectorActivity] = useState<any[]>([]);
@@ -5725,7 +5787,7 @@ export default function CRM() {
                                             {showWorkFormModal.duties.map((duty: string, i: number) => (
                                                 <li key={i} className="flex items-start gap-2.5 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                                                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                                                    <span className="leading-tight">{duty}</span>
+                                                    <span className="leading-tight">{getDutyLabel(duty, showWorkFormModal.form_type)}</span>
                                                 </li>
                                             ))}
                                         </ul>
