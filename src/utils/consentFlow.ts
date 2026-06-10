@@ -78,3 +78,95 @@ export function buildConsentFlowActionData(
         ...data,
     };
 }
+
+/** WhatsApp Baby Care Taker flow (BABY_CARE_FORM) prefill. */
+export const BABY_CARE_SCREEN_ID = 'BABY_CARE_FORM';
+
+export function buildBabyCareFlowData(
+    lead: {
+        name?: string | null;
+        notes?: string | null;
+        client_consents?: Record<string, unknown>[];
+        crm_quotations?: Record<string, unknown>[];
+    } | null,
+    options?: {
+        consent?: Record<string, unknown> | null;
+        quote?: Record<string, unknown> | null;
+        extra?: Record<string, string>;
+    },
+): Record<string, string> {
+    const consent = options?.consent ?? null;
+    const quote = options?.quote ?? null;
+    const startDate = consent?.service_start_date || quote?.start_date || '';
+
+    const data: Record<string, string> = {
+        // Patient Name (baby's name) comes from the consent form's patient_name field
+        baby_name: String(consent?.patient_name || '').trim(),
+        // Service start date, formatted as YYYY-MM-DD
+        date: startDate ? String(startDate).split('T')[0] : '',
+        time: '',
+    };
+
+    if (options?.extra) {
+        for (const [key, val] of Object.entries(options.extra)) {
+            if (val != null && val !== '') data[key] = val;
+        }
+    }
+
+    return data;
+}
+
+export function buildBabyCareFlowActionData(
+    lead: Parameters<typeof buildBabyCareFlowData>[0],
+    options?: Parameters<typeof buildBabyCareFlowData>[1],
+): Record<string, string> {
+    const data = buildBabyCareFlowData(lead, options);
+    return {
+        screen: BABY_CARE_SCREEN_ID,
+        ...data,
+    };
+}
+
+/** WhatsApp Patient Care Taker flow (PATIENT_CARE_FORM) prefill. */
+export const PATIENT_CARE_SCREEN_ID = 'PATIENT_CARE_FORM';
+
+export function buildPatientCareFlowData(
+    lead: {
+        name?: string | null;
+        notes?: string | null;
+        client_consents?: Record<string, unknown>[];
+        crm_quotations?: Record<string, unknown>[];
+    } | null,
+    options?: {
+        consent?: Record<string, unknown> | null;
+        quote?: Record<string, unknown> | null;
+        extra?: Record<string, string>;
+    },
+): Record<string, string> {
+    const consent = options?.consent ?? null;
+    const leadDisplayName = resolveLeadDisplayName(lead);
+
+    const data: Record<string, string> = {
+        // Full Name comes from patient_name or lead name
+        full_name: String(consent?.patient_name || leadDisplayName || '').trim(),
+    };
+
+    if (options?.extra) {
+        for (const [key, val] of Object.entries(options.extra)) {
+            if (val != null && val !== '') data[key] = val;
+        }
+    }
+
+    return data;
+}
+
+export function buildPatientCareFlowActionData(
+    lead: Parameters<typeof buildPatientCareFlowData>[0],
+    options?: Parameters<typeof buildPatientCareFlowData>[1],
+): Record<string, string> {
+    const data = buildPatientCareFlowData(lead, options);
+    return {
+        screen: PATIENT_CARE_SCREEN_ID,
+        ...data,
+    };
+}

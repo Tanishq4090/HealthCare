@@ -178,6 +178,71 @@ serve(async (req) => {
                 return new Response('EVENT_RECEIVED', { status: 200 });
             }
 
+            // --- WORK FORM FLOW BRANCH ---
+            if (formData.flow_type === 'baby_care_form' || formData.flow_type === 'patient_care_form') {
+                console.log(`[Flow] Processing Work Form (${formData.flow_type}) for ${formData.baby_name || formData.full_name}`);
+
+                const { data: existingLeads } = await supabase
+                    .from('crm_leads')
+                    .select('id')
+                    .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                const existingLead = existingLeads?.[0] ?? null;
+
+                if (existingLead) {
+                    const dutiesArray = typeof formData.duties === 'string' ? formData.duties.split(',') : (formData.duties || []);
+                    
+                    const { error: workError } = await supabase.from('client_work_forms').insert([{
+                        lead_id: existingLead.id,
+                        form_type: formData.flow_type,
+                        patient_name: formData.baby_name || formData.full_name || '',
+                        duties: dutiesArray,
+                        other_work: formData.other_work || ''
+                    }]);
+
+                    if (workError) {
+                        console.error('[Flow] Error inserting work form:', workError);
+                    }
+
+                    // Log activity event
+                    const { error: actError } = await supabase.from('crm_lead_activity').insert([{
+                        lead_id: existingLead.id,
+                        event_type: 'form_filled',
+                        description: `Work duties form filled (${formData.flow_type})`,
+                        metadata: { duties_count: dutiesArray.length, form_type: formData.flow_type }
+                    }]);
+                    if (actError) console.error('[Flow] Error inserting activity:', actError);
+                } else {
+                    console.warn(`[Flow] Work Form received but no CRM Lead found for ${purePhone}!`);
+                }
+
+                const confirmMsg = `Thank you! 🙏😊\n\nWe have successfully received the work duties checklist. This helps us ensure the best care possible! ✨`;
+
+                if (META_SYSTEM_TOKEN && META_PHONE_ID) {
+                    await fetch(`https://graph.facebook.com/v20.0/${META_PHONE_ID}/messages`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${META_SYSTEM_TOKEN}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            messaging_product: "whatsapp",
+                            to: purePhone,
+                            type: "text",
+                            text: { body: confirmMsg }
+                        })
+                    });
+                }
+
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'assistant', content: confirmMsg }]);
+                await supabase.from('whatsapp_logs').insert([{
+                    sid: wamid, status: 'success',
+                    payload: { type: `flow_submission_${formData.flow_type}`, original_recipient: fromPhone }
+                }]);
+
+                await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: `[${formData.flow_type === 'baby_care_form' ? 'Baby Care' : 'Patient Care'} form submitted]` }]);
+
+                return new Response('EVENT_RECEIVED', { status: 200 });
+            }
+
             // --- LEGACY LEAD QUALIFICATION FLOW BRANCH ---
             // Log the form submission in chat history as a user message
             await supabase.from('whatsapp_messages').insert([{ phone: purePhone, role: 'user', content: '[Form submitted]' }]);

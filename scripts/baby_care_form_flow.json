@@ -1,0 +1,113 @@
+{
+  "version": "6.1",
+  "screens": [
+    {
+      "id": "BABY_CARE_FORM",
+      "title": "Baby care Taker work",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "baby_name": { "type": "string", "__default__": "", "__example__": "Aryan" },
+        "date": { "type": "string", "__default__": "", "__example__": "2026-06-10", "__min_date__": "2020-01-01" },
+        "time": { "type": "string", "__default__": "", "__example__": "09:00" },
+        "duties": { "type": "array", "items": { "type": "string" }, "__default__": [], "__example__": ["baby_bath"] },
+        "other_work": { "type": "string", "__default__": "", "__example__": "None" },
+        "agreement": { "type": "array", "items": { "type": "string" }, "__default__": [], "__example__": ["I Agreed"] }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextInput",
+            "label": "Baby Name",
+            "name": "baby_name",
+            "required": true,
+            "input-type": "text",
+            "init-value": "${data.baby_name}"
+          },
+          {
+            "type": "DatePicker",
+            "label": "Date",
+            "name": "date",
+            "required": true,
+            "init-value": "${data.date}"
+          },
+          {
+            "type": "TextInput",
+            "label": "Time (e.g. 09:00 AM)",
+            "name": "time",
+            "required": true,
+            "input-type": "text",
+            "init-value": "${data.time}"
+          },
+          {
+            "type": "CheckboxGroup",
+            "label": "Kindly mark your work and duties for baby care taker",
+            "name": "duties",
+            "required": true,
+            "init-value": "${data.duties}",
+            "data-source": [
+              { "id": "baby_bath", "title": "Baby Bath" },
+              { "id": "baby_feed", "title": "Baby Feeding" },
+              { "id": "baby_massage", "title": "Baby Massage" },
+              { "id": "baby_play", "title": "Play with Baby" },
+              { "id": "baby_wash_clothes", "title": "Wash Baby Clothes" },
+              { "id": "room_sanitize", "title": "Sanitize Room" },
+              { "id": "food_prep", "title": "Food Preparation" },
+              { "id": "clean_toys", "title": "Clean Toys" },
+              { "id": "change_clothes", "title": "Change Clothes" },
+              { "id": "diaper_change", "title": "Diaper Change" },
+              { "id": "play_group", "title": "Take to Play Group" },
+              { "id": "fold_clothes", "title": "Fold Clothes" },
+              { "id": "veg_chopping", "title": "Vegetable Chopping" },
+              { "id": "dry_clothes", "title": "Dry Clothes" },
+              { "id": "give_medicine", "title": "Give Medicine" },
+              { "id": "cut_nails", "title": "Cut Nails" },
+              { "id": "milk_feed", "title": "Milk Feeding" },
+              { "id": "clean_bottle", "title": "Clean Milk Bottle" },
+              { "id": "burping", "title": "Burping after Milk" }
+            ]
+          },
+          {
+            "type": "TextInput",
+            "label": "Any Other Work",
+            "name": "other_work",
+            "required": false,
+            "input-type": "text",
+            "init-value": "${data.other_work}"
+          },
+          {
+            "type": "TextBody",
+            "text": "There are no other works except the ones marked above. And if you want to do other works, let us know. This is to maintain our relationship and provide good service. I assure you that the contractor is not obligated to do these works for anyone else."
+          },
+          {
+            "type": "CheckboxGroup",
+            "label": "Agreement",
+            "name": "agreement",
+            "required": true,
+            "init-value": "${data.agreement}",
+            "data-source": [
+              { "id": "I Agreed", "title": "I agree to the terms" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Submit Form",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "baby_name": "${form.baby_name}",
+                "date": "${form.date}",
+                "time": "${form.time}",
+                "duties": "${form.duties}",
+                "other_work": "${form.other_work}",
+                "agreement": "${form.agreement}",
+                "flow_type": "baby_care_form"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

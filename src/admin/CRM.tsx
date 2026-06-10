@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star, QrCode } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -11,7 +11,7 @@ import { SendQuotationModal } from './components/SendQuotationModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
-import { buildConsentFlowActionData, resolveLeadDisplayName } from '../utils/consentFlow';
+import { buildConsentFlowActionData, buildBabyCareFlowActionData, buildPatientCareFlowActionData, resolveLeadDisplayName } from '../utils/consentFlow';
 import {
     findClientMasterByPhone,
     isLegacyPipelineStage,
@@ -679,6 +679,7 @@ export default function CRM() {
     const [editingLeadName, setEditingLeadName] = useState<string>('');
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
     const [selectedInspectorLead, setSelectedInspectorLead] = useState<any | null>(null);
+    const [showWorkFormModal, setShowWorkFormModal] = useState<any | null>(null);
 
     // Inspector editing state for new fields
     const [inspectorActivity, setInspectorActivity] = useState<any[]>([]);
@@ -1469,7 +1470,7 @@ export default function CRM() {
         try {
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
+                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), client_work_forms(*)')
                 .is('deleted_at', null)
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
@@ -1479,7 +1480,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), client_work_forms(*)')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -2055,6 +2056,13 @@ export default function CRM() {
             extra,
         });
 
+    const buildBabyCareFlowPrefill = (lead: any, extra: Record<string, string> = {}) =>
+        buildBabyCareFlowActionData(lead, {
+            consent: getLatestByCreatedAt(lead?.client_consents),
+            quote: getLatestByCreatedAt(lead?.crm_quotations),
+            extra,
+        });
+
     // Helper to dispatch WhatsApp templates programmatically
     const dispatchWhatsAppTemplate = async (lead: any, action: string, params?: string[], flowData?: any) => {
         const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -2068,6 +2076,7 @@ export default function CRM() {
             inquiry: 'post_call_intake',
             quotation: 'quote_client_v2',
             consent: 'consent_form',
+            baby_care: 'baby_care_form',
             deposit: 'deposit_request',
             staff: 'staff_assignment'
         };
@@ -2087,7 +2096,7 @@ export default function CRM() {
                 useTemplate: true,
                 templateName: templateMap[action],
                 templateParams: params || (action === 'inquiry' ? buildLeadIntakePrefill(lead).templateParams : [lead.name?.split(' ')[0] || 'there']),
-                flowData: flowData || (action === 'inquiry' ? buildLeadIntakePrefill(lead).flowData : action === 'consent' ? buildConsentFlowPrefill(lead) : undefined),
+                flowData: flowData || (action === 'inquiry' ? buildLeadIntakePrefill(lead).flowData : action === 'consent' ? buildConsentFlowPrefill(lead) : action === 'baby_care' ? buildBabyCareFlowPrefill(lead) : undefined),
             })
         });
 
@@ -2453,6 +2462,50 @@ export default function CRM() {
                 else if (agentTargetAction === 'consent') {
                     await logActivity(agentTargetLead.id, 'consent_sent', 'Consent form link sent');
                     toast.success(`Consent Form dispatched to ${agentTargetLead.name}!`, { id: toastId, duration: 4000 });
+
+                    // Handle Secondary Dispatch of Work Form Based on Service
+                    try {
+                        const consentObj = getLatestByCreatedAt(agentTargetLead.client_consents) || getLatestByCreatedAt(agentTargetLead.crm_quotations);
+                        const service = String(consentObj?.service_category || consentObj?.service_name || '').toLowerCase();
+
+                        if (service.match(/baby care|new born baby care|maternity care|jhapa care/i)) {
+                            setTimeout(async () => {
+                                const flowData = buildBabyCareFlowActionData(agentTargetLead, { consent: consentObj });
+                                await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+                                    body: JSON.stringify({
+                                        phone: phoneDigits,
+                                        leadName: agentTargetLead?.name?.split(/\s+/)[0] || 'there',
+                                        leadId: agentTargetLead.id,
+                                        useTemplate: true,
+                                        templateName: 'baby_care_form',
+                                        flowData: flowData
+                                    })
+                                });
+                                toast.success('Baby Care Work Form also dispatched!');
+                            }, 1500);
+                        } else if (service.match(/old age care|nursing care/i)) {
+                            setTimeout(async () => {
+                                const flowData = buildPatientCareFlowActionData(agentTargetLead, { consent: consentObj });
+                                await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+                                    body: JSON.stringify({
+                                        phone: phoneDigits,
+                                        leadName: agentTargetLead?.name?.split(/\s+/)[0] || 'there',
+                                        leadId: agentTargetLead.id,
+                                        useTemplate: true,
+                                        templateName: 'patient_care_form',
+                                        flowData: flowData
+                                    })
+                                });
+                                toast.success('Patient Care Work Form also dispatched!');
+                            }, 1500);
+                        }
+                    } catch (err) {
+                        console.error('Secondary Work Form dispatch failed', err);
+                    }
                 }
                 // If staff assignment -> move to Staff Assigned
                 else if (agentTargetAction === 'staff' && (selectedWorker || agentTargetLead.assigned_staff)) {
@@ -5243,6 +5296,40 @@ export default function CRM() {
                             );
                         })()}
 
+                        {/* ── Work Form Details ──────────────────────────── */}
+                        {selectedInspectorLead.client_work_forms && selectedInspectorLead.client_work_forms.length > 0 && (() => {
+                            const workForm = getLatestByCreatedAt(selectedInspectorLead.client_work_forms);
+                            const dutiesCount = workForm?.duties?.length || 0;
+                            const title = workForm?.form_type === 'baby_care_form' ? 'Baby Care Work Form' : 'Patient Care Work Form';
+                            
+                            return (
+                                <div className="mt-4">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Work Form Details</p>
+                                    <button 
+                                        onClick={() => setShowWorkFormModal(workForm)}
+                                        className="w-full bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl border border-slate-200 p-4 flex flex-col items-start gap-2 group text-left"
+                                    >
+                                        <div className="flex items-center justify-between w-full">
+                                            <span className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                                                <ListChecks className="w-4 h-4 text-primary" /> {title}
+                                            </span>
+                                            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                                            <CheckSquare className="w-3.5 h-3.5" />
+                                            <span>{dutiesCount} duties specified</span>
+                                        </div>
+                                        {workForm?.patient_name && (
+                                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                <User className="w-3.5 h-3.5" />
+                                                <span>Patient: {workForm.patient_name}</span>
+                                            </div>
+                                        )}
+                                    </button>
+                                </div>
+                            );
+                        })()}
+
                         {/* ── Lead Value ─────────────────────────────────── */}
                         <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Lead Value</p>
@@ -5500,7 +5587,7 @@ export default function CRM() {
                                                     className="w-full bg-primary/10 hover:bg-primary hover:text-white border border-primary/15 text-primary font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                                 >
                                                     <FileText className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                                    {hasConsentSent ? 'Resend Consent Form Link' : 'Send Consent Form Link'}
+                                                    {hasConsentSent ? 'Resend Consent & Work Form' : 'Send Consent & Work Form'}
                                                 </button>
                                             )}
 
@@ -5584,6 +5671,73 @@ export default function CRM() {
                     </div>
                 </div>
             )}
+
+            {/* Work Form Modal */}
+            {showWorkFormModal &&
+                createPortal(
+                    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setShowWorkFormModal(null)}>
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                            <div className="p-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-10 rounded-t-2xl">
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                                        <ListChecks className="w-5 h-5 text-primary" /> 
+                                        {showWorkFormModal.form_type === 'baby_care_form' ? 'Baby Care Form' : 'Patient Care Form'}
+                                    </h3>
+                                    {showWorkFormModal.patient_name && (
+                                        <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
+                                            <User className="w-4 h-4" /> {showWorkFormModal.patient_name}
+                                        </p>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => setShowWorkFormModal(null)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-5 overflow-y-auto space-y-6">
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-900 mb-3 uppercase tracking-wider flex items-center gap-2">
+                                        <CheckSquare className="w-4 h-4 text-emerald-500" /> Selected Duties
+                                    </h4>
+                                    {showWorkFormModal.duties && showWorkFormModal.duties.length > 0 ? (
+                                        <ul className="space-y-2.5">
+                                            {showWorkFormModal.duties.map((duty: string, i: number) => (
+                                                <li key={i} className="flex items-start gap-2.5 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                                                    <span className="leading-tight">{duty}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-slate-500 italic">No specific duties selected.</p>
+                                    )}
+                                </div>
+                                
+                                {showWorkFormModal.other_work && (
+                                    <div>
+                                        <h4 className="text-sm font-bold text-slate-900 mb-3 uppercase tracking-wider flex items-center gap-2">
+                                            <FileText className="w-4 h-4 text-blue-500" /> Other Instructions
+                                        </h4>
+                                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-900 whitespace-pre-wrap leading-relaxed">
+                                            {showWorkFormModal.other_work}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                                <button
+                                    onClick={() => setShowWorkFormModal(null)}
+                                    className="w-full bg-white border border-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                                >
+                                    Close Details
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
 
             {/* Returning Client Modal — portal so Voice AI tab overflow cannot hide it */}
             {returningClientModal &&
