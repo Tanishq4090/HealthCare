@@ -342,6 +342,9 @@ serve(async (req) => {
 
       // Add flow button to post_call_intake or consent_form templates
       const FLOW_ID = Deno.env.get('WHATSAPP_FLOW_ID');
+      const BABY_CARE_FLOW_ID = Deno.env.get('BABY_CARE_FLOW_ID');
+      const PATIENT_CARE_FLOW_ID = Deno.env.get('PATIENT_CARE_FLOW_ID');
+
       if ((templateName === "post_call_intake" || templateName === "consent_form") && FLOW_ID) {
         let consentLeadFullName = (leadFullName || '').trim();
         let consentLeadNotes = '';
@@ -361,7 +364,6 @@ serve(async (req) => {
         };
 
         if (templateName === "post_call_intake") {
-          // Always send screen data — logs showed flowData:null so prefill never reached Meta
           actionPayload.flow_action_data = {
             screen: 'INTAKE_FORM',
             ...buildIntakeFlowPayload(flowData, parameters, leadName),
@@ -390,6 +392,50 @@ serve(async (req) => {
               action: actionPayload
             }
           ]
+        });
+      }
+
+      // Add flow button for Baby Care Work Form
+      if (templateName === "baby_care_form" && BABY_CARE_FLOW_ID) {
+        const actionPayload: Record<string, unknown> = {
+          flow_token: `flow_${digits}_${Date.now()}`,
+          flow_action_data: {
+            screen: 'BABY_CARE_FORM',
+            baby_name: String(flowData?.baby_name || ''),
+            date: String(flowData?.date || ''),
+            time: String(flowData?.time || ''),
+            duties: [],
+            other_work: '',
+            agreement: [],
+          }
+        };
+        console.log(`[Meta] Baby Care flow_action_data:`, JSON.stringify(actionPayload.flow_action_data));
+        components.push({
+          type: "button",
+          sub_type: "flow",
+          index: "0",
+          parameters: [{ type: "action", action: actionPayload }]
+        });
+      }
+
+      // Add flow button for Patient Care Work Form
+      if (templateName === "patient_care_form" && PATIENT_CARE_FLOW_ID) {
+        const actionPayload: Record<string, unknown> = {
+          flow_token: `flow_${digits}_${Date.now()}`,
+          flow_action_data: {
+            screen: 'PATIENT_CARE_FORM',
+            full_name: String(flowData?.full_name || flowData?.patient_name || ''),
+            duties: [],
+            other_work: '',
+            agreement: [],
+          }
+        };
+        console.log(`[Meta] Patient Care flow_action_data:`, JSON.stringify(actionPayload.flow_action_data));
+        components.push({
+          type: "button",
+          sub_type: "flow",
+          index: "0",
+          parameters: [{ type: "action", action: actionPayload }]
         });
       }
 
