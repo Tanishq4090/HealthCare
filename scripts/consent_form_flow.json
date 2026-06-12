@@ -33,12 +33,13 @@
           {
             "type": "Dropdown",
             "name": "age_unit",
-            "label": "Age in (Years/Months)",
+            "label": "Age in (Years/Months/Days)",
             "init-value": "${data.age_unit}",
             "required": true,
             "data-source": [
               { "id": "Years", "title": "Years" },
-              { "id": "Months", "title": "Months" }
+              { "id": "Months", "title": "Months" },
+              { "id": "Days", "title": "Days" }
             ]
           },
           { "type": "TextInput", "name": "weight", "label": "Weight (kg)", "input-type": "number", "init-value": "${data.weight}", "required": true },
