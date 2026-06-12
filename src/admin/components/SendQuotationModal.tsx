@@ -14,12 +14,6 @@ interface SendQuotationModalProps {
     lead: any;
     onDispatch: (quotationData: any) => void;
 }
-
-const inclusionsOptions = [
-    'Medication reminders', 'Vital monitoring', 'Bathing assistance', 'Meal preparation',
-    'Physiotherapy exercises', 'Wound care', 'Companionship', 'Hospital accompaniment'
-];
-
 export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, onClose, lead, onDispatch }) => {
     const [serviceName, setServiceName] = useState('');
     const [serviceCategory, setServiceCategory] = useState('Nursing Care');
@@ -33,7 +27,6 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     const [completeMonthRate, setCompleteMonthRate] = useState('');
     const [incompleteMonthRate, setIncompleteMonthRate] = useState('');
     const [deposit, setDeposit] = useState('');
-    const [selectedInclusions, setSelectedInclusions] = useState<string[]>(['Medication reminders', 'Vital monitoring']);
     
     // Auto-calculated
     const [estimatedTotal, setEstimatedTotal] = useState(0);
@@ -158,11 +151,6 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
 
     if (!isOpen) return null;
 
-    const toggleInclusion = (item: string) => {
-        setSelectedInclusions(prev => 
-            prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
-        );
-    };
 
     const handleDispatch = () => {
         if (!serviceName.trim()) return toast.error('Please enter the Service Name.');
@@ -198,7 +186,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
             estimatedTotal: estimate.total,
             serviceDays: estimate.serviceDays,
             isShortTerm: estimate.isShortTerm,
-            inclusions: selectedInclusions,
+            inclusions: [],
             messageTemplate,
             language,
             customMessage,
@@ -391,25 +379,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                         </div>
                     </section>
 
-                    <hr className="border-slate-800" />
 
-                    {/* WHAT'S INCLUDED */}
-                    <section>
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2 mb-4">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span> What's Included
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                            {inclusionsOptions.map(inc => (
-                                <button
-                                    key={inc}
-                                    onClick={() => toggleInclusion(inc)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${selectedInclusions.includes(inc) ? 'bg-white/10 text-white border-white/30' : 'bg-[#2a2a2a] text-slate-400 border-slate-700 hover:border-slate-500'}`}
-                                >
-                                    {inc}
-                                </button>
-                            ))}
-                        </div>
-                    </section>
 
                     <hr className="border-slate-800" />
 

@@ -7,16 +7,56 @@
       "terminal": true,
       "success": true,
       "data": {
-        "service": { "type": "string", "__default__": "", "__example__": "Old Age Care" },
-        "name": { "type": "string", "__default__": "", "__example__": "Rajesh Patel" },
-        "country": { "type": "string", "__default__": "India", "__example__": "India" },
-        "state": { "type": "string", "__default__": "Gujarat", "__example__": "Gujarat" },
-        "city": { "type": "string", "__default__": "Surat", "__example__": "Surat" },
-        "area": { "type": "string", "__default__": "", "__example__": "" },
-        "shift_type": { "type": "string", "__default__": "", "__example__": "10-Hour Shift" },
-        "care_for": { "type": "string", "__default__": "", "__example__": "Self" },
-        "start_date": { "type": "string", "__default__": "", "__example__": "2026-05-20" },
-        "end_date": { "type": "string", "__default__": "", "__example__": "2026-06-20" }
+        "service": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "Old Age Care"
+        },
+        "name": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "Rajesh Patel"
+        },
+        "country": {
+          "type": "string",
+          "__default__": "India",
+          "__example__": "India"
+        },
+        "state": {
+          "type": "string",
+          "__default__": "Gujarat",
+          "__example__": "Gujarat"
+        },
+        "city": {
+          "type": "string",
+          "__default__": "Surat",
+          "__example__": "Surat"
+        },
+        "area": {
+          "type": "string",
+          "__default__": "",
+          "__example__": ""
+        },
+        "shift_type": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "10-Hour Shift"
+        },
+        "care_for": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "Self"
+        },
+        "start_date": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "2026-05-20"
+        },
+        "end_date": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "2026-06-20"
+        }
       },
       "layout": {
         "type": "SingleColumnLayout",
@@ -28,12 +68,30 @@
             "required": true,
             "init-value": "${data.service}",
             "data-source": [
-              { "id": "Nursing Care", "title": "Nursing Care" },
-              { "id": "Maternity Care", "title": "Maternity Care" },
-              { "id": "New Born Baby Care", "title": "New Born Baby Care" },
-              { "id": "Baby Care", "title": "Baby Care" },
-              { "id": "Japa Care (Post-Delivery)", "title": "Japa Care (Post-Delivery)" },
-              { "id": "Old Age Care", "title": "Old Age Care" }
+              {
+                "id": "Nursing Care",
+                "title": "Nursing Care"
+              },
+              {
+                "id": "Maternity Care",
+                "title": "Maternity Care"
+              },
+              {
+                "id": "New Born Baby Care",
+                "title": "New Born Baby Care"
+              },
+              {
+                "id": "Baby Care",
+                "title": "Baby Care"
+              },
+              {
+                "id": "Japa Care (Post-Delivery)",
+                "title": "Japa Care (Post-Delivery)"
+              },
+              {
+                "id": "Old Age Care",
+                "title": "Old Age Care"
+              }
             ]
           },
           {
@@ -52,12 +110,30 @@
             "required": true,
             "init-value": "${data.country}",
             "data-source": [
-              { "id": "India", "title": "India" },
-              { "id": "USA", "title": "USA" },
-              { "id": "UK", "title": "UK" },
-              { "id": "Canada", "title": "Canada" },
-              { "id": "Australia", "title": "Australia" },
-              { "id": "Other", "title": "Other" }
+              {
+                "id": "India",
+                "title": "India"
+              },
+              {
+                "id": "USA",
+                "title": "USA"
+              },
+              {
+                "id": "UK",
+                "title": "UK"
+              },
+              {
+                "id": "Canada",
+                "title": "Canada"
+              },
+              {
+                "id": "Australia",
+                "title": "Australia"
+              },
+              {
+                "id": "Other",
+                "title": "Other"
+              }
             ]
           },
           {
@@ -67,12 +143,30 @@
             "required": true,
             "init-value": "${data.state}",
             "data-source": [
-              { "id": "Gujarat", "title": "Gujarat" },
-              { "id": "Maharashtra", "title": "Maharashtra" },
-              { "id": "Delhi", "title": "Delhi" },
-              { "id": "Karnataka", "title": "Karnataka" },
-              { "id": "Tamil Nadu", "title": "Tamil Nadu" },
-              { "id": "Other", "title": "Other" }
+              {
+                "id": "Gujarat",
+                "title": "Gujarat"
+              },
+              {
+                "id": "Maharashtra",
+                "title": "Maharashtra"
+              },
+              {
+                "id": "Delhi",
+                "title": "Delhi"
+              },
+              {
+                "id": "Karnataka",
+                "title": "Karnataka"
+              },
+              {
+                "id": "Tamil Nadu",
+                "title": "Tamil Nadu"
+              },
+              {
+                "id": "Other",
+                "title": "Other"
+              }
             ]
           },
           {
@@ -82,12 +176,30 @@
             "required": true,
             "init-value": "${data.city}",
             "data-source": [
-              { "id": "Surat", "title": "Surat" },
-              { "id": "Ahmedabad", "title": "Ahmedabad" },
-              { "id": "Vadodara", "title": "Vadodara" },
-              { "id": "Rajkot", "title": "Rajkot" },
-              { "id": "Mumbai", "title": "Mumbai" },
-              { "id": "Other", "title": "Other" }
+              {
+                "id": "Surat",
+                "title": "Surat"
+              },
+              {
+                "id": "Ahmedabad",
+                "title": "Ahmedabad"
+              },
+              {
+                "id": "Vadodara",
+                "title": "Vadodara"
+              },
+              {
+                "id": "Rajkot",
+                "title": "Rajkot"
+              },
+              {
+                "id": "Mumbai",
+                "title": "Mumbai"
+              },
+              {
+                "id": "Other",
+                "title": "Other"
+              }
             ]
           },
           {
@@ -105,8 +217,14 @@
             "required": true,
             "init-value": "${data.shift_type}",
             "data-source": [
-              { "id": "10-Hour Shift", "title": "10-Hour Shift" },
-              { "id": "24-Hour Shift", "title": "24-Hour Shift" }
+              {
+                "id": "10-Hour Shift",
+                "title": "10-Hour Shift"
+              },
+              {
+                "id": "24-Hour Shift",
+                "title": "24-Hour Shift"
+              }
             ]
           },
           {
