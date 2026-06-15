@@ -115,7 +115,7 @@ function resolveWhatsappNumber(
         }
 
         // Correction cue outside the WhatsApp-question window: use the latest valid mobile.
-        if (phones.length > 0 && (hasNegative || /\b(?:wait|ruk|rukiye|likhiye|write|correct|sahi)\b|रुक|लिख|सही/i.test(msgLower))) {
+        if (phones.length > 0 && (hasNegative || /\b(?:wait|ruk|rukiye|likhiye|write|correct|sahi|my number|my whatsapp|number is|whatsapp is)\b|रुक|लिख|सही/i.test(msgLower))) {
             resolved = phones[phones.length - 1];
         }
     }
@@ -181,7 +181,20 @@ serve(async (req) => {
         let dataCollectionWhatsapp = '';
         if (analysis.data_collection_results) {
             const dc = analysis.data_collection_results;
-            dataCollectionWhatsapp = dc.contact_number?.value || dc.phone_number?.value || dc.whatsapp?.value || '';
+            const explicitWa = dc.whatsapp_number?.value || dc.whatsapp?.value || dc.WhatsApp?.value || dc.WhatsApp_Number?.value;
+            if (explicitWa) {
+                dataCollectionWhatsapp = explicitWa;
+            } else {
+                for (const key of Object.keys(dc)) {
+                    const kLower = key.toLowerCase();
+                    if (kLower.includes('whatsapp') || kLower.includes('phone') || kLower.includes('contact') || kLower.includes('mobile')) {
+                        if (dc[key]?.value && typeof dc[key].value === 'string' && dc[key].value.replace(/\D/g, '').length >= 10) {
+                            dataCollectionWhatsapp = dc[key].value;
+                            if (kLower.includes('whatsapp')) break;
+                        }
+                    }
+                }
+            }
         }
 
         // Transcript wins over data_collection because callers often correct numbers after the first capture.
