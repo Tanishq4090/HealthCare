@@ -98,14 +98,14 @@ export function EmployeeIDCard({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* Brand icon */}
             <div style={{
-              width: 36, height: 36, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 8,
+              width: 44, height: 44, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 8,
               position: 'relative', flexShrink: 0,
             }}>
               <img
                 src="/99care-logo.svg"
                 alt="99Care"
                 style={{ 
-                  width: 24, height: 24, 
+                  width: 34, height: 34, 
                   position: 'absolute', top: '50%', left: '50%', 
                   transform: 'translate(-50%, -50%)',
                   objectFit: 'contain' 
@@ -113,8 +113,7 @@ export function EmployeeIDCard({
               />
             </div>
             <div>
-              <p style={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1, margin: 0 }}>99Care</p>
-              <p style={{ color: 'rgba(240,253,253,0.8)', fontSize: 8, marginTop: 2, letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 600, margin: '2px 0 0' }}>Employee Identification</p>
+              <p style={{ color: '#fff', fontWeight: 700, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', margin: 0 }}>Employee Identification</p>
             </div>
           </div>
           {/* ID chip */}
@@ -186,28 +185,7 @@ export function EmployeeIDCard({
               )}
             </div>
 
-            {/* ID badge below photo */}
-            <div style={{
-              backgroundColor: '#f0fdfa',
-              border: '1px solid #99f6e4',
-              borderRadius: 6,
-              width: 84,
-              height: 22,
-              display: 'table'
-            }}>
-              <span style={{ 
-                color: '#0f766e', 
-                fontFamily: 'monospace', 
-                fontSize: 10, 
-                fontWeight: 800,
-                display: 'table-cell',
-                verticalAlign: 'middle',
-                textAlign: 'center',
-                lineHeight: 1
-              }}>
-                {employeeId}
-              </span>
-            </div>
+
           </div>
 
           {/* ── Info column ──────────────────────────── */}
@@ -226,25 +204,6 @@ export function EmployeeIDCard({
             {/* Detail rows */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
 
-              {/* Duty */}
-              {duty && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, width: 54, flexShrink: 0 }}>Duty</span>
-                  <div style={{ 
-                    color: '#1e293b', 
-                    fontSize: 10, 
-                    fontWeight: 700, 
-                    backgroundColor: '#f0fdfa', 
-                    border: '1px solid #99f6e4', 
-                    borderRadius: 4, 
-                    height: 20, 
-                    padding: '0 8px',
-                    display: 'table'
-                  }}>
-                    <span style={{ display: 'table-cell', verticalAlign: 'middle', lineHeight: 1 }}>{duty}</span>
-                  </div>
-                </div>
-              )}
 
               {/* Experience */}
               {experience && (
