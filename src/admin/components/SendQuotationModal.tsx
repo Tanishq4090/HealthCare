@@ -32,6 +32,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
     const [estimatedTotal, setEstimatedTotal] = useState(0);
     const [estimateLabel, setEstimateLabel] = useState('Estimated monthly total');
     const [estimateDetail, setEstimateDetail] = useState('');
+    const [includeEstimatedTotal, setIncludeEstimatedTotal] = useState(true);
 
     // Messaging
     const [messageTemplate, setMessageTemplate] = useState('Standard quotation');
@@ -184,6 +185,7 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
             incompleteMonthRate: Number(incompleteMonthRate) || null,
             deposit: Number(deposit) || 0,
             estimatedTotal: estimate.total,
+            includeEstimatedTotal,
             serviceDays: estimate.serviceDays,
             isShortTerm: estimate.isShortTerm,
             inclusions: [],
@@ -368,14 +370,28 @@ export const SendQuotationModal: React.FC<SendQuotationModalProps> = ({ isOpen, 
                             <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="e.g. ₹5,000" className="w-full bg-[#2a2a2a] border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2dd4bf]" />
                         </div>
 
-                        <div className="bg-[#168a8b]/10 border border-[#168a8b]/20 rounded-lg p-3 flex justify-between items-center gap-3">
-                            <div>
-                                <p className="text-sm font-medium text-slate-200">{estimateLabel}</p>
-                                <p className="text-xs text-slate-500">
-                                    {estimateDetail || 'auto-calculated from rates & duration'}
-                                </p>
+                        <div className="mb-4 bg-[#168a8b]/10 border border-[#168a8b]/20 rounded-lg overflow-hidden">
+                            <div className="p-3 flex justify-between items-center gap-3">
+                                <div>
+                                    <p className="text-sm font-medium text-slate-200">{estimateLabel}</p>
+                                    <p className="text-xs text-slate-500">
+                                        {estimateDetail || 'auto-calculated from rates & duration'}
+                                    </p>
+                                </div>
+                                <span className="text-lg font-bold text-[#2dd4bf] shrink-0">₹{estimatedTotal.toLocaleString('en-IN')}</span>
                             </div>
-                            <span className="text-lg font-bold text-[#2dd4bf] shrink-0">₹{estimatedTotal.toLocaleString('en-IN')}</span>
+                            <div className="bg-[#168a8b]/5 px-3 py-2 border-t border-[#168a8b]/10 flex items-center gap-2">
+                                <input 
+                                    type="checkbox" 
+                                    id="includeEstimatedTotal"
+                                    checked={includeEstimatedTotal}
+                                    onChange={(e) => setIncludeEstimatedTotal(e.target.checked)}
+                                    className="rounded border-[#168a8b]/50 bg-transparent text-[#168a8b] focus:ring-[#168a8b] w-3.5 h-3.5"
+                                />
+                                <label htmlFor="includeEstimatedTotal" className="text-xs text-slate-300 cursor-pointer select-none">
+                                    Include this estimate in the WhatsApp message
+                                </label>
+                            </div>
                         </div>
                     </section>
 

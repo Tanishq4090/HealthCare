@@ -2252,17 +2252,19 @@ export default function CRM() {
             msgText += `Rate (partial month): ₹${quotationData.incompleteMonthRate} / day\n`;
             if (quotationData.deposit) msgText += `Deposit: ₹${quotationData.deposit}\n`;
 
-            if (quotationData.isShortTerm) {
-                const days = quotationData.serviceDays || 1;
-                const rate = quotationData.incompleteMonthRate || 0;
-                msgText += `\n*Estimated service total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')}*\n`;
-                if (rate > 0) {
-                    msgText += `${days} day${days !== 1 ? 's' : ''} × ₹${Number(rate).toLocaleString('en-IN')}/day\n\n`;
+            if (quotationData.includeEstimatedTotal) {
+                if (quotationData.isShortTerm) {
+                    const days = quotationData.serviceDays || 1;
+                    const rate = quotationData.incompleteMonthRate || 0;
+                    msgText += `\n*Estimated service total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')}*\n`;
+                    if (rate > 0) {
+                        msgText += `${days} day${days !== 1 ? 's' : ''} × ₹${Number(rate).toLocaleString('en-IN')}/day\n\n`;
+                    } else {
+                        msgText += `${days} day${days !== 1 ? 's' : ''} service\n\n`;
+                    }
                 } else {
-                    msgText += `${days} day${days !== 1 ? 's' : ''} service\n\n`;
+                    msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')} / mo*\n\n`;
                 }
-            } else {
-                msgText += `\n*Estimated monthly total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')} / mo*\n\n`;
             }
 
             if (quotationData.inclusions && quotationData.inclusions.length > 0) {
