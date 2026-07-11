@@ -293,7 +293,7 @@ serve(async (req) => {
                 const updatePayload: any = {
                     last_called_at: startTime,
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : existingLead.service_interest || undefined,
-                    notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call\n\n${existingLead.notes || ''}`
+                    notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call`
                 };
                 if (existingLead.pipeline_stage === 'New' || existingLead.pipeline_stage === 'New Inquiry') {
                     updatePayload.pipeline_stage = 'In Discussion';
@@ -331,10 +331,12 @@ serve(async (req) => {
                 // Auto-create a new lead for this caller — never miss a contact
                 console.log(`[Call Webhook] No existing lead. Auto-creating for ${phoneForLookup}`);
                 const newLeadName = detectedName !== 'Customer' ? detectedName : 'Unknown Caller';
+                const cleanPhone = phoneForLookup.replace(/\D/g, '');
+                const cleanWhatsapp = (effectivePhoneNumber || phoneForLookup).replace(/\D/g, '');
                 const { data: newLead } = await supabase.from('crm_leads').insert([{
                     name: newLeadName,
-                    phone: phoneForLookup,
-                    whatsapp_number: effectivePhoneNumber || phoneForLookup,
+                    phone: `+${cleanPhone}`,
+                    whatsapp_number: `+${cleanWhatsapp}`,
                     source: 'AI Phone Call',
                     pipeline_stage: 'New Inquiry',
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : null,
