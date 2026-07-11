@@ -395,7 +395,7 @@ export default function Clients() {
                                 </div>
                             );
                             return filtered.map(client => (
-                            <div key={client.id} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
+                            <div key={client.id} onClick={() => navigate('/admin/crm', { state: { openLeadId: client.id } })} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
