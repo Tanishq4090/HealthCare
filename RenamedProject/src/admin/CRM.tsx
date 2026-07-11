@@ -744,16 +744,7 @@ export default function CRM() {
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
     const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
 
-    // Initialize all stages as closed by default
-    useEffect(() => {
-        if (pipelineStages.length > 0 && Object.keys(expandedStages).length === 0) {
-            const initialExpanded: Record<string, boolean> = {};
-            pipelineStages.forEach(stage => {
-                initialExpanded[stage] = false;
-            });
-            setExpandedStages(initialExpanded);
-        }
-    }, [pipelineStages]);
+    // Stages start closed by default (empty expandedStages object means false)
 
     const toggleStage = (stageName: string) => {
         setExpandedStages(prev => ({ ...prev, [stageName]: !prev[stageName] }));
@@ -1529,9 +1520,24 @@ export default function CRM() {
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
+
                     const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l));
+                    
+                    // Filter duplicates
+                    const uniqueFallbackRows = [];
+                    const phoneMap = new Set();
+                    for (const l of fallbackRows) {
+                        const phoneDigits = (l.phone || l.whatsapp_number || '').replace(/\D/g, '').slice(-10);
+                        if (phoneDigits && phoneDigits.length === 10) {
+                            if (phoneMap.has(phoneDigits)) continue;
+                            phoneMap.add(phoneDigits);
+                        }
+                        uniqueFallbackRows.push(l);
+                    }
+                    const finalFallbackRows = uniqueFallbackRows;
+
                     const firstStage = NEW_LEAD_PIPELINE_STAGE;
-                    const legacyIds = fallbackRows
+                    const legacyIds = finalFallbackRows
                         .filter((l) => isLegacyPipelineStage(l.pipeline_stage))
                         .map((l) => l.id);
                     if (legacyIds.length > 0) {
@@ -1541,7 +1547,7 @@ export default function CRM() {
                             .in('id', legacyIds);
                     }
                     setLeads(
-                        fallbackRows.map((l) =>
+                        finalFallbackRows.map((l) =>
                             isLegacyPipelineStage(l.pipeline_stage)
                                 ? { ...l, pipeline_stage: firstStage }
                                 : l
@@ -3760,7 +3766,7 @@ export default function CRM() {
                         ) : (
                             <>
                                 {columns.map((col, idx) => {
-                                    const isExpanded = expandedStages[col.title] || false;
+                                    const isExpanded = expandedStages[col.title] === true;
                                     const limit = stageLimits[col.title] || 4;
                                     const displayedItems = col.items.slice(0, limit);
                                     const hasMore = col.items.length > limit;
