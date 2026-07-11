@@ -3,6 +3,7 @@ import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, 
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import ClientDetailsModal from './components/ClientDetailsModal';
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
 const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
@@ -20,6 +21,8 @@ export default function Clients() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingClient, setEditingClient] = useState<any>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [inspectingClient, setInspectingClient] = useState<any>(null);
 
     // Monthly slider state
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -395,7 +398,7 @@ export default function Clients() {
                                 </div>
                             );
                             return filtered.map(client => (
-                            <div key={client.id} onClick={() => navigate('/admin/crm', { state: { openLeadId: client.id } })} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
+                            <div key={client.id} onClick={() => setInspectingClient(client)} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -788,6 +791,12 @@ export default function Clients() {
                         </div>
                     </div>
                 </div>
+            )}
+            {inspectingClient && (
+                <ClientDetailsModal 
+                    clientId={inspectingClient.id} 
+                    onClose={() => setInspectingClient(null)} 
+                />
             )}
         </div>
     );
