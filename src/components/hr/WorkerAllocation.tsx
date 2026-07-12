@@ -26,6 +26,7 @@ import {
 import { services as allAvailableServices } from '@/data/services';
 import {
   createEmployee,
+  updateEmployeeFull,
   getAvailableEmployees,
   updateEmployeeStatus,
   deleteEmployee,
@@ -184,12 +185,13 @@ function TableRowSkeleton({ cols = 6 }: { cols?: number }) {
 // ── Add Employee Dialog ───────────────────────────────────
 
 interface AddEmployeeDialogProps {
+  employee?: Employee | null;
   open: boolean;
   onClose: () => void;
   onCreated: (emp: Employee, autoPreview?: boolean) => void;
 }
 
-function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps) {
+function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDialogProps) {
   const [form, setForm] = useState<CreateEmployeeInput>({ 
     full_name: '', job_title: '', 
     preferred_payment_type: 'daily', services: [],
@@ -202,6 +204,37 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (employee) {
+      setForm({
+        full_name: employee.full_name || '',
+        job_title: employee.job_title || '',
+        preferred_payment_type: (employee.preferred_payment_type as any) || 'daily',
+        services: employee.services || [],
+        phone: employee.phone || '',
+        aadhaar_number: employee.aadhaar_number || '',
+        address: employee.address || '',
+        dob: employee.dob || '',
+        hourly_rate: employee.hourly_rate || 0,
+        monthly_daily_rate: employee.monthly_daily_rate || 0,
+        short_term_daily_rate: employee.short_term_daily_rate || 0,
+        username: '', password: '', documents: [],
+      });
+      (setForm as any)(f => ({...f, gender: employee.gender || '', experience: employee.experience || ''}));
+      setPhotoPreview(employee.photo_url || null);
+    } else {
+      setForm({
+        full_name: '', job_title: '',
+        preferred_payment_type: 'daily', services: [],
+        phone: '', aadhaar_number: '', address: '', dob: '',
+        hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
+        username: '', password: '', documents: []
+      });
+      (setForm as any)(f => ({...f, gender: '', experience: ''}));
+      setPhotoPreview(null);
+    }
+  }, [employee]);
+
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) { toast.error('Please select an image file.'); return; }
@@ -237,10 +270,18 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
     if (!form.job_title.trim()) { toast.error('Job title is required.'); return; }
     setIsSubmitting(true);
     try {
-      const emp = await createEmployee(form);
-      toast.success(`Employee created! ID: ${emp.employee_id} ✅`);
-      onCreated(emp, true); // Added flag to trigger auto-preview
+      
+      let emp: Employee;
+      if (employee) {
+        emp = await updateEmployeeFull({ id: employee.id, ...form });
+        toast.success(`Employee updated successfully! ✅`);
+      } else {
+        emp = await createEmployee(form);
+        toast.success(`Employee created! ID: ${emp.employee_id} ✅`);
+      }
+      onCreated(emp, !employee); // Trigger auto-preview only on create
       onClose();
+
       // Reset form but keep the newly created emp for preview
       setForm({ 
         full_name: '', job_title: '',
@@ -262,8 +303,8 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-primary" />
-            Add New Employee
+            {employee ? <Edit2 className="w-5 h-5 text-primary" /> : <UserPlus className="w-5 h-5 text-primary" />}
+            {employee ? 'Edit Employee' : 'Add New Employee'}
           </DialogTitle>
         </DialogHeader>
 
@@ -465,7 +506,7 @@ function AddEmployeeDialog({ open, onClose, onCreated }: AddEmployeeDialogProps)
             <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
             <Button type="submit" className="bg-primary hover:bg-primary/90 text-white gap-2" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-              {isSubmitting ? 'Creating...' : 'Create Employee'}
+              {isSubmitting ? (employee ? 'Saving...' : 'Creating...') : (employee ? 'Save Changes' : 'Create Employee')}
             </Button>
           </DialogFooter>
         </form>
@@ -1036,164 +1077,6 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
   );
 }
 
-// ── Edit Employee Rates Dialog ───────────────────────────
-
-function EditEmployeeDialog({ employee, open, onClose, onSaved }: {
-  employee: Employee | null;
-  open: boolean;
-  onClose: () => void;
-  onSaved: (emp: Employee) => void;
-}) {
-  const [form, setForm] = useState({
-    preferred_payment_type: 'daily' as 'daily' | 'monthly' | 'hourly' | 'short_term',
-    monthly_daily_rate: 0,
-    hourly_rate: 0,
-    short_term_daily_rate: 0,
-    job_title: '',
-    phone: '',
-    address: '',
-  } as {
-    preferred_payment_type: 'daily' | 'hourly' | 'monthly' | 'short_term';
-    monthly_daily_rate: number;
-    hourly_rate: number;
-    short_term_daily_rate: number;
-    job_title: string;
-    phone: string;
-    address: string;
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (employee) {
-      const ppt = employee.preferred_payment_type ?? 'daily';
-      setForm({
-        preferred_payment_type: ppt as any,
-        monthly_daily_rate: employee.monthly_daily_rate ?? 0,
-        hourly_rate: employee.hourly_rate ?? 0,
-        short_term_daily_rate: employee.short_term_daily_rate ?? 0,
-        job_title: employee.job_title ?? '',
-        phone: employee.phone ?? '',
-        address: employee.address ?? '',
-      });
-    }
-  }, [employee]);
-
-  if (!employee) return null;
-
-  const handleSave = async () => {
-    setIsSubmitting(true);
-    try {
-      const { data, error } = await supabase
-        .from('employees')
-        .update({
-          preferred_payment_type: form.preferred_payment_type,
-          monthly_daily_rate: form.monthly_daily_rate,
-          hourly_rate: form.hourly_rate,
-          short_term_daily_rate: form.short_term_daily_rate,
-          job_title: form.job_title,
-          phone: form.phone || null,
-          address: form.address || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', employee.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      toast.success('Employee updated successfully!');
-      onSaved(data as Employee);
-      onClose();
-    } catch (err: any) {
-      toast.error(err.message ?? 'Update failed.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Edit2 className="w-4 h-4 text-primary" /> Edit Employee
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Job Title</label>
-            <Input className="mt-1" value={form.job_title} onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Phone</label>
-            <Input className="mt-1" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Address</label>
-            <Input className="mt-1" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
-          </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 border-b border-slate-100">
-             <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Payment Scheme</label>
-              <select
-                className="w-full mt-1 flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                value={form.preferred_payment_type}
-                onChange={e => setForm(f => ({ ...f, preferred_payment_type: e.target.value as any }))}
-              >
-                <option value="daily">Daily Rate</option>
-                <option value="hourly">Hourly Rate</option>
-                <option value="monthly">Fixed Monthly Salary</option>
-                <option value="short_term">Per Service</option>
-              </select>
-            </div>
-             <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                {form.preferred_payment_type === 'hourly' ? 'Hourly Rate (₹)' : 
-                 form.preferred_payment_type === 'monthly' ? 'Fixed Monthly Rate (₹)' : 
-                 form.preferred_payment_type === 'short_term' ? 'Per Service Rate (₹)' :
-                 'Daily Rate (₹)'}
-              </label>
-              <Input type="number" className="mt-1" 
-                value={
-                  form.preferred_payment_type === 'hourly' ? form.hourly_rate :
-                  form.preferred_payment_type === 'monthly' ? form.monthly_daily_rate :
-                  form.preferred_payment_type === 'short_term' ? form.short_term_daily_rate :
-                  form.monthly_daily_rate
-                }
-                onChange={e => {
-                  const val = Number(e.target.value);
-                  if (form.preferred_payment_type === 'hourly') {
-                      setForm(f => ({ ...f, hourly_rate: val }));
-                  } else if (form.preferred_payment_type === 'monthly') {
-                      setForm(f => ({ ...f, monthly_daily_rate: val }));
-                  } else if (form.preferred_payment_type === 'short_term') {
-                      setForm(f => ({ ...f, short_term_daily_rate: val }));
-                  } else {
-                      // daily
-                      setForm(f => ({ ...f, monthly_daily_rate: val }));
-                  }
-                }} 
-              />
-            </div>
-            
-            {form.preferred_payment_type === 'hourly' && (
-              <p className="col-span-2 text-xs text-slate-500">
-                Shift hours are configured per client assignment, not on the employee profile.
-              </p>
-            )}
-          </div>
-        </div>
-        <DialogFooter className="mt-4 gap-2">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
-          <Button className="bg-primary hover:bg-primary/90 text-white gap-2" onClick={handleSave} disabled={isSubmitting}>
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Available Workers Tab ─────────────────────────────────
 
 function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
@@ -1344,7 +1227,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
         </div>
       )}
     </div>
-    <EditEmployeeDialog
+    <AddEmployeeDialog
       employee={editEmployee}
       open={!!editEmployee}
       onClose={() => setEditEmployee(null)}

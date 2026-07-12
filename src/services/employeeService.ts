@@ -170,6 +170,74 @@ export async function createEmployee(
 
 // ─────────────────────────────────────────────────────────
 
+export interface UpdateEmployeeInput extends Partial<CreateEmployeeInput> {
+  id: string;
+}
+
+export async function updateEmployeeFull(data: UpdateEmployeeInput): Promise<Employee> {
+  try {
+    let photo_url: string | undefined = undefined;
+
+    // 1. Upload photo if provided
+    if (data.photo) {
+      photo_url = await uploadEmployeePhoto(data.photo);
+    }
+
+    const updateData: any = {};
+    if (data.full_name !== undefined) updateData.full_name = data.full_name.trim();
+    if (data.job_title !== undefined) updateData.job_title = data.job_title.trim();
+    if (photo_url !== undefined) updateData.photo_url = photo_url;
+    if (data.phone !== undefined) updateData.phone = data.phone?.trim() ?? null;
+    if (data.aadhaar_number !== undefined) updateData.aadhaar_number = data.aadhaar_number?.trim() ?? null;
+    if (data.address !== undefined) updateData.address = data.address?.trim() ?? null;
+    if (data.dob !== undefined) updateData.dob = data.dob ?? null;
+    if (data.preferred_payment_type !== undefined) updateData.preferred_payment_type = data.preferred_payment_type;
+    if (data.services !== undefined) updateData.services = data.services;
+    if (data.hourly_rate !== undefined) updateData.hourly_rate = data.hourly_rate;
+    if (data.monthly_daily_rate !== undefined) updateData.monthly_daily_rate = data.monthly_daily_rate;
+    if (data.short_term_daily_rate !== undefined) updateData.short_term_daily_rate = data.short_term_daily_rate;
+    if (data.experience !== undefined) updateData.experience = data.experience?.trim() ?? null;
+    if (data.gender !== undefined) updateData.gender = data.gender?.trim() ?? null;
+    
+    updateData.updated_at = new Date().toISOString();
+
+    const { data: updated, error } = await supabase
+      .from('employees')
+      .update(updateData)
+      .eq('id', data.id)
+      .select()
+      .single();
+
+    if (error) throw new Error(`Failed to update employee: ${error.message}`);
+    if (!updated) throw new Error('Employee was updated but no record was returned.');
+
+    // Upload and record documents if provided
+    if (data.documents && data.documents.length > 0) {
+      for (const doc of data.documents) {
+        try {
+          const docUrl = await uploadEmployeeDocument(updated.id, doc);
+          await supabase.from('employee_documents').insert({
+            employee_id: updated.id,
+            file_url: docUrl,
+            file_name: doc.name,
+            file_type: doc.type,
+          });
+        } catch (docErr) {
+          console.error('Failed to upload document:', doc.name, docErr);
+          toast.error(`Warning: Failed to upload document ${doc.name}`);
+        }
+      }
+    }
+
+    return updated as Employee;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+
 /**
  * Fetches a single employee by their UUID primary key.
  *
