@@ -220,7 +220,7 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
         short_term_daily_rate: employee.short_term_daily_rate || 0,
         username: '', password: '', documents: [],
       });
-      (setForm as any)(f => ({...f, gender: employee.gender || '', experience: employee.experience || ''}));
+      (setForm as any)((f: any) => ({...f, gender: employee.gender || '', experience: employee.experience || ''}));
       setPhotoPreview(employee.photo_url || null);
     } else {
       setForm({
@@ -230,7 +230,7 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
         hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
         username: '', password: '', documents: []
       });
-      (setForm as any)(f => ({...f, gender: '', experience: ''}));
+      (setForm as any)((f: any) => ({...f, gender: '', experience: ''}));
       setPhotoPreview(null);
     }
   }, [employee]);
@@ -253,11 +253,11 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
   const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    setForm(f => ({ ...f, documents: [...(f.documents || []), ...files] }));
+    setForm((f: any) => ({ ...f, documents: [...(f.documents || []), ...files] }));
   };
 
   const removeDocument = (index: number) => {
-    setForm(f => {
+    setForm((f: any) => {
       const newDocs = [...(f.documents || [])];
       newDocs.splice(index, 1);
       return { ...f, documents: newDocs };
@@ -1231,7 +1231,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
       employee={editEmployee}
       open={!!editEmployee}
       onClose={() => setEditEmployee(null)}
-      onSaved={(updated) => {
+      onCreated={(updated: any) => {
         setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
         setEditEmployee(null);
       }}
