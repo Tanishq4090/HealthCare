@@ -3,11 +3,12 @@ import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, Clipboard
 import { supabase } from '../../lib/supabase';
 
 interface ClientDetailsModalProps {
-    clientId: string;
+    client: any;
     onClose: () => void;
 }
 
-export default function ClientDetailsModal({ clientId, onClose }: ClientDetailsModalProps) {
+export default function ClientDetailsModal({ client, onClose }: ClientDetailsModalProps) {
+    const clientId = client?.id;
     const [lead, setLead] = useState<any>(null);
     const [activities, setActivities] = useState<any[]>([]);
     const [quotations, setQuotations] = useState<any[]>([]);
@@ -18,8 +19,8 @@ export default function ClientDetailsModal({ clientId, onClose }: ClientDetailsM
         const fetchDetails = async () => {
             setIsLoading(true);
             try {
-                // 1. Fetch Lead
-                const { data: leadData } = await supabase.from('crm_leads').select('*').eq('id', clientId).single();
+                // 1. Fetch Lead (including consents)
+                const { data: leadData } = await supabase.from('crm_leads').select('*, client_consents(*)').eq('id', clientId).single();
                 setLead(leadData);
 
                 // 2. Fetch Activities
@@ -73,9 +74,9 @@ export default function ClientDetailsModal({ clientId, onClose }: ClientDetailsM
                 {/* Header */}
                 <div className="bg-white border-b border-slate-200 px-6 py-5 flex items-center justify-between shrink-0">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-900">{lead?.name || 'Client Details'}</h2>
+                        <h2 className="text-xl font-bold text-slate-900">{client?.name || lead?.name || 'Client Details'}</h2>
                         <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {lead?.phone || 'No phone'}</span>
+                            <span className="inline-flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {client?.phone || lead?.phone || 'No phone'}</span>
                             •
                             <span className="inline-flex items-center font-medium px-2 py-0.5 rounded-full bg-slate-100">{lead?.pipeline_stage}</span>
                         </p>
@@ -121,6 +122,51 @@ export default function ClientDetailsModal({ clientId, onClose }: ClientDetailsM
                                     </div>
                                 </div>
                             </div>
+                            
+                            {/* Patient & Care Details (from consent) */}
+                            {lead?.client_consents && lead.client_consents.length > 0 && (() => {
+                                const consent = [...lead.client_consents].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                                return (
+                                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:col-span-2">
+                                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+                                            <User className="w-4 h-4 text-primary" /> Patient Care Details
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Patient Name</span>
+                                                <span className="text-sm font-medium text-slate-800">{consent.patient_name || '—'}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Age & Weight</span>
+                                                <span className="text-sm font-medium text-slate-800">
+                                                    {consent.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}` : '—'}
+                                                    {consent.weight ? `, ${consent.weight} kg` : ''}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Relative / Guardian</span>
+                                                <span className="text-sm font-medium text-slate-800">{consent.relative_name || '—'}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Contact Number</span>
+                                                <span className="text-sm font-medium text-slate-800">{consent.contact_number || '—'}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Alternate Phone</span>
+                                                <span className="text-sm font-medium text-slate-800">{consent.alternate_contact_number || '—'}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Referred By</span>
+                                                <span className="text-sm font-medium text-slate-800">{consent.referred_by || '—'}</span>
+                                            </div>
+                                            <div className="flex flex-col sm:col-span-2 md:col-span-3">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Health Issues / Special Notes</span>
+                                                <span className="text-sm font-medium text-slate-800">{consent.health_issues || '—'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Operational Details */}
                             <div className="flex flex-col gap-4">

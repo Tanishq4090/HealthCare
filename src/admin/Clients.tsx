@@ -794,7 +794,7 @@ export default function Clients() {
             )}
             {inspectingClient && (
                 <ClientDetailsModal 
-                    clientId={inspectingClient.id} 
+                    client={inspectingClient} 
                     onClose={() => setInspectingClient(null)} 
                 />
             )}
