@@ -2323,9 +2323,14 @@ export default function CRM() {
             });
 
             // 2. Send the template with buttons using a newline-free summary
-            const summaryParam = quotationData.isShortTerm
-                ? `Estimated service total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')} (${quotationData.serviceDays || 1} days)`
-                : `Estimated monthly total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')}/mo`;
+            let summaryParam = '';
+            if (quotationData.includeEstimatedTotal) {
+                summaryParam = quotationData.isShortTerm
+                    ? `Estimated service total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')} (${quotationData.serviceDays || 1} days)`
+                    : `Estimated monthly total: ₹${quotationData.estimatedTotal.toLocaleString('en-IN')}/mo`;
+            } else {
+                summaryParam = `Service quotation for ${quotationData.serviceName}`;
+            }
             const templateLogText = `Hello, please find the quotation details for your care request below:\n${summaryParam}\nPlease use the buttons below to respond or schedule a follow-up. We look forward to assisting your family.`;
 
             const payload = {
