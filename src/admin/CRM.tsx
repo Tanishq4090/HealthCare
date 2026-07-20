@@ -3532,6 +3532,26 @@ export default function CRM() {
         const leadPhone = opts?.phone?.trim() || '';
         const standardized = normalizePhoneDigits(leadPhone);
 
+        if (opts?.isDuplicate && opts?.duplicateOfId) {
+            try {
+                const { error } = await supabase.from('crm_leads').update({ name: leadName }).eq('id', opts.duplicateOfId);
+                if (error) throw error;
+                await logActivity(opts.duplicateOfId, 'lead_updated', `Lead name updated to "${leadName}"`);
+                toast.success(`Lead name updated to "${leadName}"!`);
+                setIsAddLeadModalOpen(false);
+                setReturningClientModal(null);
+                setAddLeadName('');
+                setAddLeadPhone('');
+                setAddLeadDuplicateWarning(null);
+                setAddLeadConfirmDuplicate(false);
+                fetchLeads();
+            } catch (err: any) {
+                toast.error("Failed to update lead: " + err.message);
+                setIsAddLeadModalOpen(true);
+            }
+            return;
+        }
+
         // Check if this phone belongs to an existing client (returning client detection)
         if (!opts?.skipReturningCheck && phoneLast10(leadPhone).length >= 8) {
             const existingClient = await findClientMasterByPhone(supabase, leadPhone);
@@ -6174,15 +6194,9 @@ export default function CRM() {
                                                     An existing lead <strong>{addLeadDuplicateWarning.name}</strong> already uses this number
                                                     (Stage: <strong>{addLeadDuplicateWarning.pipeline_stage}</strong>).
                                                 </p>
-                                                <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={addLeadConfirmDuplicate}
-                                                        onChange={e => setAddLeadConfirmDuplicate(e.target.checked)}
-                                                        className="w-3.5 h-3.5 rounded accent-amber-500"
-                                                    />
-                                                    <span className="text-xs text-amber-700 font-medium">I understand — this is a different person using the same number</span>
-                                                </label>
+                                                <p className="text-xs text-amber-700 font-medium mt-2">
+                                                    Continuing will update the existing lead's name to <strong>{addLeadName || 'the new name'}</strong>.
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
@@ -6201,18 +6215,17 @@ export default function CRM() {
                             <button
                                 onClick={() => {
                                     if (!addLeadName.trim()) { toast.error('Please enter a name.'); return; }
-                                    if (addLeadDuplicateWarning && !addLeadConfirmDuplicate) { toast.error('Please confirm the duplicate warning to proceed.'); return; }
                                     handleAddManualLead({
                                         name: addLeadName,
                                         phone: addLeadPhone,
-                                        isDuplicate: !!addLeadDuplicateWarning && addLeadConfirmDuplicate,
+                                        isDuplicate: !!addLeadDuplicateWarning,
                                         duplicateOfId: addLeadDuplicateWarning?.id,
                                     });
                                 }}
-                                disabled={!addLeadName.trim() || (!!addLeadDuplicateWarning && !addLeadConfirmDuplicate)}
+                                disabled={!addLeadName.trim()}
                                 className="flex-1 py-2.5 text-sm font-bold text-white bg-[#1AA6A8] rounded-xl hover:bg-[#1AA6A8]/90 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                Add Lead
+                                {addLeadDuplicateWarning ? 'Update Lead' : 'Add Lead'}
                             </button>
                         </div>
                     </div>
