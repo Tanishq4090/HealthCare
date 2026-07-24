@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build:os",
+  "outputDirectory": "dist",
+  "installCommand": "npm install --prefer-offline --legacy-peer-deps",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

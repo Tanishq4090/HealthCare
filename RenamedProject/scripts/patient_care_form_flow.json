@@ -1,0 +1,116 @@
+{
+  "version": "6.1",
+  "screens": [
+    {
+      "id": "PATIENT_CARE_FORM",
+      "title": "Patient Care Form",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "full_name": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "Jane Doe"
+        },
+        "duties": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__default__": [],
+          "__example__": ["sponge_bath"]
+        },
+        "other_work": {
+          "type": "string",
+          "__default__": "",
+          "__example__": "None"
+        },
+        "agreement": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__default__": [],
+          "__example__": ["I Agreed"]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextInput",
+            "label": "Patient/Client Name",
+            "name": "full_name",
+            "required": true,
+            "input-type": "text",
+            "init-value": "${data.full_name}"
+          },
+          {
+            "type": "CheckboxGroup",
+            "label": "Select your duties for Patient Care",
+            "name": "duties",
+            "required": true,
+            "init-value": "${data.duties}",
+            "data-source": [
+              { "id": "pateint_bath", "title": "Patient Bath" },
+              { "id": "massage", "title": "Massage" },
+              { "id": "diaper_change", "title": "Diaper Change" },
+              { "id": "feeding", "title": "Feeding" },
+              { "id": "medication", "title": "Medication" },
+              { "id": "exercise", "title": "Exercise" },
+              { "id": "clean_room", "title": "Clean Room" },
+              { "id": "cut_nails", "title": "Grooming (Hair/Nails)" },
+              { "id": "changing_cloths", "title": "Change/Wash Clothes" },
+              { "id": "change_bedshit", "title": "Change Bedsheet" },
+              { "id": "take_in_washroom", "title": "Take to Washroom" },
+              { "id": "take_into_hospital", "title": "Hospital/Outdoor Trips" },
+              { "id": "change_catheter", "title": "Change Catheter" },
+              { "id": "feed_rt_tube", "title": "Feed from R.T Tube" },
+              { "id": "trochoschomy_suction", "title": "Tracheostomy Suction" },
+              { "id": "nebulizing", "title": "Nebulizing" },
+              { "id": "injection_vitals", "title": "Injection & Vitals" },
+              { "id": "dressing", "title": "Dressing" },
+              { "id": "urine_bag", "title": "Empty Urine Bag" },
+              { "id": "prepare_food", "title": "Prepare Meals" }
+            ]
+          },
+          {
+            "type": "TextInput",
+            "label": "Any Other Work",
+            "name": "other_work",
+            "required": false,
+            "input-type": "text",
+            "init-value": "${data.other_work}"
+          },
+          {
+            "type": "TextBody",
+            "text": "There are no other works except the ones marked above. And if you want to do other works, let us know. This is to maintain our relationship and provide good service. I assure you that the contractor is not obligated to do these works for anyone else.\n(ઉપર દર્શાવેલ કાર્યો સિવાય અન્ય કોઈ કાર્યો નથી. અને જો તમે અન્ય કાર્યો કરવા માંગતા હો, તો અમને જણાવો. આ આપણા સંબંધો જાળવવા અને સારી સેવા પૂરી પાડવા માટે છે. હું તમને ખાતરી આપું છું કે સંભાળ રાખનાર બીજા કોઈ માટે આ કાર્યો કરવા માટે બંધાયેલ નથી.)"
+          },
+          {
+            "type": "CheckboxGroup",
+            "label": "Agreement",
+            "name": "agreement",
+            "required": true,
+            "init-value": "${data.agreement}",
+            "data-source": [
+              {
+                "id": "I Agreed",
+                "title": "I agree to the terms"
+              }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Submit Form",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "full_name": "${form.full_name}",
+                "duties": "${form.duties}",
+                "other_work": "${form.other_work}",
+                "agreement": "${form.agreement}",
+                "flow_type": "patient_care_form"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

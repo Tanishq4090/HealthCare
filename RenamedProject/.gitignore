@@ -1,0 +1,31 @@
+node_modules/
+
+# Local secrets
+.env
+*.env
+backend/.env
+frontend/.env
+
+# Build output
+dist/
+dist-os/
+dist-public/
+
+# Generated reports and temporary workspaces
+report/
+scratch/
+
+# Logs and ad-hoc command output
+*.log
+*-log.txt
+*_output.txt
+*output*.txt
+lint_results.txt
+eslint_output.txt
+ts_errors.log
+build_output.log
+
+# Local/editor artifacts
+.DS_Store
+.vscode/
+*.exe
