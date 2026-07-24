@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -68,6 +68,8 @@ export default function Clients() {
 
     // Remove from pipeline confirmation state
     const [removeConfirmClient, setRemoveConfirmClient] = useState<any>(null);
+    const [deleteConfirmClient, setDeleteConfirmClient] = useState<any>(null);
+    const [viewingTrash, setViewingTrash] = useState(false);
 
     const handleRemoveFromPipeline = async (client: any) => {
         const isArchived = client.status === 'Archived';
@@ -99,6 +101,49 @@ export default function Clients() {
             toast.success(`${client.name} removed from pipeline. Still visible in Client Master.`);
         } catch (err: any) {
             toast.error(`Failed: ${err.message}`);
+        }
+    };
+
+    const confirmTemporaryDelete = async () => {
+        if (!deleteConfirmClient) return;
+        const client = deleteConfirmClient;
+        setDeleteConfirmClient(null);
+        try {
+            const { error } = await supabase.from('crm_leads').update({ pipeline_stage: 'Trash' }).eq('id', client.id);
+            if (error) throw error;
+            setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Trash' } : c));
+            toast.success(`${client.name} moved to trash.`);
+        } catch (err: any) {
+            toast.error(`Failed to move to trash: ${err.message}`);
+        }
+    };
+    
+    const handleRestoreClient = async (client: any) => {
+        try {
+            const { error } = await supabase.from('crm_leads').update({ pipeline_stage: 'Archived' }).eq('id', client.id);
+            if (error) throw error;
+            setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Archived' } : c));
+            toast.success(`${client.name} restored from trash.`);
+        } catch (err: any) {
+            toast.error(`Failed to restore: ${err.message}`);
+        }
+    };
+
+    const confirmDeleteClient = async () => {
+        if (!deleteConfirmClient) return;
+        const client = deleteConfirmClient;
+        setDeleteConfirmClient(null);
+        try {
+            // First attempt to delete from crm_leads in case it's a foreign key parent
+            await supabase.from('crm_leads').delete().eq('id', client.id);
+            // Then delete from clients table
+            const { error } = await supabase.from('clients').delete().eq('id', client.id);
+            if (error) throw error;
+            
+            setClients(prev => prev.filter(c => c.id !== client.id));
+            toast.success(`${client.name} permanently deleted from master database.`);
+        } catch (err: any) {
+            toast.error(`Failed to delete: ${err.message}`);
         }
     };
 
@@ -221,16 +266,18 @@ export default function Clients() {
         try {
             // 1. Fetch leads in client stages WITH their pipeline_stage
             // Also include leads with null pipeline_stage (removed from pipeline but still clients)
-            const [activeLeadsResult, archivedLeadsResult] = await Promise.all([
+            const [activeLeadsResult, archivedLeadsResult, trashLeadsResult] = await Promise.all([
                 supabase.from('crm_leads').select('id, pipeline_stage')
                     .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
                 supabase.from('crm_leads').select('id, pipeline_stage')
-                    .eq('pipeline_stage', 'Archived')
+                    .eq('pipeline_stage', 'Archived'),
+                supabase.from('crm_leads').select('id, pipeline_stage')
+                    .eq('pipeline_stage', 'Trash')
             ]);
 
             if (activeLeadsResult.error) throw activeLeadsResult.error;
 
-            const allLeads = [...(activeLeadsResult.data || []), ...(archivedLeadsResult.data || [])];
+            const allLeads = [...(activeLeadsResult.data || []), ...(archivedLeadsResult.data || []), ...(trashLeadsResult.data || [])];
             const clientIds = allLeads.map(l => l.id);
             // Build a map of lead_id -> pipeline_stage for status badge
             const stageMap: Record<string, string> = {};
@@ -376,6 +423,12 @@ export default function Clients() {
                         </div>
                         {/* Month slider */}
                         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden shrink-0">
+                            <button
+                                onClick={() => setViewingTrash(!viewingTrash)}
+                                className={`px-3 py-1.5 text-xs font-semibold transition-colors border-r border-slate-200 ${viewingTrash ? 'bg-red-50 text-red-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                            >
+                                {viewingTrash ? 'Exit Trash' : 'View Trash'}
+                            </button>
                             <button onClick={prevMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm">‹</button>
                             <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[120px] text-center border-x border-slate-200">{monthLabel(selectedMonth)}</span>
                             <button onClick={nextMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30"
@@ -385,16 +438,21 @@ export default function Clients() {
                     <div className="flex-1 overflow-auto p-4 space-y-3">
                         {(() => {
                             const filtered = clients.filter(c => {
-                                if (!c.created_at) return true;
-                                const d = new Date(c.created_at);
-                                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-                                return key === selectedMonth;
+                                if (viewingTrash) {
+                                    return c.status === 'Trash';
+                                } else {
+                                    if (c.status === 'Trash') return false;
+                                    if (!c.created_at) return true;
+                                    const d = new Date(c.created_at);
+                                    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                                    return key === selectedMonth;
+                                }
                             });
                             if (filtered.length === 0) return (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
-                                    <p className="text-sm font-semibold text-slate-500">No clients joined in {monthLabel(selectedMonth)}</p>
-                                    <p className="text-xs text-slate-400 mt-1">Use the arrows to browse other months.</p>
+                                    <p className="text-sm font-semibold text-slate-500">{viewingTrash ? 'Trash is empty' : `No clients joined in ${monthLabel(selectedMonth)}`}</p>
+                                    <p className="text-xs text-slate-400 mt-1">{viewingTrash ? '' : 'Use the arrows to browse other months.'}</p>
                                 </div>
                             );
                             return filtered.map(client => (
@@ -416,12 +474,14 @@ export default function Clients() {
                                         client.status === 'Monthly Billing' ? 'bg-blue-100 text-blue-700' :
                                         client.status === 'Active Client' ? 'bg-teal-100 text-teal-700' :
                                         client.status === 'Archived' ? 'bg-slate-100 text-slate-500' :
+                                        client.status === 'Trash' ? 'bg-red-100 text-red-600' :
                                         'bg-slate-100 text-slate-600'
                                     }`}>
                                         {client.status === 'Closed Won' ? 'Closed' :
                                          client.status === 'Monthly Billing' ? 'Billing' :
                                          client.status === 'Active Client' ? 'Active' :
                                          client.status === 'Archived' ? 'Archived' :
+                                         client.status === 'Trash' ? 'Trash' :
                                          client.status}
                                     </span>
                                 </div>
@@ -439,46 +499,73 @@ export default function Clients() {
                                         <p className="text-sm font-bold text-emerald-700">₹{client.securityDeposit.toLocaleString()}</p>
                                     </div>
                                     <div className="col-span-1 sm:col-span-2 lg:col-span-2 flex items-center gap-2 flex-wrap">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleRequestReview(client); }}
-                                            className={`flex-1 min-w-[100px] px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm ${
-                                                reviewSentIds.has(client.id)
-                                                    ? 'text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200'
-                                                    : 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                                            {reviewSentIds.has(client.id) ? 'Resend Review' : 'Review'}
-                                        </button>
-                                        {client.status === 'Closed Won' && (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); openRestartModal(client); }}
-                                                className="flex-1 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                                            >
-                                                <RotateCcw className="w-3.5 h-3.5" /> Restart Service
-                                            </button>
+                                        {client.status === 'Trash' ? (
+                                            <>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleRestoreClient(client); }}
+                                                    className="flex-1 px-3 py-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                                                >
+                                                    <ArchiveRestore className="w-3.5 h-3.5" /> Restore Client
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmClient(client); }}
+                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                                    title="Delete permanently"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleRequestReview(client); }}
+                                                    className={`flex-1 min-w-[100px] px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                                                        reviewSentIds.has(client.id)
+                                                            ? 'text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200'
+                                                            : 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                                                    {reviewSentIds.has(client.id) ? 'Resend Review' : 'Review'}
+                                                </button>
+                                                {client.status === 'Closed Won' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); openRestartModal(client); }}
+                                                        className="flex-1 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                                                    >
+                                                        <RotateCcw className="w-3.5 h-3.5" /> Restart Service
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleRemoveFromPipeline(client); }}
+                                                    className={`p-2 rounded-xl transition-all border ${
+                                                        client.status === 'Archived'
+                                                            ? 'text-emerald-600 hover:bg-emerald-50 border-transparent hover:border-emerald-100'
+                                                            : 'text-slate-400 hover:text-red-500 hover:bg-red-50 border-transparent hover:border-red-100'
+                                                    }`}
+                                                    title={client.status === 'Archived' ? 'Add back to pipeline' : 'Remove from pipeline'}
+                                                >
+                                                    {client.status === 'Archived'
+                                                        ? <Plus className="w-4 h-4" />
+                                                        : <UserMinus className="w-4 h-4" />
+                                                    }
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
+                                                    className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
+                                                    title="Edit Profile"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmClient(client); }}
+                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                                    title="Delete permanently"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </>
                                         )}
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleRemoveFromPipeline(client); }}
-                                            className={`p-2 rounded-xl transition-all border ${
-                                                client.status === 'Archived'
-                                                    ? 'text-emerald-600 hover:bg-emerald-50 border-transparent hover:border-emerald-100'
-                                                    : 'text-slate-400 hover:text-red-500 hover:bg-red-50 border-transparent hover:border-red-100'
-                                            }`}
-                                            title={client.status === 'Archived' ? 'Add back to pipeline' : 'Remove from pipeline'}
-                                        >
-                                            {client.status === 'Archived'
-                                                ? <Plus className="w-4 h-4" />
-                                                : <UserMinus className="w-4 h-4" />
-                                            }
-                                        </button>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
-                                            className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
-                                            title="Edit Profile"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -787,6 +874,32 @@ export default function Clients() {
                             <div className="flex gap-3 pt-1">
                                 <button onClick={() => setRemoveConfirmClient(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
                                 <button onClick={confirmRemoveFromPipeline} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm">Remove</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {deleteConfirmClient && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-red-50 flex items-center gap-3">
+                            <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                                <Trash2 className="w-5 h-5 text-red-600" />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-bold text-slate-900">Delete Permanently?</h2>
+                                <p className="text-xs text-slate-500">{deleteConfirmClient.name} will be removed completely.</p>
+                            </div>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <p className="text-sm text-slate-600">This will permanently delete <strong>{deleteConfirmClient.name}</strong> from the entire database. This action cannot be undone.</p>
+                            <div className="flex gap-3 pt-1 flex-col sm:flex-row">
+                                <button onClick={() => setDeleteConfirmClient(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
+                                {deleteConfirmClient.status !== 'Trash' && (
+                                    <button onClick={confirmTemporaryDelete} className="flex-1 py-2.5 text-sm font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors shadow-sm">Move to Trash</button>
+                                )}
+                                <button onClick={confirmDeleteClient} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm">Delete Forever</button>
                             </div>
                         </div>
                     </div>
