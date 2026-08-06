@@ -151,6 +151,26 @@ serve(async (req) => {
         const analysis = payload.analysis || dataBlock.analysis || {};
         console.log(`[Webhook] Parsed fields — conversationId=${conversationId}, agentId=${agentId}, transcriptLen=${transcript.length}`);
 
+        // --- WEBHOOK DEDUPLICATION ---
+        // ElevenLabs can retry webhook calls for reliability. If this conversation was already
+        // fully processed (has a lead_id linked), skip re-processing to prevent duplicate greetings.
+        if (conversationId && SUPABASE_URL && SUPABASE_KEY) {
+            const dedupClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+            const { data: existingTranscript } = await dedupClient
+                .from('call_transcripts')
+                .select('conversation_id, lead_id')
+                .eq('conversation_id', conversationId)
+                .maybeSingle();
+            
+            if (existingTranscript?.lead_id) {
+                console.log(`[Webhook Dedup] conversation_id=${conversationId} already processed with lead_id=${existingTranscript.lead_id}. Skipping.`);
+                return new Response(JSON.stringify({ ok: true, deduplicated: true, conversation_id: conversationId }), {
+                    headers: { 'Content-Type': 'application/json' },
+                    status: 200
+                });
+            }
+        }
+
         const startTimeRaw = metadata.start_time_unix_secs
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
             : new Date().toISOString();

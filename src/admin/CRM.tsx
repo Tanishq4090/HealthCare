@@ -266,8 +266,7 @@ export default function CRM() {
             console.log("[fetchAutomationSettings] data:", data, "error:", error);
             if (data && !error) {
                 setWorkflows({
-                    greeting: data.greeting_enabled,
-                    drip: data.drip_enabled
+                    greeting: data.greeting_enabled
                 });
 
                 // Cloud Sync: If database has columns for stages/templates, use them
@@ -305,7 +304,7 @@ export default function CRM() {
                 }
             } else if (!data && !error) {
                 console.log("[fetchAutomationSettings] row missing, initializing...");
-                await supabase.from('automation_settings').upsert({ id: 'global', greeting_enabled: true, drip_enabled: false }, { onConflict: 'id' });
+                await supabase.from('automation_settings').upsert({ id: 'global', greeting_enabled: true }, { onConflict: 'id' });
             }
             setIsSettingsLoaded(true);
         };
@@ -494,6 +493,7 @@ export default function CRM() {
     // Per-call greeting dispatch status (keyed by call.id)
     const [callGreetingStatus, setCallGreetingStatus] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
     const processingCalls = useRef<Set<string>>(new Set());
+    const autoGreetAttempted = useRef<Set<string>>(new Set());
     const [assignmentResult, setAssignmentResult] = useState<any>(null);
 
     // Add Lead Modal State
@@ -753,8 +753,7 @@ export default function CRM() {
     const loadMoreInStage = (stageName: string) => {
         setStageLimits(prev => ({ ...prev, [stageName]: (prev[stageName] || 4) + 4 }));
     }; const [workflows, setWorkflows] = useState({
-        greeting: true,
-        drip: false
+        greeting: true
     });
 
     // Voice AI State
@@ -1078,21 +1077,40 @@ export default function CRM() {
             }
             const matchingLead = finalLeadId ? leads.find(l => l.id === finalLeadId) : null;
 
-            if (!isManual) {
-                const { data: transcriptRow } = await supabase
-                    .from('call_transcripts')
-                    .select('automation_error')
-                    .eq('conversation_id', callKey)
-                    .maybeSingle();
+            // --- ATOMIC IDEMPOTENCY CHECK ---
+            // Use claim_greeting_send RPC for atomic check-and-set.
+            // This prevents race conditions between auto-trigger, manual clicks, and multiple tabs.
+            if (finalLeadId) {
+                const { data: claimResult } = await supabase.rpc('claim_greeting_send', {
+                    target_lead_id: finalLeadId
+                });
 
-                if (
-                    transcriptRow?.automation_error === 'GREETING_SENT' ||
-                    transcriptRow?.automation_error === 'GREETING_PROCESSING'
-                ) {
-                    console.log(`[Auto-Greet] DB lock found (${transcriptRow.automation_error}) for ${callKey} — skipping.`);
+                const claimSucceeded = claimResult && claimResult.length > 0;
+
+                if (!claimSucceeded && !isManual) {
+                    // Another process already sent the greeting — skip silently
+                    console.log(`[Greeting] Atomic claim failed for lead ${finalLeadId} — greeting already sent. Skipping.`);
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: finalLeadId,
+                        event_type: 'greeting_attempt',
+                        description: 'Greeting skipped: already sent (atomic claim failed)',
+                        metadata: { trigger_source: 'call_end', outcome: 'skipped_already_sent', conversation_id: callKey }
+                    }]);
+                    await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_SENT');
                     setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
                     dismissToast(manualToastId);
                     return;
+                }
+
+                if (!claimSucceeded && isManual) {
+                    // Manual resend — warn but allow
+                    console.log(`[Greeting] Manual resend for lead ${finalLeadId} — greeting was already sent, proceeding anyway.`);
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: finalLeadId,
+                        event_type: 'greeting_attempt',
+                        description: 'Greeting resent manually (override)',
+                        metadata: { trigger_source: 'manual', outcome: 'resent_override', conversation_id: callKey }
+                    }]);
                 }
             }
 
@@ -1101,29 +1119,6 @@ export default function CRM() {
                 callPhoneDigits || digits,
                 isManual ? 'GREETING_RESENDING' : 'GREETING_PROCESSING'
             );
-
-            // Step 1: Check if we already sent a greeting to this number recently (last 24h)
-            // This is a real-time DB check — not just local state — to prevent duplicates on refresh
-            const { data: existingGreeting } = await supabase
-                .from('whatsapp_logs')
-                .select('id, created_at, status')
-                .or(`payload->>'original_recipient'.ilike.%${last10}%`)
-                .eq('status', 'success')
-                .filter('payload->>templateName', 'eq', 'post_call_intake')
-                .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-                .limit(1)
-                .maybeSingle();
-
-            if (existingGreeting && !isManual) {
-                console.log(`[Auto-Greet] Already found a greeting log for ${last10} — marking sent without re-sending.`);
-                await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_SENT');
-                setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
-                dismissToast(manualToastId);
-                toast.success(`✅ Greeting already sent to ${firstName}! Marked as done.`);
-                return;
-            }
-
-            await upsertCallTranscriptStatus(callForTranscript, callPhoneDigits || digits, 'GREETING_PROCESSING');
 
             // Step 2: Send post_call_intake — template body + Flow prefill from Voice AI summary
             const intakePrefill = buildVoiceCallIntakePrefill(call);
@@ -1213,6 +1208,19 @@ export default function CRM() {
                         last_greeted_at: new Date().toISOString(),
                     })
                     .eq('id', leadToUpdateId);
+
+                // Log successful greeting send for audit trail
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: leadToUpdateId,
+                    event_type: 'greeting_attempt',
+                    description: `Greeting ${isManual ? 'resent manually' : 'sent automatically'} to ${firstName}`,
+                    metadata: {
+                        trigger_source: isManual ? 'manual' : 'call_end',
+                        outcome: 'sent',
+                        conversation_id: callKey,
+                        phone: digits
+                    }
+                }]);
             }
 
             setCallGreetingStatus(prev => ({ ...prev, [callKey]: 'sent' }));
@@ -1436,8 +1444,7 @@ export default function CRM() {
 
         const updatePayload = {
             id: 'global',
-            greeting_enabled: key === 'greeting' ? isTurningOn : workflows.greeting,
-            drip_enabled: key === 'drip' ? isTurningOn : workflows.drip
+            greeting_enabled: key === 'greeting' ? isTurningOn : workflows.greeting
         };
 
         const { error } = await supabase
@@ -1450,7 +1457,7 @@ export default function CRM() {
             // Rollback
             setWorkflows(prev => ({ ...prev, [key]: !isTurningOn }));
         } else {
-            toast.success(`${key === 'greeting' ? 'Instant Greeting' : 'Drip Campaign'} ${isTurningOn ? 'Enabled' : 'Disabled'}`);
+            toast.success(`Instant Greeting ${isTurningOn ? 'Enabled' : 'Disabled'}`);
             fetchDeliveryLogs();
         }
     };
@@ -1458,102 +1465,7 @@ export default function CRM() {
 
 
 
-    const handleBulkGreeting = async () => {
-        if (!workflows.greeting) {
-            toast.info("Toggle ON 'Instant Greeting & Triage' first before dispatching.");
-            return;
-        }
-
-        const newInquiryLeads = leads.filter((l) => l.pipeline_stage === NEW_LEAD_PIPELINE_STAGE);
-
-        if (newInquiryLeads.length === 0) {
-            toast.info(`No leads in '${NEW_LEAD_PIPELINE_STAGE}' to greet. There may not be any fresh ungreeted leads right now.`);
-            return;
-        }
-
-        const confirmed = await new Promise<boolean>(resolve => {
-            toast(`Send WhatsApp greeting to ${newInquiryLeads.length} lead(s)?\n${newInquiryLeads.map(l => `• ${l.name}`).join(', ')}`, {
-                action: { label: 'Send', onClick: () => resolve(true) },
-                cancel: { label: 'Cancel', onClick: () => resolve(false) },
-                duration: 10000,
-            });
-        });
-        if (!confirmed) return;
-
-        setIsSimulatingInquiry(true);
-        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-        const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-        let sentCount = 0;
-        let failCount = 0;
-        const progressId = `bulk-greeting-${Date.now()}`;
-        toast.loading(`Sending greetings… 0/${newInquiryLeads.length}`, { id: progressId });
-
-        for (const lead of newInquiryLeads) {
-            try {
-                // Prioritize dedicated WhatsApp number if Vapi captured it, otherwise use regular phone
-                let targetNumber = lead.whatsapp_number || lead.phone || '918000044090';
-                const phoneDigits = targetNumber.replace(/\D/g, '');
-                const bulkPrefill = buildLeadIntakePrefill(lead);
-
-                const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                        'apikey': SUPABASE_ANON_KEY,
-                    },
-                    body: JSON.stringify({
-                        phone: phoneDigits,
-                        leadId: lead.id,
-                        leadName: bulkPrefill.flowData.name || lead.name?.split(/\s+/)[0] || 'there',
-                        useTemplate: true,
-                        templateName: 'post_call_intake',
-                        templateParams: bulkPrefill.templateParams,
-                        flowData: bulkPrefill.flowData,
-                    }),
-                });
-
-                const bulkRes = await response.json().catch(() => ({}));
-                if (!response.ok || bulkRes.success === false) {
-                    throw new Error(bulkRes.error || bulkRes.message || `HTTP ${response.status}`);
-                }
-
-                sentCount++;
-                toast.loading(`Sending greetings… ${sentCount}/${newInquiryLeads.length}`, { id: progressId });
-
-                // Determine target stage (usually the one after 'New Lead')
-                const targetStage = pipelineStages[1] || 'In Discussion';
-
-                // Move lead to target stage after greeting and record timestamp
-                await supabase
-                    .from('crm_leads')
-                    .update({
-                        pipeline_stage: targetStage,
-                        last_greeted_at: new Date().toISOString(),
-                        drip_step: 0
-                    })
-                    .eq('id', lead.id);
-
-            } catch (e: any) {
-                console.warn(`Failed to greet ${lead.name}:`, e.message);
-                failCount++;
-            }
-        }
-
-        toast.dismiss(progressId);
-
-        fetchDeliveryLogs();
-
-        if (sentCount > 0) {
-            toast.success(`✅ Greeted ${sentCount} lead(s)! They've been moved to "In Discussion".`);
-        }
-        if (failCount > 0) {
-            toast.error(`${failCount} greeting(s) failed — check console.`);
-        }
-
-        setIsSimulatingInquiry(false);
-    };
+    // Bulk greeting removed — greetings are now sent only from individual call cards or the pipeline inspector.
 
     const fetchLeads = async () => {
         setIsLoading(true);
@@ -2019,26 +1931,30 @@ export default function CRM() {
             });
 
             // Step 2: AUTO-TRIGGER — only for the SINGLE most recent ungreeted call.
-            const fiveMinsAgo = Date.now() - (5 * 60 * 1000);
+            // Uses a 3-minute window (tightened from 5) and a persistent ref to prevent
+            // the useEffect from re-evaluating the same call on every `calls` state change.
+            const threeMinsAgo = Date.now() - (3 * 60 * 1000);
 
             const targetCall = calls.find((call: any) => {
                 const phone = (call.capturedWhatsapp || '').toString();
                 const digits = phone.replace(/\D/g, '');
                 const isToday = new Date(call.created_at).toDateString() === new Date().toDateString();
                 const callTime = new Date(call.created_at).getTime();
-                const canRetryOldLeadLinkError = isRetryableGreetingError(call.automation_error);
-                const isRecent = callTime > fiveMinsAgo || canRetryOldLeadLinkError;
+                const isRecent = callTime > threeMinsAgo;
 
-                // CRITICAL: Check local UI state + the mutex ref to avoid double-firing
+                // CRITICAL: Check local UI state + the mutex ref + persistent ref to avoid double-firing
                 const alreadyHandled = !!callGreetingStatus[call.id] || processingCalls.current.has(call.id);
-                const dbAlreadyLogged = !!call.automation_error && !isRetryableGreetingError(call.automation_error);
+                const alreadyAttempted = autoGreetAttempted.current.has(String(call.id));
+                const dbAlreadyLogged = !!call.automation_error;
                 const lead = leads.find(l => l.id === call.lead_id);
                 const isNewLead = !lead || ['New', 'New Lead', 'New Inquiry'].includes(lead.pipeline_stage);
 
-                return digits.length >= 10 && isRecent && isToday && !dbAlreadyLogged && !alreadyHandled && isNewLead;
+                return digits.length >= 10 && isRecent && isToday && !dbAlreadyLogged && !alreadyHandled && !alreadyAttempted && isNewLead;
             });
 
             if (targetCall) {
+                // Mark as attempted BEFORE calling to prevent re-fires from subsequent renders
+                autoGreetAttempted.current.add(String(targetCall.id));
                 console.log(`[Auto-Greet] Triggering for: ${targetCall.id}`);
                 handleSendCallGreeting(targetCall);
             }
@@ -2560,6 +2476,27 @@ export default function CRM() {
             const consentPrefill = agentTargetAction === 'consent' && agentTargetLead
                 ? buildConsentFlowPrefill(agentTargetLead)
                 : null;
+
+            // Atomic greeting claim for inquiry (greeting) sends from the pipeline inspector
+            if (agentTargetAction === 'inquiry' && agentTargetLead?.id) {
+                const { data: claimResult } = await supabase.rpc('claim_greeting_send', {
+                    target_lead_id: agentTargetLead.id
+                });
+                const claimSucceeded = claimResult && claimResult.length > 0;
+                // Log the attempt regardless
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: agentTargetLead.id,
+                    event_type: 'greeting_attempt',
+                    description: claimSucceeded
+                        ? 'Greeting sent via pipeline inspector'
+                        : 'Greeting resent via pipeline inspector (was already sent)',
+                    metadata: {
+                        trigger_source: 'manual',
+                        outcome: claimSucceeded ? 'sent' : 'resent_override',
+                        phone: phoneDigits
+                    }
+                }]);
+            }
 
             const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
                 method: 'POST',
@@ -4555,26 +4492,9 @@ export default function CRM() {
                                         </button>
                                     </div>
                                     <p className="text-sm text-slate-500 mb-3">Automatically replies to inbound web chats and SMS. Classifies intent (Booking vs. Inquiry).</p>
-                                    <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-md mt-3">
-                                        Bulk greeting dispatch is disabled. Send greetings from an individual lead card only.
+                                    <p className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-3 py-2 rounded-md mt-3">
+                                        Greetings are sent automatically after a call ends, or manually from a lead card. Each lead receives at most one greeting.
                                     </p>
-                                </div>
-
-
-                                <div className={`p-4 rounded-lg border transition-colors ${workflows.drip ? 'border-emerald-300 bg-[#E6F7F7]' : 'border-slate-200'}`}>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <Send className={`w-5 h-5 ${workflows.drip ? 'text-[#1AA6A8]' : 'text-slate-400'}`} />
-                                            <h3 className={`font-semibold ${workflows.drip ? 'text-[#1AA6A8]' : 'text-slate-600'}`}>No-Response Drip Campaign</h3>
-                                        </div>
-                                        <button
-                                            onClick={() => toggleWorkflow('drip')}
-                                            className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${workflows.drip ? 'bg-[#1AA6A8]' : 'bg-slate-200'}`}
-                                        >
-                                            <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${workflows.drip ? 'right-0.5' : 'left-0.5'}`}></div>
-                                        </button>
-                                    </div>
-                                    <p className="text-sm text-slate-500">Sends 3 automated follow-ups if lead ghosts after 48 hours. {!workflows.drip && <span className="text-amber-500 font-medium">(Currently Paused)</span>}</p>
                                 </div>
                             </div>
                         </div>
