@@ -1248,23 +1248,77 @@ export default function CRM() {
             // Fetch calls natively from Edge Function to bypass SDK wrapper issues
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/get-elevenlabs-calls`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                    'apikey': SUPABASE_ANON_KEY
-                },
-                body: JSON.stringify({ limit: 30 })
-            });
+            let callsData: any[] = [];
 
-            if (!res.ok) {
-                const errText = await res.text();
-                throw new Error(`Edge Function responded with HTTP ${res.status}: ${errText}`);
+            try {
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/get-elevenlabs-calls`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({ limit: 30 })
+                });
+
+                if (res.ok) {
+                    const edgeResponse = await res.json();
+                    callsData = edgeResponse?.data || [];
+                } else {
+                    console.warn(`Edge Function responded with HTTP ${res.status}, falling back to Supabase call_transcripts.`);
+                }
+            } catch (edgeErr) {
+                console.warn('Edge Function fetch failed, falling back to Supabase call_transcripts:', edgeErr);
             }
 
-            const edgeResponse = await res.json();
-            const callsData = edgeResponse?.data || [];
+            // Fallback: If edge function returned empty or encountered an error, fetch directly from Supabase call_transcripts
+            if (!callsData || callsData.length === 0) {
+                const { data: dbTranscripts, error: dbErr } = await supabase
+                    .from('call_transcripts')
+                    .select('*')
+                    .order('called_at', { ascending: false })
+                    .limit(50);
+
+                if (!dbErr && dbTranscripts && dbTranscripts.length > 0) {
+                    callsData = dbTranscripts.map((t: any) => {
+                        const transcriptArr = Array.isArray(t.transcript_json) ? t.transcript_json : [];
+                        const transcriptStr = t.transcript_text || transcriptArr.map((turn: any) => `${turn.role === 'agent' ? 'AI' : 'User'}: ${turn.message}`).join('\n');
+                        
+                        let capturedName = null;
+                        let capturedWhatsapp = null;
+                        let intent = "Inquiry";
+                        
+                        for (const turn of transcriptArr) {
+                            if (turn.tool_calls) {
+                                for (const tc of turn.tool_calls) {
+                                    if (tc.params_as_json) {
+                                        try {
+                                            const p = JSON.parse(tc.params_as_json);
+                                            if (p.name) capturedName = p.name;
+                                            if (p.service) intent = p.service;
+                                        } catch (_) {}
+                                    }
+                                }
+                            }
+                        }
+
+                        return {
+                            id: t.conversation_id,
+                            created_at: t.called_at || t.created_at || new Date().toISOString(),
+                            duration_seconds: t.call_duration_secs || 0,
+                            intent: intent,
+                            summary: t.transcript_text ? t.transcript_text.slice(0, 160) + '...' : "Call recorded.",
+                            transcript: transcriptStr,
+                            recording_url: null,
+                            phone_number: t.phone_number || null,
+                            capturedName: capturedName,
+                            capturedWhatsapp: capturedWhatsapp,
+                            lead_id: t.lead_id || null,
+                            automation_error: t.automation_error || null
+                        };
+                    });
+                }
+            }
 
             // Process and format calls
             let todayCalls = 0;

@@ -141,37 +141,82 @@ serve(async (req) => {
       }
     }
 
+    // Initialize Supabase client early for fallback and data matching
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    );
+
     // Fetch the conversation list from ElevenLabs API
     const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-    if (!ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not configured.");
-
     const agentId = payload.agent_id || Deno.env.get('VITE_ELEVENLABS_AGENT_ID') || 'agent_4401kn9khqyzf68t6d99s2a8n9gt';
 
-    const listRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversations?agent_id=${agentId}`, {
-        headers: { "xi-api-key": ELEVENLABS_API_KEY }
-    });
-    
-    if (!listRes.ok) throw new Error(`ElevenLabs API List Error: ${listRes.statusText}`);
-    const listData = await listRes.json();
-    
-    // WIPE THRESHOLD: Hide all calls before April 23, 2026 11:00 UTC to simulate a fresh wipe
-    const WIPE_THRESHOLD = 1776942000; 
-    const topCalls = (listData.conversations || [])
-        .filter((c: any) => c.start_time_unix_secs > WIPE_THRESHOLD)
-        .slice(0, limit);
+    let detailedCalls: any[] = [];
 
-    // Fetch individual call transcripts & data collection
-    const detailedCalls = await Promise.all(topCalls.map(async (c: any) => {
-        try {
-            const detRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversations/${c.conversation_id}`, {
-                headers: { "xi-api-key": ELEVENLABS_API_KEY }
-            });
-            return await detRes.json();
-        } catch (e) {
-            console.error("Failed to fetch details for", c.conversation_id, e);
-            return null;
+    if (ELEVENLABS_API_KEY) {
+      try {
+        const listRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversations?agent_id=${agentId}`, {
+            headers: { "xi-api-key": ELEVENLABS_API_KEY }
+        });
+        
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const WIPE_THRESHOLD = 1776942000; 
+          const topCalls = (listData.conversations || [])
+              .filter((c: any) => c.start_time_unix_secs > WIPE_THRESHOLD)
+              .slice(0, limit);
+
+          detailedCalls = await Promise.all(topCalls.map(async (c: any) => {
+              try {
+                  const detRes = await fetch(`https://api.elevenlabs.io/v1/convai/conversations/${c.conversation_id}`, {
+                      headers: { "xi-api-key": ELEVENLABS_API_KEY }
+                  });
+                  if (detRes.ok) return await detRes.json();
+                  return null;
+              } catch (e) {
+                  console.error("Failed to fetch details for", c.conversation_id, e);
+                  return null;
+              }
+          }));
+        } else {
+          const errBody = await listRes.text();
+          console.warn(`ElevenLabs API List Error (${listRes.status}):`, errBody);
         }
-    }));
+      } catch (err: any) {
+        console.error("ElevenLabs fetch exception:", err.message);
+      }
+    }
+
+    // Fallback & Merge: If ElevenLabs API failed or returned fewer calls, load from Supabase call_transcripts table
+    const { data: storedTranscripts } = await supabaseClient
+        .from('call_transcripts')
+        .select('*')
+        .order('called_at', { ascending: false })
+        .limit(limit);
+
+    const existingConvIds = new Set(detailedCalls.filter(Boolean).map((c: any) => c.conversation_id));
+
+    if (storedTranscripts && storedTranscripts.length > 0) {
+      for (const t of storedTranscripts) {
+        if (!existingConvIds.has(t.conversation_id)) {
+          const transcriptJson = Array.isArray(t.transcript_json) ? t.transcript_json : [];
+          detailedCalls.push({
+            conversation_id: t.conversation_id,
+            transcript: transcriptJson,
+            metadata: {
+              start_time_unix_secs: t.called_at ? Math.floor(new Date(t.called_at).getTime() / 1000) : Math.floor(Date.now() / 1000),
+              call_duration_secs: t.call_duration_secs || 0,
+              phone_number: t.phone_number || null,
+              call_summary_title: "Inbound Call"
+            },
+            analysis: {
+              transcript_summary: t.transcript_text ? t.transcript_text.slice(0, 200) : "Call recorded."
+            }
+          });
+          existingConvIds.add(t.conversation_id);
+        }
+      }
+    }
 
     // --- VOBIZ CDR LOOKUP: Fetch recent inbound calls to match caller phone numbers by timestamp ---
     const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
@@ -211,12 +256,6 @@ serve(async (req) => {
             console.error('[Vobiz CDR] Exception:', e.message);
         }
     }
-
-    // Initialize Supabase with Service Role to check which calls are already 'Processed' in CRM Pipeline
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
 
     // Fetch which conversation_ids have ALREADY been explicitly added to the CRM pipeline
     // Also fetch the automation_error if it exists
