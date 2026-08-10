@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -553,36 +553,134 @@ export default function CRM() {
     const [selectedWhatsappLead, setSelectedWhatsappLead] = useState<any>(null);
     const [whatsappChat, setWhatsappChat] = useState<any[]>([]);
     const [isFetchingChat, setIsFetchingChat] = useState(false);
+    const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
     const fetchWhatsappChat = async (lead: any) => {
+        if (!lead) return;
         setSelectedWhatsappLead(lead);
         setIsWhatsappChatOpen(true);
         setIsFetchingChat(true);
         setWhatsappChat([]);
+
         try {
-            let phoneDigits = 'Unknown';
-            const targetNumber = lead.whatsapp_number || lead.phone;
-            if (targetNumber && targetNumber !== 'Unknown Number' && targetNumber !== 'Unknown') {
-                phoneDigits = targetNumber.replace(/\D/g, '');
-                if (phoneDigits.length === 10) phoneDigits = `91${phoneDigits}`;
+            // 1. Collect all phone number representations for this lead
+            const rawPhones = [lead.whatsapp_number, lead.phone].filter(Boolean);
+            
+            // Also collect related lead phones if duplicate/linked
+            if (lead.duplicate_of_lead_id || lead.id) {
+                const linkedLeadIds = new Set([lead.id, lead.duplicate_of_lead_id].filter(Boolean));
+                leads.forEach((l: any) => {
+                    if (linkedLeadIds.has(l.id) || linkedLeadIds.has(l.duplicate_of_lead_id)) {
+                        if (l.whatsapp_number) rawPhones.push(l.whatsapp_number);
+                        if (l.phone) rawPhones.push(l.phone);
+                    }
+                });
             }
 
-            let query = supabase
-                .from("whatsapp_messages")
-                .select("role, content, created_at")
-                .ilike("phone", `%${phoneDigits.slice(-10)}%`);
+            const digitsList = rawPhones
+                .map((p: string) => String(p).replace(/\D/g, ''))
+                .filter(Boolean);
 
-            // If it's a linked lead (duplicate_of_lead_id exists), show the full shared history.
-            // If it's an independent lead, only show history starting slightly before this lead was created,
-            // isolating it from any previous distinct leads that share the same phone number.
-            if (!lead.duplicate_of_lead_id && lead.created_at) {
-                query = query.gte("created_at", lead.created_at);
+            const phoneSuffixes = [...new Set(
+                digitsList
+                    .map((d: string) => d.length >= 10 ? d.slice(-10) : d)
+                    .filter((d: string) => d.length >= 7)
+            )];
+
+            let messagesList: any[] = [];
+
+            // 2. Fetch all messages from whatsapp_messages (no date restriction to ensure full history)
+            if (phoneSuffixes.length > 0) {
+                const orQuery = phoneSuffixes.map(suffix => `phone.ilike.%${suffix}%`).join(',');
+                const { data: dbMsgs, error: msgError } = await supabase
+                    .from("whatsapp_messages")
+                    .select("id, role, content, created_at")
+                    .or(orQuery)
+                    .order("created_at", { ascending: true });
+
+                if (!msgError && dbMsgs) {
+                    messagesList = dbMsgs.map((m: any) => ({
+                        id: m.id,
+                        role: m.role || 'user',
+                        content: m.content || '',
+                        created_at: m.created_at,
+                        source: 'message'
+                    }));
+                }
             }
 
-            const { data, error } = await query.order("created_at", { ascending: true });
+            // 3. Fetch from whatsapp_logs to include template dispatches, AI greetings & quotes not in whatsapp_messages
+            try {
+                const { data: logsData } = await supabase
+                    .from('whatsapp_logs')
+                    .select('id, created_at, status, payload')
+                    .order('created_at', { ascending: true })
+                    .limit(300);
 
-            if (error) throw error;
-            setWhatsappChat(data || []);
+                if (logsData) {
+                    const matchedLogs = logsData.filter((log: any) => {
+                        const p = log.payload;
+                        if (!p) return false;
+                        if (lead.id && (p.lead_id === lead.id || p.leadId === lead.id)) return true;
+                        if (lead.duplicate_of_lead_id && (p.lead_id === lead.duplicate_of_lead_id || p.leadId === lead.duplicate_of_lead_id)) return true;
+                        const recipient = String(p.original_recipient || p.contacts?.[0]?.wa_id || p.to || '');
+                        return phoneSuffixes.some(suffix => recipient.includes(suffix));
+                    });
+
+                    for (const log of matchedLogs) {
+                        const p = log.payload || {};
+                        let text = p.message;
+                        if (!text && p.templateName) {
+                            if (p.templateName === 'post_call_intake') {
+                                const name = p.flowData?.name || (p.templateParams && p.templateParams[0]) || lead.name || 'there';
+                                const service = p.flowData?.service || (p.templateParams && p.templateParams[1]) || 'healthcare';
+                                text = `Hi ${name}, welcome to 99 Care! Please tap the button below to fill out our intake form so we can understand your requirements for ${service}.`;
+                            } else if (p.templateName === 'quote_client_v2') {
+                                const name = (p.templateParams && p.templateParams[0]) || lead.name || 'Customer';
+                                text = `Hello ${name}, please find the customized quotation details for your care request.`;
+                            } else if (p.templateName === 'client_review_request') {
+                                text = `Namaste, we hope you had a great experience with 99 Care! Please share your feedback and review.`;
+                            } else if (p.templateName.includes('consent')) {
+                                text = `Consent form & service agreement sent.`;
+                            } else if (p.templateName.includes('staff')) {
+                                text = `Staff allocation & verified ID card link sent.`;
+                            } else {
+                                text = `[WhatsApp Template Sent: ${p.templateName}]`;
+                            }
+                        }
+
+                        if (text && String(text).trim()) {
+                            const logTime = new Date(log.created_at).getTime();
+                            // Check if this log is already represented in messagesList within 30 seconds
+                            const isDuplicate = messagesList.some((m: any) => {
+                                const mTime = new Date(m.created_at).getTime();
+                                return Math.abs(logTime - mTime) < 30000 && (
+                                    m.content.trim() === String(text).trim() ||
+                                    (p.templateName && m.content.includes(p.templateName))
+                                );
+                            });
+
+                            if (!isDuplicate && log.status !== 'failed') {
+                                messagesList.push({
+                                    id: log.id,
+                                    role: 'assistant',
+                                    content: String(text).trim(),
+                                    created_at: log.created_at,
+                                    status: log.status,
+                                    source: 'log'
+                                });
+                            }
+                        }
+                    }
+                }
+            } catch (logErr) {
+                console.warn('Could not merge whatsapp_logs into chat history:', logErr);
+            }
+
+            // 4. Sort unified history chronologically
+            messagesList.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            setWhatsappChat(messagesList);
         } catch (err: any) {
             console.error('Failed to fetch chat logs:', err);
             toast.error(`Unable to load chat: ${err.message}`);
@@ -590,6 +688,60 @@ export default function CRM() {
             setIsFetchingChat(false);
         }
     };
+
+    // Auto-scroll chat to bottom when messages update
+    useEffect(() => {
+        if (isWhatsappChatOpen && chatScrollRef.current) {
+            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }
+    }, [whatsappChat, isWhatsappChatOpen]);
+
+    // Realtime subscription for incoming WhatsApp messages while chat modal is open
+    useEffect(() => {
+        if (!isWhatsappChatOpen || !selectedWhatsappLead) return;
+
+        const targetPhones = [selectedWhatsappLead.whatsapp_number, selectedWhatsappLead.phone].filter(Boolean);
+        const suffixes = [...new Set(
+            targetPhones
+                .map((p: string) => String(p).replace(/\D/g, ''))
+                .filter(Boolean)
+                .map((d: string) => d.length >= 10 ? d.slice(-10) : d)
+                .filter((d: string) => d.length >= 7)
+        )];
+
+        if (suffixes.length === 0) return;
+
+        const channel = supabase
+            .channel(`whatsapp_chat_${selectedWhatsappLead.id || 'realtime'}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' },
+                (payload) => {
+                    const newMsg = payload.new as any;
+                    const msgPhone = String(newMsg.phone || '').replace(/\D/g, '');
+                    const isForLead = suffixes.some(s => msgPhone.includes(s));
+                    if (isForLead) {
+                        setWhatsappChat((prev) => {
+                            if (prev.some((m) => m.id === newMsg.id || (m.content === newMsg.content && Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 5000))) {
+                                return prev;
+                            }
+                            return [...prev, {
+                                id: newMsg.id,
+                                role: newMsg.role || 'user',
+                                content: newMsg.content || '',
+                                created_at: newMsg.created_at || new Date().toISOString(),
+                                source: 'message'
+                            }];
+                        });
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [isWhatsappChatOpen, selectedWhatsappLead]);
 
     const [whatsappTemplates, setWhatsappTemplates] = useState<Record<string, Record<string, string>>>({
         inquiry: {
@@ -4004,6 +4156,17 @@ export default function CRM() {
                                                                                         {deliveryLog.status === 'accepted_by_meta' ? 'sent' : deliveryLog.status}
                                                                                     </span>
                                                                                 )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    title="View WhatsApp Chat History"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        fetchWhatsappChat(item);
+                                                                                    }}
+                                                                                    className="ml-auto p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors"
+                                                                                >
+                                                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                                                </button>
                                                                             </div>
                                                                             {/* Time */}
                                                                             <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
@@ -5001,49 +5164,93 @@ export default function CRM() {
             {/* WhatsApp Chat Modal */}
             {isWhatsappChatOpen && selectedWhatsappLead && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/80 sticky top-0 z-10">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh] border border-slate-200">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/90 sticky top-0 z-10">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#EAFBFB] text-[#1AA6A8]">
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#EAFBFB] text-[#1AA6A8] shadow-sm">
                                     <MessageCircle className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-slate-900">WhatsApp Chat History</h2>
-                                    <p className="text-sm text-slate-500 mt-0.5">Contact: {selectedWhatsappLead.name}</p>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-lg font-bold text-slate-900">{selectedWhatsappLead.name}</h2>
+                                        {whatsappChat.length > 0 && (
+                                            <span className="text-[11px] font-bold px-2 py-0.5 bg-primary/10 text-primary rounded-full">
+                                                {whatsappChat.length} {whatsappChat.length === 1 ? 'message' : 'messages'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 font-medium">
+                                        <Phone className="w-3 h-3 text-slate-400" />
+                                        {formatPhoneNumber(selectedWhatsappLead.whatsapp_number || selectedWhatsappLead.phone) || 'No phone'}
+                                    </p>
                                 </div>
                             </div>
-                            <button onClick={() => setIsWhatsappChatOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm">
-                                <X className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => fetchWhatsappChat(selectedWhatsappLead)}
+                                    disabled={isFetchingChat}
+                                    title="Refresh chat history"
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm disabled:opacity-50"
+                                >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${isFetchingChat ? 'animate-spin text-primary' : ''}`} />
+                                </button>
+                                <button
+                                    onClick={() => setIsWhatsappChatOpen(false)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="p-6 flex-1 overflow-y-auto space-y-4 bg-[#efeae2]">
+                        <div ref={chatScrollRef} className="p-6 flex-1 overflow-y-auto space-y-4 bg-[#efeae2] custom-scrollbar">
                             {isFetchingChat ? (
-                                <div className="flex flex-col items-center justify-center py-10">
+                                <div className="flex flex-col items-center justify-center py-16">
                                     <Loader2 className="w-8 h-8 text-[#1AA6A8] animate-spin mb-3" />
-                                    <p className="text-slate-600 font-medium">Loading chat history...</p>
+                                    <p className="text-slate-600 font-medium text-sm">Loading full WhatsApp conversation...</p>
                                 </div>
                             ) : whatsappChat.length > 0 ? (
                                 <div className="space-y-3">
                                     {whatsappChat.map((msg, idx) => {
                                         const isAI = msg.role === 'assistant';
                                         const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                        const date = new Date(msg.created_at).toLocaleDateString();
+                                        const date = new Date(msg.created_at).toLocaleDateString(undefined, {
+                                            weekday: 'short',
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                        });
 
-                                        // simple date separator
-                                        const showDate = idx === 0 || new Date(whatsappChat[idx - 1].created_at).toLocaleDateString() !== date;
+                                        const showDate = idx === 0 || new Date(whatsappChat[idx - 1].created_at).toLocaleDateString() !== new Date(msg.created_at).toLocaleDateString();
 
                                         return (
-                                            <div key={idx}>
+                                            <div key={msg.id || idx}>
                                                 {showDate && (
-                                                    <div className="flex justify-center my-4">
-                                                        <span className="bg-white/80 rounded-md px-3 py-1 text-[11px] font-bold text-slate-500 shadow-sm">{date}</span>
+                                                    <div className="flex justify-center my-3">
+                                                        <span className="bg-white/85 backdrop-blur-sm rounded-md px-3 py-1 text-[11px] font-bold text-slate-600 shadow-sm border border-slate-200/50">
+                                                            {date}
+                                                        </span>
                                                     </div>
                                                 )}
                                                 <div className={`flex ${isAI ? 'justify-start' : 'justify-end'}`}>
-                                                    <div className={`max-w-[75%] rounded-lg px-3 py-2 shadow-sm flex flex-col relative ${isAI ? 'bg-white rounded-tl-none' : 'bg-[#d9fdd3] rounded-tr-none'}`}>
-                                                        <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed break-all">{msg.content}</p>
-                                                        <span className="text-[10px] text-slate-500 text-right mt-1 ml-4 block">{time}</span>
+                                                    <div className={`max-w-[78%] rounded-xl px-3.5 py-2.5 shadow-sm flex flex-col relative ${isAI ? 'bg-white rounded-tl-none border border-slate-100' : 'bg-[#d9fdd3] rounded-tr-none border border-emerald-100'}`}>
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isAI ? 'text-primary' : 'text-emerald-800'}`}>
+                                                                {isAI ? '99 Care AI' : (selectedWhatsappLead.name || 'Lead')}
+                                                            </span>
+                                                            {msg.source === 'log' && (
+                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded">
+                                                                    System Log
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed break-words">{msg.content}</p>
+                                                        <div className="flex items-center justify-end gap-1 mt-1 ml-4">
+                                                            <span className="text-[10px] text-slate-400">{time}</span>
+                                                            {isAI && (
+                                                                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -5051,10 +5258,14 @@ export default function CRM() {
                                     })}
                                 </div>
                             ) : (
-                                <div className="flex flex-col items-center justify-center py-12 text-center bg-white/50 rounded-xl border border-dashed border-slate-300">
-                                    <MessageCircle className="w-10 h-10 text-slate-300 mb-3" />
-                                    <h3 className="font-semibold text-slate-700">No Chat History</h3>
-                                    <p className="text-sm text-slate-500">The AI hasn't conversed with this lead yet.</p>
+                                <div className="flex flex-col items-center justify-center py-16 text-center bg-white/70 backdrop-blur-sm rounded-2xl border border-dashed border-slate-300 p-8">
+                                    <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3 border border-emerald-100">
+                                        <MessageCircle className="w-6 h-6 text-emerald-600" />
+                                    </div>
+                                    <h3 className="font-bold text-slate-800 text-base">No Chat History Found</h3>
+                                    <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                                        No inbound or outbound WhatsApp messages recorded yet for {formatPhoneNumber(selectedWhatsappLead.whatsapp_number || selectedWhatsappLead.phone) || 'this lead'}.
+                                    </p>
                                 </div>
                             )}
                         </div>
@@ -5118,12 +5329,22 @@ export default function CRM() {
                                 )}
                             </div>
                         </div>
-                        <button
-                            onClick={() => setSelectedInspectorLead(null)}
-                            className="p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm shrink-0 ml-2"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <button
+                                type="button"
+                                onClick={() => fetchWhatsappChat(selectedInspectorLead)}
+                                title="View WhatsApp Chat History"
+                                className="p-2 rounded-full hover:bg-emerald-50 hover:text-emerald-600 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm"
+                            >
+                                <MessageCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => setSelectedInspectorLead(null)}
+                                className="p-2 rounded-full hover:bg-slate-200 transition-colors text-slate-500 bg-white border border-slate-200 shadow-sm"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 custom-scrollbar">

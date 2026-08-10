@@ -175,8 +175,40 @@ serve(async (req) => {
             ? new Date(metadata.start_time_unix_secs * 1000).toISOString()
             : new Date().toISOString();
         const startTimeUnix = metadata.start_time_unix_secs || Math.floor(Date.now() / 1000);
-        const callerPhone = metadata.phone_number || metadata.caller_id || '';
+        let callerPhone = metadata.phone_number || metadata.caller_id || '';
         const callDurationSecs = metadata.call_duration_secs || analysis.call_duration || 0;
+
+        // --- VOBIZ CDR LOOKUP FALLBACK ---
+        // Match this ElevenLabs call's start time against Vobiz CDR records if Caller ID is missing
+        if (!callerPhone) {
+            const VOBIZ_AUTH_ID = Deno.env.get('VOBIZ_AUTH_ID');
+            const VOBIZ_AUTH_TOKEN = Deno.env.get('VOBIZ_AUTH_TOKEN');
+            if (VOBIZ_AUTH_ID && VOBIZ_AUTH_TOKEN && metadata.start_time_unix_secs) {
+                try {
+                    const cdrRes = await fetch(
+                        `https://api.vobiz.ai/api/v1/account/${VOBIZ_AUTH_ID}/cdr/recent?limit=10`,
+                        { headers: { 'X-Auth-ID': VOBIZ_AUTH_ID, 'X-Auth-Token': VOBIZ_AUTH_TOKEN, 'Accept': 'application/json' } }
+                    );
+                    if (cdrRes.ok) {
+                        const cdrData = await cdrRes.json();
+                        const targetTime = metadata.start_time_unix_secs * 1000;
+                        const records = cdrData.data || [];
+                        for (const rec of records) {
+                            if (rec.call_direction === 'inbound' && rec.caller_id_number && rec.start_time) {
+                                const recTime = new Date(rec.start_time).getTime();
+                                if (Math.abs(recTime - targetTime) <= 60000) {
+                                    callerPhone = rec.caller_id_number;
+                                    console.log(`[Vobiz CDR] Webhook matched caller: ${callerPhone} for call at ${new Date(targetTime).toISOString()}`);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (e: any) {
+                    console.error('[Vobiz CDR Webhook] Exception:', e.message);
+                }
+            }
+        }
 
         // Build a clean text transcript
         const transcriptText = transcript
@@ -185,7 +217,7 @@ serve(async (req) => {
             
         // --- WHATSAPP NUMBER EXTRACTION LOGIC ---
         // Dynamic wildcard SIP Header parsing for the caller/calling number.
-        let metadataPhone = metadata?.phone_number || metadata?.caller_id || null;
+        let metadataPhone = callerPhone || metadata?.phone_number || metadata?.caller_id || null;
         if (!metadataPhone && metadata) {
             for (const key in metadata) {
                 if (typeof metadata[key] === 'string') {
@@ -265,6 +297,39 @@ serve(async (req) => {
             detectedName = analysis.data_collection_results.name.value;
         } else if (metadata.customer_name) {
             detectedName = metadata.customer_name;
+        }
+
+        if (detectedName === 'Customer' && transcript.length > 0) {
+            const cleanName = (raw: string): string | null => {
+                const naaamPatterns = [
+                    /mera(?:\s+shubh)?\s+naam\s+(.+?)(?:\s+hai\.?)?$/i,
+                    /my name is\s+(.+?)\.?$/i,
+                ];
+                for (const pattern of naaamPatterns) {
+                    const m = raw.match(pattern);
+                    if (m) return m[1].replace(/[.,!?]+$/, '').trim();
+                }
+                const fillers = /^(?:uh[\s,-]+|aa[\s,-]+|hmm[\s,-]+|um[\s,-]+|oh[\s,-]+|ah[\s,-]+|acha[\s,-]+|accha[\s,-]+)+/i;
+                const stripped = raw.replace(fillers, '').replace(/[.,!?]+$/, '').trim();
+                const words = stripped.split(/\s+/).filter(Boolean);
+                if (words.length >= 1 && words.length <= 3 && stripped.length < 35) {
+                    return stripped;
+                }
+                return null;
+            };
+
+            for (let i = 0; i < transcript.length; i++) {
+                const turn = transcript[i];
+                const msg = (turn.message || '').toLowerCase();
+                // Match "aapka naam", "apna naam", "your name", "shubh naam", "aapka", "kya naam" but avoid just "naam" or "नाम" alone since the agent says "mera naam khushi hai"
+                if (turn.role === 'agent' && (msg.includes('your name') || msg.includes('aapka naam') || msg.includes('apna naam') || msg.includes('shubh naam') || msg.includes('आपका नाम') || msg.includes('अपना नाम'))) {
+                    if (i + 1 < transcript.length && transcript[i + 1].role === 'user') {
+                        const raw = (transcript[i + 1].message || '').trim();
+                        const cleaned = cleanName(raw);
+                        if (cleaned && cleaned.length > 2) { detectedName = cleaned; break; }
+                    }
+                }
+            }
         }
 
         if (!SUPABASE_URL || !SUPABASE_KEY) {

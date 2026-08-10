@@ -123,6 +123,36 @@ serve(async (req: Request) => {
     const messageId = metaData.messages?.[0]?.id || 'unknown';
     console.log(`[send-id-card-link] Sent to ${to} — messageId: ${messageId}`);
 
+    // Log to whatsapp_messages and whatsapp_logs so it appears in CRM chat history
+    try {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') || '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+      );
+      const staffMsg = `Namaste! 🙏 Your assigned healthcare professional is ${employeeName} (${jobTitle}). You can view and verify their profile & ID card here: ${shareableUrl}`;
+      
+      await supabase.from('whatsapp_messages').insert([{
+        phone: to,
+        role: 'assistant',
+        content: staffMsg
+      }]);
+
+      await supabase.from('whatsapp_logs').insert([{
+        sid: messageId,
+        status: 'accepted_by_meta',
+        payload: {
+          original_recipient: to,
+          templateName: 'staff_id_card_allocation',
+          message: staffMsg,
+          employeeName,
+          jobTitle,
+          shareableUrl
+        }
+      }]);
+    } catch (logErr) {
+      console.warn('[send-id-card-link] Failed to log chat message:', logErr);
+    }
+
     return new Response(JSON.stringify({ success: true, messageId }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

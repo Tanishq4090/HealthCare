@@ -544,11 +544,31 @@ serve(async (req) => {
         });
 
         // Insert into whatsapp_messages to show up in the CRM chat history viewer
-        if (message) {
+        let chatRecordContent = message;
+        if (!chatRecordContent && templateName) {
+            if (templateName === 'post_call_intake') {
+                const name = flowData?.name || (templateParams && templateParams[0]) || 'there';
+                const service = flowData?.service || (templateParams && templateParams[1]) || 'healthcare';
+                chatRecordContent = `Hi ${name}, welcome to 99 Care! Please tap the button below to fill out our intake form so we can understand your requirements for ${service}.`;
+            } else if (templateName === 'quote_client_v2') {
+                const name = (templateParams && templateParams[0]) || 'Customer';
+                chatRecordContent = `Hello ${name}, please find the customized quotation details for your care request.`;
+            } else if (templateName === 'client_review_request') {
+                chatRecordContent = `Namaste, we hope you had a great experience with 99 Care! Please share your feedback and review.`;
+            } else if (templateName.includes('consent')) {
+                chatRecordContent = `Consent form & service agreement sent.`;
+            } else if (templateName.includes('staff')) {
+                chatRecordContent = `Staff allocation & verified ID card link sent.`;
+            } else {
+                chatRecordContent = `[WhatsApp Template Sent: ${templateName}]`;
+            }
+        }
+
+        if (chatRecordContent) {
             await supabase.from('whatsapp_messages').insert([{ 
                 phone: digits, 
                 role: 'assistant', 
-                content: message 
+                content: chatRecordContent 
             }]);
         }
 

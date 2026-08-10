@@ -350,11 +350,12 @@ serve(async (req) => {
             for (let i = 0; i < c.transcript.length; i++) {
                 const turn = c.transcript[i];
                 const msg = (turn.message || '').toLowerCase();
-                if (turn.role === 'agent' && (msg.includes('naam') || msg.includes('your name') || msg.includes('aapka naam') || msg.includes('aapka shubh'))) {
+                // Match "aapka naam", "apna naam", "your name", "shubh naam", "aapka", "kya naam" but avoid just "naam" or "नाम" alone since the agent says "mera naam khushi hai"
+                if (turn.role === 'agent' && (msg.includes('your name') || msg.includes('aapka naam') || msg.includes('apna naam') || msg.includes('shubh naam') || msg.includes('आपका नाम') || msg.includes('अपना नाम'))) {
                     if (i + 1 < c.transcript.length && c.transcript[i + 1].role === 'user') {
                         const raw = (c.transcript[i + 1].message || '').trim();
                         const cleaned = cleanName(raw);
-                        if (cleaned) { capturedName = cleaned; break; }
+                        if (cleaned && cleaned.length > 2) { capturedName = cleaned; break; }
                     }
                 }
             }
