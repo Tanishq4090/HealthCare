@@ -76,7 +76,7 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_APP_MODE': JSON.stringify(appMode),
     },
     build: {
-      outDir: process.env.VERCEL ? 'dist' : (appMode === 'os' ? 'dist-os' : 'dist-public'),
+      outDir: appMode === 'os' ? 'dist-os' : 'dist-public',
       emptyOutDir: true,
       sourcemap: true, minify: false,
       cssCodeSplit: true,

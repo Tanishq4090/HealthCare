@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build:os",
-  "outputDirectory": "dist",
+  "buildCommand": "npm run build:public",
+  "outputDirectory": "dist-public",
   "installCommand": "npm install --prefer-offline --legacy-peer-deps",
   "framework": "vite",
   "rewrites": [
