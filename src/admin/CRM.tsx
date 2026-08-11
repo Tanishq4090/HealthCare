@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -518,6 +518,7 @@ export default function CRM() {
 
     // Staff Picker State
     const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
+    const [staffSearchQuery, setStaffSearchQuery] = useState('');
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
     const [depositMethod, setDepositMethod] = useState('Online Transfer');
     const [depositLeadTarget, setDepositLeadTarget] = useState<any>(null);
@@ -4783,23 +4784,36 @@ export default function CRM() {
                             </button>
                         </div>
 
+                        <div className="px-5 pt-5 pb-2 border-b border-slate-100 flex-shrink-0">
+                            <div className="relative">
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Search workers by name or role..."
+                                    value={staffSearchQuery}
+                                    onChange={(e) => setStaffSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all text-sm"
+                                />
+                            </div>
+                        </div>
+
                         <div className="p-5 flex-1 overflow-y-auto">
                             {isLoadingWorkers ? (
                                 <div className="flex flex-col items-center justify-center py-16">
                                     <Loader2 className="w-8 h-8 text-purple-500 animate-spin mb-3" />
                                     <p className="text-slate-500 font-medium">Loading available staff...</p>
                                 </div>
-                            ) : availableWorkers.length === 0 ? (
+                            ) : availableWorkers.filter(w => (w.name || '').toLowerCase().includes(staffSearchQuery.toLowerCase()) || (w.role || '').toLowerCase().includes(staffSearchQuery.toLowerCase())).length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                                         <Users className="w-8 h-8 text-slate-400" />
                                     </div>
-                                    <h3 className="font-bold text-slate-800 mb-2">No Available Staff</h3>
-                                    <p className="text-sm text-slate-500">All workers are currently assigned. Add more staff from the HR page.</p>
+                                    <h3 className="font-bold text-slate-800 mb-2">{staffSearchQuery ? 'No Matching Staff Found' : 'No Available Staff'}</h3>
+                                    <p className="text-sm text-slate-500">{staffSearchQuery ? `No workers found matching "${staffSearchQuery}".` : 'All workers are currently assigned. Add more staff from the HR page.'}</p>
                                 </div>
                             ) : (
                                 <div className="grid sm:grid-cols-2 gap-3">
-                                    {availableWorkers.map((worker, index) => (
+                                    {availableWorkers.filter(w => (w.name || '').toLowerCase().includes(staffSearchQuery.toLowerCase()) || (w.role || '').toLowerCase().includes(staffSearchQuery.toLowerCase())).map((worker, index) => (
                                         <div key={worker.id || index} className="p-4 border-2 border-slate-200 hover:border-purple-400 rounded-xl transition-all cursor-pointer group hover:shadow-md bg-white">
                                             <div className="flex items-start gap-3 mb-3">
                                                 <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
