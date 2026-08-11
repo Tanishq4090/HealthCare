@@ -10,10 +10,13 @@ import { TubelightNavbar } from '@/components/ui/tubelight-navbar';
 
 const SERVICES = [
   { name: 'Nursing Care', path: '/services/nursing-services-on-demand' },
+  { name: 'Wound Care', path: '/services/wound-care' },
+  { name: 'Respiratory Care', path: '/services/respiratory-care-at-home' },
+  { name: 'Injection at Home', path: '/services/injection-at-home' },
   { name: 'Maternity Care', path: '/services/maternity-care' },
   { name: 'New Born Baby Care', path: '/services/new-born-baby-care' },
   { name: 'Baby Care', path: '/services/baby-care' },
-  { name: 'Japa Care (Post-Delivery)', path: '/services/maternity-care' },
+  { name: 'Japa Care (Post-Delivery)', path: '/services/japa-care' },
   { name: 'Old Age Care', path: '/services/old-age-person-care' },
 ];
 

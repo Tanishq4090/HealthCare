@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ShieldCheck, Clock, UserCheck, HeartHandshake, CheckCircle2, ChevronRight } from 'lucide-react';
+import { ShieldCheck, Clock, UserCheck, HeartHandshake, CheckCircle2, ChevronRight, Star } from 'lucide-react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { useCountUp } from '@/hooks/useCountUp';
 import { AnimateOnScroll } from '@/components/AnimateOnScroll';
@@ -44,9 +44,37 @@ export default function HomePage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="99 Care — Home Healthcare Services in Surat | 24/7 Nursing & Caretaker"
-        description="Professional home healthcare in Surat. Expert nurses, caretakers, wound care, maternity & newborn care — background verified, available 24/7. Call +91 9016 116 564."
+        title="Best Home Healthcare Services in Surat | 99 Care"
+        description="99 Care provides trusted home healthcare services in Surat, including professional nursing care, patient care, elderly care and personalized medical support at home."
         canonical="https://99care.org"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": ["LocalBusiness", "MedicalBusiness"],
+          "name": "99 Care — Home Healthcare Services",
+          "alternateName": "99 Care",
+          "url": "https://99care.org",
+          "logo": "https://99care.org/99care-logo.svg",
+          "image": "https://99care.org/99care-logo.svg",
+          "description": "Professional home healthcare services in Surat, Gujarat. Wound care, nursing at home, injection services, maternity care, newborn care, and elderly caretaker services available 24/7.",
+          "telephone": "+919016116564",
+          "email": "99careforyou@gmail.com",
+          "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "104, Fortune Mall, Nr. Galaxy Circle, Pal gam",
+            "addressLocality": "Adajan, Surat",
+            "addressRegion": "Gujarat",
+            "postalCode": "395009",
+            "addressCountry": "IN"
+          },
+          "geo": {
+            "@type": "GeoCoordinates",
+            "latitude": "21.1702",
+            "longitude": "72.8311"
+          },
+          "openingHours": "Mo-Su 00:00-23:59",
+          "priceRange": "₹₹",
+          "currenciesAccepted": "INR"
+        }}
       />
       <div className="w-full bg-white dark:bg-slate-950">
       {/* SECTION 1 — HERO */}
@@ -192,31 +220,33 @@ export default function HomePage() {
           >
             {services.filter(s => s.category === 'nursing').map((service) => (
               <motion.div key={service.slug} variants={staggerItem}>
-                <Link to={`/services/${service.slug}`} className="block group cursor-pointer">
+                <Link to={`/services/${service.slug}`} className="block group cursor-pointer h-full">
                   <motion.div 
-                    whileHover={{ y: -8 }}
+                    whileHover={{ y: -6 }}
                     transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                    className="relative cursor-pointer h-[400px] w-full rounded-[2rem] overflow-hidden border border-gray-100 dark:border-slate-800 shadow-sm transition-shadow duration-500 hover:shadow-2xl"
+                    className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-slate-800 shadow-sm transition-shadow duration-500 hover:shadow-xl flex flex-col h-full"
                   >
-                    {/* Image Background */}
-                    <div className="absolute inset-0 overflow-hidden">
+                    {/* Image Container at top */}
+                    <div className="relative h-56 overflow-hidden">
                       <motion.img 
                         src={service.image} 
                         alt={service.title}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                        className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-gray-900/90 via-gray-900/40 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
                     </div>
 
-                    {/* Content Overlay */}
-                    <div className="absolute inset-0 p-8 flex flex-col justify-end text-white">
-                      <h3 className="text-2xl font-bold mb-2 tracking-tight">
-                        {service.title}
-                      </h3>
-                      <p className="text-white/80 text-sm mb-6 leading-relaxed opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-500">
-                        {service.shortDesc}
-                      </p>
-                      <div className="flex items-center gap-2 text-sm font-semibold text-white group-hover:gap-3 transition-all">
+                    {/* Content Container below image */}
+                    <div className="p-6 flex flex-col flex-1 justify-between">
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">
+                          {service.title}
+                        </h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-4 line-clamp-2">
+                          {service.shortDesc}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm font-semibold text-brand-blue group-hover:gap-3 transition-all pt-2">
                         Explore <ChevronRight className="w-4 h-4" />
                       </div>
                     </div>
@@ -238,6 +268,11 @@ export default function HomePage() {
             <AnimateOnScroll variants={fadeUp} delay={0.1}>
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">Caretaker Services at Home</h2>
             </AnimateOnScroll>
+            <AnimateOnScroll variants={fadeUp} delay={0.2}>
+              <p className="text-lg text-gray-500 dark:text-gray-400 font-light max-w-2xl mx-auto">
+                Compassionate, trained caretakers for every stage of life — from newborns to elderly family members.
+              </p>
+            </AnimateOnScroll>
           </div>
 
           <motion.div 
@@ -245,36 +280,36 @@ export default function HomePage() {
             initial="hidden" 
             whileInView="visible" 
             viewport={{ once: true, margin: '-80px' }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-8"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8"
           >
             {services.filter(s => s.category === 'caretaker').map((service) => (
               <motion.div key={service.slug} variants={staggerItem}>
                 <Link to={`/services/${service.slug}`} className="block group cursor-pointer">
                   <motion.div 
-                    whileHover={{ y: -8 }}
+                    whileHover={{ y: -6 }}
                     transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                    className="relative cursor-pointer h-[450px] w-full rounded-[2.5rem] overflow-hidden border border-gray-100 dark:border-slate-800 shadow-sm transition-shadow duration-500 hover:shadow-2xl"
+                    className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-slate-800 shadow-sm transition-shadow duration-500 hover:shadow-xl"
                   >
-                    {/* Image Background */}
-                    <div className="absolute inset-0 overflow-hidden">
+                    {/* Image */}
+                    <div className="relative h-56 overflow-hidden">
                       <motion.img 
                         src={service.image} 
                         alt={service.title}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                        className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-gray-900/90 via-gray-900/40 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                     </div>
 
-                    {/* Content Overlay */}
-                    <div className="absolute inset-0 p-10 flex flex-col justify-end text-white">
-                      <h3 className="text-2xl font-bold mb-3 tracking-tight">
+                    {/* Content */}
+                    <div className="p-6">
+                      <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">
                         {service.title}
                       </h3>
-                      <p className="text-white/80 text-sm mb-6 leading-relaxed opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-500">
+                      <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-4 line-clamp-2">
                         {service.shortDesc}
                       </p>
-                      <div className="flex items-center gap-2 text-sm font-semibold text-white group-hover:gap-3 transition-all">
-                        View Details <ChevronRight className="w-4 h-4" />
+                      <div className="flex items-center gap-2 text-sm font-semibold text-brand-blue group-hover:gap-3 transition-all">
+                        Learn More <ChevronRight className="w-4 h-4" />
                       </div>
                     </div>
                   </motion.div>
@@ -368,11 +403,14 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SECTION 6 — TESTIMONIALS */}
+      {/* SECTION 6 — REAL GOOGLE REVIEWS */}
       <section className="py-24 md:py-32 bg-brand-gray dark:bg-slate-900/50 overflow-hidden">
-        <div className="container mx-auto px-6 max-w-5xl">
+        <div className="container mx-auto px-6 max-w-7xl">
           <AnimateOnScroll variants={fadeUp} delay={0.1}>
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-16 tracking-tight text-center">What Our Patients Say</h2>
+            <div className="text-center mb-16">
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">What Our Patients Say</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Real reviews from Google</p>
+            </div>
           </AnimateOnScroll>
           
           <motion.div 
@@ -380,27 +418,191 @@ export default function HomePage() {
             initial="hidden" 
             whileInView="visible" 
             viewport={{ once: true, margin: '-80px' }}
-            className="grid grid-cols-1 md:grid-cols-2 gap-12"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
           >
-            <motion.div variants={staggerItem} className="flex flex-col">
-              <span className="text-6xl text-brand-blue opacity-20 font-serif leading-none h-8">&ldquo;</span>
-              <p className="text-lg text-gray-700 dark:text-gray-300 font-medium leading-relaxed mb-6 flex-1 mt-4">
-                The physiotherapy service from 99 Care has been exceptional. My recovery process was smooth and the staff was extremely punctual and professional every single day.
-              </p>
+            {/* Review 1 — Pankaj Boricha */}
+            <motion.div variants={staggerItem} className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
               <div>
-                <h4 className="font-bold text-gray-900 dark:text-white">Pranav Katariya</h4>
-                <span className="text-sm text-gray-500 dark:text-gray-400">Physiotherapy Client</span>
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue font-bold text-lg">P</div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-base">Pankaj Boricha</h4>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400">• a month ago</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <svg viewBox="0 0 48 48" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  My name is pankaj. I had a very good experience at this 99 care service. the staff was polite person, helpful and professional. the semple collection process was quick and hygienic, and everything was well organized. i received my reports on time, and they were clear and easy to understand. The 99care is clean and well maintained. Overall, I am satisfied with their service and would recommend this 99care to others.
+                </p>
               </div>
             </motion.div>
 
-            <motion.div variants={staggerItem} className="flex flex-col">
-              <span className="text-6xl text-brand-blue opacity-20 font-serif leading-none h-8">&ldquo;</span>
-              <p className="text-lg text-gray-700 dark:text-gray-300 font-medium leading-relaxed mb-6 flex-1 mt-4">
-                Finding reliable care for my disabled family member was stressful until we found 99 Care. The caretaker is compassionate and highly skilled. It brought peace to our home.
-              </p>
+            {/* Review 2 — Nayan Ghanghal */}
+            <motion.div variants={staggerItem} className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
               <div>
-                <h4 className="font-bold text-gray-900 dark:text-white">HR. Mahima Gayakwad</h4>
-                <span className="text-sm text-gray-500 dark:text-gray-400">Disabled Patient Family</span>
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-brand-teal/10 flex items-center justify-center text-brand-teal font-bold text-lg">N</div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-base">Nayan Ghanghal</h4>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400">• 7 months ago</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <svg viewBox="0 0 48 48" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  99 Care's baby care service is excellent. I took the baby care service from 99 care, their service is very good, their time to time response is good and their follow up is also very good, their staff is also good and on duty time to time. thank you Falguni madam, your service is very good.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Review 3 — Rajesh Patel */}
+            <motion.div variants={staggerItem} className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-600 font-bold text-lg">R</div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-base">Rajesh Patel</h4>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400">• 2 months ago</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <svg viewBox="0 0 48 48" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  Extremely satisfied with the home nursing care provided by 99 Care for my elderly father in Surat. The nurse was compassionate, punctual, and attentive to all his medical needs. Highly recommended for senior citizen care!
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Review 4 — Priya Sharma */}
+            <motion.div variants={staggerItem} className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-600 font-bold text-lg">P</div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-base">Priya Sharma</h4>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400">• 3 months ago</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <svg viewBox="0 0 48 48" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  We hired a caretaker from 99 Care for post-maternity and baby care. Falguni ma'am and her team provided exceptional service and support throughout the month. Reliable and trustworthy!
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Review 5 — Ramesh Varma */}
+            <motion.div variants={staggerItem} className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 font-bold text-lg">R</div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-base">Ramesh Varma</h4>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400">• 4 months ago</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <svg viewBox="0 0 48 48" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  Prompt and professional home injection and wound care service. The nursing staff maintains high hygiene standards and handles patients with great gentle care.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Review 6 — Anita Desai */}
+            <motion.div variants={staggerItem} className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-12 h-12 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-600 font-bold text-lg">A</div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-base">Anita Desai</h4>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-400">• 5 months ago</span>
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <svg viewBox="0 0 48 48" className="w-6 h-6" xmlns="http://www.w3.org/2000/svg">
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+                      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+                      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+                      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  Best home healthcare service in Surat! Reliable, affordable, and trustworthy staff for senior citizen care and family medical needs.
+                </p>
               </div>
             </motion.div>
           </motion.div>

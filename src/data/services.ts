@@ -16,11 +16,11 @@ export const services: Service[] = [
     title: 'Wound Care',
     category: 'nursing',
     icon: 'bandage',
-    image: '/images/services/wound-care.jpg',
+    image: '/images/services/wound-care.png',
     shortDesc: 'Expert wound care and dressing services delivered safely in the comfort of your home.',
     description: [
-      'At 99 Care, we understand that proper wound care is a critical component of recovery — especially for elderly patients and those managing long-term medical conditions. Untreated or poorly managed wounds can lead to serious infections, prolonged recovery times, and a significant decline in quality of life. That is why our skilled nursing team brings professional wound care directly to your doorstep.',
-      'Our trained caregivers are equipped to handle a wide range of wound types including post-surgical wounds, diabetic ulcers, pressure sores, and injury-related lacerations. We follow strict clinical protocols for cleaning, dressing, and monitoring wounds to ensure the fastest and safest healing process possible — all without the need to travel to a clinic or hospital.',
+      'At 99 Care, we understand that proper wound care is a critical component of recovery, especially for elderly patients and those managing long-term medical conditions. Untreated or poorly managed wounds can lead to serious infections, prolonged recovery times, and a significant decline in quality of life. That is why our skilled nursing team brings professional wound care directly to your doorstep.',
+      'Our trained caregivers are equipped to handle a wide range of wound types including post-surgical wounds, diabetic ulcers, pressure sores, and injury-related lacerations. We follow strict clinical protocols for cleaning, dressing, and monitoring wounds to ensure the fastest and safest healing process possible, all without the need to travel to a clinic or hospital.',
       'We believe that healing happens best in a familiar, comfortable environment. By receiving wound care at home, patients experience less stress, lower risk of hospital-acquired infections, and the emotional comfort of being surrounded by loved ones. Our team provides not just physical care but also guidance to family members on how to support the healing process between visits.',
     ],
     benefits: [
@@ -37,7 +37,7 @@ export const services: Service[] = [
       },
       {
         title: 'Sterile Equipment at Home',
-        text: 'We bring all necessary sterile supplies and medical-grade dressing materials to your home — no trip to a pharmacy needed.',
+        text: 'We bring all necessary sterile supplies and medical-grade dressing materials to your home with no trip to a pharmacy needed.',
       },
       {
         title: '24/7 Follow-Up Support',
@@ -50,12 +50,12 @@ export const services: Service[] = [
     title: 'Respiratory Care at Home',
     category: 'nursing',
     icon: 'wind',
-    image: '/images/services/respiratory-care.jpg',
+    image: '/images/services/respiratory-care.png',
     shortDesc: 'Comprehensive respiratory support and monitoring for patients with chronic or acute breathing conditions.',
     description: [
-      'Breathing is life — and maintaining good respiratory health is essential, particularly for individuals recovering from illness or managing chronic conditions such as asthma, COPD, or post-COVID complications. At 99 Care, we bring expert respiratory care directly to your home so that you or your loved ones never have to compromise on the quality of treatment received.',
-      'Our respiratory care services include nebulization therapy, oxygen therapy support, chest physiotherapy, and continuous monitoring of respiratory vitals. Our caregivers are trained to operate and assist with home ventilators and oxygen concentrators, ensuring that patients with complex respiratory needs receive the same level of attention they would in a clinical setting — right in their own bedroom.',
-      'Being at home during respiratory recovery significantly reduces the anxiety and discomfort associated with hospital environments. Patients breathe easier — both literally and figuratively — when they are in a calm, familiar space. Our nurses work closely with your pulmonologist or treating physician to follow prescribed care plans and keep all parties informed of your progress.',
+      'Breathing is life, and maintaining good respiratory health is essential, particularly for individuals recovering from illness or managing chronic conditions such as asthma, COPD, or post-COVID complications. At 99 Care, we bring expert respiratory care directly to your home so that you or your loved ones never have to compromise on the quality of treatment received.',
+      'Our respiratory care services include nebulization therapy, oxygen therapy support, chest physiotherapy, and continuous monitoring of respiratory vitals. Our caregivers are trained to operate and assist with home ventilators and oxygen concentrators, ensuring that patients with complex respiratory needs receive the same level of attention they would in a clinical setting, right in their own bedroom.',
+      'Being at home during respiratory recovery significantly reduces the anxiety and discomfort associated with hospital environments. Patients breathe easier, both literally and figuratively, when they are in a calm, familiar space. Our nurses work closely with your pulmonologist or treating physician to follow prescribed care plans and keep all parties informed of your progress.',
     ],
     benefits: [
       'Nebulization and inhalation therapy administered by trained nurses',
@@ -84,12 +84,12 @@ export const services: Service[] = [
     title: 'Injection at Home',
     category: 'nursing',
     icon: 'syringe',
-    image: '/images/services/injection-at-home.jpg',
-    shortDesc: 'Safe, professional injection services administered at home — no clinic visit required.',
+    image: '/images/services/injection-at-home.png',
+    shortDesc: 'Safe, professional injection services administered at home with no clinic visit required.',
     description: [
-      'In today\'s fast-paced world, convenience and comfort are critical — especially when it comes to medical care. Whether you require daily insulin injections, vitamin B12 shots, antibiotic infusions, or other prescribed injectable medications, 99 Care brings safe and professional injection services right to your home. We understand the need for timely, accurate medication delivery without the hassle of repeated clinic visits.',
+      'In today\'s fast-paced world, convenience and comfort are critical, especially when it comes to medical care. Whether you require daily insulin injections, vitamin B12 shots, antibiotic infusions, or other prescribed injectable medications, 99 Care brings safe and professional injection services right to your home. We understand the need for timely, accurate medication delivery without the hassle of repeated clinic visits.',
       'All injections are administered by qualified nurses following strict aseptic techniques to ensure patient safety. We handle intramuscular (IM), intravenous (IV), and subcutaneous injections as prescribed by your doctor. Our nurses verify prescriptions, prepare dosages accurately, and monitor patients for any post-injection reactions before concluding the visit.',
-      'For patients who require daily or multiple injections — such as those on insulin therapy or recovering from infections requiring IV antibiotics — our home injection service provides a consistent, reliable, and stress-free alternative to frequent hospital or clinic visits. We help you stay on schedule with your treatment without disrupting your daily routine.',
+      'For patients who require daily or multiple injections, such as those on insulin therapy or recovering from infections requiring IV antibiotics, our home injection service provides a consistent, reliable, and stress-free alternative to frequent hospital or clinic visits. We help you stay on schedule with your treatment without disrupting your daily routine.',
     ],
     benefits: [
       'Intramuscular, intravenous, and subcutaneous injections by qualified nurses',
@@ -109,7 +109,7 @@ export const services: Service[] = [
       },
       {
         title: 'Flexible Scheduling',
-        text: 'We schedule injection visits around your routine — early mornings, evenings, or any time of day that works best for you.',
+        text: 'We schedule injection visits around your routine: early mornings, evenings, or any time of day that works best for you.',
       },
     ],
   },
@@ -118,12 +118,12 @@ export const services: Service[] = [
     title: 'Nursing Services On-Demand',
     category: 'nursing',
     icon: 'stethoscope',
-    image: '/images/services/nursing-services.jpg',
+    image: '/images/services/nursing-services.png',
     shortDesc: 'Professional, compassionate nursing care delivered to your home whenever you need it.',
     description: [
-      'Patients can receive expert and compassionate care in the comfort of their own homes with 99 Care\'s on-demand professional nursing services. Our mission is to provide individualized care that is tailored to each patient\'s specific requirements, preserving their well-being, comfort, and dignity. Whether you need post-operative nursing, chronic illness management, palliative care, or general nursing support — we are just a call away.',
+      'Patients can receive expert and compassionate care in the comfort of their own homes with 99 Care\'s on-demand professional nursing services. Our mission is to provide individualized care that is tailored to each patient\'s specific requirements, preserving their well-being, comfort, and dignity. Whether you need post-operative nursing, chronic illness management, palliative care, or general nursing support, we are just a call away.',
       'Our on-demand nursing team is equipped to handle a comprehensive range of medical needs including vital signs monitoring, catheter care, nasogastric tube management, medication administration, physiotherapy assistance, and more. Each nurse is assigned based on the specific clinical requirements of the patient, ensuring the right expertise is always at hand.',
-      '99 Care guarantees excellent medical treatment and assistance at your door for any nursing need. Our nurses work with complete professionalism, empathy, and respect for patients and their families. We understand that inviting a caregiver into your home requires trust — and we work hard every day to earn and maintain that trust through consistent, high-quality care.',
+      '99 Care guarantees excellent medical treatment and assistance at your door for any nursing need. Our nurses work with complete professionalism, empathy, and respect for patients and their families. We understand that inviting a caregiver into your home requires trust, and we work hard every day to earn and maintain that trust through consistent, high-quality care.',
     ],
     benefits: [
       'Post-operative care and surgical wound management at home',
@@ -155,7 +155,7 @@ export const services: Service[] = [
     image: '/images/services/maternity-care.jpg',
     shortDesc: 'Dedicated post-natal and maternity care for new mothers in the comfort of home.',
     description: [
-      'The arrival of a new baby is one of the most beautiful and transformative experiences in life — but it also comes with its own set of physical and emotional demands for the new mother. At 99 Care, we offer dedicated maternity caretaker services designed to support mothers through the post-natal period with professional care, warmth, and expertise delivered right at home.',
+      'The arrival of a new baby is one of the most beautiful and transformative experiences in life, but it also comes with its own set of physical and emotional demands for the new mother. At 99 Care, we offer dedicated maternity caretaker services designed to support mothers through the post-natal period with professional care, warmth, and expertise delivered right at home.',
       'Our maternity caretakers assist with post-delivery recovery, helping new mothers with personal hygiene, dietary support, breastfeeding guidance, and rest management. We also assist with basic newborn care coordination so that the mother can focus on bonding and healing without being overwhelmed. Our caretakers are trained to identify signs of post-partum complications and escalate promptly when needed.',
       'Every new mother deserves dedicated attention and care during this delicate period. Our team brings professional support without intruding on the intimate family experience of welcoming a new child. We work around your preferences, routines, and family dynamics to provide care that truly feels like an extension of your family.',
     ],
@@ -173,7 +173,7 @@ export const services: Service[] = [
       },
       {
         title: 'Mother-Centered Approach',
-        text: 'We design our care schedules around the mother\'s comfort, preferences, and family routines — making the transition to parenthood smoother.',
+        text: 'We design our care schedules around the mother\'s comfort, preferences, and family routines, making the transition to parenthood smoother.',
       },
       {
         title: 'Holistic Support',
@@ -186,16 +186,16 @@ export const services: Service[] = [
     title: 'New Born Baby Care',
     category: 'caretaker',
     icon: 'baby',
-    image: '/images/services/new-born-baby-care.jpg',
-    shortDesc: 'Gentle, expert newborn care at home — giving your baby the best start in life.',
+    image: '/images/services/new-born-baby-care.png',
+    shortDesc: 'Gentle, expert newborn care at home, giving your baby the best start in life.',
     description: [
       'A newborn baby requires round-the-clock attention, delicate handling, and expert care during the most vulnerable weeks of their life. At 99 Care, our trained newborn caretakers bring professional baby care expertise directly to your home, allowing parents to rest, recover, and bond with their baby while knowing that their little one is in safe, capable hands.',
       'Our newborn care services cover feeding support, diapering, bathing, sleep routine establishment, umbilical cord care, and skin care for sensitive newborn skin. Our caretakers are also trained to monitor newborns for signs of jaundice, feeding difficulties, weight loss, or other early health concerns that warrant medical attention.',
-      'We understand that every baby is unique and every family has its own preferences and routines. Our caretakers adapt to your parenting style and family environment, providing support that complements rather than overrides your instincts as a parent. Whether you need full-day support, night care only, or flexible hourly help — we are here for you.',
+      'We understand that every baby is unique and every family has its own preferences and routines. Our caretakers adapt to your parenting style and family environment, providing support that complements rather than overrides your instincts as a parent. Whether you need full-day support, night care only, or flexible hourly help, we are here for you.',
     ],
     benefits: [
       'Newborn bathing, diapering, and skin care by trained caregivers',
-      'Feeding assistance — bottle preparation, breastfeeding support, and burping',
+      'Feeding assistance: bottle preparation, breastfeeding support, and burping',
       'Sleep routine establishment and safe sleep environment guidance',
       'Umbilical cord care and early health monitoring for jaundice and weight',
       'Night care available so parents can rest and recover fully',
@@ -220,8 +220,8 @@ export const services: Service[] = [
     title: 'Baby Care',
     category: 'caretaker',
     icon: 'baby',
-    image: '/images/services/new-born-baby-care.jpg',
-    shortDesc: 'Expert baby care at home — giving your child the best support and attention.',
+    image: '/images/services/baby-care.png',
+    shortDesc: 'Expert baby care at home, giving your child the best support and attention.',
     description: [
       'A growing baby requires attentive care, engaging activities, and expert support. At 99 Care, our trained caretakers bring professional baby care expertise directly to your home, ensuring your child receives the attention they need in a safe and loving environment.',
       'Our baby care services cover feeding, diapering, bathing, establishing routines, and engaging in age-appropriate developmental activities. Our caretakers are vigilant and attentive to your baby\'s evolving needs.',
@@ -250,16 +250,50 @@ export const services: Service[] = [
     ],
   },
   {
+    slug: 'japa-care',
+    title: 'Japa Care (Post-Delivery)',
+    category: 'caretaker',
+    icon: 'heart',
+    image: '/images/services/japa-care.png',
+    shortDesc: 'Traditional post-delivery care for mother and baby, featuring expert japa services at home.',
+    description: [
+      'Japa care is a time-honoured tradition in Indian families: a dedicated period of rest, nourishment, and recovery for the new mother after delivery. At 99 Care, we bring this essential care directly to your home with trained and experienced japa caretakers who understand the cultural significance and medical importance of the post-delivery recovery period.',
+      'Our japa caretakers provide comprehensive support including traditional massage therapy for the mother, warm baths, dietary management with nutritious post-delivery meals, breastfeeding assistance, and complete newborn care. They help establish healthy routines for both mother and baby, ensuring the mother gets adequate rest while the newborn receives attentive, loving care.',
+      'We believe that the post-delivery period is sacred and transformative. Our japa care services are designed to honour this tradition while incorporating modern healthcare best practices. Our caretakers work closely with your family to respect customs, preferences, and routines, providing professional support that feels like a natural extension of your household.',
+    ],
+    benefits: [
+      'Traditional post-delivery massage and warm bath therapy for the mother',
+      'Nutritious meal planning and dietary support for faster recovery',
+      'Complete newborn care including bathing, feeding, and sleep management',
+      'Breastfeeding guidance and lactation support',
+      'Mother and baby health monitoring with prompt escalation when needed',
+    ],
+    whyUs: [
+      {
+        title: 'Experienced Japa Caretakers',
+        text: 'Our japa care specialists have extensive experience in traditional post-delivery care, blending cultural practices with modern healthcare standards.',
+      },
+      {
+        title: 'Holistic Mother-Baby Care',
+        text: 'We provide end-to-end support for both mother and baby, from recovery massage to newborn routines, so the entire family can focus on bonding.',
+      },
+      {
+        title: 'Culturally Sensitive Approach',
+        text: 'We respect and incorporate your family\'s cultural preferences and traditions into our care plan, ensuring a comfortable and familiar experience.',
+      },
+    ],
+  },
+  {
     slug: 'old-age-person-care',
     title: 'Old Age Person Care',
     category: 'caretaker',
     icon: 'user',
-    image: '/images/services/old-age-person-care.jpg',
-    shortDesc: 'Compassionate elderly care at home — dignity, comfort, and support for your loved ones.',
+    image: '/images/services/old-age-person-care.png',
+    shortDesc: 'Compassionate elderly care at home: dignity, comfort, and support for your loved ones.',
     description: [
-      'As our loved ones age, they deserve the highest quality of care, attention, and dignity in the comfort of their own homes. At 99 Care, our elderly care services are designed to support senior citizens with their daily activities, medical needs, emotional well-being, and social engagement — all while preserving their independence and sense of self.',
+      'As our loved ones age, they deserve the highest quality of care, attention, and dignity in the comfort of their own homes. At 99 Care, our elderly care services are designed to support senior citizens with their daily activities, medical needs, emotional well-being, and social engagement, all while preserving their independence and sense of self.',
       'Our elderly caretakers assist with activities of daily living including bathing, grooming, dressing, meal preparation, medication reminders, and mobility support. For seniors with conditions such as dementia, Parkinson\'s disease, or post-stroke mobility issues, we provide specialized care plans developed in coordination with the family and treating physician to ensure safety and comfort at all times.',
-      'Loneliness and social isolation are among the greatest challenges faced by elderly individuals living at home. Our caretakers are trained not just in physical assistance but in companionship — engaging seniors in meaningful conversation, light activities, and emotional support that makes a profound difference in their quality of life. We treat every elderly patient with patience, warmth, and deep respect.',
+      'Loneliness and social isolation are among the greatest challenges faced by elderly individuals living at home. Our caretakers are trained not just in physical assistance but in companionship: engaging seniors in meaningful conversation, light activities, and emotional support that makes a profound difference in their quality of life. We treat every elderly patient with patience, warmth, and deep respect.',
     ],
     benefits: [
       'Assistance with bathing, grooming, dressing, and personal hygiene',
@@ -271,7 +305,7 @@ export const services: Service[] = [
     whyUs: [
       {
         title: 'Dignity-First Philosophy',
-        text: 'We train all our elderly caretakers to prioritize the dignity, privacy, and independence of every senior in our care — always.',
+        text: 'We train all our elderly caretakers to prioritize the dignity, privacy, and independence of every senior in our care, always.',
       },
       {
         title: 'Specialized Condition Care',
@@ -290,7 +324,7 @@ export const getCaretakerServices = () => services.filter(s => s.category === 'c
 export const getServiceBySlug = (slug: string) => services.find(s => s.slug === slug)
 
 /**
- * Canonical 5 services used in appointment booking, dropdowns, and forms.
+ * Canonical services used in appointment booking, dropdowns, and forms.
  * Maps to existing service page slugs where available.
  */
 export const APPOINTMENT_SERVICES = [
@@ -298,6 +332,6 @@ export const APPOINTMENT_SERVICES = [
   { slug: 'maternity-care',             title: 'Maternity Care' },
   { slug: 'new-born-baby-care',         title: 'New Born Baby Care' },
   { slug: 'baby-care',                  title: 'Baby Care' },
-  { slug: 'maternity-care',             title: 'Japa Care (Post-Delivery)' },
+  { slug: 'japa-care',                  title: 'Japa Care (Post-Delivery)' },
   { slug: 'old-age-person-care',        title: 'Old Age Care' },
 ];

@@ -48,7 +48,7 @@ function AppMeta() {
     document.title =
       mode === 'os'
         ? '99Care OS — Private Portal'
-        : '99 Care — Home Healthcare Services in Surat';
+        : 'Best Home Healthcare Services in Surat | 99 Care';
 
     const existing = document.querySelector('meta[name="robots"]');
     if (mode === 'os') {
