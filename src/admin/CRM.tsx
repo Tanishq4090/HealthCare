@@ -2714,6 +2714,12 @@ export default function CRM() {
             if (agentTargetLead) {
                 // If Inquiry -> move to In Discussion
                 if (agentTargetAction === 'inquiry') {
+                    // Update greeting_sent flag so it doesn't get sent again
+                    await supabase.from('crm_leads').update({
+                        greeting_sent: true,
+                        greeting_sent_at: new Date().toISOString()
+                    }).eq('id', agentTargetLead.id);
+
                     await handleMoveLead(agentTargetLead.id, 'In Discussion');
                     toast.success(`Greeting dispatched! Moved ${agentTargetLead.name} to In Discussion.`, { id: toastId, duration: 4000 });
                 }
@@ -5829,12 +5835,17 @@ export default function CRM() {
                                             {selectedInspectorLead.pipeline_stage === 'New Inquiry' && (
                                                 <button
                                                     onClick={async () => {
+                                                        const isSent = hasGreetingSent || selectedInspectorLead?.greeting_sent;
+                                                        if (isSent) {
+                                                            const confirmed = window.confirm("Greeting message has already been sent to this lead recently. Do you want me to send it again?");
+                                                            if (!confirmed) return;
+                                                        }
                                                         openAgentModal(selectedInspectorLead, 'inquiry');
                                                     }}
                                                     className="w-full bg-[#E6F7F7] hover:bg-primary hover:text-white border border-[#1AA6A8]/20 text-[#0E7C7E] font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
                                                 >
                                                     <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                    {hasGreetingSent ? 'Resend Greeting Message' : 'Send Greeting Message'}
+                                                    {(hasGreetingSent || selectedInspectorLead?.greeting_sent) ? 'Resend Greeting Message' : 'Send Greeting Message'}
                                                 </button>
                                             )}
 
