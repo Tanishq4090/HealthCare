@@ -26,8 +26,8 @@ export default defineConfig(({ mode }) => {
           scope: '/',
           start_url: '/',
           icons: [
-            { src: '/99care-favicon.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
-            { src: '/99care-favicon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' },
+            { src: '/favicon-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+            { src: '/favicon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
           ],
           shortcuts: [
             { name: 'Open Dashboard', url: '/admin', description: 'Go to 99Care OS dashboard' },
@@ -45,15 +45,15 @@ export default defineConfig(({ mode }) => {
           start_url: '/',
           icons: [
             {
-              src: '/99care-logo.svg',
+              src: '/favicon-192x192.png',
               sizes: '192x192',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any maskable',
             },
             {
-              src: '/99care-logo.svg',
+              src: '/favicon-512x512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any maskable',
             },
           ],
@@ -104,7 +104,7 @@ export default defineConfig(({ mode }) => {
       }),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.svg'],
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
         manifest: pwaManifest as any,
         devOptions: {
           enabled: false, // Disable SW in dev to prevent stale cache issues
