@@ -77,9 +77,9 @@ export default function Navbar() {
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ scale: 1.03 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              src="/99care-logo.svg" 
+              src="/99care-logo.png" 
               alt="99 Care Logo" 
-              className="h-[44px] sm:h-[52px] lg:h-[60px] w-auto filter dark:brightness-125 transition-all" 
+              className="h-[48px] sm:h-[56px] lg:h-[64px] w-auto object-contain transition-all" 
             />
           </Link>
 

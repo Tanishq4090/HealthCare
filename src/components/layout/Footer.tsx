@@ -11,7 +11,7 @@ export default function Footer() {
           <div>
             <div className="bg-white/95 p-3 rounded-2xl inline-block mb-6 shadow-sm">
               <img 
-                src="/99care-logo.svg" 
+                src="/99care-logo.png" 
                 alt="99 Care Logo" 
                 className="h-12 sm:h-14 w-auto object-contain" 
               />
