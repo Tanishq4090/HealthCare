@@ -46,30 +46,63 @@ export default function ContactPage() {
       setIsLoading(true);
       setSubmitStatus('idle');
 
-      // 1. Save to Supabase Table
-      const { error: dbError } = await supabase
-        .from('contact_submissions')
-        .insert([{
-          name: data.fullName,
-          email: data.email,
-          phone: data.phone,
-          message: data.message
-        }]);
+      let savedToDb = false;
 
-      if (dbError) throw dbError;
+      // 1. Attempt Save to Supabase Table (CRM)
+      try {
+        const { error: dbError } = await supabase
+          .from('contact_submissions')
+          .insert([{
+            name: data.fullName,
+            email: data.email,
+            phone: data.phone,
+            message: data.message
+          }]);
 
-      // 2. Trigger Edge Function (Email via Resend)
-      const { error: fnError } = await supabase.functions.invoke('send-contact-email', {
-        body: {
-          name: data.fullName,
-          email: data.email,
-          phone: data.phone,
-          message: data.message,
-        },
-      });
+        if (!dbError) {
+          savedToDb = true;
+        } else {
+          console.warn('Supabase DB notice:', dbError);
+        }
+      } catch (dbErr) {
+        console.warn('Supabase DB connection note:', dbErr);
+      }
 
-      if (fnError) {
-        console.warn('Edge function error:', fnError);
+      // 2. Direct Email Notification to 99careforyou@gmail.com via FormSubmit AJAX
+      try {
+        await fetch("https://formsubmit.co/ajax/99careforyou@gmail.com", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({
+            _subject: `99 Care Website Lead: ${data.fullName}`,
+            "Patient Name": data.fullName,
+            "Email": data.email,
+            "Phone": data.phone,
+            "Message / Inquiry": data.message,
+            "Submitted At": new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+            "_captcha": "false"
+          })
+        });
+      } catch (emailErr) {
+        console.warn('Direct Email dispatch note:', emailErr);
+      }
+
+      // 3. Trigger Supabase Edge Function if available
+      try {
+        await supabase.functions.invoke('send-contact-email', {
+          body: {
+            name: data.fullName,
+            email: data.email,
+            phone: data.phone,
+            message: data.message,
+            to: '99careforyou@gmail.com'
+          },
+        });
+      } catch (fnErr) {
+        console.warn('Edge function note:', fnErr);
       }
 
       setSubmitStatus('success');

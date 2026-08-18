@@ -70,16 +70,16 @@ export default function Navbar() {
       <div className="container mx-auto px-6 lg:px-8">
         <div className="flex items-center justify-between h-[72px] lg:h-[88px]">
           
-          {/* LEFT: Logo - Shifted towards center */}
-          <Link to="/" className="flex-shrink-0 ml-4 lg:ml-20" onClick={() => setIsOpen(false)}>
+          {/* LEFT: Logo - Clean brand alignment */}
+          <Link to="/" className="flex-shrink-0 flex items-center" onClick={() => setIsOpen(false)}>
             <motion.img 
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              whileHover={{ scale: 1.05 }}
+              whileHover={{ scale: 1.03 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               src="/99care-logo.svg" 
               alt="99 Care Logo" 
-              className="h-[52px] lg:h-[68px] w-auto drop-shadow-[0_4px_12px_rgba(26,166,168,0.25)] dark:drop-shadow-[0_4px_12px_rgba(255,255,255,0.1)]" 
+              className="h-[44px] sm:h-[52px] lg:h-[60px] w-auto filter dark:brightness-125 transition-all" 
             />
           </Link>
 

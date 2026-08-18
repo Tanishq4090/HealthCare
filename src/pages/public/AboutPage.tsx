@@ -110,7 +110,7 @@ export default function AboutPage() {
               </div>
               
               <div className="space-y-6 text-gray-600 dark:text-gray-300 leading-relaxed text-base sm:text-lg font-light">
-                <p className="first-letter:text-4xl first-letter:font-bold first-letter:text-brand-blue first-letter:mr-2 first-letter:float-left">
+                <p>
                   99Care was founded with a strong desire to redefine the manner in which care services are delivered in order to give high-quality, professional, and personalized care directly to our patients' homes. It started out from a simple idea: healing happens best in the comfort of one's own space. Since our establishment, we have been working extensively with an objective to cater to all the specific needs of families and people with reliable healthcare solutions.
                 </p>
                 
