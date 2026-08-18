@@ -6,6 +6,7 @@ import { AnimateOnScroll } from '@/components/AnimateOnScroll';
 import { fadeUp, slideLeft, slideRight, staggerContainer, staggerItem } from '@/lib/animations';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { SEOMeta } from '@/components/SEOMeta';
+import { BrandEmblem } from '@/components/ui/BrandEmblem';
 
 export default function AboutPage() {
   return (
@@ -29,8 +30,8 @@ export default function AboutPage() {
               </div>
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.05}>
-              <span className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full bg-brand-blue/10 text-brand-blue dark:text-teal-400 text-xs font-bold uppercase tracking-wider mb-4">
-                <Sparkles className="w-3.5 h-3.5" /> Our Story & Healthcare Mission
+              <span className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-brand-blue/10 text-brand-blue dark:text-teal-400 text-xs font-bold uppercase tracking-wider mb-4">
+                <BrandEmblem className="w-4 h-4" /> Our Story & Healthcare Mission
               </span>
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.1}>
@@ -52,8 +53,12 @@ export default function AboutPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-16 items-center">
               <AnimateOnScroll variants={slideLeft}>
                 <div className="bg-slate-50/80 dark:bg-slate-900/60 p-8 sm:p-10 rounded-3xl border border-gray-200/80 dark:border-slate-800 shadow-sm">
-                  <span className="text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-3 block">Surat's Premier Healthcare Partner</span>
-                  <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-6 tracking-tight">Welcome to 99 Care</h2>
+                  <span className="text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-3 flex items-center gap-1.5">
+                    <BrandEmblem className="w-4 h-4" /> Surat's Premier Healthcare Partner
+                  </span>
+                  <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-6 tracking-tight flex items-center gap-3">
+                    Welcome to 99 Care
+                  </h2>
                   <p className="text-gray-600 dark:text-gray-300 mb-6 leading-relaxed font-light text-base sm:text-lg">
                     We understand that home is where healing happens best. That's why we bring expert medical care directly to you. Our team of certified nurses, experienced caretakers, and trained medical professionals are passionate about improving your quality of life without the stress of hospital visits.
                   </p>

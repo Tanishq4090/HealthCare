@@ -8,6 +8,7 @@ import { PageTransition } from '@/components/PageTransition';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { services } from '@/data/services';
 import { SEOMeta } from '@/components/SEOMeta';
+import { BrandEmblem } from '@/components/ui/BrandEmblem';
 
 interface StatCardProps {
   value: number;
@@ -98,9 +99,9 @@ export default function HomePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0 }}
-            className="text-brand-blue dark:text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-8 bg-brand-blue-light/50 dark:bg-brand-blue/20 px-4 py-1.5 rounded-full border border-brand-blue/20 dark:border-brand-blue/40"
+            className="text-brand-blue dark:text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-8 bg-brand-blue-light/50 dark:bg-brand-blue/20 px-4 py-1.5 rounded-full border border-brand-blue/20 dark:border-brand-blue/40 flex items-center gap-2"
           >
-            Trusted Home Healthcare • Surat, Gujarat
+            <BrandEmblem className="w-4 h-4" /> Trusted Home Healthcare • Surat, Gujarat
           </motion.span>
           
           <h1 className="text-5xl md:text-7xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-[1.1] mb-6 overflow-hidden">

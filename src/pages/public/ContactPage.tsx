@@ -26,6 +26,8 @@ const contactSchema = z.object({
 
 type ContactFormValues = z.infer<typeof contactSchema>;
 
+import { BrandEmblem } from '@/components/ui/BrandEmblem';
+
 export default function ContactPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -150,8 +152,8 @@ export default function ContactPage() {
 
           <div className="max-w-4xl mx-auto relative z-10">
             <AnimateOnScroll variants={{ hidden: { opacity: 0, y: -10 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }}>
-              <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-brand-blue/10 text-brand-blue dark:text-teal-400 text-xs font-bold uppercase tracking-wider mb-4">
-                <Sparkles className="w-3.5 h-3.5" /> 24/7 Patient Assistance
+              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand-blue/10 text-brand-blue dark:text-teal-400 text-xs font-bold uppercase tracking-wider mb-4">
+                <BrandEmblem className="w-4 h-4" /> 24/7 Patient Assistance
               </span>
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.1}>
