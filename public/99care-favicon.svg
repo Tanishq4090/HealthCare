@@ -1,33 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
-  <defs>
-    <linearGradient id="favTeal" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00B4D8" />
-      <stop offset="100%" stop-color="#0D9CAA" />
-    </linearGradient>
-    <linearGradient id="favEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#10B981" />
-      <stop offset="100%" stop-color="#059669" />
-    </linearGradient>
-    <linearGradient id="favBg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF" />
-      <stop offset="100%" stop-color="#F8FAFC" />
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" fill="none">
+  <!-- Outer Background Circle for Browser Tabs -->
+  <circle cx="80" cy="80" r="76" fill="#FFFFFF" stroke="#0A9396" stroke-width="4"/>
 
-  <!-- Solid Crisp Circle Base for Google Search / Browser Tab -->
-  <rect x="4" y="4" width="120" height="120" rx="60" fill="url(#favBg)" stroke="#0D9CAA" stroke-width="4"/>
+  <!-- Connected 99 Swoosh Emblem -->
+  <g transform="translate(5, 5)">
+    <!-- Outer Swoosh Arc -->
+    <path d="M 75 14 C 40 14 16 38 16 75 C 16 112 42 136 78 136 C 105 136 128 120 136 94 C 131 106 114 125 80 125 C 48 125 28 104 28 75 C 28 44 50 25 80 25 C 96 25 110 32 120 42 C 108 24 92 14 75 14 Z" fill="#0A9396" />
 
-  <!-- Integrated Dual 9 Heart Emblem -->
-  <!-- Left 9 -->
-  <path d="M 48 38 C 36 38 30 48 30 58 C 30 70 40 77 52 77 C 60 77 64 73 66 68 L 66 90 C 66 95 61 100 54 100 C 49 100 44 97 42 93" 
-        stroke="url(#favTeal)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <circle cx="49" cy="58" r="8.5" fill="url(#favTeal)"/>
+    <!-- Left 9 -->
+    <path d="M 64 52 C 54 52 46 60 46 70 C 46 80 54 88 64 88 C 74 88 82 80 82 70 C 82 60 74 52 64 52 Z M 64 62 C 68 62 72 65 72 70 C 72 75 68 78 64 78 C 60 78 56 75 56 70 C 56 65 60 62 64 62 Z" fill="#0A9396"/>
+    <path d="M 80 72 C 80 88 74 100 66 108 C 62 112 56 114 52 114 C 48 114 46 110 48 106 C 52 102 60 96 68 86 Z" fill="#0A9396"/>
 
-  <!-- Right 9 -->
-  <path d="M 80 38 C 92 38 98 48 98 58 C 98 70 88 77 76 77 C 68 77 64 73 62 68 L 62 90 C 62 95 67 100 74 100 C 79 100 84 97 86 93" 
-        stroke="url(#favEmerald)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <circle cx="79" cy="58" r="8.5" fill="url(#favEmerald)"/>
-
-  <!-- Medical Cross Spark (Center Top) -->
-  <path d="M 56 30 L 64 22 L 72 30" stroke="#00B4D8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <!-- Right 9 -->
+    <path d="M 104 52 C 94 52 86 60 86 70 C 86 80 94 88 104 88 C 114 88 122 80 122 70 C 122 60 114 52 104 52 Z M 104 62 C 108 62 112 65 112 70 C 112 75 108 78 104 78 C 100 78 96 75 96 70 C 96 65 100 62 104 62 Z" fill="#0A9396"/>
+    <path d="M 120 72 C 120 88 114 100 106 108 C 102 112 96 114 92 114 C 88 114 86 110 88 106 C 92 102 100 96 108 86 Z" fill="#0A9396"/>
+  </g>
 </svg>

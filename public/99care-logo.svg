@@ -1,60 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 120" width="460" height="120" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 160" width="520" height="160" fill="none">
   <defs>
-    <linearGradient id="primaryTeal" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00B4D8" />
-      <stop offset="100%" stop-color="#0D9CAA" />
-    </linearGradient>
-    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#10B981" />
-      <stop offset="100%" stop-color="#059669" />
-    </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0D9CAA" flood-opacity="0.25" />
-    </filter>
+    <!-- Brand Colors -->
+    <!-- Teal: #0A9396, Red: #E63946 -->
+    <style>
+      .brand-teal { fill: #0A9396; }
+      .brand-stroke-teal { stroke: #0A9396; }
+      .brand-red { fill: #E63946; }
+      .serif-text { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+      .script-text { font-family: 'Caveat', 'Dancing Script', 'Brush Script MT', cursive; }
+    </style>
   </defs>
 
-  <!-- Modern Dual-9 Heart Emblem -->
-  <g transform="translate(10, 10)" filter="url(#glow)">
-    <!-- Base Glow Pill -->
-    <rect x="0" y="0" width="100" height="100" rx="28" fill="url(#primaryTeal)" opacity="0.08"/>
-    
-    <!-- Outer Shield / Circle Container -->
-    <rect x="2" y="2" width="96" height="96" rx="26" fill="white" stroke="url(#primaryTeal)" stroke-width="2.5"/>
+  <!-- Left Circular Swoosh & Connected 99 Mark -->
+  <g transform="translate(10, 10)">
+    <!-- Outer Swoosh Arc 1 (Top Left Swirl) -->
+    <path d="M 75 14 C 40 14 16 38 16 75 C 16 112 42 136 78 136 C 105 136 128 120 136 94 C 131 106 114 125 80 125 C 48 125 28 104 28 75 C 28 44 50 25 80 25 C 96 25 110 32 120 42 C 108 24 92 14 75 14 Z" fill="#0A9396" />
 
-    <!-- Integrated Dual-9 Heart Icon -->
+    <!-- Outer Swoosh Arc 2 (Top Accent Crescent) -->
+    <path d="M 60 22 C 85 10 115 14 132 30 C 114 20 88 18 60 22 Z" fill="#0A9396" opacity="0.95" />
+    <path d="M 38 128 C 18 108 12 80 22 55 C 16 75 22 105 38 128 Z" fill="#0A9396" opacity="0.85" />
+
+    <!-- Connected 99 Loop Emblem -->
     <!-- Left 9 -->
-    <path d="M 38 32 C 28 32 24 40 24 48 C 24 58 32 64 42 64 C 48 64 52 61 54 57 L 54 74 C 54 78 50 82 44 82 C 40 82 36 80 34 77" 
-          stroke="url(#primaryTeal)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    <circle cx="39" cy="48" r="7" fill="url(#primaryTeal)"/>
+    <path d="M 64 52 C 54 52 46 60 46 70 C 46 80 54 88 64 88 C 74 88 82 80 82 70 C 82 60 74 52 64 52 Z M 64 62 C 68 62 72 65 72 70 C 72 75 68 78 64 78 C 60 78 56 75 56 70 C 56 65 60 62 64 62 Z" fill="#0A9396"/>
+    <path d="M 80 72 C 80 88 74 100 66 108 C 62 112 56 114 52 114 C 48 114 46 110 48 106 C 52 102 60 96 68 86 Z" fill="#0A9396"/>
 
-    <!-- Right 9 (Mirrored Heart Formation) -->
-    <path d="M 62 32 C 72 32 76 40 76 48 C 76 58 68 64 58 64 C 52 64 48 61 46 57 L 46 74 C 46 78 50 82 56 82 C 60 82 64 80 66 77" 
-          stroke="url(#emeraldGrad)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    <circle cx="61" cy="48" r="7" fill="url(#emeraldGrad)"/>
-
-    <!-- Medical Pulse Spark (Center Top) -->
-    <path d="M 44 26 L 50 20 L 56 26" stroke="#00B4D8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <!-- Right 9 -->
+    <path d="M 104 52 C 94 52 86 60 86 70 C 86 80 94 88 104 88 C 114 88 122 80 122 70 C 122 60 114 52 104 52 Z M 104 62 C 108 62 112 65 112 70 C 112 75 108 78 104 78 C 100 78 96 75 96 70 C 96 65 100 62 104 62 Z" fill="#0A9396"/>
+    <path d="M 120 72 C 120 88 114 100 106 108 C 102 112 96 114 92 114 C 88 114 86 110 88 106 C 92 102 100 96 108 86 Z" fill="#0A9396"/>
   </g>
 
-  <!-- Brand Typography -->
-  <!-- 99 -->
-  <text x="130" y="72" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="58" fill="#0F172A" letter-spacing="-1.5">
-    99
+  <!-- Typography Right Side -->
+  <!-- "Care" Serif Text -->
+  <text x="168" y="96" font-family="'Playfair Display', Georgia, 'Times New Roman', serif" font-weight="700" font-size="82" fill="#0A9396" letter-spacing="-1">
+    Care
   </text>
 
-  <!-- CARE -->
-  <text x="205" y="72" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="58" fill="#0D9CAA" letter-spacing="-0.5">
-    CARE
+  <!-- "Helping hands" Cursive Red Subtitle -->
+  <text x="218" y="132" font-family="'Brush Script MT', 'Dancing Script', 'Caveat', cursive" font-weight="600" font-size="36" fill="#E63946" font-style="italic">
+    Helping hands
   </text>
-
-  <!-- Subtitle Tagline -->
-  <text x="132" y="96" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="13" fill="#64748B" letter-spacing="3.5">
-    HOME HEALTHCARE
-  </text>
-  
-  <!-- Subtle Medical Cross Badge -->
-  <g transform="translate(415, 34)">
-    <circle cx="12" cy="12" r="12" fill="#10B981" opacity="0.15"/>
-    <path d="M 12 7 V 17 M 7 12 H 17" stroke="#10B981" stroke-width="3" stroke-linecap="round"/>
-  </g>
 </svg>

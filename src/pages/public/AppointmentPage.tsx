@@ -260,23 +260,23 @@ export default function AppointmentPage() {
                             type="button"
                             variant="outline"
                             className={cn(
-                              "w-full h-14 pl-4 pr-5 text-left font-normal bg-slate-50/80 dark:bg-slate-800/80 border-gray-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between rounded-2xl transition-all shadow-sm",
+                              "w-full h-14 px-3 sm:px-4 text-left font-normal bg-slate-50/80 dark:bg-slate-800/80 border-gray-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between rounded-2xl transition-all shadow-sm gap-2",
                               (!form.watch("date") || !form.watch("timeSlot")) ? "text-muted-foreground" : "text-gray-900 dark:text-white border-brand-blue/40"
                             )}
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="bg-brand-blue/10 dark:bg-brand-blue/20 p-2 rounded-xl">
-                                <CalendarIcon className="h-5 w-5 text-brand-blue" />
+                            <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
+                              <div className="bg-brand-blue/10 dark:bg-brand-blue/20 p-2 rounded-xl shrink-0">
+                                <CalendarIcon className="h-4.5 w-4.5 text-brand-blue" />
                               </div>
-                              <span className="text-base font-medium">
+                              <span className="text-xs sm:text-base font-medium truncate">
                                 {form.watch("date") && form.watch("timeSlot") ? (
                                   `${format(form.watch("date"), "PPP")} at ${form.watch("timeSlot")}`
                                 ) : (
-                                  "Select a Date and Time"
+                                  "Select Date & Time"
                                 )}
                               </span>
                             </div>
-                            <div className="text-xs font-bold uppercase tracking-wider text-brand-blue bg-brand-blue/10 px-3.5 py-1.5 rounded-full">
+                            <div className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-brand-blue bg-brand-blue/10 px-2.5 sm:px-3.5 py-1.5 rounded-full shrink-0">
                               {form.watch("date") && form.watch("timeSlot") ? "Change" : "Pick Slot"}
                             </div>
                           </Button>

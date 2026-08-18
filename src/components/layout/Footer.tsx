@@ -9,11 +9,13 @@ export default function Footer() {
           
           {/* Col 1: Brand & Social */}
           <div>
-            <img 
-              src="/99care-logo.svg" 
-              alt="99 Care Logo" 
-              className="h-16 mb-6 drop-shadow-[0_2px_12px_rgba(255,255,255,0.2)] dark:brightness-110" 
-            />
+            <div className="bg-white/95 p-3 rounded-2xl inline-block mb-6 shadow-sm">
+              <img 
+                src="/99care-logo.svg" 
+                alt="99 Care Logo" 
+                className="h-12 sm:h-14 w-auto object-contain" 
+              />
+            </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-8 pr-4">
               Professional home healthcare, delivered with care. Serving families across Surat with compassion and medical excellence.
             </p>
