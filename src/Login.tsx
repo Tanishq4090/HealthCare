@@ -79,11 +79,11 @@ export default function Login() {
                     <div className="w-20 h-20 bg-white shadow-xl shadow-slate-200/50 rounded-3xl flex items-center justify-center mx-auto mb-6 p-3 ring-1 ring-slate-100">
                         <img 
                             src="/99care-logo.png"
-                            alt="99Care Logo" 
+                            alt="99 Care Logo" 
                             className="w-full h-full object-contain"
                         />
                     </div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">99Care OS</h1>
+                    <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">99 Care OS</h1>
                     <p className="text-slate-500 font-medium">Healthcare Operations Management</p>
                 </div>
 
@@ -142,7 +142,7 @@ export default function Login() {
                 </div>
 
                 <div className="text-center mt-8 text-xs text-slate-400">
-                    <p>Secured by 99Care OS Authentication</p>
+                    <p>Secured by 99 Care OS Authentication</p>
                 </div>
             </div>
         </div>

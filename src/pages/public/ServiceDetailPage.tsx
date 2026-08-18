@@ -134,7 +134,7 @@ export default function ServiceDetailPage() {
                 </div>
                 <div className="space-y-6 text-base sm:text-lg text-gray-600 dark:text-gray-300 font-light leading-relaxed">
                   {service.description.map((para, idx) => (
-                    <p key={idx} className={idx === 0 ? "first-letter:text-4xl first-letter:font-bold first-letter:text-brand-blue first-letter:mr-2 first-letter:float-left leading-relaxed" : ""}>
+                    <p key={idx} className="leading-relaxed">
                       {para}
                     </p>
                   ))}

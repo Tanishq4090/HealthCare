@@ -116,7 +116,7 @@ export default function AboutPage() {
               
               <div className="space-y-6 text-gray-600 dark:text-gray-300 leading-relaxed text-base sm:text-lg font-light">
                 <p>
-                  99Care was founded with a strong desire to redefine the manner in which care services are delivered in order to give high-quality, professional, and personalized care directly to our patients' homes. It started out from a simple idea: healing happens best in the comfort of one's own space. Since our establishment, we have been working extensively with an objective to cater to all the specific needs of families and people with reliable healthcare solutions.
+                  <span className="font-bold text-brand-blue dark:text-teal-400">99 Care</span> was founded with a strong desire to redefine the manner in which care services are delivered in order to give high-quality, professional, and personalized care directly to our patients' homes. It started out from a simple idea: healing happens best in the comfort of one's own space. Since our establishment, we have been working extensively with an objective to cater to all the specific needs of families and people with reliable healthcare solutions.
                 </p>
                 
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white pt-4 border-t border-gray-100 dark:border-slate-800">Expanding with Intention</h3>
@@ -126,7 +126,7 @@ export default function AboutPage() {
                 
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white pt-4 border-t border-gray-100 dark:border-slate-800">Bringing About Change</h3>
                 <p>
-                  With pride, 99Care serves as a reliable healthcare partner for multiple families today. Continuing into the future, we still hold tight to our core values, innovating and raising the bar for home health services across Surat.
+                  With pride, <span className="font-bold text-brand-blue dark:text-teal-400">99 Care</span> serves as a reliable healthcare partner for multiple families today. Continuing into the future, we still hold tight to our core values, innovating and raising the bar for home health services across Surat.
                 </p>
               </div>
             </div>
