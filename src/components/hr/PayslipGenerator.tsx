@@ -103,7 +103,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const getLogo = (): Promise<string | null> => {
     return new Promise((resolve) => {
       const img = new Image();
-      img.src = '/99care-logo.svg';
+      img.src = '/99care-logo.png';
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');

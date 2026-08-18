@@ -17,7 +17,7 @@ export function SEOMeta({
   title,
   description,
   canonical = 'https://99care.org',
-  ogImage = 'https://99care.org/99care-logo.svg',
+  ogImage = 'https://99care.org/99care-logo.png',
   ogType = 'website',
   jsonLd
 }: SEOMetaProps) {

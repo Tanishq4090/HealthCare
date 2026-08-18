@@ -46,7 +46,7 @@ export default function BlogDetailPage() {
             "name": "99 Care",
             "logo": {
               "@type": "ImageObject",
-              "url": "https://99care.org/99care-logo.svg"
+              "url": "https://99care.org/99care-logo.png"
             }
           },
           "datePublished": blog.date,

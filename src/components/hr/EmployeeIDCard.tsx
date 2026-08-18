@@ -102,7 +102,7 @@ export function EmployeeIDCard({
               position: 'relative', flexShrink: 0,
             }}>
               <img
-                src="/99care-logo.svg"
+                src="/99care-logo.png"
                 alt="99Care"
                 style={{ 
                   width: 34, height: 34, 

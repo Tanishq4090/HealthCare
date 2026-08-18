@@ -150,7 +150,7 @@ export default function PublicIDCard() {
       {/* ── Header branding ──────────────────────────────── */}
       <header className="py-6 px-4 flex items-center justify-center gap-3">
         <div className="w-10 h-10 bg-white shadow-sm ring-1 ring-slate-100 rounded-xl flex items-center justify-center p-1.5">
-          <img src="/99care-logo.svg" alt="99Care" className="w-full h-full object-contain" />
+          <img src="/99care-logo.png" alt="99Care" className="w-full h-full object-contain" />
         </div>
         <span className="text-xl font-bold text-slate-800 tracking-tight">99Care</span>
       </header>

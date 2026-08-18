@@ -759,7 +759,7 @@ export default function HR() {
     const getLogo = (): Promise<string | null> => {
         return new Promise((resolve) => {
             const img = new Image();
-            img.src = '/99care-logo.svg';
+            img.src = '/99care-logo.png';
             img.onload = () => {
                 try {
                     const canvas = document.createElement('canvas');
@@ -2682,7 +2682,7 @@ export default function HR() {
                             <div className="flex justify-between items-start">
                                 <div>
                                     <div className="flex items-center gap-2 mb-2">
-                                        <img src="/99care-logo.svg" className="h-10 w-auto" alt="99care Logo" onError={(e) => {
+                                        <img src="/99care-logo.png" className="h-10 w-auto" alt="99care Logo" onError={(e) => {
                                             // fallback to text if SVG doesn't load in HTML
                                             e.currentTarget.style.display = 'none';
                                         }} />

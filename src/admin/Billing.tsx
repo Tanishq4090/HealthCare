@@ -1804,7 +1804,7 @@ export default function Billing() {
                             <div className="flex justify-between items-start mb-10">
                                 <div>
                                     <div className="flex flex-col mb-4">
-                                        <img src="/99care-logo.svg" alt="99 CARE" className="h-14 w-auto object-contain" />
+                                        <img src="/99care-logo.png" alt="99 CARE" className="h-14 w-auto object-contain" />
                                     </div>
                                     <div className="mt-8">
                                         <h2 className="text-xl font-bold text-slate-800 tracking-[0.2em]">INVOICE</h2>

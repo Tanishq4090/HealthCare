@@ -78,7 +78,7 @@ export default function Login() {
                 <div className="text-center mb-8">
                     <div className="w-20 h-20 bg-white shadow-xl shadow-slate-200/50 rounded-3xl flex items-center justify-center mx-auto mb-6 p-3 ring-1 ring-slate-100">
                         <img 
-                            src="/99care-logo.svg"
+                            src="/99care-logo.png"
                             alt="99Care Logo" 
                             className="w-full h-full object-contain"
                         />
