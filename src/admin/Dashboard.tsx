@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { sanitizePipelineStages } from '../utils/crm';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, TrendingUp, Phone, CheckCircle2, Loader2, ArrowUpRight, Bot, FileText, MessageSquare, Clock } from 'lucide-react';
+import { Users, TrendingUp, Phone, CheckCircle2, Loader2, ArrowUpRight, Bot, FileText, MessageSquare, Clock, Calendar, AlertCircle } from 'lucide-react';
 
 type ActivityItem = {
     id: string;
@@ -19,6 +19,9 @@ export default function Dashboard() {
         activeLeads: { value: 0, trend: '+0%' },
         activeWorkers: { value: 0, trend: '+0%' },
         totalMrr: { value: '₹0', trend: '+0%' },
+        totalDeposits: { value: '₹0', trend: '+0%' },
+        upcomingAppointments: { value: 0, trend: '0%' },
+        outstandingBalances: { value: '₹0', trend: '0%' },
         aiVoiceCalls: { value: 48, trend: '+12%' }
     });
     const [revenueData, setRevenueData] = useState<any[]>([]);
@@ -120,7 +123,16 @@ export default function Dashboard() {
                 const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
                 // Fetch dashboard metrics concurrently
-                const [{ data: leads }, { data: employees }, { data: settings }, { data: servicePayments }, { data: assignments }] = await Promise.all([
+                const [
+                    { data: leads }, 
+                    { data: employees }, 
+                    { data: settings }, 
+                    { data: servicePayments }, 
+                    { data: assignments }, 
+                    { data: depositPayments },
+                    { count: upcomingAppointmentsCount },
+                    { data: unpaidPayrolls }
+                ] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at').is('deleted_at', null),
                     supabase.from('employees').select('id, status'),
                     supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle(),
@@ -133,7 +145,20 @@ export default function Dashboard() {
                     supabase
                         .from('worker_assignments')
                         .select('id, client_id, assignment_status, total_bill_amount, start_date, end_date, clients(client_name)')
-                        .eq('assignment_status', 'active')
+                        .eq('assignment_status', 'active'),
+                    supabase
+                        .from('payments')
+                        .select('amount')
+                        .eq('payment_type', 'deposit'),
+                    supabase
+                        .from('crm_leads')
+                        .select('id', { count: 'exact', head: true })
+                        .gt('appointment_datetime', new Date().toISOString())
+                        .is('deleted_at', null),
+                    supabase
+                        .from('payroll')
+                        .select('net_balance')
+                        .eq('status', 'Pending Payment')
                 ]);
                 
                 const pipelineStages = sanitizePipelineStages(
@@ -175,10 +200,16 @@ export default function Dashboard() {
                     revenue: Math.floor(mrr * (0.3 + (idx * 0.14))) // Scales up to current MRR roughly
                 }));
 
+                const totalDepositsCollected = (depositPayments || []).reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+                const totalOutstanding = (unpaidPayrolls || []).reduce((sum: number, p: any) => sum + (Number(p.net_balance) || 0), 0);
+
                 setStats({
                     activeLeads: { value: activeLeads.length, trend: '+0%' },
                     activeWorkers: { value: activeWorkersList.length, trend: '+0%' },
-                    totalMrr: { value: `₹${mrr.toLocaleString()}`, trend: '+0%' },
+                    totalMrr: { value: `₹${mrr.toLocaleString('en-IN')}`, trend: '+0%' },
+                    totalDeposits: { value: `₹${totalDepositsCollected.toLocaleString('en-IN')}`, trend: '+0%' },
+                    upcomingAppointments: { value: upcomingAppointmentsCount || 0, trend: '0%' },
+                    outstandingBalances: { value: `₹${totalOutstanding.toLocaleString('en-IN')}`, trend: '0%' },
                     aiVoiceCalls: { value: 0, trend: '0%' }
                 });
                 
@@ -219,6 +250,9 @@ export default function Dashboard() {
         { label: 'Active Leads', value: stats.activeLeads.value, trend: stats.activeLeads.trend, icon: <TrendingUp className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'Active Deployments', value: stats.activeWorkers.value, trend: stats.activeWorkers.trend, icon: <Users className="w-5 h-5 text-emerald-500"/>, bg: 'bg-emerald-50' },
         { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
+        { label: 'Total Deposits', value: stats.totalDeposits.value, trend: stats.totalDeposits.trend, icon: <CheckCircle2 className="w-5 h-5 text-indigo-500"/>, bg: 'bg-indigo-50' },
+        { label: 'Appointments', value: stats.upcomingAppointments.value, trend: stats.upcomingAppointments.trend, icon: <Calendar className="w-5 h-5 text-purple-500"/>, bg: 'bg-purple-50' },
+        { label: 'Outstanding', value: stats.outstandingBalances.value, trend: stats.outstandingBalances.trend, icon: <AlertCircle className="w-5 h-5 text-red-500"/>, bg: 'bg-red-50' },
         { label: 'AI Voice Calls', value: stats.aiVoiceCalls.value, trend: stats.aiVoiceCalls.trend, icon: <Phone className="w-5 h-5 text-amber-500"/>, bg: 'bg-amber-50' },
     ];
 
@@ -259,7 +293,7 @@ export default function Dashboard() {
             </div>
 
             {/* Quick Stats Grid */}
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {statCards.map((stat, i) => (
                     <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
                         <div className="flex items-center justify-between mb-4">
