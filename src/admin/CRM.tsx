@@ -5443,7 +5443,7 @@ export default function CRM() {
                                         <button
                                             onClick={() => {
                                                 setStaffPickerTargetLead(selectedInspectorLead);
-                                                setIsStaffPickerModalOpen(true);
+                                                setIsStaffPickerOpen(true);
                                             }}
                                             className="text-[10px] bg-primary text-white px-2 py-1 rounded font-bold hover:bg-primary/90 transition-colors shadow-sm"
                                         >
@@ -5493,7 +5493,7 @@ export default function CRM() {
                                 <button
                                     onClick={() => {
                                         setStaffPickerTargetLead(selectedInspectorLead);
-                                        setIsStaffPickerModalOpen(true);
+                                        setIsStaffPickerOpen(true);
                                     }}
                                     className="text-[10px] bg-primary text-white px-2 py-1 rounded font-bold hover:bg-primary/90 transition-colors shadow-sm"
                                 >
