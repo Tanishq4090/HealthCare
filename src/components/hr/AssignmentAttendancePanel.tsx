@@ -222,33 +222,42 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
   // ── Release Worker ─────────────────────────────────────────
   const handleReleaseWorker = async () => {
-    if (!window.confirm(`Release ${assignment.employees?.full_name} from this assignment?\n\nThis will:\n• Mark the assignment as completed\n• Return the worker to the available pool\n• Move the client to "Monthly Billing" stage`)) return;
+    if (!window.confirm(`Release ${assignment.employees?.full_name} from this assignment?\n\nThis will generate a final payslip for their days worked.`)) return;
 
     setIsReleasing(true);
     const toastId = toast.loading('Releasing worker...');
     try {
-      // 1. Mark assignment completed
-      await supabase.from('worker_assignments').update({ assignment_status: 'completed' }).eq('id', assignment.id);
+      // 1. Try to find the new service_worker_assignment mapped to this legacy assignment
+      const { data: svcData } = await supabase
+        .from('services')
+        .select('id, service_worker_assignments(id)')
+        .eq('legacy_assignment_id', assignment.id)
+        .maybeSingle();
 
-      // 2. Deactivate ID card link
-      await supabase.from('id_card_links').update({ is_active: false }).eq('assignment_id', assignment.id);
+      const newAssignmentId = svcData?.service_worker_assignments?.[0]?.id;
 
-      // 3. Return employee to available
-      await supabase.from('employees').update({ status: 'available', assigned_client: null, updated_at: new Date().toISOString() }).eq('id', assignment.employee_id);
-
-      // 4. Move CRM lead to "Monthly Billing"
-      const clientId = assignment.client_id || (assignment.clients as any)?.id;
-      if (clientId) {
-        await supabase.from('crm_leads').update({
-          pipeline_stage: 'Monthly Billing',
-          assigned_worker_name: null,
-          assigned_worker_role: null
-        }).eq('id', clientId);
+      if (newAssignmentId) {
+        // Use the new service lifecycle release
+        const { error } = await supabase.rpc('release_worker', { p_assignment_id: newAssignmentId });
+        if (error) throw error;
+        toast.success(`${assignment.employees?.full_name} released and payslip generated!`, { id: toastId });
+      } else {
+        // Fallback to legacy logic if no service was migrated
+        await supabase.from('worker_assignments').update({ assignment_status: 'completed' }).eq('id', assignment.id);
+        await supabase.from('id_card_links').update({ is_active: false }).eq('assignment_id', assignment.id);
+        await supabase.from('employees').update({ status: 'available', assigned_client: null, updated_at: new Date().toISOString() }).eq('id', assignment.employee_id);
+        
+        const clientId = assignment.client_id || (assignment.clients as any)?.id;
+        if (clientId) {
+          await supabase.from('crm_leads').update({
+            pipeline_stage: 'Monthly Billing',
+            assigned_worker_name: null,
+            assigned_worker_role: null
+          }).eq('id', clientId);
+        }
+        toast.success(`${assignment.employees?.full_name} released! (Legacy)`, { id: toastId });
       }
 
-      toast.success(`${assignment.employees?.full_name} released! Client moved to Monthly Billing.`, { id: toastId, duration: 5000 });
-
-      // Trigger invoice generation prompt via parent
       onAssignmentCompleted?.(assignment);
     } catch (err: any) {
       toast.error('Failed to release worker: ' + err.message, { id: toastId });
