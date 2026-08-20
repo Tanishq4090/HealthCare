@@ -150,16 +150,7 @@ export async function assignWorkerToClient(
   }
 
   // ── Step 0.5: Enforce Single Staff Rule ──────────────────
-  const { data: existingActive } = await supabase
-    .from('worker_assignments')
-    .select('id')
-    .eq('client_id', clientUuid)
-    .eq('assignment_status', 'active')
-    .maybeSingle();
-
-  if (existingActive) {
-    throw new Error('This lead already has a staff member assigned. Please release the current staff before assigning a new one.');
-  }
+  // Removed: We now support multiple active workers per client using the new services model.
 
   // ── Step 1: Create assignment record ──────────────────
   const { data: assignment, error: assignError } = await supabase
