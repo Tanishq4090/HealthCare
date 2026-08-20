@@ -5780,6 +5780,20 @@ export default function CRM() {
                                     <span className="text-sm font-bold text-slate-800">₹{((selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0) * 12).toLocaleString('en-IN')}</span>
                                 </div>
                                 )}
+                                {/* Complete Month Quote */}
+                                {selectedInspectorLead.complete_month_daily_rate && (
+                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Complete Month Quote</span>
+                                    <span className="text-sm font-bold text-slate-800">₹{selectedInspectorLead.complete_month_daily_rate.toLocaleString('en-IN')}/day</span>
+                                </div>
+                                )}
+                                {/* Incomplete Month Quote */}
+                                {selectedInspectorLead.incomplete_month_daily_rate && (
+                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Partial Month Quote</span>
+                                    <span className="text-sm font-bold text-slate-800">₹{selectedInspectorLead.incomplete_month_daily_rate.toLocaleString('en-IN')}/day</span>
+                                </div>
+                                )}
                                 {/* Priority */}
                                 <div className="flex items-center justify-between px-4 py-3">
                                     <span className="flex items-center gap-2 text-sm text-slate-500"><Star className="w-3.5 h-3.5 text-slate-400" /> Priority</span>
