@@ -129,6 +129,36 @@ BEGIN
 END;
 $$;
 
+-- ─── TRIGGER: Auto-release worker when status changes to 'available' ─────────
+CREATE OR REPLACE FUNCTION public.trg_release_worker_on_status_change()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_asgn RECORD;
+BEGIN
+    IF NEW.status = 'available' AND OLD.status != 'available' THEN
+        -- Find active assignments for this worker
+        FOR v_asgn IN
+            SELECT id FROM public.service_worker_assignments 
+            WHERE employee_id = NEW.id AND end_date IS NULL
+        LOOP
+            PERFORM public.release_worker(v_asgn.id, CURRENT_DATE);
+        END LOOP;
+        
+        -- Also clean up any loose legacy worker_assignments
+        UPDATE public.worker_assignments
+        SET assignment_status = 'completed', end_date = CURRENT_DATE, updated_at = NOW()
+        WHERE employee_id = NEW.id AND assignment_status = 'active';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trigger_release_worker_on_available ON public.employees;
+CREATE TRIGGER trigger_release_worker_on_available
+AFTER UPDATE OF status ON public.employees
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_release_worker_on_status_change();
+
 -- ─── RPC: End a service (with deposit settlement) ────────────
 CREATE OR REPLACE FUNCTION public.end_service(
     p_service_id UUID,
