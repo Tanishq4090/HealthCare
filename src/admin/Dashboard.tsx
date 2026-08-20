@@ -20,7 +20,7 @@ export default function Dashboard() {
         activeWorkers: { value: 0, trend: '+0%' },
         totalMrr: { value: '₹0', trend: '+0%' },
         totalDeposits: { value: '₹0', trend: '+0%' },
-        upcomingAppointments: { value: 0, trend: '0%' },
+        upcomingAppointments: { value: 0, trend: '0%', subtext: '' },
         outstandingBalances: { value: '₹0', trend: '0%' },
         aiVoiceCalls: { value: 48, trend: '+12%' }
     });
@@ -130,7 +130,7 @@ export default function Dashboard() {
                     { data: servicePayments }, 
                     { data: assignments }, 
                     { data: depositPayments },
-                    { count: upcomingAppointmentsCount },
+                    { data: upcomingAppointmentsList },
                     { data: unpaidPayrolls }
                 ] = await Promise.all([
                     supabase.from('crm_leads').select('id, pipeline_stage, estimated_value_monthly, created_at').is('deleted_at', null),
@@ -152,9 +152,10 @@ export default function Dashboard() {
                         .eq('payment_type', 'deposit'),
                     supabase
                         .from('crm_leads')
-                        .select('id', { count: 'exact', head: true })
+                        .select('id, name, appointment_datetime')
                         .gt('appointment_datetime', new Date().toISOString())
-                        .is('deleted_at', null),
+                        .is('deleted_at', null)
+                        .order('appointment_datetime', { ascending: true }),
                     supabase
                         .from('payroll')
                         .select('net_balance')
@@ -203,12 +204,21 @@ export default function Dashboard() {
                 const totalDepositsCollected = (depositPayments || []).reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
                 const totalOutstanding = (unpaidPayrolls || []).reduce((sum: number, p: any) => sum + (Number(p.net_balance) || 0), 0);
 
+                let nextApptSubtext = '';
+                if (upcomingAppointmentsList && upcomingAppointmentsList.length > 0) {
+                    const nextAppt = upcomingAppointmentsList[0];
+                    const dateObj = new Date(nextAppt.appointment_datetime);
+                    const formattedDate = dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+                    const formattedTime = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                    nextApptSubtext = `Next: ${formattedDate}, ${formattedTime}`;
+                }
+
                 setStats({
                     activeLeads: { value: activeLeads.length, trend: '+0%' },
                     activeWorkers: { value: activeWorkersList.length, trend: '+0%' },
                     totalMrr: { value: `₹${mrr.toLocaleString('en-IN')}`, trend: '+0%' },
                     totalDeposits: { value: `₹${totalDepositsCollected.toLocaleString('en-IN')}`, trend: '+0%' },
-                    upcomingAppointments: { value: upcomingAppointmentsCount || 0, trend: '0%' },
+                    upcomingAppointments: { value: upcomingAppointmentsList?.length || 0, trend: '0%', subtext: nextApptSubtext },
                     outstandingBalances: { value: `₹${totalOutstanding.toLocaleString('en-IN')}`, trend: '0%' },
                     aiVoiceCalls: { value: 0, trend: '0%' }
                 });
@@ -251,7 +261,7 @@ export default function Dashboard() {
         { label: 'Active Deployments', value: stats.activeWorkers.value, trend: stats.activeWorkers.trend, icon: <Users className="w-5 h-5 text-emerald-500"/>, bg: 'bg-emerald-50' },
         { label: 'Platform MRR', value: stats.totalMrr.value, trend: stats.totalMrr.trend, icon: <ArrowUpRight className="w-5 h-5 text-primary"/>, bg: 'bg-primary/10' },
         { label: 'Total Deposits', value: stats.totalDeposits.value, trend: stats.totalDeposits.trend, icon: <CheckCircle2 className="w-5 h-5 text-indigo-500"/>, bg: 'bg-indigo-50' },
-        { label: 'Appointments', value: stats.upcomingAppointments.value, trend: stats.upcomingAppointments.trend, icon: <Calendar className="w-5 h-5 text-purple-500"/>, bg: 'bg-purple-50' },
+        { label: 'Appointments', value: stats.upcomingAppointments.value, trend: stats.upcomingAppointments.trend, subtext: stats.upcomingAppointments.subtext, icon: <Calendar className="w-5 h-5 text-purple-500"/>, bg: 'bg-purple-50' },
         { label: 'Outstanding', value: stats.outstandingBalances.value, trend: stats.outstandingBalances.trend, icon: <AlertCircle className="w-5 h-5 text-red-500"/>, bg: 'bg-red-50' },
         { label: 'AI Voice Calls', value: stats.aiVoiceCalls.value, trend: stats.aiVoiceCalls.trend, icon: <Phone className="w-5 h-5 text-amber-500"/>, bg: 'bg-amber-50' },
     ];
@@ -303,8 +313,11 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="flex items-end justify-between">
-                            <h3 className="text-3xl font-black text-slate-900 tracking-tight">{stat.value}</h3>
-                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1 shadow-sm">
+                            <div>
+                                <h3 className="text-3xl font-black text-slate-900 tracking-tight">{stat.value}</h3>
+                                {(stat as any).subtext && <p className="text-xs font-semibold text-slate-500 mt-1">{(stat as any).subtext}</p>}
+                            </div>
+                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1 shadow-sm shrink-0">
                                 {stat.trend}
                             </span>
                         </div>

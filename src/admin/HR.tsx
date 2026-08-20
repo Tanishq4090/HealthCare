@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import WorkerAllocation from '../components/hr/WorkerAllocation';
 import AssignmentAttendancePanel from '../components/hr/AssignmentAttendancePanel';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
+import ServicesPanel from '../components/hr/ServicesPanel';
 import {
     calculateWorkerPay,
     grossFromPayrollItem,
@@ -20,7 +21,7 @@ import {
 import { markPayslipDispatched, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
 
 export default function HR() {
-    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
+    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll' | 'services'>('allocation');
     const [isGenerating, setIsGenerating] = useState(false);
     const [workers, setWorkers] = useState<any[]>([]);
     const [payrollItems, setPayrollItems] = useState<any[]>([]);
@@ -1673,6 +1674,12 @@ export default function HR() {
                     >
                         Payroll
                     </button>
+                    <button
+                        onClick={() => setActiveTab('services')}
+                        className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'services' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                        Services
+                    </button>
                 </div>
             </div>
 
@@ -1746,6 +1753,11 @@ export default function HR() {
                             </div>
                         </div>
                     )}
+                </div>
+            ) : activeTab === 'services' ? (
+                /* Service Lifecycle Manager */
+                <div className="flex-1 min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <ServicesPanel isEmbedded />
                 </div>
             ) : (
                 /* Payroll & Invoicing View */

@@ -1961,6 +1961,59 @@ export default function CRM() {
             // Store the result
             setAssignmentResult(result);
 
+            // ── Also create the new Services model record ──────────
+            try {
+                // Fetch the latest quotation for rates
+                const { data: quote } = await supabase
+                    .from('crm_quotations')
+                    .select('complete_month_rate, incomplete_month_rate, deposit')
+                    .eq('lead_id', staffPickerTargetLead.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                const cmRate = quote?.complete_month_rate || 850;
+                const icmRate = quote?.incomplete_month_rate || 1500;
+                const depositAmt = quote?.deposit || 0;
+
+                // Create service record
+                const { data: newService } = await supabase
+                    .from('services')
+                    .insert({
+                        client_id: staffPickerTargetLead.id,
+                        lead_id: staffPickerTargetLead.id,
+                        service_type: serviceType,
+                        hours_per_day: serviceHours,
+                        start_date: serviceStartDate,
+                        end_date: serviceType === 'date_range' ? serviceEndDate : null,
+                        status: 'active',
+                        deposit_amount: depositAmt,
+                        deposit_status: depositAmt > 0 ? 'collected' : 'pending',
+                        complete_month_daily_rate: cmRate,
+                        incomplete_month_daily_rate: icmRate,
+                        legacy_assignment_id: result.assignment?.id || null,
+                    })
+                    .select('id')
+                    .single();
+
+                if (newService) {
+                    // Create service_worker_assignment
+                    await supabase.from('service_worker_assignments').insert({
+                        service_id: newService.id,
+                        employee_id: selectedWorker.id,
+                        start_date: serviceStartDate,
+                    });
+
+                    // Also save rates to crm_leads for dashboard reference
+                    await supabase.from('crm_leads').update({
+                        complete_month_daily_rate: cmRate,
+                        incomplete_month_daily_rate: icmRate,
+                    }).eq('id', staffPickerTargetLead.id);
+                }
+            } catch (svcErr) {
+                console.warn('Service lifecycle record creation failed (non-blocking):', svcErr);
+            }
+
             // Open the WhatsApp modal with ID card link
             setAgentTargetLead(staffPickerTargetLead);
             setAgentTargetAction('staff');
