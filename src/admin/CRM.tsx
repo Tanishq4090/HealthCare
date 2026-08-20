@@ -4829,7 +4829,7 @@ export default function CRM() {
             )}
             {/* Staff Picker Modal */}
             {isStaffPickerOpen && staffPickerTargetLead && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
                     <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
                         <div className="p-5 border-b border-slate-100 bg-purple-500/10 flex justify-between items-center shrink-0">
                             <div className="flex items-center gap-3">
@@ -5441,10 +5441,7 @@ export default function CRM() {
                                     <div className="flex items-center justify-between">
                                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Users className="w-3.5 h-3.5" /> Assigned Staff</p>
                                         <button
-                                            onClick={() => {
-                                                setStaffPickerTargetLead(selectedInspectorLead);
-                                                setIsStaffPickerOpen(true);
-                                            }}
+                                            onClick={() => openStaffPicker(selectedInspectorLead)}
                                             className="text-[10px] bg-primary text-white px-2 py-1 rounded font-bold hover:bg-primary/90 transition-colors shadow-sm"
                                         >
                                             + Add Worker
@@ -5491,10 +5488,7 @@ export default function CRM() {
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => {
-                                        setStaffPickerTargetLead(selectedInspectorLead);
-                                        setIsStaffPickerOpen(true);
-                                    }}
+                                    onClick={() => openStaffPicker(selectedInspectorLead)}
                                     className="text-[10px] bg-primary text-white px-2 py-1 rounded font-bold hover:bg-primary/90 transition-colors shadow-sm"
                                 >
                                     + Add
