@@ -1782,7 +1782,7 @@ export default function CRM() {
             .replace(/\{\{v4\}\}/g, quotationVars.v4 || '[Price]');
     };
 
-    const fetchWorkers = async () => {
+    const fetchWorkers = async (targetLead: any) => {
         setIsLoadingWorkers(true);
         try {
             const { data, error } = await supabase.from('employees').select('*').is('deleted_at', null);
@@ -1790,9 +1790,18 @@ export default function CRM() {
             if (error) throw error;
 
             if (data && data.length > 0) {
-                // Filter in JS to be safe against schema variations
+                // Get IDs of workers already assigned to this lead
+                const activeEmployeeIds = new Set(
+                    (targetLead?.services || []).flatMap((s: any) => 
+                        (s.service_worker_assignments || [])
+                            .filter((swa: any) => !swa.end_date)
+                            .map((swa: any) => swa.employee_id)
+                    )
+                );
+
+                // Filter in JS to be safe against schema variations, and remove already assigned workers
                 const available = data.filter(w =>
-                    (w.status && w.status.toLowerCase() === 'available') && !w.deleted_at
+                    (w.status && w.status.toLowerCase() === 'available') && !w.deleted_at && !activeEmployeeIds.has(w.id)
                 );
                 // Map unified fields to legacy UI expectations
                 const mapped = available.map(w => ({ ...w, name: w.full_name || w.name, role: w.job_title || w.role }));
@@ -1811,7 +1820,7 @@ export default function CRM() {
     const openStaffPicker = (lead: any) => {
         setStaffPickerTargetLead(lead);
         setSelectedWorker(null);
-        fetchWorkers();
+        fetchWorkers(lead);
         setIsStaffPickerOpen(true);
     };
 
