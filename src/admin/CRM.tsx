@@ -1625,7 +1625,7 @@ export default function CRM() {
         try {
             const { data, error } = await supabase
                 .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
+                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                 .is('deleted_at', null)
                 .not('pipeline_stage', 'eq', 'Archived')
                 .order('created_at', { ascending: false });
@@ -1635,7 +1635,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*)')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -1961,54 +1961,63 @@ export default function CRM() {
             // Store the result
             setAssignmentResult(result);
 
-            // ── Also create the new Services model record ──────────
+            // ── Also create or update the Services model record ──────────
             try {
-                // Fetch the latest quotation for rates
-                const { data: quote } = await supabase
-                    .from('crm_quotations')
-                    .select('complete_month_rate, incomplete_month_rate, deposit')
-                    .eq('lead_id', staffPickerTargetLead.id)
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
+                const existingService = staffPickerTargetLead.services?.find((s: any) => s.status === 'active');
+                let targetServiceId = existingService?.id;
 
-                const cmRate = quote?.complete_month_rate || 850;
-                const icmRate = quote?.incomplete_month_rate || 1500;
-                const depositAmt = quote?.deposit || 0;
+                if (!targetServiceId) {
+                    // Fetch the latest quotation for rates
+                    const { data: quote } = await supabase
+                        .from('crm_quotations')
+                        .select('complete_month_rate, incomplete_month_rate, deposit')
+                        .eq('lead_id', staffPickerTargetLead.id)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
 
-                // Create service record
-                const { data: newService } = await supabase
-                    .from('services')
-                    .insert({
-                        client_id: staffPickerTargetLead.id,
-                        lead_id: staffPickerTargetLead.id,
-                        service_type: serviceType,
-                        hours_per_day: serviceHours,
-                        start_date: serviceStartDate,
-                        end_date: serviceType === 'date_range' ? serviceEndDate : null,
-                        status: 'active',
-                        deposit_amount: depositAmt,
-                        deposit_status: depositAmt > 0 ? 'collected' : 'pending',
-                        complete_month_daily_rate: cmRate,
-                        incomplete_month_daily_rate: icmRate,
-                        legacy_assignment_id: result.assignment?.id || null,
-                    })
-                    .select('id')
-                    .single();
+                    const cmRate = quote?.complete_month_rate || 850;
+                    const icmRate = quote?.incomplete_month_rate || 1500;
+                    const depositAmt = quote?.deposit || 0;
 
-                if (newService) {
+                    // Create service record
+                    const { data: newService } = await supabase
+                        .from('services')
+                        .insert({
+                            client_id: staffPickerTargetLead.id,
+                            lead_id: staffPickerTargetLead.id,
+                            service_type: serviceType,
+                            hours_per_day: serviceHours,
+                            start_date: serviceStartDate,
+                            end_date: serviceType === 'date_range' ? serviceEndDate : null,
+                            status: 'active',
+                            deposit_amount: depositAmt,
+                            deposit_status: depositAmt > 0 ? 'collected' : 'pending',
+                            complete_month_daily_rate: cmRate,
+                            incomplete_month_daily_rate: icmRate,
+                            legacy_assignment_id: result.assignment?.id || null,
+                        })
+                        .select('id')
+                        .single();
+
+                    targetServiceId = newService?.id;
+
+                    // Also save rates to crm_leads for dashboard reference
+                    if (targetServiceId) {
+                        await supabase.from('crm_leads').update({
+                            complete_month_daily_rate: cmRate,
+                            incomplete_month_daily_rate: icmRate,
+                        }).eq('id', staffPickerTargetLead.id);
+                    }
+                }
+
+                if (targetServiceId) {
                     // Create service_worker_assignment
                     await supabase.from('service_worker_assignments').insert({
-                        service_id: newService.id,
+                        service_id: targetServiceId,
                         employee_id: selectedWorker.id,
                         start_date: serviceStartDate,
                     });
-
-                    // Also save rates to crm_leads for dashboard reference
-                    await supabase.from('crm_leads').update({
-                        complete_month_daily_rate: cmRate,
-                        incomplete_month_daily_rate: icmRate,
-                    }).eq('id', staffPickerTargetLead.id);
                 }
             } catch (svcErr) {
                 console.warn('Service lifecycle record creation failed (non-blocking):', svcErr);
@@ -5423,17 +5432,75 @@ export default function CRM() {
                     <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 custom-scrollbar">
 
                         {/* Assigned Staff Info */}
-                        {selectedInspectorLead.assigned_worker_name && (
-                            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shrink-0">
-                                    <Users className="w-4 h-4" />
+                        {/* Assigned Staff Info */}
+                        {selectedInspectorLead.services?.some((s: any) => s.status === 'active') ? (() => {
+                            const activeService = selectedInspectorLead.services.find((s: any) => s.status === 'active');
+                            const activeAssignments = activeService.service_worker_assignments?.filter((swa: any) => !swa.end_date) || [];
+                            return (
+                                <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex flex-col gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Users className="w-3.5 h-3.5" /> Assigned Staff</p>
+                                        <button
+                                            onClick={() => {
+                                                setStaffPickerTargetLead(selectedInspectorLead);
+                                                setIsStaffPickerModalOpen(true);
+                                            }}
+                                            className="text-[10px] bg-primary text-white px-2 py-1 rounded font-bold hover:bg-primary/90 transition-colors shadow-sm"
+                                        >
+                                            + Add Worker
+                                        </button>
+                                    </div>
+                                    {activeAssignments.length > 0 ? (
+                                        <div className="flex flex-col gap-2">
+                                            {activeAssignments.map((swa: any) => (
+                                                <div key={swa.id} className="flex items-center justify-between bg-white border border-primary/10 rounded-lg p-2 shadow-sm">
+                                                    <p className="text-sm font-bold text-slate-900">{swa.employees?.full_name || 'Worker'}</p>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (!confirm('Are you sure you want to release this worker? A payslip will be generated for their days worked.')) return;
+                                                            try {
+                                                                const { error } = await supabase.rpc('release_worker', { p_assignment_id: swa.id });
+                                                                if (error) throw error;
+                                                                toast.success('Worker released and payslip generated');
+                                                                fetchLeads();
+                                                            } catch (err: any) {
+                                                                toast.error(err.message || 'Failed to release worker');
+                                                            }
+                                                        }}
+                                                        className="text-[10px] text-red-500 font-bold hover:bg-red-50 px-2 py-1 rounded transition-colors border border-red-100"
+                                                    >
+                                                        Release
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-500 italic">No workers currently assigned.</p>
+                                    )}
                                 </div>
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Assigned Staff</p>
-                                    <p className="text-sm font-bold text-slate-900">{selectedInspectorLead.assigned_worker_name}</p>
+                            );
+                        })() : selectedInspectorLead.assigned_worker_name ? (
+                            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-center gap-3 justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shrink-0">
+                                        <Users className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Assigned Staff</p>
+                                        <p className="text-sm font-bold text-slate-900">{selectedInspectorLead.assigned_worker_name}</p>
+                                    </div>
                                 </div>
+                                <button
+                                    onClick={() => {
+                                        setStaffPickerTargetLead(selectedInspectorLead);
+                                        setIsStaffPickerModalOpen(true);
+                                    }}
+                                    className="text-[10px] bg-primary text-white px-2 py-1 rounded font-bold hover:bg-primary/90 transition-colors shadow-sm"
+                                >
+                                    + Add
+                                </button>
                             </div>
-                        )}
+                        ) : null}
 
                         {/* ── Pipeline Stage ─────────────────────────────── */}
                         <div>
