@@ -63,7 +63,7 @@ BEGIN
     -- Determine period start
     SELECT MAX(period_end) INTO v_last_payroll_end
     FROM public.payroll
-    WHERE assignment_id = p_assignment_id::TEXT
+    WHERE assignment_id = p_assignment_id
       AND service_id = v_asgn.service_id;
 
     IF v_last_payroll_end IS NOT NULL THEN
@@ -99,7 +99,7 @@ BEGIN
             (v_days_counted * COALESCE(v_emp.monthly_daily_rate, 0)) - COALESCE(v_emp.deposit_received, 0),
             'Pending Payment',
             v_service.id,
-            p_assignment_id::TEXT,
+            p_assignment_id,
             v_period_start,
             p_release_date,
             v_days_counted,
@@ -297,7 +297,7 @@ BEGIN
             -- Check if payslip already exists
             IF EXISTS (
                 SELECT 1 FROM public.payroll
-                WHERE assignment_id = v_asgn.id::TEXT
+                WHERE assignment_id = v_asgn.id
                   AND period_start = p_month_start
                   AND period_end = p_month_end
             ) THEN
@@ -329,7 +329,7 @@ BEGIN
                 v_days_counted * COALESCE(v_emp.monthly_daily_rate, 0),
                 'Pending Payment',
                 v_svc.id,
-                v_asgn.id::TEXT,
+                v_asgn.id,
                 p_month_start,
                 p_month_end,
                 v_days_counted,
