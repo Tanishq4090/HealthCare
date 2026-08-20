@@ -101,6 +101,9 @@ ADD COLUMN IF NOT EXISTS days_counted NUMERIC,
 ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'recurring',
 ADD COLUMN IF NOT EXISTS worker_id UUID REFERENCES public.employees(id) ON DELETE SET NULL;
 
+-- Drop the legacy foreign key constraint on assignment_id so it can hold either old or new assignment UUIDs
+ALTER TABLE public.payroll DROP CONSTRAINT IF EXISTS payroll_assignment_id_fkey;
+
 -- Note: period_start and period_end already exist from the original migration.
 -- assignment_id already existed as a text column; we add it as UUID if not present.
 -- total_amount already existed from a later migration.
