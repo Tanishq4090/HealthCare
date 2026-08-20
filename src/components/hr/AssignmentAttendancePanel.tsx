@@ -228,19 +228,37 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
     const toastId = toast.loading('Releasing worker...');
     try {
       // 1. Try to find the new service_worker_assignment mapped to this legacy assignment
-      const { data: svcData } = await supabase
-        .from('services')
-        .select('id, service_worker_assignments(id)')
-        .eq('legacy_assignment_id', assignment.id)
-        .maybeSingle();
+      const clientId = assignment.client_id || (assignment.clients as any)?.id;
+      let newAssignmentId = null;
+      
+      if (clientId) {
+        const { data: activeService } = await supabase
+          .from('services')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('status', 'active')
+          .maybeSingle();
 
-      const newAssignmentId = svcData?.service_worker_assignments?.[0]?.id;
+        if (activeService) {
+          const { data: swaData } = await supabase
+            .from('service_worker_assignments')
+            .select('id')
+            .eq('service_id', activeService.id)
+            .eq('employee_id', assignment.employee_id)
+            .is('end_date', null)
+            .maybeSingle();
+          newAssignmentId = swaData?.id;
+        }
+      }
 
       if (newAssignmentId) {
         // Use the new service lifecycle release
         const { error } = await supabase.rpc('release_worker', { p_assignment_id: newAssignmentId });
         if (error) throw error;
         toast.success(`${assignment.employees?.full_name} released and payslip generated!`, { id: toastId });
+        
+        // Reload to update parent state (activeAssignments)
+        setTimeout(() => window.location.reload(), 1500);
       } else {
         // Fallback to legacy logic if no service was migrated
         await supabase.from('worker_assignments').update({ assignment_status: 'completed' }).eq('id', assignment.id);
@@ -256,9 +274,9 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
           }).eq('id', clientId);
         }
         toast.success(`${assignment.employees?.full_name} released! (Legacy)`, { id: toastId });
+        
+        onAssignmentCompleted?.(assignment);
       }
-
-      onAssignmentCompleted?.(assignment);
     } catch (err: any) {
       toast.error('Failed to release worker: ' + err.message, { id: toastId });
     } finally {

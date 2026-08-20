@@ -113,6 +113,13 @@ BEGIN
     SET status = 'available', assigned_client = NULL, updated_at = NOW()
     WHERE id = v_asgn.employee_id;
 
+    -- Also complete legacy worker_assignment if present (so it hides from legacy Attendance tab)
+    IF v_service.legacy_assignment_id IS NOT NULL THEN
+        UPDATE public.worker_assignments
+        SET assignment_status = 'completed', end_date = p_release_date, updated_at = NOW()
+        WHERE id = v_service.legacy_assignment_id;
+    END IF;
+
     RETURN jsonb_build_object(
         'success', true,
         'assignment_id', p_assignment_id,

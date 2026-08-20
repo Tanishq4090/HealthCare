@@ -256,29 +256,9 @@ export default function HR() {
             // Records persist even if the worker is no longer in the employees table.
             const validDbPayroll = (payrollData || []).filter((p: any) => !!p.worker);
 
-            // Deduplicate across DB and synthetic: DB entries take precedence
-            const seenKeys = new Set<string>();
-            const dedupedPayroll: any[] = [];
-            
-            // Add DB rows first
-            for (const dbItem of validDbPayroll) {
-                const dbClient = dbItem.client_name || dbItem.client;
-                const key = `${dbItem.worker}|${dbClient}`;
-                if (!seenKeys.has(key)) {
-                    seenKeys.add(key);
-                    dedupedPayroll.push(dbItem);
-                }
-            }
-            
-            // Then add synthetic items if key not already present
-            for (const synthItem of syntheticItems) {
-                const synthClient = synthItem.client_name || synthItem.client;
-                const key = `${synthItem.worker}|${synthClient}`;
-                if (!seenKeys.has(key)) {
-                    seenKeys.add(key);
-                    dedupedPayroll.push(synthItem);
-                }
-            }
+            // DB entries and synthetic items are combined. 
+            // Synthetic items are already filtered above to exclude assignments that have DB payroll records.
+            const dedupedPayroll: any[] = [...validDbPayroll, ...syntheticItems];
 
             if (!payrollError && dedupedPayroll.length > 0) {
                 setPayrollItems(dedupedPayroll);
