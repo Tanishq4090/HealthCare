@@ -5467,7 +5467,7 @@ export default function CRM() {
                                                             try {
                                                                 const { error } = await supabase.rpc('release_worker', { p_assignment_id: swa.id });
                                                                 if (error) throw error;
-                                                                toast.success('Worker released and payslip generated');
+                                                                toast.success('Worker released! Final payslip auto-generated in HR -> Payroll', { duration: 5000 });
                                                                 fetchLeads();
                                                             } catch (err: any) {
                                                                 toast.error(err.message || 'Failed to release worker');
