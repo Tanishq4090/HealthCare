@@ -116,7 +116,7 @@ BEGIN
     -- Also complete legacy worker_assignment if present (so it hides from legacy Attendance tab)
     IF v_service.legacy_assignment_id IS NOT NULL THEN
         UPDATE public.worker_assignments
-        SET assignment_status = 'completed', end_date = p_release_date, updated_at = NOW()
+        SET assignment_status = 'completed', end_date = p_release_date
         WHERE id = v_service.legacy_assignment_id;
     END IF;
 
@@ -146,7 +146,7 @@ BEGIN
         
         -- Also clean up any loose legacy worker_assignments
         UPDATE public.worker_assignments
-        SET assignment_status = 'completed', end_date = CURRENT_DATE, updated_at = NOW()
+        SET assignment_status = 'completed', end_date = CURRENT_DATE
         WHERE employee_id = NEW.id AND assignment_status = 'active';
     END IF;
     RETURN NEW;
