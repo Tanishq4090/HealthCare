@@ -120,6 +120,12 @@ BEGIN
         WHERE id = v_service.legacy_assignment_id;
     END IF;
 
+    -- Also clear the assigned worker from the lead card if this was the worker
+    UPDATE public.crm_leads
+    SET assigned_worker_name = NULL
+    WHERE phone = (SELECT phone FROM public.clients WHERE id = v_service.client_id LIMIT 1)
+      AND assigned_worker_name = v_emp.full_name;
+
     RETURN jsonb_build_object(
         'success', true,
         'assignment_id', p_assignment_id,

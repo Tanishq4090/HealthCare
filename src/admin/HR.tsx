@@ -149,7 +149,7 @@ export default function HR() {
         try {
             // Fetch from employees table instead of workers
             const { data: employeeData, error: employeeError } = await supabase.from('employees').select('*');
-            const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*, worker_assignments(assignment_status)');
+            const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
             // Fix: use assignment_status (not status), and fetch ALL statuses so completed duties appear
             const { data: assignmentsData } = await supabase
                 .from('worker_assignments')
@@ -260,13 +260,12 @@ export default function HR() {
             // Synthetic items are already filtered above to exclude assignments that have DB payroll records.
             const dedupedPayroll: any[] = [...validDbPayroll, ...syntheticItems];
 
-            if (!payrollError && dedupedPayroll.length > 0) {
-                setPayrollItems(dedupedPayroll);
-            } else if (payrollError) {
-                setPayrollItems([]);
-            } else {
-                setPayrollItems([]);
+            if (payrollError) {
+                console.error("Payroll fetch error:", payrollError);
             }
+            
+            // Set deduped items even if DB fetch had an error (to preserve synthetic items)
+            setPayrollItems(dedupedPayroll);
 
             if (leadData && leadData.length > 0) {
                 setPipelineLeads(leadData);
@@ -274,11 +273,9 @@ export default function HR() {
                 setPipelineLeads([]);
             }
         } catch (err: any) {
-            console.error('fetchData failed:', err);
-            toast.error('Failed to load workforce data.');
-            setWorkers([]);
-            setPayrollItems([]);
-            setPipelineLeads([]);
+            console.error('fetchData failed (uncaught exception):', err);
+            toast.error(`Failed to load workforce data: ${err.message || 'Unknown error'}`);
+            // Don't arbitrarily clear state on a partial failure, just set loading false
         } finally {
             setIsLoading(false);
         }

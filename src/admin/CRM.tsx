@@ -8,6 +8,7 @@ import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
 import { SendQuotationModal } from './components/SendQuotationModal';
+import PayslipGenerator from '../components/hr/PayslipGenerator';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
@@ -835,6 +836,7 @@ export default function CRM() {
     const [editingLeadName, setEditingLeadName] = useState<string>('');
     const [editingLeadPhone, setEditingLeadPhone] = useState<string>('');
     const [selectedInspectorLead, setSelectedInspectorLead] = useState<any | null>(null);
+    const [releasedAssignment, setReleasedAssignment] = useState<any | null>(null);
     const [showWorkFormModal, setShowWorkFormModal] = useState<any | null>(null);
 
     const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
@@ -5467,8 +5469,9 @@ export default function CRM() {
                                                             try {
                                                                 const { error } = await supabase.rpc('release_worker', { p_assignment_id: swa.id });
                                                                 if (error) throw error;
-                                                                toast.success('Worker released! Final payslip auto-generated in HR -> Payroll', { duration: 5000 });
+                                                                toast.success('Worker released! Adjust their final payslip below.', { duration: 5000 });
                                                                 fetchLeads();
+                                                                setReleasedAssignment(swa);
                                                             } catch (err: any) {
                                                                 toast.error(err.message || 'Failed to release worker');
                                                             }
@@ -6729,6 +6732,16 @@ export default function CRM() {
                     </div>
                 );
             })()}
+
+            {/* Payslip Generator when releasing from CRM */}
+            {releasedAssignment && (
+                <PayslipGenerator
+                    assignment={releasedAssignment}
+                    autoCloseAssignmentOnGenerate={false}
+                    onClose={() => setReleasedAssignment(null)}
+                    onGenerated={() => { setReleasedAssignment(null); fetchLeads(); }}
+                />
+            )}
         </div>
     );
 }
