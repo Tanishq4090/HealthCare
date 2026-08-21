@@ -3597,7 +3597,7 @@ export default function CRM() {
 
     const createLeadFromVoiceCall = async (
         call: VoiceCallSnapshot,
-        opts?: { duplicateOfId?: string; skipReturningCheck?: boolean }
+        opts?: { skipReturningCheck?: boolean }
     ) => {
         const { leadPhone, leadWhatsapp, phoneForLookup } = resolveVoiceCallPhone(call);
 
@@ -3637,11 +3637,10 @@ export default function CRM() {
                         name: call.capturedName || 'Voice Lead',
                         phone: leadPhone || null,
                         whatsapp_number: standardized || leadWhatsapp || null,
-                        source: opts?.duplicateOfId ? 'AI Phone Call (Returning)' : 'AI Phone Call',
+                        source: 'AI Phone Call',
                         status: 'AI Handled',
                         pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
                         estimated_value_monthly: Number(call.capturedValue) || 0,
-                        ...(opts?.duplicateOfId ? { duplicate_of_lead_id: opts.duplicateOfId } : {}),
                     },
                 ])
                 .select('*')
@@ -3661,13 +3660,9 @@ export default function CRM() {
                 );
                 if (transcriptErr) console.warn('call_transcripts upsert:', transcriptErr.message);
 
-                const activityMsg = opts?.duplicateOfId
-                    ? 'Returning client — voice lead linked to existing client record'
-                    : 'Lead created from AI phone call';
-                await logActivity(newLead.id, 'lead_created', activityMsg, {
+                await logActivity(newLead.id, 'lead_created', 'Lead created from AI phone call', {
                     source: 'AI Phone Call',
                     call_id: String(call.id),
-                    ...(opts?.duplicateOfId ? { client_id: opts.duplicateOfId } : {}),
                 });
             }
 
@@ -3830,61 +3825,67 @@ export default function CRM() {
         }
     };
 
-    const handleReturningClientNewLead = async () => {
+    const handleOpenExistingLead = async () => {
         if (!returningClientModal) return;
-        const { pendingLeadData } = returningClientModal;
+        const { existingClient, pendingLeadData } = returningClientModal;
         setReturningClientModal(null);
-        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callSnapshot) {
-            await createLeadFromVoiceCall(pendingLeadData.callSnapshot, { skipReturningCheck: true });
-            return;
-        }
-        await handleAddManualLead({
-            name: pendingLeadData?.name || returningClientModal.name,
-            phone: pendingLeadData?.phone || returningClientModal.phone,
-            isDuplicate: pendingLeadData?.isDuplicate,
-            duplicateOfId: pendingLeadData?.duplicateOfId,
-            skipReturningCheck: true,
-        });
-    };
-
-    const handleReturningClientLink = async () => {
-        if (!returningClientModal) return;
-        const { phone, name, existingClient, pendingLeadData } = returningClientModal;
-        setReturningClientModal(null);
-        if (pendingLeadData?.kind === 'voice' && pendingLeadData.callSnapshot) {
-            await createLeadFromVoiceCall(pendingLeadData.callSnapshot, {
-                skipReturningCheck: true,
-                duplicateOfId: existingClient.id,
-            });
-            return;
-        }
-        const standardized = normalizePhoneDigits(phone);
+        
+        const toastId = toast.loading('Opening client record...');
+        
         try {
-            const { data: newLead, error } = await supabase.from('crm_leads').insert([{
-                name: name || existingClient.client_name,
-                phone: phone || null,
-                whatsapp_number: standardized || null,
-                source: 'Manual Add (Returning)',
-                status: 'New',
-                pipeline_stage: NEW_LEAD_PIPELINE_STAGE,
-                estimated_value_monthly: 0,
-                duplicate_of_lead_id: existingClient.id,
-            }]).select('*').single();
-            if (error) throw error;
-            if (newLead?.id) {
-                await logActivity(newLead.id, 'lead_created', `Returning client — linked to existing client record: ${existingClient.client_name}`, { source: 'Returning Client', client_id: existingClient.id });
+            if (pendingLeadData?.kind === 'voice' && pendingLeadData.callSnapshot) {
+                const call = pendingLeadData.callSnapshot;
+                const { error: transcriptErr } = await supabase.from('call_transcripts').upsert(
+                    {
+                        conversation_id: String(call.id),
+                        lead_id: existingClient.id,
+                        phone_number: existingClient.phone_number,
+                        called_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'conversation_id' }
+                );
+                
+                if (!transcriptErr) {
+                    await logActivity(existingClient.id, 'lead_contacted', 'Returning client contacted via AI Phone Call.', {
+                        source: 'AI Phone Call',
+                        call_id: String(call.id),
+                    });
+                    
+                    setCalls((prev) =>
+                        prev.map((c) =>
+                            String(c.id) === String(call.id)
+                                ? { ...c, status: 'Processed', lead_id: existingClient.id }
+                                : c
+                        )
+                    );
+                }
+                toast.success(`Voice call attached to existing client ${existingClient.client_name}`, { id: toastId });
+            } else {
+                await logActivity(existingClient.id, 'lead_contacted', 'Returning client contacted manually.', { source: 'Manual Add' });
+                toast.success(`Opened existing record for ${existingClient.client_name}`, { id: toastId });
             }
-            toast.success(`New lead created and linked to ${existingClient.client_name}'s client record! ✅`);
+            
+            // Fetch the latest full lead record
+            const { data } = await supabase
+                .from('crm_leads')
+                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                .eq('id', existingClient.id)
+                .single();
+                
+            if (data) {
+                setSelectedInspectorLead(data);
+                setLeads(prev => {
+                    const filtered = prev.filter(l => l.id !== data.id);
+                    return [data, ...filtered]; // Move to top of local state
+                });
+            }
+            
             setIsAddLeadModalOpen(false);
             setAddLeadName('');
             setAddLeadPhone('');
-            setAddLeadDuplicateWarning(null);
-            setAddLeadConfirmDuplicate(false);
-            if (newLead) setSelectedInspectorLead(newLead);
-            fetchLeads();
+            
         } catch (err: any) {
-            toast.error("Failed: " + err.message);
-            setIsAddLeadModalOpen(true);
+            toast.error("Failed to open existing lead: " + err.message, { id: toastId });
         }
     };
 
@@ -6247,27 +6248,16 @@ export default function CRM() {
                                     <p className="font-bold text-slate-900">{returningClientModal.existingClient.client_name}</p>
                                     <p className="text-slate-500 text-xs mt-0.5">{returningClientModal.existingClient.phone_number}</p>
                                 </div>
-                                <p className="text-sm text-slate-600">How would you like to handle this enquiry?</p>
+                                <p className="text-sm text-slate-600 mb-2">This person is already in your CRM. Duplicate leads are not permitted for the same phone number.</p>
                                 <button
                                     type="button"
-                                    onClick={handleReturningClientNewLead}
-                                    className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
-                                >
-                                    <Plus className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                                    <div>
-                                        <p className="font-bold text-blue-800 text-sm">New Independent Lead</p>
-                                        <p className="text-xs text-blue-600 mt-0.5">Fresh enquiry, no connection to old record.</p>
-                                    </div>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleReturningClientLink}
+                                    onClick={handleOpenExistingLead}
                                     className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
                                 >
-                                    <Users className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                                    <ArrowUpRight className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                                     <div>
-                                        <p className="font-bold text-emerald-800 text-sm">Link to Existing Client</p>
-                                        <p className="text-xs text-emerald-600 mt-0.5">New lead linked to {returningClientModal.existingClient.client_name}'s history.</p>
+                                        <p className="font-bold text-emerald-800 text-sm">Open Existing Lead</p>
+                                        <p className="text-xs text-emerald-600 mt-0.5">View and manage their existing service record.</p>
                                     </div>
                                 </button>
                                 <button
