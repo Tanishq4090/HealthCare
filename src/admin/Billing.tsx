@@ -234,8 +234,28 @@ export default function Billing() {
                     console.warn('Could not fetch service payments:', err);
                 }
 
-                // Map to deposits
-                const mappedDeposits = activeAssignments.map(asgn => {
+                // Map to deposits (deduplicated by client so we only show one deposit entry per client)
+                const uniqueClientAssignments: any[] = [];
+                const seenClients = new Set();
+                
+                // Sort assignments so we pick the most recently active one for the deposit status
+                const sortedAssignments = [...activeAssignments].sort((a: any, b: any) => 
+                    new Date(b.assigned_at || b.start_date).getTime() - new Date(a.assigned_at || a.start_date).getTime()
+                );
+                
+                for (const asgn of sortedAssignments) {
+                    const clientId = (asgn as any).clients?.id;
+                    if (clientId && !seenClients.has(clientId)) {
+                        // Prefer paid/invoiced assignments over pending ones when deduplicating
+                        const existingPaid = sortedAssignments.find(a => (a as any).clients?.id === clientId && ((a as any).deposit_paid > 0 || a.deposit_invoice_sent));
+                        if (existingPaid && existingPaid.id !== asgn.id) continue;
+                        
+                        seenClients.add(clientId);
+                        uniqueClientAssignments.push(existingPaid || asgn);
+                    }
+                }
+
+                const mappedDeposits = uniqueClientAssignments.map(asgn => {
                     const clientId = (asgn as any).clients?.id;
                     const depositAmt = asgn.deposit_amount || quotesMap[clientId]?.deposit || 0;
                     return {
@@ -245,7 +265,7 @@ export default function Billing() {
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
                         amount: `₹${depositAmt}`,
                         status: ((asgn as any).deposit_paid && (asgn as any).deposit_paid > 0) ? "Paid" : (asgn.deposit_invoice_sent ? "Invoice Sent" : "Pending Invoice"),
-                        date: new Date(asgn.assigned_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        date: new Date(asgn.assigned_at || asgn.start_date || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                         invoice_no: "",
                         invoice_pdf_url: asgn.invoice_pdf_url
                     };

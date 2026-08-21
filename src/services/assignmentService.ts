@@ -178,7 +178,7 @@ export async function assignWorkerToClient(
   }
 
   // ── Step 2: Update employee status and assigned client ──────
-  const { data: lead } = await supabase.from('crm_leads').select('name').eq('id', clientUuid).single();
+  const { data: lead } = await supabase.from('crm_leads').select('name, pipeline_stage').eq('id', clientUuid).single();
   const leadName = lead?.name || 'Assigned Client';
 
   const { error: statusError } = await supabase
@@ -204,13 +204,24 @@ export async function assignWorkerToClient(
 
   // ── Step 2b: Update CRM Lead stage + store assigned worker info ──────────────────
   const { data: empInfo } = await supabase.from('employees').select('full_name, job_title').eq('id', employeeUuid).single();
-  await supabase
-    .from('crm_leads')
-    .update({
-      pipeline_stage:       'Staff Assigned',
+  
+  // Only advance to 'Staff Assigned' if they are in an earlier stage
+  const currentStage = lead?.pipeline_stage || '';
+  const advancedStages = ['Staff Assigned', 'Deposit Pending', 'Active Client', 'Monthly Billing', 'Closed Won', 'Archived'];
+  const shouldAdvanceStage = !advancedStages.includes(currentStage);
+
+  const leadUpdatePayload: any = {
       assigned_worker_name: empInfo?.full_name ?? null,
       assigned_worker_role: empInfo?.job_title ?? null,
-    })
+  };
+
+  if (shouldAdvanceStage) {
+      leadUpdatePayload.pipeline_stage = 'Staff Assigned';
+  }
+
+  await supabase
+    .from('crm_leads')
+    .update(leadUpdatePayload)
     .eq('id', clientUuid);
 
   // ── Step 3: Generate token ────────────────────────────
