@@ -4587,24 +4587,47 @@ export default function CRM() {
                                                                 </button>
                                                             );
                                                         })()}
-                                                        {call.lead_id || call.status === 'Processed' ? (
-                                                            <div className="flex items-center gap-1.5 text-xs font-bold text-purple-600 bg-purple-50 px-3 py-2 rounded-lg border border-purple-100 shrink-0">
-                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Added to CRM
-                                                            </div>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                disabled={capturingCallId != null && String(capturingCallId) === String(call.id)}
-                                                                onClick={() => captureCallAsLead(call.id)}
-                                                                className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
-                                                            >
-                                                                {capturingCallId != null && String(capturingCallId) === String(call.id) ? (
-                                                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Adding…</>
-                                                                ) : (
-                                                                    <><Plus className="w-3.5 h-3.5" /> Add to Pipeline</>
-                                                                )}
-                                                            </button>
-                                                        )}
+                                                        {(() => {
+                                                            const isNumberInCRM = [call.phone, call.capturedWhatsapp].some(num => 
+                                                                num && leads.some(l => phonesMatch(l.phone, num) || phonesMatch(l.whatsapp_number, num))
+                                                            );
+                                                            
+                                                            if (call.lead_id || call.status === 'Processed') {
+                                                                return (
+                                                                    <div className="flex items-center gap-1.5 text-xs font-bold text-purple-600 bg-purple-50 px-3 py-2 rounded-lg border border-purple-100 shrink-0">
+                                                                        <CheckCircle2 className="w-3.5 h-3.5" /> Added to CRM
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            
+                                                            if (isNumberInCRM) {
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled
+                                                                        className="px-4 py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex items-center gap-2 shadow-sm shrink-0 whitespace-nowrap cursor-not-allowed opacity-70"
+                                                                        title="This contact number is already in the pipeline"
+                                                                    >
+                                                                        <CheckCircle2 className="w-3.5 h-3.5" /> Already in CRM
+                                                                    </button>
+                                                                );
+                                                            }
+
+                                                            return (
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={capturingCallId != null && String(capturingCallId) === String(call.id)}
+                                                                    onClick={() => captureCallAsLead(call.id)}
+                                                                    className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                                                >
+                                                                    {capturingCallId != null && String(capturingCallId) === String(call.id) ? (
+                                                                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Adding…</>
+                                                                    ) : (
+                                                                        <><Plus className="w-3.5 h-3.5" /> Add to Pipeline</>
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </div>
                                             ) : null;

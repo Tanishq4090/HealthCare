@@ -376,7 +376,6 @@ serve(async (req) => {
                 console.log(`[Call Webhook] Found lead: ${existingLead.id} (${existingLead.name})`);
                 // Update call timestamp and stage if still 'New'
                 const updatePayload: any = {
-                    last_called_at: startTime,
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : existingLead.service_interest || undefined,
                     notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call`
                 };
@@ -426,8 +425,7 @@ serve(async (req) => {
                     pipeline_stage: 'New Inquiry',
                     service_interest: detectedService !== 'Home Healthcare' ? detectedService : null,
                     notes: `Service: ${detectedService}\nShift: ${detectedShift}\nSource: AI Phone Call`,
-                    status: 'new',
-                    last_called_at: startTime
+                    status: 'new'
                 }]).select('id').single();
 
                 if (newLead?.id) {
