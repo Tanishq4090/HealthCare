@@ -1625,12 +1625,22 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('crm_leads')
-                .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
-                .is('deleted_at', null)
-                .not('pipeline_stage', 'eq', 'Archived')
-                .order('created_at', { ascending: false });
+            const [leadsResult, paidAssignmentsResult] = await Promise.all([
+                supabase
+                    .from('crm_leads')
+                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                    .is('deleted_at', null)
+                    .not('pipeline_stage', 'eq', 'Archived')
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('worker_assignments')
+                    .select('client_id, deposit_paid')
+                    .gt('deposit_paid', 0)
+            ]);
+
+            const paidClientIds = new Set((paidAssignmentsResult.data || []).map(a => a.client_id));
+            const data = leadsResult.data;
+            const error = leadsResult.error;
 
             if (error) {
                 // If deleted_at column doesn't exist yet, fall back to fetching all leads
@@ -1668,11 +1678,11 @@ export default function CRM() {
                             .in('id', legacyIds);
                     }
                     setLeads(
-                        finalFallbackRows.map((l) =>
-                            isLegacyPipelineStage(l.pipeline_stage)
-                                ? { ...l, pipeline_stage: firstStage }
-                                : l
-                        )
+                        finalFallbackRows.map((l) => ({
+                            ...l,
+                            pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
+                            has_paid_deposit: paidClientIds.has(l.id)
+                        }))
                     );
                     setSelectedInspectorLead((prev: any) => {
                         if (!prev?.id) return prev;
@@ -1712,11 +1722,11 @@ export default function CRM() {
                     });
             }
             setLeads(
-                rows.map((l) =>
-                    isLegacyPipelineStage(l.pipeline_stage)
-                        ? { ...l, pipeline_stage: firstStage }
-                        : l
-                )
+                rows.map((l) => ({
+                    ...l,
+                    pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
+                    has_paid_deposit: paidClientIds.has(l.id)
+                }))
             );
             setSelectedInspectorLead((prev: any) => {
                 if (!prev?.id) return prev;
@@ -4154,6 +4164,24 @@ export default function CRM() {
                                                                 const deliveryLog = deliveryLogs
                                                                     .filter((l) => l.payload?.lead_id === item.id)
                                                                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                                                                    
+                                                                // Extract active workers from services
+                                                                let activeWorkers: string[] = [];
+                                                                if (item.services && Array.isArray(item.services)) {
+                                                                    const activeAssignments = item.services
+                                                                        .filter((s: any) => s.status === 'active' || s.status === 'pending')
+                                                                        .flatMap((s: any) => s.service_worker_assignments || [])
+                                                                        .filter((wa: any) => wa.employees?.full_name && !wa.end_date); // Ignore ended assignments
+                                                                    
+                                                                    const names = new Set<string>();
+                                                                    activeAssignments.forEach((wa: any) => names.add(wa.employees.full_name));
+                                                                    activeWorkers = Array.from(names);
+                                                                }
+                                                                
+                                                                // Fallback to assigned_worker_name column if nothing found in services
+                                                                if (activeWorkers.length === 0 && item.assigned_worker_name) {
+                                                                    activeWorkers = [item.assigned_worker_name];
+                                                                }
                                                                 return (
                                                                     <div key={item.id} className={`relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                                         {item.needs_attention && (
@@ -4178,12 +4206,29 @@ export default function CRM() {
                                                                                                 {serviceName}
                                                                                             </span>
                                                                                         )}
-                                                                                        {item.assigned_worker_name && (
+                                                                                        {item.has_paid_deposit && (
+                                                                                            <button
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    navigate('/admin/billing?tab=history');
+                                                                                                }}
+                                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase tracking-wider cursor-pointer hover:bg-green-200 transition-colors"
+                                                                                                title="View in Finance > Collection History"
+                                                                                            >
+                                                                                                <CheckCircle2 className="w-2.5 h-2.5" /> Deposit Paid
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {activeWorkers.length > 0 && (
                                                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
                                                                                                 <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                                                                 </svg>
-                                                                                                {item.assigned_worker_name}
+                                                                                                {activeWorkers[0]}
+                                                                                                {activeWorkers.length > 1 && (
+                                                                                                    <span className="ml-0.5 text-[9px] font-bold text-purple-600 bg-purple-200/60 px-1 rounded-sm">
+                                                                                                        +{activeWorkers.length - 1}
+                                                                                                    </span>
+                                                                                                )}
                                                                                             </span>
                                                                                         )}
                                                                                     </div>
