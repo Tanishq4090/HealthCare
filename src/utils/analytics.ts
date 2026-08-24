@@ -24,7 +24,7 @@ export interface AnalyticsConfig {
 // ── Script Inserters ─────────────────────────────────────────────────────────
 
 export function initAnalytics(config?: AnalyticsConfig) {
-  const gaId = config?.gaMeasurementId || import.meta.env.VITE_GA_MEASUREMENT_ID;
+  const gaId = config?.gaMeasurementId || import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-NH7YJC31JX';
   const gtmId = config?.gtmId || import.meta.env.VITE_GTM_ID;
   const clarityId = config?.clarityId || import.meta.env.VITE_CLARITY_ID;
   const pixelId = config?.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
