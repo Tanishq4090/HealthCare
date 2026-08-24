@@ -5513,8 +5513,8 @@ export default function CRM() {
 
                         {/* Assigned Staff Info */}
                         {/* Assigned Staff Info */}
-                        {selectedInspectorLead.services?.some((s: any) => s.status === 'active') ? (() => {
-                            const activeService = selectedInspectorLead.services.find((s: any) => s.status === 'active');
+                        {selectedInspectorLead.services?.some((s: any) => s.status === 'active' || s.status === 'pending') ? (() => {
+                            const activeService = selectedInspectorLead.services.find((s: any) => s.status === 'active' || s.status === 'pending');
                             const activeAssignments = activeService.service_worker_assignments?.filter((swa: any) => !swa.end_date) || [];
                             return (
                                 <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex flex-col gap-3">

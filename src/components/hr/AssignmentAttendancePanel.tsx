@@ -57,14 +57,16 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         startDate.setHours(0, 0, 0, 0);
         endDate.setHours(0, 0, 0, 0);
 
-        const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
-        const allDays = eachDayOfInterval({ start: safeStartDate, end: endDate });
+        let allDays: Date[] = [];
+        if (!isAfter(startDate, endDate)) {
+            allDays = eachDayOfInterval({ start: startDate, end: endDate });
+        }
 
         const isAssignmentOver = assignment.end_date
             ? isBefore(endDate, startOfDay(new Date()))
             : false;
 
-        return { startDate, safeStartDate, endDate, allDays, isAssignmentOver, isOpenEnded: openEnded };
+        return { startDate, endDate, allDays, isAssignmentOver, isOpenEnded: openEnded };
     }, [assignment.start_date, assignment.assigned_at, assignment.end_date, assignment.service_type]);
 
   const pastDays = useMemo(() => {
@@ -137,7 +139,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
     } finally {
       setIsLoading(false);
     }
-  }, [assignment.employee_id, safeStartDate, endDate, allDays]);
+  }, [assignment.employee_id, startDate, endDate, allDays]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
@@ -176,7 +178,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
       await fetchAttendance();
       const prevMarked = days.filter(d => d.status !== null).length;
-      if (status !== null && prevMarked + 1 >= allDays.length) setShowCompletionPopup(true);
+      if (status !== null && !isOpenEnded && prevMarked + 1 >= allDays.length) setShowCompletionPopup(true);
     } catch (err: any) {
       toast.error('Failed to update attendance: ' + err.message);
     } finally {
