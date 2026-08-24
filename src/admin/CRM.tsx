@@ -1728,6 +1728,12 @@ export default function CRM() {
                     has_paid_deposit: paidClientIds.has(l.id)
                 }))
             );
+            
+            setSelectedInspectorLead((prev: any) => {
+                if (!prev?.id) return prev;
+                const latest = rows.find((l) => l.id === prev.id);
+                return latest ? { ...prev, ...latest } : prev;
+            });
             setSelectedInspectorLead((prev: any) => {
                 if (!prev?.id) return prev;
                 const latest = rows.find((l) => l.id === prev.id);
@@ -2002,7 +2008,7 @@ export default function CRM() {
                     const depositAmt = quote?.deposit || 0;
 
                     // Create service record
-                    const { data: newService } = await supabase
+                    const { data: newService, error: svcError } = await supabase
                         .from('services')
                         .insert({
                             client_id: staffPickerTargetLead.id,
@@ -2010,7 +2016,7 @@ export default function CRM() {
                             service_type: serviceType,
                             hours_per_day: serviceHours,
                             start_date: serviceStartDate,
-                            end_date: serviceType === 'date_range' ? serviceEndDate : null,
+                            end_date: (serviceType === 'date_range' && serviceEndDate) ? serviceEndDate : null,
                             status: 'active',
                             deposit_amount: depositAmt,
                             deposit_status: depositAmt > 0 ? 'collected' : 'pending',
@@ -2021,6 +2027,7 @@ export default function CRM() {
                         .select('id')
                         .single();
 
+                    if (svcError) throw svcError;
                     targetServiceId = newService?.id;
 
                     // Also save rates to crm_leads for dashboard reference
