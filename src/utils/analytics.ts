@@ -26,7 +26,7 @@ export interface AnalyticsConfig {
 export function initAnalytics(config?: AnalyticsConfig) {
   const gaId = config?.gaMeasurementId || import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-NH7YJC31JX';
   const gtmId = config?.gtmId || import.meta.env.VITE_GTM_ID || 'GTM-PP92GFT6';
-  const clarityId = config?.clarityId || import.meta.env.VITE_CLARITY_ID;
+  const clarityId = config?.clarityId || import.meta.env.VITE_CLARITY_ID || 'y7ckyov81w';
   const pixelId = config?.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
   const gscId = config?.gscVerificationId || import.meta.env.VITE_GSC_VERIFICATION_ID;
 
