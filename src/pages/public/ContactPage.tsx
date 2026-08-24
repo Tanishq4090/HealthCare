@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { SEOMeta } from '@/components/SEOMeta';
 import { GoogleMap } from '@/components/GoogleMap';
 import { GradientButton } from '@/components/ui/gradient-button';
-import { Link } from 'react-router-dom';
+import { trackFormSubmission } from '@/utils/analytics';
 
 const contactSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters long"),
@@ -106,6 +106,12 @@ export default function ContactPage() {
       } catch (fnErr) {
         console.warn('Edge function note:', fnErr);
       }
+
+      trackFormSubmission('contact_form', {
+        name: data.fullName,
+        email: data.email,
+        phone: data.phone,
+      });
 
       setSubmitStatus('success');
       form.reset();

@@ -22,6 +22,7 @@ import { SEOMeta } from '@/components/SEOMeta';
 import { cn } from '@/lib/utils';
 import { APPOINTMENT_SERVICES } from '@/data/services';
 import { supabase } from '@/lib/supabase';
+import { trackAppointmentBooking } from '@/utils/analytics';
 
 const formSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters long"),
@@ -123,6 +124,13 @@ export default function AppointmentPage() {
           location: data.location,
         }),
       }).catch(() => { /* silently ignore if backend is down */ });
+
+      trackAppointmentBooking(data.serviceId, {
+        name: data.fullName,
+        phone: data.phone,
+        location: data.location,
+        timeSlot: data.timeSlot,
+      });
 
       navigate('/appointment/confirmed', {
         state: { booking: data },

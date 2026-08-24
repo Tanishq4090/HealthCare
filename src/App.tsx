@@ -197,16 +197,20 @@ const queryClient = new QueryClient({
   },
 });
 
+import { AnalyticsProvider } from './components/AnalyticsProvider';
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <AuthProvider>
-          <ScrollToTop />
-          <AppMeta />
-          <Toaster position="bottom-right" theme="light" />
-          <AppContent />
-        </AuthProvider>
+        <AnalyticsProvider>
+          <AuthProvider>
+            <ScrollToTop />
+            <AppMeta />
+            <Toaster position="bottom-right" theme="light" />
+            <AppContent />
+          </AuthProvider>
+        </AnalyticsProvider>
       </Router>
     </QueryClientProvider>
   );

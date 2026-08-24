@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, MessageCircle, Phone, ExternalLink, Globe, ArrowRight } from 'lucide-react';
+import { trackWhatsAppClick } from '@/utils/analytics';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Message {
@@ -173,6 +174,7 @@ export function WhatsAppWidget() {
                   href={WHATSAPP_URL}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => trackWhatsAppClick('floating_widget_menu')}
                   className="flex items-center gap-3 w-full p-4 bg-slate-50 dark:bg-slate-700 border border-[#25D366]/30 hover:border-[#25D366] rounded-xl shadow-sm transition-all group"
                 >
                   <div className="w-10 h-10 bg-[#25D366]/10 rounded-full flex items-center justify-center group-hover:bg-[#25D366]/20 transition-colors">
@@ -284,6 +286,7 @@ export function WhatsAppWidget() {
                   href={WHATSAPP_URL}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => trackWhatsAppClick('floating_widget_chat_footer')}
                   className="flex items-center justify-center gap-2 py-2 bg-[#f0fdf4] hover:bg-[#dcfce7] border-t border-b border-green-100 text-[11px] font-semibold text-[#128C7E] transition-colors"
                 >
                   <ExternalLink className="w-3 h-3" />
