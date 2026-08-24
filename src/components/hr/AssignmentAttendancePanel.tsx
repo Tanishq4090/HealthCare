@@ -107,7 +107,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         .from('attendance')
         .select('id, duty_date, status, is_half_day, assignment_id')
         .eq('worker_id', assignment.employee_id)
-        .gte('duty_date', format(safeStartDate, 'yyyy-MM-dd'))
+        .gte('duty_date', format(startDate, 'yyyy-MM-dd'))
         .lte('duty_date', format(endDate, 'yyyy-MM-dd'));
 
       if (error) throw error;
