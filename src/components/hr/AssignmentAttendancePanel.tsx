@@ -38,7 +38,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
   const today = startOfDay(new Date());
 
-    const { startDate, safeStartDate, endDate, allDays, isAssignmentOver, isOpenEnded } = useMemo(() => {
+    const { startDate, endDate, allDays, isAssignmentOver, isOpenEnded } = useMemo(() => {
         const fallbackStart = assignment.start_date || assignment.assigned_at;
         const startDate = fallbackStart ? parseISO(fallbackStart) : new Date();
 
