@@ -487,7 +487,16 @@ export default function Billing() {
 
                 if (assignError) throw assignError;
 
-                // 3. Update local UI immediately
+                // 3. Move CRM lead to Active Client stage
+                if (deposit.client_id) {
+                    await supabase
+                        .from('crm_leads')
+                        .update({ pipeline_stage: 'Active Client' })
+                        .eq('id', deposit.client_id)
+                        .eq('pipeline_stage', 'Deposit Pending'); // only advance if still in Deposit Pending
+                }
+
+                // 4. Update local UI immediately
                 setDeposits(prev => prev.map(d => d.id === activeDepositId ? { ...d, status: 'Paid' } : d));
 
                 try {
