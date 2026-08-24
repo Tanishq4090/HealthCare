@@ -2986,14 +2986,14 @@ export default function CRM() {
             // ── Guard: Require staff assignment before advancing to staff stages ──────
             const staffRequiredStages = ['Staff Assigned', 'Deposit Pending', 'Active Client'];
             if (staffRequiredStages.includes(newStage)) {
-                const { data: activeAssignment } = await supabase
+                const { data: activeAssignments } = await supabase
                     .from('worker_assignments')
                     .select('id')
                     .eq('client_id', id)
                     .eq('assignment_status', 'active')
-                    .maybeSingle();
+                    .limit(1);
 
-                if (!activeAssignment) {
+                if (!activeAssignments || activeAssignments.length === 0) {
                     toast.error(
                         `Cannot move to "${newStage}" — please assign a staff member first using the "Assign Staff Member" button.`,
                         { id: toastId, duration: 5000 }
