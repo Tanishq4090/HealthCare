@@ -445,71 +445,41 @@ export default function ServicesPanel({
                                             )}
                                         </div>
 
-                                        {/* Financial & Lifecycle Action Footer */}
-                                        <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50/70 -mx-4 -mb-4 p-4 rounded-b-xl">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                {paidClients.has((service.clients?.client_name || '').trim().toLowerCase()) ? (
-                                                    <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
-                                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Monthly Bill Paid
-                                                    </span>
+                                        {/* Lifecycle Action Footer */}
+                                        {service.status === 'active' && (
+                                            <div className="border-t border-slate-100 pt-3 flex items-center justify-end bg-slate-50/50 -mx-4 -mb-4 p-4 rounded-b-xl">
+                                                {showEndConfirm === service.id ? (
+                                                    <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                                                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                                                        <p className="text-xs text-red-700">
+                                                            Release all {activeWorkers.length} worker(s) & settle deposit?
+                                                        </p>
+                                                        <button
+                                                            onClick={() => handleEndService(service.id)}
+                                                            disabled={endingServiceId === service.id}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
+                                                        >
+                                                            {endingServiceId === service.id
+                                                                ? <Loader2 className="w-3 h-3 animate-spin inline" />
+                                                                : 'Confirm End'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setShowEndConfirm(null)}
+                                                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
                                                 ) : (
-                                                    <>
-                                                        {onPrepareInvoice && (
-                                                            <button
-                                                                onClick={() => onPrepareInvoice(service)}
-                                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors"
-                                                            >
-                                                                <FileText className="w-4 h-4" /> Prepare Monthly Invoice
-                                                            </button>
-                                                        )}
-                                                        {onRecordCollection && (
-                                                            <button
-                                                                onClick={() => onRecordCollection(service)}
-                                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-xs transition-colors"
-                                                            >
-                                                                <DollarSign className="w-4 h-4" /> Record Collection
-                                                            </button>
-                                                        )}
-                                                    </>
+                                                    <button
+                                                        onClick={() => setShowEndConfirm(service.id)}
+                                                        className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-2xs"
+                                                    >
+                                                        <XCircle className="w-4 h-4 text-red-500" /> End Service & Settle
+                                                    </button>
                                                 )}
                                             </div>
-
-                                            {/* End Service Action */}
-                                            {service.status === 'active' && (
-                                                <div>
-                                                    {showEndConfirm === service.id ? (
-                                                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                                                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                                                            <p className="text-xs text-red-700">
-                                                                Release all {activeWorkers.length} worker(s) & settle deposit?
-                                                            </p>
-                                                            <button
-                                                                onClick={() => handleEndService(service.id)}
-                                                                disabled={endingServiceId === service.id}
-                                                                className="px-2.5 py-1 text-xs font-bold bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
-                                                            >
-                                                                {endingServiceId === service.id
-                                                                    ? <Loader2 className="w-3 h-3 animate-spin inline" />
-                                                                    : 'Confirm End'}
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setShowEndConfirm(null)}
-                                                                className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
-                                                            >
-                                                                Cancel
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => setShowEndConfirm(service.id)}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-                                                        >
-                                                            <XCircle className="w-4 h-4 text-red-500" /> End Service & Settle
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
