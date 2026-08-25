@@ -214,9 +214,35 @@ export default function ServicesPanel({ isEmbedded = false }: ServicesPanelProps
                         const isExpanded = expandedService === service.id;
                         const activeWorkers = (service.service_worker_assignments || []).filter(a => !a.end_date);
                         const allWorkers = service.service_worker_assignments || [];
-                        const daysSinceStart = service.start_date
-                            ? Math.max(1, Math.ceil((Date.now() - new Date(service.start_date).getTime()) / (1000 * 60 * 60 * 24)))
-                            : 0;
+                        
+                        const startDate = service.start_date ? new Date(service.start_date + 'T00:00:00') : null;
+                        const endDate = service.end_date ? new Date(service.end_date + 'T00:00:00') : null;
+                        const now = new Date();
+                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+                        const isUpcoming = startDate ? startDate.getTime() > today.getTime() : false;
+                        const isOngoing = !service.end_date;
+
+                        let durationBadgeText = 'Ongoing';
+                        let durationTitle = 'Ongoing';
+                        let durationRateNote = 'Full month rate applies';
+
+                        if (isUpcoming && startDate) {
+                            const diffDays = Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                            durationBadgeText = `Starts in ${diffDays}d`;
+                            durationTitle = `Starts ${format(startDate, 'dd MMM')}`;
+                            durationRateNote = isOngoing ? 'Open-ended (Full month rate)' : 'Scheduled service';
+                        } else if (isOngoing && startDate) {
+                            const daysActive = Math.max(1, Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                            durationBadgeText = `${daysActive} days (Ongoing)`;
+                            durationTitle = `${daysActive} days`;
+                            durationRateNote = 'Open-ended (Full month rate)';
+                        } else if (startDate && endDate) {
+                            const totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                            durationBadgeText = `${totalDays} days`;
+                            durationTitle = `${totalDays} days`;
+                            durationRateNote = totalDays >= 30 ? 'Full month rate applies' : 'Short-term rate applies';
+                        }
 
                         return (
                             <div key={service.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -239,7 +265,7 @@ export default function ServicesPanel({ isEmbedded = false }: ServicesPanelProps
                                             <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
                                                 <span className="flex items-center gap-1">
                                                     <Calendar className="w-3 h-3" />
-                                                    {service.start_date ? format(new Date(service.start_date), 'dd MMM yyyy') : '—'}
+                                                    {service.start_date ? format(new Date(service.start_date + 'T00:00:00'), 'dd MMM yyyy') : '—'}
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Users className="w-3 h-3" />
@@ -247,7 +273,7 @@ export default function ServicesPanel({ isEmbedded = false }: ServicesPanelProps
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Clock className="w-3 h-3" />
-                                                    {daysSinceStart} day{daysSinceStart !== 1 ? 's' : ''}
+                                                    {durationBadgeText}
                                                 </span>
                                             </div>
                                         </div>
@@ -289,8 +315,8 @@ export default function ServicesPanel({ isEmbedded = false }: ServicesPanelProps
                                             </div>
                                             <div className="p-3 bg-slate-50 rounded-lg">
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Duration</p>
-                                                <p className="text-lg font-black text-slate-800 mt-0.5">{daysSinceStart} <span className="text-xs font-normal text-slate-400">days</span></p>
-                                                <p className="text-[10px] text-slate-400">{daysSinceStart >= 30 ? 'Full month rate applies' : 'Short-term rate applies'}</p>
+                                                <p className="text-lg font-black text-slate-800 mt-0.5">{durationTitle}</p>
+                                                <p className="text-[10px] text-slate-400">{durationRateNote}</p>
                                             </div>
                                         </div>
 

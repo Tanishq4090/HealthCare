@@ -61,7 +61,40 @@ export interface ServiceWithDetails extends Service {
     })[];
 }
 
-// ── Fetch Services ────────────────────────────────────────
+async function enrichServicesWithPayments(services: any[]): Promise<ServiceWithDetails[]> {
+    if (!services || services.length === 0) return [];
+    try {
+        const { data: payments } = await supabase
+            .from('payments')
+            .select('client_name, amount, payment_type')
+            .eq('payment_type', 'deposit');
+
+        const depositMap = new Map<string, number>();
+        if (payments) {
+            for (const p of payments) {
+                const name = (p.client_name || '').trim().toLowerCase();
+                if (name) {
+                    depositMap.set(name, (depositMap.get(name) || 0) + (p.amount || 0));
+                }
+            }
+        }
+
+        return services.map(s => {
+            const clientName = (s.clients?.client_name || '').trim().toLowerCase();
+            const collectedDeposit = depositMap.get(clientName) || 0;
+            const depositAmt = (s.deposit_amount && s.deposit_amount > 0) ? s.deposit_amount : collectedDeposit;
+            const depositStatus = depositAmt > 0 ? 'collected' : (s.deposit_status || 'pending');
+
+            return {
+                ...s,
+                deposit_amount: depositAmt,
+                deposit_status: depositStatus,
+            };
+        });
+    } catch {
+        return services as ServiceWithDetails[];
+    }
+}
 
 export async function getActiveServices(): Promise<ServiceWithDetails[]> {
     const { data, error } = await supabase
@@ -78,7 +111,7 @@ export async function getActiveServices(): Promise<ServiceWithDetails[]> {
         .order('created_at', { ascending: false });
 
     if (error) throw new Error(`Failed to fetch services: ${error.message}`);
-    return (data || []) as ServiceWithDetails[];
+    return enrichServicesWithPayments(data || []);
 }
 
 export async function getAllServices(): Promise<ServiceWithDetails[]> {
@@ -95,7 +128,7 @@ export async function getAllServices(): Promise<ServiceWithDetails[]> {
         .order('created_at', { ascending: false });
 
     if (error) throw new Error(`Failed to fetch services: ${error.message}`);
-    return (data || []) as ServiceWithDetails[];
+    return enrichServicesWithPayments(data || []);
 }
 
 export async function getServiceById(serviceId: string): Promise<ServiceWithDetails | null> {
