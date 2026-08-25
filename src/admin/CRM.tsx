@@ -7030,14 +7030,12 @@ export default function CRM() {
                                                 const val = e.target.value;
                                                 setAddClientShiftType(val);
                                                 if (val.includes('24')) setAddClientShiftHours(24);
-                                                else if (val.includes('12')) setAddClientShiftHours(12);
                                                 else setAddClientShiftHours(10);
                                             }}
-                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm font-medium text-slate-800"
                                         >
-                                            <option value="10-Hour Day Shift">10-Hour Day Shift (10 hrs)</option>
-                                            <option value="12-Hour Shift">12-Hour Shift (12 hrs)</option>
-                                            <option value="24-Hour Live-in">24-Hour Live-in (24 hrs)</option>
+                                            <option value="10-Hour Shift">10-Hour Shift (10 hrs)</option>
+                                            <option value="24-Hour Shift">24-Hour Shift (24 hrs)</option>
                                         </select>
                                     </div>
 
