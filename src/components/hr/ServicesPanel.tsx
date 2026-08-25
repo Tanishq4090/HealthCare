@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import {
     Briefcase, Users, Calendar, DollarSign, UserMinus,
     XCircle, Play, Loader2, ChevronDown, ChevronRight, RefreshCw,
-    AlertTriangle, CheckCircle2, Clock, Search, Plus,
+    AlertTriangle, CheckCircle2, Clock, Search, Plus, FileText,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
@@ -48,9 +48,10 @@ function formatCurrency(amount: number): string {
 
 interface ServicesPanelProps {
     isEmbedded?: boolean;
+    onOpenManualInvoice?: () => void;
 }
 
-export default function ServicesPanel({ isEmbedded = false }: ServicesPanelProps) {
+export default function ServicesPanel({ isEmbedded = false, onOpenManualInvoice }: ServicesPanelProps) {
     const [services, setServices] = useState<ServiceWithDetails[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [expandedService, setExpandedService] = useState<string | null>(null);
@@ -180,10 +181,18 @@ export default function ServicesPanel({ isEmbedded = false }: ServicesPanelProps
                         <option value="ended">Ended</option>
                         <option value="all">All</option>
                     </select>
+                    {onOpenManualInvoice && (
+                        <button
+                            onClick={onOpenManualInvoice}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
+                        >
+                            <FileText className="w-4 h-4" /> Manual Invoice
+                        </button>
+                    )}
                     <button
                         onClick={handleMonthlyBilling}
                         disabled={isBillingRunning}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-colors shadow-sm"
                     >
                         {isBillingRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
                         Run Monthly Billing

@@ -8,6 +8,7 @@ const RupeeIcon = ({ className }: { className?: string }) => (
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { resolveClientBillingRatePerDay } from '../utils/billingRate';
+import ServicesPanel from '../components/hr/ServicesPanel';
 
 type ManualInvoiceForm = {
     clientName: string;
@@ -1254,159 +1255,17 @@ export default function Billing() {
                     </div>
                 </div>
             ) : activeTab === 'monthly' ? (
-                /* Monthly Billing View */
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div>
-                            <h2 className="font-semibold text-slate-900">Monthly Billing Dashboard ({currentMonthYear})</h2>
-                            <p className="text-sm text-slate-500 mt-1">Invoices require explicit HR Attendance Verification before dispatch.</p>
-                        </div>
-                        <button
-                            onClick={() => {
-                                setManualInvoiceForm(manualInvoiceInitialForm());
-                                setManualDuplicateMatches([]);
-                                setIsDuplicateChoiceOpen(false);
-                                setIsManualInvoiceOpen(true);
-                            }}
-                            className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                        >
-                            <FileText className="w-4 h-4" /> Manual Invoice
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-auto p-4 space-y-4">
-                        {monthlyBills.map(bill => (
-                            <div key={bill.id} className="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white hover:border-primary/20 transition-colors">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-slate-50 border border-slate-100 text-slate-500 rounded-xl flex items-center justify-center shrink-0">
-                                        <Building className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-slate-900">{bill.client}</h3>
-                                        <p className="text-sm font-semibold text-slate-600 mt-1">Rate: {bill.amount}</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                    {/* Action Buttons */}
-                                    <div className="flex gap-2 border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4">
-                                        {bill.status === 'Pending Verification' ? (
-                                            <button disabled className="px-4 py-2 bg-slate-100 text-slate-400 text-sm font-medium rounded-lg cursor-not-allowed flex items-center gap-2">
-                                                <FileText className="w-4 h-4" /> Locked
-                                            </button>
-                                        ) : bill.status === 'Paid' ? (
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                {bill.invoice_pdf_url && (
-                                                    <button onClick={() => window.open(bill.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
-                                                        <FileText className="w-4 h-4 text-primary" /> View PDF
-                                                    </button>
-                                                )}
-                                                <button onClick={() => {
-                                                    const asgn = bill.rawAssignment;
-                                                    setClientInvoiceBill(bill);
-                                                    setCiRate(resolveClientBillingRatePerDay(asgn, asgn._quote));
-                                                    setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
-                                                    const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
-                                                    setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-                                                    setCiEndDate('');
-                                                    setCiDays(1);
-                                                    setCiAttendanceVerified(true);
-                                                    setIsClientInvoiceOpen(true);
-                                                    if (asgn.employee_id && asgn.start_date) {
-                                                        supabase.from('attendance')
-                                                            .select('status, is_half_day')
-                                                            .eq('worker_id', asgn.employee_id)
-                                                            .gte('duty_date', asgn.start_date.split('T')[0])
-                                                            .then(({ data }) => {
-                                                                if (data && data.length > 0) {
-                                                                    const p = data.filter((a: any) => a.status === 'Present').length;
-                                                                    const h = data.filter((a: any) => a.is_half_day).length;
-                                                                    setCiDays(p + h * 0.5 || 1);
-                                                                }
-                                                            });
-                                                    }
-                                                }} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
-                                                    <Send className="w-4 h-4" /> Resend Invoice
-                                                </button>
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-emerald-100 text-emerald-700">
-                                                    <CheckCircle2 className="w-4 h-4" /> Paid
-                                                </span>
-                                            </div>
-                                        ) : bill.status === 'Sent' ? (
-                                            <div className="flex gap-2 flex-wrap">
-                                                {bill.invoice_pdf_url && (
-                                                    <button onClick={() => window.open(bill.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
-                                                        <FileText className="w-4 h-4 text-primary" /> View PDF
-                                                    </button>
-                                                )}
-                                                <button onClick={() => {
-                                                    const asgn = bill.rawAssignment;
-                                                    setClientInvoiceBill(bill);
-                                                    setCiRate(resolveClientBillingRatePerDay(asgn, asgn._quote));
-                                                    setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
-                                                    const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
-                                                    setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-                                                    setCiEndDate('');
-                                                    setCiDays(1);
-                                                    setCiAttendanceVerified(true);
-                                                    setIsClientInvoiceOpen(true);
-                                                    if (asgn.employee_id && asgn.start_date) {
-                                                        supabase.from('attendance')
-                                                            .select('status, is_half_day')
-                                                            .eq('worker_id', asgn.employee_id)
-                                                            .gte('duty_date', asgn.start_date.split('T')[0])
-                                                            .then(({ data }) => {
-                                                                if (data && data.length > 0) {
-                                                                    const p = data.filter((a: any) => a.status === 'Present').length;
-                                                                    const h = data.filter((a: any) => a.is_half_day).length;
-                                                                    setCiDays(p + h * 0.5 || 1);
-                                                                }
-                                                            });
-                                                    }
-                                                }} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
-                                                    <Send className="w-4 h-4" /> Resend Invoice
-                                                </button>
-                                                <button onClick={() => handleAction('Record Monthly Payment', bill.client, bill.id)} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5">
-                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
-                                                </button>
-                                            </div>
-                                        ) : bill.status === 'Draft' ? (
-                                            <button onClick={() => {
-                                                const asgn = bill.rawAssignment;
-                                                setClientInvoiceBill(bill);
-                                                setCiRate(resolveClientBillingRatePerDay(asgn, asgn._quote));
-                                                setCiDeposit(asgn.deposit_amount || asgn._quote?.deposit || 0);
-                                                const defaultStart = asgn.start_date || asgn._quote?.start_date || '';
-                                                setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-                                                setCiEndDate('');
-                                                setCiDays(1);
-                                                setCiAttendanceVerified(true);
-                                                setIsClientInvoiceOpen(true);
-                                                if (asgn.employee_id && asgn.start_date) {
-                                                    supabase.from('attendance')
-                                                        .select('status, is_half_day')
-                                                        .eq('worker_id', asgn.employee_id)
-                                                        .gte('duty_date', asgn.start_date.split('T')[0])
-                                                        .then(({ data }) => {
-                                                            if (data && data.length > 0) {
-                                                                const p = data.filter((a: any) => a.status === 'Present').length;
-                                                                const h = data.filter((a: any) => a.is_half_day).length;
-                                                                setCiDays(p + h * 0.5 || 1);
-                                                                setCiAttendanceVerified(true);
-                                                            } else {
-                                                                setCiDays(0);
-                                                                setCiAttendanceVerified(false);
-                                                            }
-                                                        });
-                                                }
-                                            }} className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-lg hover:bg-emerald-100 hover:text-emerald-800 transition-colors flex items-center gap-2 shadow-sm group border border-emerald-100">
-                                                <FileText className="w-4 h-4 group-hover:scale-110 transition-transform" /> Prepare Invoice
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                /* Unified Services & Monthly Billing Lifecycle View */
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
+                    <ServicesPanel
+                        isEmbedded
+                        onOpenManualInvoice={() => {
+                            setManualInvoiceForm(manualInvoiceInitialForm());
+                            setManualDuplicateMatches([]);
+                            setIsDuplicateChoiceOpen(false);
+                            setIsManualInvoiceOpen(true);
+                        }}
+                    />
                 </div>
             ) : (
                 /* Collection History View */
