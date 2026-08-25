@@ -49,10 +49,18 @@ function formatCurrency(amount: number): string {
 interface ServicesPanelProps {
     isEmbedded?: boolean;
     onOpenManualInvoice?: () => void;
+    onPrepareInvoice?: (service: ServiceWithDetails) => void;
+    onRecordCollection?: (service: ServiceWithDetails) => void;
 }
 
-export default function ServicesPanel({ isEmbedded = false, onOpenManualInvoice }: ServicesPanelProps) {
+export default function ServicesPanel({ 
+    isEmbedded = false, 
+    onOpenManualInvoice,
+    onPrepareInvoice,
+    onRecordCollection,
+}: ServicesPanelProps) {
     const [services, setServices] = useState<ServiceWithDetails[]>([]);
+    const [paidClients, setPaidClients] = useState<Set<string>>(new Set());
     const [isLoading, setIsLoading] = useState(true);
     const [expandedService, setExpandedService] = useState<string | null>(null);
     const [search, setSearch] = useState('');
@@ -66,12 +74,18 @@ export default function ServicesPanel({ isEmbedded = false, onOpenManualInvoice 
     const fetchServices = useCallback(async () => {
         setIsLoading(true);
         try {
-            const data = statusFilter === 'all'
-                ? await getAllServices()
-                : statusFilter === 'active'
-                    ? await getActiveServices()
-                    : (await getAllServices()).filter(s => s.status === 'ended');
-            setServices(data);
+            const [servicesData, paymentsRes] = await Promise.all([
+                statusFilter === 'all'
+                    ? getAllServices()
+                    : statusFilter === 'active'
+                        ? getActiveServices()
+                        : (await getAllServices()).filter(s => s.status === 'ended'),
+                supabase.from('payments').select('client_name').eq('payment_type', 'service'),
+            ]);
+
+            setServices(servicesData);
+            const paid = new Set((paymentsRes.data || []).map((p: any) => (p.client_name || '').trim().toLowerCase()));
+            setPaidClients(paid);
         } catch (err: any) {
             toast.error(err.message || 'Failed to load services');
         } finally {
@@ -287,7 +301,41 @@ export default function ServicesPanel({ isEmbedded = false, onOpenManualInvoice 
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-4 shrink-0">
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {/* Financial Action Buttons */}
+                                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                            {paidClients.has((service.clients?.client_name || '').trim().toLowerCase()) ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Paid
+                                                </span>
+                                            ) : (
+                                                <>
+                                                    {onPrepareInvoice && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onPrepareInvoice(service);
+                                                            }}
+                                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
+                                                        >
+                                                            <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
+                                                        </button>
+                                                    )}
+                                                    {onRecordCollection && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onRecordCollection(service);
+                                                            }}
+                                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors"
+                                                        >
+                                                            <DollarSign className="w-3.5 h-3.5" /> Record Collection
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+
                                         <div className="text-right hidden sm:block">
                                             <p className="text-xs text-slate-500">Rates</p>
                                             <p className="text-sm font-bold text-slate-700">

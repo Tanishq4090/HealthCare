@@ -651,6 +651,24 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
         let targetServiceId = svcs?.[0]?.id;
         if (!targetServiceId) {
+          const { data: quote } = await supabase
+            .from('crm_quotations')
+            .select('complete_month_rate, incomplete_month_rate, deposit')
+            .eq('lead_id', selectedClient.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const { data: lead } = await supabase
+            .from('crm_leads')
+            .select('complete_month_daily_rate, incomplete_month_daily_rate')
+            .eq('id', selectedClient.id)
+            .maybeSingle();
+
+          const cmRate = quote?.complete_month_rate || lead?.complete_month_daily_rate || (hoursPerDay === 24 ? 1000 : 500);
+          const imRate = quote?.incomplete_month_rate || lead?.incomplete_month_daily_rate || (hoursPerDay === 24 ? 2000 : 1000);
+          const depAmount = quote?.deposit || 0;
+
           const { data: newSvc } = await supabase
             .from('services')
             .insert({
@@ -661,8 +679,10 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               start_date: startDate,
               end_date: endDate || null,
               status: 'active',
-              complete_month_daily_rate: 850,
-              incomplete_month_daily_rate: 1500,
+              deposit_amount: depAmount,
+              deposit_status: depAmount > 0 ? 'collected' : 'pending',
+              complete_month_daily_rate: cmRate,
+              incomplete_month_daily_rate: imRate,
             })
             .select('id')
             .single();

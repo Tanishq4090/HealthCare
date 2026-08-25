@@ -64,14 +64,15 @@ export interface ServiceWithDetails extends Service {
 async function enrichServicesWithPayments(services: any[]): Promise<ServiceWithDetails[]> {
     if (!services || services.length === 0) return [];
     try {
-        const { data: payments } = await supabase
-            .from('payments')
-            .select('client_name, amount, payment_type')
-            .eq('payment_type', 'deposit');
+        const [paymentsRes, quotesRes, leadsRes] = await Promise.all([
+            supabase.from('payments').select('client_name, amount, payment_type').eq('payment_type', 'deposit'),
+            supabase.from('crm_quotations').select('lead_id, complete_month_rate, incomplete_month_rate, deposit').order('created_at', { ascending: false }),
+            supabase.from('crm_leads').select('id, complete_month_daily_rate, incomplete_month_daily_rate'),
+        ]);
 
         const depositMap = new Map<string, number>();
-        if (payments) {
-            for (const p of payments) {
+        if (paymentsRes.data) {
+            for (const p of paymentsRes.data) {
                 const name = (p.client_name || '').trim().toLowerCase();
                 if (name) {
                     depositMap.set(name, (depositMap.get(name) || 0) + (p.amount || 0));
@@ -79,16 +80,53 @@ async function enrichServicesWithPayments(services: any[]): Promise<ServiceWithD
             }
         }
 
+        const quotesMap = new Map<string, any>();
+        if (quotesRes.data) {
+            for (const q of quotesRes.data) {
+                if (q.lead_id && !quotesMap.has(q.lead_id)) {
+                    quotesMap.set(q.lead_id, q);
+                }
+            }
+        }
+
+        const leadsMap = new Map<string, any>();
+        if (leadsRes.data) {
+            for (const l of leadsRes.data) {
+                if (l.id) leadsMap.set(l.id, l);
+            }
+        }
+
         return services.map(s => {
             const clientName = (s.clients?.client_name || '').trim().toLowerCase();
             const collectedDeposit = depositMap.get(clientName) || 0;
-            const depositAmt = (s.deposit_amount && s.deposit_amount > 0) ? s.deposit_amount : collectedDeposit;
+            const quote = quotesMap.get(s.client_id) || quotesMap.get(s.lead_id || '');
+            const lead = leadsMap.get(s.client_id) || leadsMap.get(s.lead_id || '');
+
+            const depositAmt = (s.deposit_amount && s.deposit_amount > 0) 
+                ? s.deposit_amount 
+                : (quote?.deposit || collectedDeposit);
+
             const depositStatus = depositAmt > 0 ? 'collected' : (s.deposit_status || 'pending');
+
+            // Resolve agreed daily rates
+            const cmRate = (quote?.complete_month_rate && quote.complete_month_rate > 0)
+                ? quote.complete_month_rate
+                : (lead?.complete_month_daily_rate && lead.complete_month_daily_rate > 0)
+                    ? lead.complete_month_daily_rate
+                    : s.complete_month_daily_rate;
+
+            const imRate = (quote?.incomplete_month_rate && quote.incomplete_month_rate > 0)
+                ? quote.incomplete_month_rate
+                : (lead?.incomplete_month_daily_rate && lead.incomplete_month_daily_rate > 0)
+                    ? lead.incomplete_month_daily_rate
+                    : s.incomplete_month_daily_rate;
 
             return {
                 ...s,
                 deposit_amount: depositAmt,
                 deposit_status: depositStatus,
+                complete_month_daily_rate: cmRate,
+                incomplete_month_daily_rate: imRate,
             };
         });
     } catch {
