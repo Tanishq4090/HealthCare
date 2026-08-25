@@ -8,6 +8,7 @@ import { useConversation } from '@elevenlabs/react';
 import { MOCK_WORKERS } from '../data/mockWorkers';
 import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assignmentService';
 import { SendQuotationModal } from './components/SendQuotationModal';
+import { CARE_SERVICES } from '../constants/services';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
@@ -7011,15 +7012,13 @@ export default function CRM() {
                                         <select
                                             value={addClientServiceName}
                                             onChange={e => setAddClientServiceName(e.target.value)}
-                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm font-medium text-slate-800"
                                         >
-                                            <option value="Old Age Care">Old Age Care</option>
-                                            <option value="Patient Care">Patient Care</option>
-                                            <option value="Baby Care">Baby Care</option>
-                                            <option value="New Born Baby Care">New Born Baby Care</option>
-                                            <option value="Nursing Services">Nursing Services</option>
-                                            <option value="Domestic Helper / Housemaid">Domestic Helper / Housemaid</option>
-                                            <option value="Post-Surgical Care">Post-Surgical Care</option>
+                                            {CARE_SERVICES.map(service => (
+                                                <option key={service} value={service}>
+                                                    {service}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
 
