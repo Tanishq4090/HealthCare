@@ -1885,8 +1885,6 @@ export default function CRM() {
         let autoStartDate = new Date().toISOString().split('T')[0];
         let autoEndDate = '';
         let autoHours = 12;
-        let autoType: 'one_day' | 'date_range' = 'date_range';
-        let autoBill = 0;
 
         if (staffPickerTargetLead?.id) {
             const { data: quote } = await supabase
@@ -1917,75 +1915,14 @@ export default function CRM() {
                 const hourMatch = consent.offered_time.match(/(\d+)/);
                 if (hourMatch) autoHours = parseInt(hourMatch[1]);
             }
-
-            if (quote?.duration) {
-                const start = new Date(autoStartDate);
-                if (!isNaN(start.getTime())) {
-                    const dur = quote.duration.toLowerCase().trim();
-                    if (dur.includes('open') || dur.includes('ongoing') || dur.includes('indefinite')) {
-                        autoEndDate = '';
-                    } else {
-                        const match = dur.match(/^(\d+)\s*(day|month|year)s?$/);
-                        if (match) {
-                            const amount = parseInt(match[1]);
-                            const unit = match[2];
-                            if (unit === 'day') {
-                                start.setDate(start.getDate() + amount);
-                            } else if (unit === 'month') {
-                                start.setMonth(start.getMonth() + amount);
-                            } else if (unit === 'year') {
-                                start.setFullYear(start.getFullYear() + amount);
-                            }
-                            autoEndDate = start.toISOString().split('T')[0];
-                        } else if (dur.includes('month')) {
-                            const amountMatch = dur.match(/(\d+)/);
-                            const amount = amountMatch ? parseInt(amountMatch[1]) : 1;
-                            start.setMonth(start.getMonth() + amount);
-                            autoEndDate = start.toISOString().split('T')[0];
-                        } else if (dur.includes('day')) {
-                            const amountMatch = dur.match(/(\d+)/);
-                            const amount = amountMatch ? parseInt(amountMatch[1]) : 15;
-                            start.setDate(start.getDate() + amount);
-                            autoEndDate = start.toISOString().split('T')[0];
-                        }
-                    }
-                }
-            } else {
-                // If there's no duration specified but it is date_range, default end date to start date + 1 month
-                const start = new Date(autoStartDate);
-                if (!isNaN(start.getTime())) {
-                    start.setMonth(start.getMonth() + 1);
-                    autoEndDate = start.toISOString().split('T')[0];
-                }
-            }
-
-            // Determine if single day or date range
-            if (quote?.service_category === 'one_day' || quote?.service_name === 'one_day') {
-                autoType = 'one_day';
-            } else {
-                autoType = 'date_range';
-            }
-
-            // Monthly total bill estimation
-            autoBill = quote?.estimated_monthly_total || quote?.complete_month_rate || 0;
-            if (!autoBill) {
-                const workerDaily = (autoHours > 10 ? selectedWorker?.rate_24hr : selectedWorker?.rate_10hr) || selectedWorker?.rate_10hr || 0;
-                const dailyRate = quote?.incomplete_month_rate || workerDaily || 0;
-                if (autoType === 'date_range' && autoEndDate) {
-                    const days = Math.max(1, Math.ceil((new Date(autoEndDate).getTime() - new Date(autoStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
-                    autoBill = Math.round(days * dailyRate);
-                } else {
-                    autoBill = Math.round(dailyRate);
-                }
-            }
         }
 
-        // Reset service form with auto-filled data
-        setServiceType(autoType);
+        // Always default to ongoing (empty string / null)
+        setServiceType('date_range');
         setServiceStartDate(autoStartDate);
         setServiceEndDate(autoEndDate);
         setServiceHours(autoHours);
-        setCalculatedBill(autoBill);
+        setCalculatedBill(0);
     };
 
     const handleConfirmServicePeriod = async () => {
@@ -2004,10 +1941,10 @@ export default function CRM() {
                 true, // skipWhatsApp
                 {
                     startDate: serviceStartDate,
-                    endDate: serviceType === 'date_range' ? serviceEndDate : undefined,
-                    serviceType,
+                    endDate: serviceEndDate ? serviceEndDate : undefined,
+                    serviceType: 'date_range',
                     hoursPerDay: serviceHours,
-                    totalBillAmount: calculatedBill
+                    totalBillAmount: 0
                 }
             );
 
@@ -2029,8 +1966,14 @@ export default function CRM() {
                         .limit(1)
                         .maybeSingle();
 
-                    const cmRate = quote?.complete_month_rate || 850;
-                    const icmRate = quote?.incomplete_month_rate || 1500;
+                    const { data: lead } = await supabase
+                        .from('crm_leads')
+                        .select('complete_month_daily_rate, incomplete_month_daily_rate')
+                        .eq('id', staffPickerTargetLead.id)
+                        .maybeSingle();
+
+                    const cmRate = quote?.complete_month_rate || lead?.complete_month_daily_rate || (serviceHours === 24 ? 1000 : 500);
+                    const icmRate = quote?.incomplete_month_rate || lead?.incomplete_month_daily_rate || (serviceHours === 24 ? 2000 : 1000);
                     const depositAmt = quote?.deposit || 0;
 
                     // Create service record
@@ -2039,10 +1982,10 @@ export default function CRM() {
                         .insert({
                             client_id: staffPickerTargetLead.id,
                             lead_id: staffPickerTargetLead.id,
-                            service_type: serviceType,
+                            service_type: 'date_range',
                             hours_per_day: serviceHours,
                             start_date: serviceStartDate,
-                            end_date: (serviceType === 'date_range' && serviceEndDate) ? serviceEndDate : null,
+                            end_date: serviceEndDate ? serviceEndDate : null,
                             status: 'active',
                             deposit_amount: depositAmt,
                             deposit_status: depositAmt > 0 ? 'collected' : 'pending',
@@ -2055,26 +1998,18 @@ export default function CRM() {
 
                     if (svcError) throw svcError;
                     targetServiceId = newService?.id;
-
-                    // Also save rates to crm_leads for dashboard reference
-                    if (targetServiceId) {
-                        await supabase.from('crm_leads').update({
-                            complete_month_daily_rate: cmRate,
-                            incomplete_month_daily_rate: icmRate,
-                        }).eq('id', staffPickerTargetLead.id);
-                    }
                 }
 
                 if (targetServiceId) {
-                    // Create service_worker_assignment
                     await supabase.from('service_worker_assignments').insert({
                         service_id: targetServiceId,
                         employee_id: selectedWorker.id,
                         start_date: serviceStartDate,
+                        end_date: serviceEndDate ? serviceEndDate : null,
                     });
                 }
             } catch (svcErr) {
-                console.warn('Service lifecycle record creation failed (non-blocking):', svcErr);
+                console.error('Failed to sync with services table:', svcErr);
             }
 
             // Open the WhatsApp modal with ID card link
@@ -2096,6 +2031,7 @@ export default function CRM() {
                 `${selectedWorker.name || selectedWorker.full_name} assigned! Review the message below.`,
                 { id: toastId, duration: 3000 }
             );
+            fetchLeads();
         } catch (err: any) {
             console.error('Assignment creation failed:', err);
             toast.error(
@@ -6727,116 +6663,110 @@ export default function CRM() {
             {/* Service Period Modal */}
             {isServicePeriodOpen && selectedWorker && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-visible flex flex-col border border-slate-200">
-                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-visible flex flex-col border border-slate-200 animate-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
                                 <Calendar className="w-5 h-5 text-primary" />
-                                Assign Service Period
+                                Assign Worker Duty Period
                             </h3>
                             <button onClick={() => setIsServicePeriodOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="p-6 flex flex-col gap-5 overflow-y-auto max-h-[70vh]">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">Service Type</label>
-                                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                                    <button
-                                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'one_day' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
-                                        onClick={() => {
-                                            setServiceType('one_day');
-                                            const dailyRate = (serviceHours > 10 ? selectedWorker?.rate_24hr : selectedWorker?.rate_10hr) || selectedWorker?.rate_10hr || 0;
-                                            setCalculatedBill(Math.round(dailyRate));
-                                        }}
-                                    >One Day</button>
-                                    <button
-                                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${serviceType === 'date_range' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
-                                        onClick={() => {
-                                            setServiceType('date_range');
-                                            // Start with monthly rate as default for range
-                                            setCalculatedBill(staffPickerTargetLead?.quoted_monthly_rate || 0);
-                                        }}
-                                    >Date Range</button>
+                        <div className="p-6 flex flex-col gap-4">
+                            {/* Worker and Client Info Banner */}
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Worker</p>
+                                    <p className="text-sm font-bold text-slate-800">{selectedWorker.name || selectedWorker.full_name}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Client</p>
+                                    <p className="text-sm font-bold text-slate-800">{staffPickerTargetLead?.name || 'Client'}</p>
                                 </div>
                             </div>
 
-                            {serviceType === 'one_day' ? (
-                                <>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
-                                        <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => setServiceStartDate(e.target.value)} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Hours</label>
-                                        <input type="number" min="1" max="24" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceHours} onChange={e => {
-                                            const h = parseInt(e.target.value) || 1;
-                                            setServiceHours(h);
-                                            const dailyRate = (h > 10 ? selectedWorker?.rate_24hr : selectedWorker?.rate_10hr) || selectedWorker?.rate_10hr || 0;
-                                            setCalculatedBill(Math.round(dailyRate));
-                                        }} />
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="flex gap-3 items-start">
-                                        <div className="flex-1">
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Start Date</label>
-                                             <input type="date" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceStartDate} onChange={e => {
-                                                setServiceStartDate(e.target.value);
-                                                if (serviceEndDate) {
-                                                    const days = Math.max(1, Math.ceil((new Date(serviceEndDate).getTime() - new Date(e.target.value).getTime()) / (1000 * 3600 * 24)) + 1);
-                                                    const workerRate = (serviceHours > 10 ? selectedWorker?.rate_24hr : selectedWorker?.rate_10hr) || selectedWorker?.rate_10hr || 0;
-                                                    setCalculatedBill(days * workerRate);
-                                                }
-                                            }} />
+                            {/* Start Date */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Start Date</label>
+                                <input
+                                    type="date"
+                                    className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-semibold text-sm"
+                                    value={serviceStartDate}
+                                    onChange={e => setServiceStartDate(e.target.value)}
+                                />
+                            </div>
+
+                            {/* End Date with explicit Ongoing button */}
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">End Date</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setServiceEndDate('')}
+                                        className={`text-xs font-bold px-2 py-0.5 rounded transition-colors ${
+                                            !serviceEndDate
+                                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50'
+                                        }`}
+                                    >
+                                        ✓ Ongoing (No End Date)
+                                    </button>
+                                </div>
+
+                                {!serviceEndDate ? (
+                                    <div className="p-3 bg-emerald-50/80 border-2 border-dashed border-emerald-300 rounded-xl flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                            Ongoing / Open-Ended (No fixed end date)
                                         </div>
-                                        <div className="flex-1">
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">End Date</label>
-                                            <p className="text-[11px] text-slate-400 mb-1">Optional — leave blank for open-ended</p>
-                                            <input type="date" min={serviceStartDate} className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceEndDate} onChange={e => {
-                                                setServiceEndDate(e.target.value);
-                                                if (serviceStartDate) {
-                                                    const days = Math.max(1, Math.ceil((new Date(e.target.value).getTime() - new Date(serviceStartDate).getTime()) / (1000 * 3600 * 24)) + 1);
-
-                                                    // Intelligent estimation:
-                                                    // Both rates are now per-day rates.
-                                                    // If days >= 30, use the monthly-commitment per-day rate.
-                                                    // Otherwise, use the standard short-term per-day rate.
-                                                    const monthlyDayRate = staffPickerTargetLead?.quoted_monthly_rate || 0;
-                                                    const workerRate = (serviceHours > 10 ? selectedWorker?.rate_24hr : selectedWorker?.rate_10hr) || selectedWorker?.rate_10hr || 0;
-                                                    const dailyRate = workerRate || monthlyDayRate;
-
-                                                    if (days >= 30) {
-                                                        setCalculatedBill(Math.round(days * monthlyDayRate));
-                                                    } else {
-                                                        setCalculatedBill(Math.round(days * dailyRate));
-                                                    }
-                                                }
-                                            }} />
-                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const d = new Date(serviceStartDate || new Date());
+                                                d.setMonth(d.getMonth() + 1);
+                                                setServiceEndDate(d.toISOString().split('T')[0]);
+                                            }}
+                                            className="text-xs font-bold text-slate-600 underline hover:text-slate-900"
+                                        >
+                                            Set specific date
+                                        </button>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Shift Hours</label>
-                                        <input type="number" min="1" max="24" className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-medium" value={serviceHours} onChange={e => setServiceHours(parseInt(e.target.value) || 12)} />
+                                ) : (
+                                    <div className="relative">
+                                        <input
+                                            type="date"
+                                            min={serviceStartDate}
+                                            className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-slate-800 font-semibold text-sm pr-10"
+                                            value={serviceEndDate}
+                                            onChange={e => setServiceEndDate(e.target.value)}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setServiceEndDate('')}
+                                            title="Clear date and make ongoing"
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
                                     </div>
-                                </>
-                            )}
+                                )}
+                            </div>
 
-                            <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 flex justify-between items-center mt-2">
-                                <span className="font-bold text-primary">Estimated Total Bill</span>
-                                <div className="flex items-center gap-1">
-                                    <span className="text-xl font-extrabold text-primary">₹</span>
-                                    <input
-                                        type="number"
-                                        className="w-24 bg-transparent text-xl font-extrabold text-primary border-b border-primary/30 outline-none text-right focus:border-primary transition-colors"
-                                        value={calculatedBill}
-                                        onChange={e => setCalculatedBill(parseInt(e.target.value) || 0)}
-                                        title="Click to override quoted amount"
-                                    />
+                            {/* Shift Hours */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Shift Requirement</label>
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                                    <span className="text-sm font-bold text-slate-800">
+                                        {serviceHours >= 24 ? '24 Hours (Live-in Care)' : `${serviceHours} Hours / Day`}
+                                    </span>
+                                    <span className="text-xs font-semibold px-2.5 py-1 bg-primary/10 text-primary rounded-md">
+                                        Fixed by Client
+                                    </span>
                                 </div>
                             </div>
                         </div>
-                        <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50">
+                        <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50 rounded-b-2xl">
                             <button onClick={() => setIsServicePeriodOpen(false)} className="flex-1 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
                             <button onClick={handleConfirmServicePeriod} className="flex-1 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm">Confirm Assignment</button>
                         </div>

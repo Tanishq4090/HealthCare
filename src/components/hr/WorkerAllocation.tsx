@@ -625,7 +625,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         {
           startDate,
           endDate: endDate || undefined,
-          serviceType: endDate ? 'date_range' : 'one_day',
+          serviceType: 'date_range',
           hoursPerDay: hoursPerDay || 10,
           totalBillAmount: 0,
         }
