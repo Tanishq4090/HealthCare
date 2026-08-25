@@ -120,12 +120,10 @@ export async function createEmployee(
         aadhaar_number: data.aadhaar_number?.trim() ?? null,
         address: data.address?.trim() ?? null,
         dob: data.dob ?? null,
-        preferred_payment_type: data.preferred_payment_type ?? 'daily',
+        preferred_payment_type: undefined,
         services: data.services ?? [],
-        hourly_rate: data.hourly_rate ?? 0,
-        monthly_daily_rate: data.monthly_daily_rate ?? 0,
-        short_term_daily_rate: data.short_term_daily_rate ?? 0,
-        shift_hours: null,
+        rate_10hr: data.rate_10hr ?? 0,
+        rate_24hr: data.rate_24hr ?? 0,
         experience: data.experience?.trim() ?? null,
         gender: data.gender?.trim() ?? null,
         // Note: username intentionally omitted — no username field in form,
@@ -191,11 +189,9 @@ export async function updateEmployeeFull(data: UpdateEmployeeInput): Promise<Emp
     if (data.aadhaar_number !== undefined) updateData.aadhaar_number = data.aadhaar_number?.trim() ?? null;
     if (data.address !== undefined) updateData.address = data.address?.trim() ?? null;
     if (data.dob !== undefined) updateData.dob = data.dob ?? null;
-    if (data.preferred_payment_type !== undefined) updateData.preferred_payment_type = data.preferred_payment_type;
     if (data.services !== undefined) updateData.services = data.services;
-    if (data.hourly_rate !== undefined) updateData.hourly_rate = data.hourly_rate;
-    if (data.monthly_daily_rate !== undefined) updateData.monthly_daily_rate = data.monthly_daily_rate;
-    if (data.short_term_daily_rate !== undefined) updateData.short_term_daily_rate = data.short_term_daily_rate;
+    if (data.rate_10hr !== undefined) updateData.rate_10hr = data.rate_10hr;
+    if (data.rate_24hr !== undefined) updateData.rate_24hr = data.rate_24hr;
     if (data.experience !== undefined) updateData.experience = data.experience?.trim() ?? null;
     if (data.gender !== undefined) updateData.gender = data.gender?.trim() ?? null;
     

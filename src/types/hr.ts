@@ -15,12 +15,11 @@ export interface Employee {
   aadhaar_number: string | null;
   address: string | null;
   dob: string | null;
-  preferred_payment_type: 'hourly' | 'daily' | 'monthly' | 'short_term';
+  /** Daily rate for a 10-hour shift. Male default ₹600, Female default ₹500. */
+  rate_10hr: number;
+  /** Daily rate for a 24-hour shift. Default ₹800 for all. */
+  rate_24hr: number;
   services: string[];
-  hourly_rate: number;
-  monthly_daily_rate: number;
-  short_term_daily_rate: number;
-  shift_hours: number | null;
   rating: number;
   experience: string | null;
   gender: string | null;
@@ -47,12 +46,9 @@ export interface CreateEmployeeInput {
   aadhaar_number?: string;
   address?: string;
   dob?: string;
-  preferred_payment_type?: 'hourly' | 'daily' | 'monthly' | 'short_term';
   services?: string[];
-  hourly_rate?: number;
-  monthly_daily_rate?: number;
-  short_term_daily_rate?: number;
-  shift_hours?: number;
+  rate_10hr?: number;
+  rate_24hr?: number;
   experience?: string;
   gender?: string;
   username?: string;

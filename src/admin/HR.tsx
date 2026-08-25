@@ -55,8 +55,8 @@ export default function HR() {
         name: '',
         role: '',
         assigned_client: '',
-        monthly_daily_rate: '',
-        short_term_daily_rate: '',
+        rate_10hr: '',
+        rate_24hr: '',
         deposit_received: '15000',
         status: 'Available',
         phone: '',
@@ -218,10 +218,8 @@ export default function HR() {
                     const periodDays = start ? periodDaysInclusive(start, end) : daysInCalendarMonth();
 
                     const pay = calculateWorkerPay({
-                        preferred_payment_type: emp?.preferred_payment_type,
-                        monthly_daily_rate: emp?.monthly_daily_rate ?? a.worker_daily_rate,
-                        short_term_daily_rate: emp?.short_term_daily_rate,
-                        hourly_rate: emp?.hourly_rate,
+                        rate_10hr: emp?.rate_10hr,
+                        rate_24hr: emp?.rate_24hr,
                         daysWorked: days,
                         periodDays,
                         hoursPerDay: a.hours_per_day,
@@ -512,7 +510,7 @@ export default function HR() {
         setModalMode('add');
         setModalTab('profile');
         setEditingWorkerId(null);
-        setFormData({ name: '', role: '', assigned_client: '', monthly_daily_rate: '', short_term_daily_rate: '', deposit_received: '15000', status: 'available', aadhaar_number: '', phone: '', address: '', dob: '', documents: [] });
+        setFormData({ name: '', role: '', assigned_client: '', rate_10hr: '', rate_24hr: '', deposit_received: '15000', status: 'available', aadhaar_number: '', phone: '', address: '', dob: '', documents: [] });
         setIsModalOpen(true);
     };
 
@@ -527,8 +525,8 @@ export default function HR() {
             name: worker.name,
             role: worker.role,
             assigned_client: worker.assigned_client || '',
-            monthly_daily_rate: worker.monthly_daily_rate?.toString() || '',
-            short_term_daily_rate: worker.short_term_daily_rate?.toString() || '',
+            rate_10hr: worker.rate_10hr?.toString() || '',
+            rate_24hr: worker.rate_24hr?.toString() || '',
             deposit_received: suggestedDeposit,
             status: worker.status,
             aadhaar_number: worker.aadhaar_number || '',
@@ -549,9 +547,6 @@ export default function HR() {
         // --- Client-side validation ---
         if (!formData.name.trim()) { toast.error('Worker name is required.'); return; }
         if (!formData.role.trim()) { toast.error('Role / Designation is required.'); return; }
-        if (!formData.monthly_daily_rate || parseFloat(formData.monthly_daily_rate) <= 0) {
-            toast.error('Monthly daily rate must be greater than 0.'); return;
-        }
         if (!formData.phone || !/^[6-9]\d{9}$/.test(formData.phone.replace(/\D/g, '').slice(-10))) {
             toast.error('A valid 10-digit Indian WhatsApp mobile number is required.'); return;
         }
@@ -582,9 +577,8 @@ export default function HR() {
                 name: formData.name.trim(),
                 role: formData.role.trim(),
                 assigned_client: newClient,
-                hourly_rate: 0, // Fallback for legacy DB column that is NOT NULL
-                monthly_daily_rate: parseFloat(formData.monthly_daily_rate) || 0,
-                short_term_daily_rate: parseFloat(formData.short_term_daily_rate) || 0,
+                rate_10hr: parseFloat(formData.rate_10hr) || 0,
+                rate_24hr: parseFloat(formData.rate_24hr) || 0,
                 deposit_received: parseFloat(formData.deposit_received) || 0,
                 status: resolvedStatus,
                 aadhaar_number: formData.aadhaar_number || null,
@@ -877,10 +871,8 @@ export default function HR() {
                 periodDays = periodDaysInclusive(new Date(item.start_date), new Date(item.end_date));
             }
             const pay = calculateWorkerPay({
-                preferred_payment_type: worker?.preferred_payment_type,
-                monthly_daily_rate: worker?.monthly_daily_rate ?? item.daily_rate,
-                short_term_daily_rate: worker?.short_term_daily_rate,
-                hourly_rate: worker?.hourly_rate,
+                rate_10hr: worker?.rate_10hr,
+                rate_24hr: worker?.rate_24hr,
                 daysWorked: days,
                 periodDays,
                 hoursPerDay: item.hours_per_day ?? hoursPerDay,
@@ -1083,18 +1075,12 @@ export default function HR() {
                     const activeAssignment = activeAssignments.find((a: any) => a.employee_id === workerId);
                     const assignmentHours = activeAssignment?.hours_per_day;
                     const pay = calculateWorkerPay({
-                        preferred_payment_type: worker.preferred_payment_type,
-                        monthly_daily_rate: worker.monthly_daily_rate,
-                        short_term_daily_rate: worker.short_term_daily_rate,
-                        hourly_rate: worker.hourly_rate,
+                        rate_10hr: worker.rate_10hr,
+                        rate_24hr: worker.rate_24hr,
                         daysWorked,
                         periodDays: daysInCalendarMonth(),
                         hoursPerDay: assignmentHours,
                     });
-                    if (worker.preferred_payment_type === 'hourly' && !assignmentHours) {
-                        toast.error(`${worker.name}: assign shift hours on client assignment before payroll.`);
-                        continue;
-                    }
                     const appliedRate = pay.dailyRateForDisplay;
                     const totalCost = pay.gross;
                     const deposit = worker.deposit_received || 0;
@@ -1410,29 +1396,21 @@ export default function HR() {
                 null;
 
             const payInput = {
-                preferred_payment_type: worker.preferred_payment_type,
-                monthly_daily_rate: worker.monthly_daily_rate,
-                short_term_daily_rate: worker.short_term_daily_rate,
-                hourly_rate: worker.hourly_rate,
+                rate_10hr: worker.rate_10hr,
+                rate_24hr: worker.rate_24hr,
                 daysWorked,
                 periodDays,
                 hoursPerDay: assignmentHours,
             };
             if (manualPayrollData.dailyRateOverride) {
                 const ov = Number(manualPayrollData.dailyRateOverride);
-                if (worker.preferred_payment_type === 'hourly') payInput.hourly_rate = ov;
-                else if (worker.preferred_payment_type === 'short_term') payInput.short_term_daily_rate = ov;
-                else payInput.monthly_daily_rate = ov;
+                // Override: apply to 10hr rate (will be used if hours <= 10, else 24hr rate applies)
+                (payInput as any).rate_10hr = ov;
+                (payInput as any).rate_24hr = ov;
             }
             const pay = calculateWorkerPay(payInput);
             const appliedRate = pay.dailyRateForDisplay;
             const totalCost = pay.gross;
-
-            if (worker.preferred_payment_type === 'hourly' && !assignmentHours) {
-                toast.error('Set shift hours on the client assignment (or enter hours below) for hourly workers.');
-                setIsGenerating(false);
-                return;
-            }
 
             const advance = Number(manualPayrollData.advanceAmount) || 0;
             const deposit = worker.deposit_received || 0;
@@ -2062,29 +2040,31 @@ export default function HR() {
 
                                             <div className="grid md:grid-cols-2 gap-6">
                                                 <div className="space-y-1.5">
-                                                    <label className="text-sm font-bold text-slate-700 ml-1">Monthly Daily Rate (₹)
-                                                        <span className="text-xs font-normal text-slate-400 ml-1">(used if ≥ 30 days)</span>
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">
+                                                        10-Hour Shift Rate (₹/day)
+                                                        <span className="text-xs font-normal text-slate-400 ml-1">Auto-filled by gender</span>
                                                     </label>
                                                     <input
                                                         type="number"
                                                         min="0"
-                                                        value={formData.monthly_daily_rate}
-                                                        onChange={(e) => setFormData({ ...formData, monthly_daily_rate: e.target.value })}
+                                                        value={formData.rate_10hr}
+                                                        onChange={(e) => setFormData({ ...formData, rate_10hr: e.target.value })}
                                                         className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
-                                                        placeholder="e.g. 1200"
+                                                        placeholder="Male ₹600 / Female ₹500"
                                                     />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <label className="text-sm font-bold text-slate-700 ml-1">Short-Term Daily Rate (₹)
-                                                        <span className="text-xs font-normal text-slate-400 ml-1">(used if &lt; 30 days)</span>
+                                                    <label className="text-sm font-bold text-slate-700 ml-1">
+                                                        24-Hour Shift Rate (₹/day)
+                                                        <span className="text-xs font-normal text-slate-400 ml-1">Default ₹800 all</span>
                                                     </label>
                                                     <input
                                                         type="number"
                                                         min="0"
-                                                        value={formData.short_term_daily_rate}
-                                                        onChange={(e) => setFormData({ ...formData, short_term_daily_rate: e.target.value })}
+                                                        value={formData.rate_24hr}
+                                                        onChange={(e) => setFormData({ ...formData, rate_24hr: e.target.value })}
                                                         className="w-full px-4 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-sm transition-all bg-white"
-                                                        placeholder="e.g. 1500"
+                                                        placeholder="₹800"
                                                     />
                                                 </div>
                                             </div>

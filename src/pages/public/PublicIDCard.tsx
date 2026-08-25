@@ -14,7 +14,7 @@ import { formatIdCardDuty } from '../../utils/employeeIdCard';
 type PageState = 'loading' | 'valid' | 'expired' | 'invalid' | 'error';
 
 interface CardData {
-  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number' | 'address' | 'dob' | 'preferred_payment_type' | 'hourly_rate' | 'monthly_daily_rate' | 'short_term_daily_rate' | 'experience' | 'gender'>;
+  employee: Pick<Employee, 'full_name' | 'employee_id' | 'job_title' | 'photo_url' | 'aadhaar_number' | 'address' | 'dob' | 'rate_10hr' | 'rate_24hr' | 'experience' | 'gender'>;
 }
 
 // ── Skeleton ──────────────────────────────────────────────
@@ -120,7 +120,7 @@ export default function PublicIDCard() {
       // 4. Fetch employee details (only safe, non-sensitive fields)
       const { data: employee, error: empError } = await supabase
         .from('employees')
-        .select('full_name, employee_id, job_title, photo_url, aadhaar_number, address, dob, preferred_payment_type, hourly_rate, monthly_daily_rate, short_term_daily_rate, experience, gender')
+        .select('full_name, employee_id, job_title, photo_url, aadhaar_number, address, dob, rate_10hr, rate_24hr, experience, gender')
         .eq('id', link.employee_id)
         .single();
 

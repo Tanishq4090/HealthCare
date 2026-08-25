@@ -24,11 +24,8 @@ interface PayslipGeneratorProps {
       full_name: string;
       job_title: string;
       phone?: string;
-      monthly_daily_rate: number;
-      short_term_daily_rate?: number;
-      preferred_payment_type?: string;
-      hourly_rate?: number;
-      shift_hours?: number;
+      rate_10hr: number;
+      rate_24hr?: number;
     } | null;
     clients: { client_name: string; phone_number?: string } | null;
   };
@@ -56,10 +53,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const daysWorked = attendanceSummary ? parseFloat(attendanceSummary.days_present || 0) : 0;
 
   const payCalc = calculateWorkerPay({
-    preferred_payment_type: emp?.preferred_payment_type,
-    monthly_daily_rate: emp?.monthly_daily_rate,
-    short_term_daily_rate: emp?.short_term_daily_rate,
-    hourly_rate: emp?.hourly_rate,
+    rate_10hr: emp?.rate_10hr,
+    rate_24hr: emp?.rate_24hr,
     daysWorked,
     periodDays: totalPeriodDays,
     hoursPerDay: assignmentHours,
@@ -70,8 +65,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const totalEarning = payCalc.gross;
   const advanceDeduction = parseFloat(advanceAmount) || 0;
   const netPayable = totalEarning - advanceDeduction;
-  const hourlyMissingHours =
-    emp?.preferred_payment_type === 'hourly' && assignmentHours == null;
+  const hourlyMissingHours = false;
 
   const fetchAttendance = async () => {
     setIsLoadingAttendance(true);

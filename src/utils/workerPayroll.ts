@@ -1,29 +1,28 @@
 /**
- * Worker payslip / payroll calculations by preferred_payment_type.
+ * Worker payslip / payroll calculations based on shift hours.
  *
- * - daily:     gross = daily_rate × days_worked
- * - hourly:    gross = hourly_rate × hours_per_day (from assignment) × days_worked
- * - monthly:   implied_daily = monthly_salary ÷ period_days; gross = implied_daily × days_worked
- * - short_term: gross = flat per-service fee (ignores days)
+ * Each worker has two rates:
+ *   rate_10hr — daily pay for a 10-hour shift (Male ₹600, Female ₹500)
+ *   rate_24hr — daily pay for a 24-hour shift (₹800 for all)
+ *
+ * The correct rate is selected by checking the service's hours_per_day:
+ *   ≤ 10 hours  → rate_10hr
+ *   > 10 hours  → rate_24hr
  */
 
-export type WorkerPaymentScheme = 'hourly' | 'daily' | 'monthly' | 'short_term';
-
 export interface WorkerPayrollInput {
-    preferred_payment_type?: string | null;
-    monthly_daily_rate?: number | null;
-    short_term_daily_rate?: number | null;
-    hourly_rate?: number | null;
+    rate_10hr?: number | null;
+    rate_24hr?: number | null;
     daysWorked: number;
-    /** Calendar days in the payslip period (assignment span or pay period). */
-    periodDays: number;
-    /** From worker_assignments.hours_per_day — required for hourly. */
+    /** From worker_assignments.hours_per_day — determines which rate applies. */
     hoursPerDay?: number | null;
+    /** Period days still used for display context. */
+    periodDays: number;
 }
 
 export interface WorkerPayrollResult {
     gross: number;
-    /** Shown on payslip as "rate/day" (derived for monthly & hourly). */
+    /** The resolved daily rate used (either rate_10hr or rate_24hr). */
     dailyRateForDisplay: number;
     hoursPerDay: number | null;
     schemeLabel: string;
@@ -44,63 +43,32 @@ export function resolveAssignmentHoursPerDay(hours?: number | null): number | nu
     return null;
 }
 
-export function calculateWorkerPay(input: WorkerPayrollInput): WorkerPayrollResult {
-    const scheme = (input.preferred_payment_type || 'daily') as WorkerPaymentScheme;
-    const daysWorked = Math.max(0, input.daysWorked);
-    const periodDays = Math.max(1, input.periodDays);
-    const hours = resolveAssignmentHoursPerDay(input.hoursPerDay);
-
-    switch (scheme) {
-        case 'hourly': {
-            const hourly = input.hourly_rate || 0;
-            const h = hours ?? 0;
-            const dailyEquiv = hourly * h;
-            const gross = daysWorked * h * hourly;
-            return {
-                gross,
-                dailyRateForDisplay: dailyEquiv,
-                hoursPerDay: h,
-                schemeLabel: 'Hourly',
-                earningsLine:
-                    h > 0
-                        ? `₹${hourly.toFixed(2)}/hr × ${h}h/day × ${daysWorked} days = ₹${gross.toFixed(2)}`
-                        : `Set shift hours on assignment (hourly worker)`,
-            };
-        }
-        case 'monthly': {
-            const monthly = input.monthly_daily_rate || 0;
-            const impliedDaily = monthly / periodDays;
-            const gross = impliedDaily * daysWorked;
-            return {
-                gross,
-                dailyRateForDisplay: impliedDaily,
-                hoursPerDay: hours,
-                schemeLabel: 'Fixed Monthly',
-                earningsLine: `₹${monthly.toFixed(2)}/mo ÷ ${periodDays} days × ${daysWorked} days = ₹${gross.toFixed(2)}`,
-            };
-        }
-        case 'short_term': {
-            const flat = input.short_term_daily_rate || 0;
-            return {
-                gross: flat,
-                dailyRateForDisplay: flat,
-                hoursPerDay: hours,
-                schemeLabel: 'Per Service',
-                earningsLine: `Per service fee: ₹${flat.toFixed(2)}`,
-            };
-        }
-        default: {
-            const daily = input.monthly_daily_rate || 0;
-            const gross = daysWorked * daily;
-            return {
-                gross,
-                dailyRateForDisplay: daily,
-                hoursPerDay: hours,
-                schemeLabel: 'Daily Rate',
-                earningsLine: `₹${daily.toFixed(2)}/day × ${daysWorked} days = ₹${gross.toFixed(2)}`,
-            };
-        }
+/**
+ * Resolve which daily rate applies based on shift hours.
+ * ≤ 10 hours → rate_10hr; > 10 hours → rate_24hr
+ */
+export function resolveWorkerDailyRate(input: Pick<WorkerPayrollInput, 'rate_10hr' | 'rate_24hr' | 'hoursPerDay'>): number {
+    const hours = input.hoursPerDay ?? 0;
+    if (hours > 10) {
+        return input.rate_24hr || 0;
     }
+    return input.rate_10hr || 0;
+}
+
+export function calculateWorkerPay(input: WorkerPayrollInput): WorkerPayrollResult {
+    const daysWorked = Math.max(0, input.daysWorked);
+    const hours = resolveAssignmentHoursPerDay(input.hoursPerDay);
+    const daily = resolveWorkerDailyRate(input);
+    const gross = daysWorked * daily;
+    const shiftLabel = (hours != null && hours > 10) ? '24-hour shift' : '10-hour shift';
+
+    return {
+        gross,
+        dailyRateForDisplay: daily,
+        hoursPerDay: hours,
+        schemeLabel: 'Daily Rate',
+        earningsLine: `₹${daily.toFixed(2)}/day (${shiftLabel}) × ${daysWorked} days = ₹${gross.toFixed(2)}`,
+    };
 }
 
 /** Gross pay for a stored payroll row (prefers total_amount when present). */

@@ -46,7 +46,7 @@ import { supabase } from '../../lib/supabase';
 import { EmployeeIDCard } from '../hr/EmployeeIDCard';
 import PayslipGenerator from './PayslipGenerator';
 import type { Employee, EmployeeStatus, CreateEmployeeInput } from '../../types/hr';
-import { formatIdCardDuty, isHourlyEmployee, normalizeEmployeePaymentType } from '../../utils/employeeIdCard';
+import { formatIdCardDuty } from '../../utils/employeeIdCard';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -92,35 +92,10 @@ function statusBadge(status: EmployeeStatus) {
 }
 
 function getPaymentScheme(employee: Employee) {
-  const type = normalizeEmployeePaymentType(employee.preferred_payment_type);
-  if (isHourlyEmployee(employee)) {
-    return {
-      label: 'Hourly',
-      rateLabel: 'Hourly Rate',
-      amount: employee.hourly_rate ?? 0,
-      duty: formatIdCardDuty(employee),
-    };
-  }
-  if (type === 'monthly') {
-    return {
-      label: 'Fixed Monthly',
-      rateLabel: 'Monthly Salary',
-      amount: employee.monthly_daily_rate ?? 0,
-      duty: 'Fixed Monthly',
-    };
-  }
-  if (type === 'short_term') {
-    return {
-      label: 'Per Service',
-      rateLabel: 'Per Service Charge',
-      amount: employee.short_term_daily_rate ?? 0,
-      duty: 'Per Service',
-    };
-  }
   return {
     label: 'Daily Rate',
     rateLabel: 'Daily Rate',
-    amount: employee.monthly_daily_rate ?? 0,
+    amount: employee.rate_10hr ?? 0,
     duty: 'Daily Rate',
   };
 }
@@ -194,9 +169,9 @@ interface AddEmployeeDialogProps {
 function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDialogProps) {
   const [form, setForm] = useState<CreateEmployeeInput>({ 
     full_name: '', job_title: '', 
-    preferred_payment_type: 'daily', services: [],
+    services: [],
     phone: '', aadhaar_number: '', address: '', dob: '',
-    hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
+    rate_10hr: 0, rate_24hr: 800,
     username: '', password: '', documents: []
   });
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -209,15 +184,13 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
       setForm({
         full_name: employee.full_name || '',
         job_title: employee.job_title || '',
-        preferred_payment_type: (employee.preferred_payment_type as any) || 'daily',
         services: employee.services || [],
         phone: employee.phone || '',
         aadhaar_number: employee.aadhaar_number || '',
         address: employee.address || '',
         dob: employee.dob || '',
-        hourly_rate: employee.hourly_rate || 0,
-        monthly_daily_rate: employee.monthly_daily_rate || 0,
-        short_term_daily_rate: employee.short_term_daily_rate || 0,
+        rate_10hr: employee.rate_10hr || 0,
+        rate_24hr: employee.rate_24hr || 800,
         username: '', password: '', documents: [],
       });
       (setForm as any)((f: any) => ({...f, gender: employee.gender || '', experience: employee.experience || ''}));
@@ -225,9 +198,9 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
     } else {
       setForm({
         full_name: '', job_title: '',
-        preferred_payment_type: 'daily', services: [],
+        services: [],
         phone: '', aadhaar_number: '', address: '', dob: '',
-        hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
+        rate_10hr: 0, rate_24hr: 800,
         username: '', password: '', documents: []
       });
       (setForm as any)((f: any) => ({...f, gender: '', experience: ''}));
@@ -285,9 +258,9 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
       // Reset form but keep the newly created emp for preview
       setForm({ 
         full_name: '', job_title: '',
-        preferred_payment_type: 'daily', services: [],
+        services: [],
         phone: '', aadhaar_number: '', address: '', dob: '',
-        hourly_rate: 0, monthly_daily_rate: 0, short_term_daily_rate: 0,
+        rate_10hr: 0, rate_24hr: 800,
         username: '', password: '', documents: []
       });
       setPhotoPreview(null);
@@ -356,8 +329,14 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
                 <label className="text-sm font-medium text-slate-700">Gender</label>
                 <select 
                   className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={form.gender ?? ''}
-                  onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+                  value={(form as any).gender ?? ''}
+                  onChange={e => {
+                    const gender = e.target.value;
+                    // Auto-fill rates based on gender
+                    const rate10 = gender === 'Female' ? 500 : gender === 'Male' ? 600 : (form as any).rate_10hr ?? 0;
+                    const rate24 = 800;
+                    setForm(f => ({ ...f, gender, rate_10hr: rate10, rate_24hr: rate24 } as any));
+                  }}
                 >
                   <option value="" disabled>Select Gender</option>
                   <option value="Male">Male</option>
@@ -450,55 +429,24 @@ function AddEmployeeDialog({ employee, open, onClose, onCreated }: AddEmployeeDi
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 border-b border-slate-100">
                <div>
-                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">Payment Scheme</label>
-                <select 
-                  className="w-full mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={form.preferred_payment_type}
-                  onChange={e => {
-                    const newType = e.target.value as any;
-                    setForm(f => ({ ...f, preferred_payment_type: newType }));
-                  }}
-                >
-                  <option value="daily">Daily Rate</option>
-                  <option value="hourly">Hourly Rate</option>
-                  <option value="monthly">Fixed Monthly Salary</option>
-                  <option value="short_term">Per Service</option>
-                </select>
-              </div>
-               <div>
-                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">
-                  {form.preferred_payment_type === 'hourly' ? 'Hourly Rate (₹)' : 
-                   form.preferred_payment_type === 'monthly' ? 'Fixed Monthly Rate (₹)' :
-                   form.preferred_payment_type === 'short_term' ? 'Per Service Rate (₹)' :
-                   'Daily Rate (₹)'}
-                </label>
+                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">10-Hour Shift Rate (₹/day)</label>
                 <Input type="number" className="mt-1" 
-                  value={
-                    form.preferred_payment_type === 'hourly' ? form.hourly_rate :
-                    form.preferred_payment_type === 'monthly' ? form.monthly_daily_rate :
-                    form.preferred_payment_type === 'short_term' ? form.short_term_daily_rate :
-                    form.monthly_daily_rate
-                  }
-                  onChange={e => {
-                    const val = Number(e.target.value);
-                    if (form.preferred_payment_type === 'hourly') {
-                        setForm(f => ({ ...f, hourly_rate: val }));
-                    } else if (form.preferred_payment_type === 'monthly') {
-                        setForm(f => ({ ...f, monthly_daily_rate: val }));
-                    } else if (form.preferred_payment_type === 'short_term') {
-                        setForm(f => ({ ...f, short_term_daily_rate: val }));
-                    } else {
-                        setForm(f => ({ ...f, monthly_daily_rate: val }));
-                    }
-                  }} 
+                  value={(form as any).rate_10hr ?? 0}
+                  onChange={e => setForm(f => ({ ...f, rate_10hr: Number(e.target.value) } as any))}
+                  placeholder="Male ₹600 / Female ₹500"
                 />
               </div>
-              
-              {form.preferred_payment_type === 'hourly' && (
-                <p className="col-span-2 text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                  Shift hours are set when you assign this worker to a client (e.g. 10-hour shift).
-                </p>
-              )}
+               <div>
+                <label className="text-sm font-medium text-slate-700 text-xs uppercase tracking-wider">24-Hour Shift Rate (₹/day)</label>
+                <Input type="number" className="mt-1"
+                  value={(form as any).rate_24hr ?? 800}
+                  onChange={e => setForm(f => ({ ...f, rate_24hr: Number(e.target.value) } as any))}
+                  placeholder="₹800"
+                />
+              </div>
+              <p className="col-span-2 text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                💡 Rate is auto-selected based on the client’s service hours: ≤10h → 10-hr rate, &gt;10h → 24-hr rate.
+              </p>
             </div>
           </div>
 
@@ -549,8 +497,8 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
   // Auto-fill client billing rate from employee's rate when employee changes
   useEffect(() => {
-    if (employee?.monthly_daily_rate && clientBillingRate === 0) {
-      setClientBillingRate(employee.monthly_daily_rate);
+    if (employee?.rate_10hr && clientBillingRate === 0) {
+      setClientBillingRate(employee.rate_10hr);
     }
   }, [employee]);
 
@@ -628,7 +576,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
           end_date: endDate || null,
           hours_per_day: hoursPerDay || 10,
           deposit_amount: depositPaid,
-          client_billing_rate: clientBillingRate || employee.monthly_daily_rate || 0,
+          client_billing_rate: clientBillingRate || employee.rate_10hr || 0,
         }).eq('id', res.assignment.id);
       }
 
@@ -804,7 +752,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-600">Client Billing Rate/Day (₹)</label>
-                  <Input type="number" className="mt-1 text-sm border-slate-200" placeholder={String(employee?.monthly_daily_rate || 0)}
+                  <Input type="number" className="mt-1 text-sm border-slate-200" placeholder={String(hoursPerDay === 24 ? employee?.rate_24hr : employee?.rate_10hr || 0)}
                     value={clientBillingRate || ''} onChange={e => setClientBillingRate(Number(e.target.value) || 0)} />
                   <p className="text-[10px] text-slate-400 mt-0.5">Rate charged to client per day.</p>
                 </div>
@@ -823,8 +771,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                     <option value={24}>24 Hours (live-in)</option>
                   </select>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    Used for hourly pay: rate × these hours × days worked.
-                    {employee.preferred_payment_type !== 'hourly' && ' Stored on assignment for records.'}
+                    Stored on assignment for records.
                   </p>
                 </div>
               </div>
