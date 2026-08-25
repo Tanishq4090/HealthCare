@@ -480,6 +480,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const [notes, setNotes] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [isEndDateOpenEnded, setIsEndDateOpenEnded] = useState(true);
   const [hoursPerDay, setHoursPerDay] = useState<number>(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ url: string; whatsappSent: boolean; whatsappError?: string } | null>(null);
@@ -496,7 +497,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   useEffect(() => {
     if (!open) {
       setResult(null); setSelectedClient(null); setNotes(''); setClientSearch('');
-      setShowNewClient(false); setStartDate(''); setEndDate(''); setHoursPerDay(10);
+      setShowNewClient(false); setStartDate(''); setEndDate(''); setIsEndDateOpenEnded(true); setHoursPerDay(10);
     }
   }, [open]);
 
@@ -536,13 +537,6 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
           .limit(1)
           .maybeSingle();
 
-        if (svc && svc.hours_per_day) {
-          setHoursPerDay(Number(svc.hours_per_day) === 24 ? 24 : 10);
-          if (svc.start_date && !startDate) setStartDate(svc.start_date);
-          if (svc.end_date && !endDate) setEndDate(svc.end_date);
-          return;
-        }
-
         // 2. Check crm_quotations
         const { data: quote } = await supabase
           .from('crm_quotations')
@@ -552,14 +546,6 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
           .limit(1)
           .maybeSingle();
 
-        if (quote) {
-          const qHours = String(quote.hours_per_day || quote.shift_type || '');
-          setHoursPerDay(qHours.includes('24') ? 24 : 10);
-          if (quote.start_date && !startDate) setStartDate(quote.start_date);
-          if (quote.end_date && !endDate) setEndDate(quote.end_date);
-          return;
-        }
-
         // 3. Fallback to crm_leads notes & consent
         const { data: lead } = await supabase
           .from('crm_leads')
@@ -567,12 +553,35 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
           .eq('id', selectedClient!.id)
           .maybeSingle();
 
+        const svcHours = Number(svc?.hours_per_day || 0);
+        const qHours = String(quote?.hours_per_day || quote?.shift_type || '');
         const notesStr = String(lead?.notes || '');
         const offeredTime = String(lead?.client_consents?.[0]?.offered_time || '');
-        if (notesStr.includes('24') || offeredTime.includes('24')) {
+
+        if (
+          svcHours >= 12 || 
+          qHours.includes('24') || 
+          qHours.toLowerCase().includes('live') || 
+          notesStr.includes('24') || 
+          offeredTime.includes('24')
+        ) {
           setHoursPerDay(24);
         } else {
           setHoursPerDay(10);
+        }
+
+        if (svc?.start_date) setStartDate(svc.start_date);
+        else if (quote?.start_date) setStartDate(quote.start_date);
+
+        if (svc?.end_date) {
+          setEndDate(svc.end_date);
+          setIsEndDateOpenEnded(false);
+        } else if (quote?.end_date) {
+          setEndDate(quote.end_date);
+          setIsEndDateOpenEnded(false);
+        } else {
+          setEndDate('');
+          setIsEndDateOpenEnded(true);
         }
       } catch (err) {
         console.warn('Could not fetch client shift details:', err);
@@ -829,10 +838,63 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                     onChange={e => setStartDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-600">End Date (optional)</label>
-                  <Input type="date" className="mt-1 text-sm border-slate-200" value={endDate}
-                    min={startDate}
-                    onChange={e => setEndDate(e.target.value)} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-600">End Date (optional)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isEndDateOpenEnded) {
+                          setIsEndDateOpenEnded(false);
+                          setEndDate(startDate || new Date().toISOString().slice(0, 10));
+                        } else {
+                          setIsEndDateOpenEnded(true);
+                          setEndDate('');
+                        }
+                      }}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                        isEndDateOpenEnded 
+                          ? 'bg-[#1AA6A8]/10 text-[#0E7C7E] border border-[#1AA6A8]/30 hover:bg-[#1AA6A8]/20' 
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                    >
+                      {isEndDateOpenEnded ? '✓ Ongoing' : '+ Set Ongoing'}
+                    </button>
+                  </div>
+
+                  {isEndDateOpenEnded ? (
+                    <div 
+                      onClick={() => {
+                        setIsEndDateOpenEnded(false);
+                        setEndDate(startDate || new Date().toISOString().slice(0, 10));
+                      }}
+                      className="w-full flex items-center justify-between h-9 rounded-md border border-dashed border-[#1AA6A8]/40 bg-[#1AA6A8]/5 px-3 py-1.5 text-xs text-[#0E7C7E] cursor-pointer hover:bg-[#1AA6A8]/10 transition-colors"
+                      title="Click to set a specific end date"
+                    >
+                      <span className="font-semibold">Ongoing / Open-Ended</span>
+                      <span className="text-[10px] text-slate-400">Click to set date</span>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <Input
+                        type="date"
+                        className="text-sm border-slate-200 pr-7"
+                        value={endDate}
+                        min={startDate}
+                        onChange={e => setEndDate(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEndDateOpenEnded(true);
+                          setEndDate('');
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-red-500 rounded"
+                        title="Clear and make ongoing"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               
