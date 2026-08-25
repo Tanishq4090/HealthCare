@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
   ChevronDown, Building2, Shield, Trash2, RotateCcw,
-  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle,
+  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle, Coins, Clock,
 } from 'lucide-react';
 
 // shadcn/ui
@@ -478,11 +478,9 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [notes, setNotes] = useState('');
-  const [depositPaid, setDepositPaid] = useState<number>(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [hoursPerDay, setHoursPerDay] = useState<number>(10);
-  const [clientBillingRate, setClientBillingRate] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ url: string; whatsappSent: boolean; whatsappError?: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -495,17 +493,10 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
   const debouncedSearch = useDebounce(clientSearch, 250);
 
-  // Auto-fill client billing rate from employee's rate when employee changes
-  useEffect(() => {
-    if (employee?.rate_10hr && clientBillingRate === 0) {
-      setClientBillingRate(employee.rate_10hr);
-    }
-  }, [employee]);
-
   useEffect(() => {
     if (!open) {
       setResult(null); setSelectedClient(null); setNotes(''); setClientSearch('');
-      setShowNewClient(false); setStartDate(''); setEndDate(''); setHoursPerDay(10); setDepositPaid(0); setClientBillingRate(0);
+      setShowNewClient(false); setStartDate(''); setEndDate(''); setHoursPerDay(10);
     }
   }, [open]);
 
@@ -558,7 +549,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         employee.id,
         selectedClient.id,
         notes,
-        depositPaid,
+        0, // Deposit handled at Client/Service level
         false,
         {
           startDate,
@@ -569,15 +560,54 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         }
       );
 
-      // Save the new billing fields to worker_assignments after creation
+      // Save the start and end dates to worker_assignments
       if (res.assignment?.id) {
         await supabase.from('worker_assignments').update({
           start_date: startDate,
           end_date: endDate || null,
           hours_per_day: hoursPerDay || 10,
-          deposit_amount: depositPaid,
-          client_billing_rate: clientBillingRate || employee.rate_10hr || 0,
         }).eq('id', res.assignment.id);
+      }
+
+      // Also ensure linking to active service in services table
+      try {
+        const { data: svcs } = await supabase
+          .from('services')
+          .select('id, status')
+          .eq('client_id', selectedClient.id)
+          .in('status', ['active', 'pending'])
+          .limit(1);
+
+        let targetServiceId = svcs?.[0]?.id;
+        if (!targetServiceId) {
+          const { data: newSvc } = await supabase
+            .from('services')
+            .insert({
+              client_id: selectedClient.id,
+              lead_id: selectedClient.id,
+              service_type: 'date_range',
+              hours_per_day: hoursPerDay,
+              start_date: startDate,
+              end_date: endDate || null,
+              status: 'active',
+              complete_month_daily_rate: 850,
+              incomplete_month_daily_rate: 1500,
+            })
+            .select('id')
+            .single();
+          targetServiceId = newSvc?.id;
+        }
+
+        if (targetServiceId) {
+          await supabase.from('service_worker_assignments').insert({
+            service_id: targetServiceId,
+            employee_id: employee.id,
+            start_date: startDate,
+            end_date: endDate || null,
+          });
+        }
+      } catch (svcErr) {
+        console.warn('Service sync note:', svcErr);
       }
 
       setResult({ url: res.shareableUrl, whatsappSent: res.whatsappSent, whatsappError: res.whatsappError });
@@ -725,7 +755,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               </div>
             )}
 
-            {/* Assignment Date Range */}
+            {/* Assignment Date Range & Shift Type */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
               <p className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" /> Assignment Period
@@ -743,37 +773,29 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
                     onChange={e => setEndDate(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600">Security Deposit (₹)</label>
-                  <Input type="number" className="mt-1 text-sm border-slate-200" placeholder="0"
-                    value={depositPaid || ''} onChange={e => setDepositPaid(Number(e.target.value) || 0)} />
-                  <p className="text-[10px] text-slate-400 mt-0.5">Upfront deposit from client.</p>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-600">Client Billing Rate/Day (₹)</label>
-                  <Input type="number" className="mt-1 text-sm border-slate-200" placeholder={String(hoursPerDay === 24 ? employee?.rate_24hr : employee?.rate_10hr || 0)}
-                    value={clientBillingRate || ''} onChange={e => setClientBillingRate(Number(e.target.value) || 0)} />
-                  <p className="text-[10px] text-slate-400 mt-0.5">Rate charged to client per day.</p>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-600">
-                    Shift Hours / Day <span className="text-red-400">*</span>
-                  </label>
-                  <select
-                    className="mt-1 w-full flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                    value={hoursPerDay}
-                    onChange={e => setHoursPerDay(Number(e.target.value))}
-                  >
-                    <option value={8}>8 Hours</option>
-                    <option value={10}>10 Hours</option>
-                    <option value={12}>12 Hours</option>
-                    <option value={24}>24 Hours (live-in)</option>
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Stored on assignment for records.
-                  </p>
-                </div>
+              
+              <div>
+                <label className="text-xs font-semibold text-slate-600">
+                  Shift Type <span className="text-red-400">*</span>
+                </label>
+                <select
+                  className="mt-1 w-full flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800"
+                  value={hoursPerDay}
+                  onChange={e => setHoursPerDay(Number(e.target.value))}
+                >
+                  <option value={10}>10-Hour Shift (10 hrs)</option>
+                  <option value={24}>24-Hour Shift (24 hrs live-in)</option>
+                </select>
+              </div>
+
+              {/* Worker Payout Preview Badge */}
+              <div className="bg-emerald-50/70 border border-emerald-200/70 rounded-lg p-2.5 flex items-center justify-between text-xs">
+                <span className="font-semibold text-emerald-800 flex items-center gap-1.5">
+                  <Coins className="w-3.5 h-3.5 text-emerald-600" /> Worker Duty Pay:
+                </span>
+                <span className="font-bold text-emerald-900">
+                  ₹{hoursPerDay === 24 ? (employee.rate_24hr || 0) : (employee.rate_10hr || 0)} / day
+                </span>
               </div>
             </div>
 
@@ -783,7 +805,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               <textarea
                 rows={2}
                 className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-transparent"
-                placeholder="Any special instructions..."
+                placeholder="Any special instructions for this assignment..."
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
               />
