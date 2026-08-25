@@ -120,7 +120,6 @@ export async function createEmployee(
         aadhaar_number: data.aadhaar_number?.trim() ?? null,
         address: data.address?.trim() ?? null,
         dob: data.dob ?? null,
-        preferred_payment_type: undefined,
         services: data.services ?? [],
         rate_10hr: data.rate_10hr ?? 0,
         rate_24hr: data.rate_24hr ?? 0,

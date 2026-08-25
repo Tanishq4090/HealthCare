@@ -173,7 +173,7 @@ export default function Billing() {
                         hours_per_day,
                         assignment_status,
                         clients (client_name, phone_number, id),
-                        employees (id, full_name, job_title, phone, monthly_daily_rate, short_term_daily_rate, preferred_payment_type, hourly_rate, shift_hours)
+                        employees (id, full_name, job_title, phone, rate_10hr, rate_24hr)
                     `)
                     .neq('assignment_status', 'cancelled')
                     .order('assigned_at', { ascending: false }),
