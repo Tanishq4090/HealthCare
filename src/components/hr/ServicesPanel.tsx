@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
-    Briefcase, Users, Calendar, DollarSign, UserMinus,
+    Briefcase, Users, Calendar, IndianRupee, UserMinus,
     XCircle, Play, Loader2, ChevronDown, ChevronRight, RefreshCw,
     AlertTriangle, CheckCircle2, Clock, Search, Plus, FileText,
 } from 'lucide-react';
@@ -208,7 +208,7 @@ export default function ServicesPanel({
                         disabled={isBillingRunning}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-colors shadow-sm"
                     >
-                        {isBillingRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
+                        {isBillingRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <IndianRupee className="w-4 h-4" />}
                         Run Monthly Billing
                     </button>
                     <button
@@ -329,7 +329,7 @@ export default function ServicesPanel({
                                                             }}
                                                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors"
                                                         >
-                                                            <DollarSign className="w-3.5 h-3.5" /> Record Collection
+                                                            <IndianRupee className="w-3.5 h-3.5" /> Record Collection
                                                         </button>
                                                     )}
                                                 </>
