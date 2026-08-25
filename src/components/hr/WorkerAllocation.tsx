@@ -520,6 +520,68 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
       });
   }, [debouncedSearch]);
 
+  // Fetch and lock shift requirements based on selected client's active service or quotation
+  useEffect(() => {
+    if (!selectedClient) return;
+
+    async function fetchClientShift() {
+      try {
+        // 1. Check services table first
+        const { data: svc } = await supabase
+          .from('services')
+          .select('hours_per_day, start_date, end_date')
+          .eq('client_id', selectedClient!.id)
+          .in('status', ['active', 'pending'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (svc && svc.hours_per_day) {
+          setHoursPerDay(Number(svc.hours_per_day) === 24 ? 24 : 10);
+          if (svc.start_date && !startDate) setStartDate(svc.start_date);
+          if (svc.end_date && !endDate) setEndDate(svc.end_date);
+          return;
+        }
+
+        // 2. Check crm_quotations
+        const { data: quote } = await supabase
+          .from('crm_quotations')
+          .select('hours_per_day, shift_type, start_date, end_date')
+          .eq('lead_id', selectedClient!.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (quote) {
+          const qHours = String(quote.hours_per_day || quote.shift_type || '');
+          setHoursPerDay(qHours.includes('24') ? 24 : 10);
+          if (quote.start_date && !startDate) setStartDate(quote.start_date);
+          if (quote.end_date && !endDate) setEndDate(quote.end_date);
+          return;
+        }
+
+        // 3. Fallback to crm_leads notes & consent
+        const { data: lead } = await supabase
+          .from('crm_leads')
+          .select('notes, client_consents(offered_time)')
+          .eq('id', selectedClient!.id)
+          .maybeSingle();
+
+        const notesStr = String(lead?.notes || '');
+        const offeredTime = String(lead?.client_consents?.[0]?.offered_time || '');
+        if (notesStr.includes('24') || offeredTime.includes('24')) {
+          setHoursPerDay(24);
+        } else {
+          setHoursPerDay(10);
+        }
+      } catch (err) {
+        console.warn('Could not fetch client shift details:', err);
+      }
+    }
+
+    fetchClientShift();
+  }, [selectedClient]);
+
   const handleCreateClient = async () => {
     if (!newClientName.trim()) { toast.error('Client name required.'); return; }
     setIsCreatingClient(true);
@@ -775,17 +837,23 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               </div>
               
               <div>
-                <label className="text-xs font-semibold text-slate-600">
-                  Shift Type <span className="text-red-400">*</span>
-                </label>
-                <select
-                  className="mt-1 w-full flex h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800"
-                  value={hoursPerDay}
-                  onChange={e => setHoursPerDay(Number(e.target.value))}
-                >
-                  <option value={10}>10-Hour Shift (10 hrs)</option>
-                  <option value={24}>24-Hour Shift (24 hrs live-in)</option>
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-primary" /> Shift Requirement
+                  </label>
+                  <span className="text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                    Fixed by Client
+                  </span>
+                </div>
+                <div className="w-full flex items-center justify-between h-10 rounded-lg border border-slate-200 bg-slate-50/90 px-3.5 py-2 text-sm font-semibold text-slate-800">
+                  <span className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${hoursPerDay === 24 ? 'bg-purple-500' : 'bg-primary'}`} />
+                    {hoursPerDay === 24 ? '24-Hour Live-in Shift' : '10-Hour Day Shift'}
+                  </span>
+                  <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs">
+                    {hoursPerDay} hrs / day
+                  </span>
+                </div>
               </div>
 
               {/* Worker Payout Preview Badge */}
