@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -503,6 +503,30 @@ export default function CRM() {
     const [addLeadPhone, setAddLeadPhone] = useState('');
     const [addLeadDuplicateWarning, setAddLeadDuplicateWarning] = useState<any>(null);
     const [addLeadCheckingDuplicate, setAddLeadCheckingDuplicate] = useState(false);
+
+    // Add Client Modal State (Comprehensive for Ongoing / Existing Clients)
+    const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+    const [addClientName, setAddClientName] = useState('');
+    const [addClientPhone, setAddClientPhone] = useState('');
+    const [addClientAddress, setAddClientAddress] = useState('');
+    const [addClientPriority, setAddClientPriority] = useState('medium');
+    const [addClientServiceName, setAddClientServiceName] = useState('Old Age Care');
+    const [addClientShiftHours, setAddClientShiftHours] = useState(10);
+    const [addClientShiftType, setAddClientShiftType] = useState('10-Hour Day Shift');
+    const [addClientStartDate, setAddClientStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [addClientIsOpenEnded, setAddClientIsOpenEnded] = useState(true);
+    const [addClientEndDate, setAddClientEndDate] = useState('');
+    const [addClientCompleteMonthRate, setAddClientCompleteMonthRate] = useState<number | ''>(600);
+    const [addClientIncompleteMonthRate, setAddClientIncompleteMonthRate] = useState<number | ''>(1000);
+    const [addClientDepositAmount, setAddClientDepositAmount] = useState<number | ''>(5000);
+    const [addClientDepositMethod, setAddClientDepositMethod] = useState('UPI');
+    const [addClientDepositDate, setAddClientDepositDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [addClientDepositNotes, setAddClientDepositNotes] = useState('');
+    const [addClientSelectedWorkers, setAddClientSelectedWorkers] = useState<{ workerId: string; workerName: string; startDate: string }[]>([]);
+    const [addClientAutoMarkAttendance, setAddClientAutoMarkAttendance] = useState(true);
+    const [addClientAbsentDays, setAddClientAbsentDays] = useState<number | ''>(0);
+    const [isSubmittingAddClient, setIsSubmittingAddClient] = useState(false);
+    const [addClientWorkerSearch, setAddClientWorkerSearch] = useState('');
 
     // Client Invoice Generator State (CRM Pipeline)
     const [isClientInvoiceOpen, setIsClientInvoiceOpen] = useState(false);
@@ -3849,6 +3873,221 @@ export default function CRM() {
         }
     };
 
+    const resetAddClientForm = () => {
+        setAddClientName('');
+        setAddClientPhone('');
+        setAddClientAddress('');
+        setAddClientPriority('medium');
+        setAddClientServiceName('Old Age Care');
+        setAddClientShiftHours(10);
+        setAddClientShiftType('10-Hour Day Shift');
+        setAddClientStartDate(new Date().toISOString().split('T')[0]);
+        setAddClientIsOpenEnded(true);
+        setAddClientEndDate('');
+        setAddClientCompleteMonthRate(600);
+        setAddClientIncompleteMonthRate(1000);
+        setAddClientDepositAmount(5000);
+        setAddClientDepositMethod('UPI');
+        setAddClientDepositDate(new Date().toISOString().split('T')[0]);
+        setAddClientDepositNotes('');
+        setAddClientSelectedWorkers([]);
+        setAddClientAutoMarkAttendance(true);
+        setAddClientAbsentDays(0);
+        setAddClientWorkerSearch('');
+    };
+
+    const handleAddManualClient = async () => {
+        if (!addClientName.trim()) {
+            toast.error('Please enter the client full name.');
+            return;
+        }
+        if (!addClientPhone.trim()) {
+            toast.error('Please enter the client phone number.');
+            return;
+        }
+        if (addClientSelectedWorkers.length === 0) {
+            toast.error('Please assign at least one worker to this client.');
+            return;
+        }
+
+        setIsSubmittingAddClient(true);
+        const toastId = toast.loading('Creating client and configuring service...');
+
+        try {
+            const leadName = addClientName.trim();
+            const leadPhone = addClientPhone.trim();
+            const standardized = normalizePhoneDigits(leadPhone);
+            const cmRate = Number(addClientCompleteMonthRate) || 0;
+            const icmRate = Number(addClientIncompleteMonthRate) || 0;
+            const depAmount = Number(addClientDepositAmount) || 0;
+            const estMonthly = cmRate > 0 ? cmRate * 30 : 0;
+
+            // 1. Create Lead in crm_leads (Active Client stage)
+            const serviceNote = `Service: ${addClientServiceName}\nShift: ${addClientShiftType}${addClientAddress.trim() ? `\nAddress: ${addClientAddress.trim()}` : ''}`;
+            const { data: newLead, error: leadError } = await supabase
+                .from('crm_leads')
+                .insert([{
+                    name: leadName,
+                    phone: leadPhone || null,
+                    whatsapp_number: standardized || null,
+                    source: 'Manual Client Setup',
+                    status: 'Active',
+                    pipeline_stage: 'Active Client',
+                    complete_month_daily_rate: cmRate,
+                    incomplete_month_daily_rate: icmRate,
+                    estimated_value_monthly: estMonthly,
+                    priority: addClientPriority,
+                    notes: serviceNote,
+                }])
+                .select('*')
+                .single();
+
+            if (leadError) throw leadError;
+
+            // 2. Ensure Client record exists in clients table
+            const { error: clientError } = await supabase
+                .from('clients')
+                .upsert({
+                    id: newLead.id,
+                    client_name: leadName,
+                    phone_number: leadPhone || null,
+                    source: 'Manual Client Setup',
+                }, { onConflict: 'id' });
+
+            if (clientError) console.warn('Clients table upsert warning:', clientError);
+
+            // 3. Create Service in services table
+            const { data: newService, error: serviceError } = await supabase
+                .from('services')
+                .insert([{
+                    client_id: newLead.id,
+                    lead_id: newLead.id,
+                    service_type: addClientIsOpenEnded ? 'open_ended' : 'date_range',
+                    hours_per_day: addClientShiftHours,
+                    start_date: addClientStartDate,
+                    end_date: addClientIsOpenEnded ? null : (addClientEndDate || null),
+                    status: 'active',
+                    deposit_amount: depAmount,
+                    deposit_status: depAmount > 0 ? 'collected' : 'pending',
+                    complete_month_daily_rate: cmRate,
+                    incomplete_month_daily_rate: icmRate,
+                    notes: `Shift: ${addClientShiftType}. Setup for ongoing client.`,
+                }])
+                .select('*')
+                .single();
+
+            if (serviceError) throw serviceError;
+
+            // 4. Record Deposit in payments table (if depAmount > 0)
+            if (depAmount > 0) {
+                const depRef = `${addClientDepositMethod.toUpperCase().replace(/\s+/g, '-')}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+                const { error: payError } = await supabase
+                    .from('payments')
+                    .insert([{
+                        client_name: leadName,
+                        amount: depAmount,
+                        payment_type: 'deposit',
+                        payment_date: addClientDepositDate || new Date().toISOString(),
+                        transaction_ref: depRef,
+                        recorded_by: 'admin',
+                    }]);
+
+                if (payError) console.warn('Payment recording warning:', payError);
+            }
+
+            // 5. Worker Assignments & Past Attendance
+            const todayStr = new Date().toISOString().split('T')[0];
+            const absentDaysCount = Number(addClientAbsentDays) || 0;
+
+            for (const worker of addClientSelectedWorkers) {
+                const wStart = worker.startDate || addClientStartDate;
+
+                // 5a. Insert into service_worker_assignments
+                await supabase
+                    .from('service_worker_assignments')
+                    .insert([{
+                        service_id: newService.id,
+                        employee_id: worker.workerId,
+                        start_date: wStart,
+                        end_date: null,
+                    }]);
+
+                // 5b. Insert into legacy worker_assignments for compatibility
+                await supabase
+                    .from('worker_assignments')
+                    .insert([{
+                        client_id: newLead.id,
+                        employee_id: worker.workerId,
+                        service_type: addClientServiceName,
+                        hours_per_day: addClientShiftHours,
+                        start_date: wStart,
+                        end_date: addClientIsOpenEnded ? null : addClientEndDate,
+                        assignment_status: 'active',
+                        deposit_amount: depAmount,
+                        deposit_paid: depAmount,
+                        client_billing_rate: cmRate,
+                    }]);
+
+                // 5c. Update Employee status
+                await supabase
+                    .from('employees')
+                    .update({
+                        status: 'assigned',
+                        assigned_client: leadName,
+                    })
+                    .eq('id', worker.workerId);
+
+                // 5d. Auto-generate past attendance if requested and start date is in past
+                if (addClientAutoMarkAttendance && wStart <= todayStr) {
+                    const startObj = new Date(wStart);
+                    const endObj = new Date(todayStr);
+                    const dates: string[] = [];
+
+                    const cur = new Date(startObj);
+                    while (cur <= endObj) {
+                        dates.push(cur.toISOString().split('T')[0]);
+                        cur.setDate(cur.getDate() + 1);
+                    }
+
+                    if (dates.length > 0) {
+                        // Mark up to absentDaysCount as absent, rest as present
+                        const attendancePayloads = dates.map((dateStr, idx) => {
+                            const isAbsent = idx < absentDaysCount;
+                            return {
+                                worker_id: worker.workerId,
+                                duty_date: dateStr,
+                                status: isAbsent ? 'absent' : 'present',
+                                is_absent: isAbsent,
+                                client_name: leadName,
+                            };
+                        });
+
+                        await supabase
+                            .from('attendance')
+                            .insert(attendancePayloads);
+                    }
+                }
+            }
+
+            // 6. Log Activity
+            await logActivity(
+                newLead.id,
+                'lead_created',
+                `Existing client setup: Service started on ${addClientStartDate} (${addClientServiceName} - ${addClientShiftType}) with ${addClientSelectedWorkers.length} worker(s). Deposit: ₹${depAmount}`
+            );
+
+            toast.success(`Client "${leadName}" successfully added with active service & workers!`, { id: toastId });
+            setIsAddClientModalOpen(false);
+            resetAddClientForm();
+            fetchLeads();
+        } catch (err: any) {
+            console.error('Failed to add client:', err);
+            toast.error('Failed to add client: ' + (err.message || err), { id: toastId });
+        } finally {
+            setIsSubmittingAddClient(false);
+        }
+    };
+
     const handleOpenExistingLead = async () => {
         if (!returningClientModal) return;
         const { existingClient, pendingLeadData } = returningClientModal;
@@ -4035,9 +4274,30 @@ export default function CRM() {
                             Live Sync Active
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3">
-                            <button onClick={() => { setIsAddLeadModalOpen(true); setAddLeadName(''); setAddLeadPhone(''); setAddLeadDuplicateWarning(null); setAddLeadConfirmDuplicate(false); }} className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm">
-                                <Plus className="w-4 h-4" /> Add Lead
-                            </button>
+                            {activeTab === 'clients' ? (
+                                <button
+                                    onClick={() => {
+                                        resetAddClientForm();
+                                        setIsAddClientModalOpen(true);
+                                    }}
+                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm"
+                                >
+                                    <UserPlus className="w-4 h-4" /> Add Client
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        setIsAddLeadModalOpen(true);
+                                        setAddLeadName('');
+                                        setAddLeadPhone('');
+                                        setAddLeadDuplicateWarning(null);
+                                        setAddLeadConfirmDuplicate(false);
+                                    }}
+                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm"
+                                >
+                                    <Plus className="w-4 h-4" /> Add Lead
+                                </button>
+                            )}
                             <button onClick={handleExportLeadsToCSV} className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex">
                                 Export CSV
                             </button>
@@ -6668,6 +6928,393 @@ export default function CRM() {
                                 className="flex-1 py-2.5 text-sm font-bold text-white bg-[#1AA6A8] rounded-xl hover:bg-[#1AA6A8]/90 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 {addLeadDuplicateWarning ? 'Update Lead' : 'Add Lead'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── ADD CLIENT MODAL (Comprehensive for Ongoing / Existing Clients) ─── */}
+            {isAddClientModalOpen && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget && !isSubmittingAddClient) setIsAddClientModalOpen(false); }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-[#E6F7F7] text-[#1AA6A8] flex items-center justify-center font-bold">
+                                    <UserPlus className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base sm:text-lg font-bold text-slate-900">Add Existing / Ongoing Client</h2>
+                                    <p className="text-xs text-slate-500">Register active clients, service rates, collected deposit & worker assignments.</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => !isSubmittingAddClient && setIsAddClientModalOpen(false)}
+                                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Scrollable Form Body */}
+                        <div className="px-6 py-5 overflow-y-auto custom-scrollbar flex flex-col gap-6 text-xs sm:text-sm">
+                            {/* Section 1: Client Profile */}
+                            <div>
+                                <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
+                                    <User className="w-4 h-4 text-[#1AA6A8]" />
+                                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">1. Client Profile</h3>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Client Full Name <span className="text-red-500">*</span></label>
+                                        <input
+                                            type="text"
+                                            value={addClientName}
+                                            onChange={e => setAddClientName(e.target.value)}
+                                            placeholder="e.g. Ramesh Patel"
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">WhatsApp / Phone <span className="text-red-500">*</span></label>
+                                        <input
+                                            type="tel"
+                                            value={addClientPhone}
+                                            onChange={e => setAddClientPhone(e.target.value)}
+                                            placeholder="e.g. 9876543210"
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-sm"
+                                        />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Residential Address / Area</label>
+                                        <input
+                                            type="text"
+                                            value={addClientAddress}
+                                            onChange={e => setAddClientAddress(e.target.value)}
+                                            placeholder="e.g. 102, Shivalik Heights, Vesu, Surat"
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-sm"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 2: Service & Quoted Rates */}
+                            <div>
+                                <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
+                                    <Clock className="w-4 h-4 text-[#1AA6A8]" />
+                                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">2. Service & Quoted Rates</h3>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Service Type</label>
+                                        <select
+                                            value={addClientServiceName}
+                                            onChange={e => setAddClientServiceName(e.target.value)}
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                        >
+                                            <option value="Old Age Care">Old Age Care</option>
+                                            <option value="Patient Care">Patient Care</option>
+                                            <option value="Baby Care">Baby Care</option>
+                                            <option value="New Born Baby Care">New Born Baby Care</option>
+                                            <option value="Nursing Services">Nursing Services</option>
+                                            <option value="Domestic Helper / Housemaid">Domestic Helper / Housemaid</option>
+                                            <option value="Post-Surgical Care">Post-Surgical Care</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Shift Type</label>
+                                        <select
+                                            value={addClientShiftType}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setAddClientShiftType(val);
+                                                if (val.includes('24')) setAddClientShiftHours(24);
+                                                else if (val.includes('12')) setAddClientShiftHours(12);
+                                                else setAddClientShiftHours(10);
+                                            }}
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                        >
+                                            <option value="10-Hour Day Shift">10-Hour Day Shift (10 hrs)</option>
+                                            <option value="12-Hour Shift">12-Hour Shift (12 hrs)</option>
+                                            <option value="24-Hour Live-in">24-Hour Live-in (24 hrs)</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Service Start Date <span className="text-red-500">*</span></label>
+                                        <input
+                                            type="date"
+                                            value={addClientStartDate}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setAddClientStartDate(val);
+                                                // Sync worker start dates if not changed individually
+                                                setAddClientSelectedWorkers(prev => prev.map(w => ({ ...w, startDate: w.startDate || val })));
+                                            }}
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Duration Format</label>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setAddClientIsOpenEnded(true)}
+                                                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold border transition-all ${addClientIsOpenEnded ? 'bg-[#E6F7F7] text-[#1AA6A8] border-[#1AA6A8]' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                                            >
+                                                Open-ended
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAddClientIsOpenEnded(false)}
+                                                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold border transition-all ${!addClientIsOpenEnded ? 'bg-[#E6F7F7] text-[#1AA6A8] border-[#1AA6A8]' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                                            >
+                                                Fixed End Date
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {!addClientIsOpenEnded && (
+                                        <div className="sm:col-span-2">
+                                            <label className="block text-xs font-semibold text-slate-700 mb-1">Service End Date</label>
+                                            <input
+                                                type="date"
+                                                value={addClientEndDate}
+                                                onChange={e => setAddClientEndDate(e.target.value)}
+                                                className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Full Month Rate (₹/day) <span className="text-red-500">*</span></label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                            <input
+                                                type="number"
+                                                value={addClientCompleteMonthRate}
+                                                onChange={e => setAddClientCompleteMonthRate(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 500 or 600"
+                                                className="w-full pl-7 pr-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-sm font-semibold"
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Applied for monthly billing cycles</p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Partial Month Rate (₹/day) <span className="text-red-500">*</span></label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                            <input
+                                                type="number"
+                                                value={addClientIncompleteMonthRate}
+                                                onChange={e => setAddClientIncompleteMonthRate(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 1000"
+                                                className="w-full pl-7 pr-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-sm font-semibold"
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Applied if service closes in &lt;30 days</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 3: Security Deposit */}
+                            <div>
+                                <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
+                                    <RupeeIcon className="w-4 h-4 text-emerald-600" />
+                                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">3. Security Deposit</h3>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Deposit Collected (₹)</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                            <input
+                                                type="number"
+                                                value={addClientDepositAmount}
+                                                onChange={e => setAddClientDepositAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 5000"
+                                                className="w-full pl-7 pr-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-sm font-semibold text-emerald-700"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
+                                        <select
+                                            value={addClientDepositMethod}
+                                            onChange={e => setAddClientDepositMethod(e.target.value)}
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                        >
+                                            <option value="UPI">UPI / GPay / PhonePe</option>
+                                            <option value="Cash">Cash</option>
+                                            <option value="Bank Transfer">Bank Transfer / NEFT</option>
+                                            <option value="Cheque">Cheque</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Deposit Payment Date</label>
+                                        <input
+                                            type="date"
+                                            value={addClientDepositDate}
+                                            onChange={e => setAddClientDepositDate(e.target.value)}
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 4: Assigned Worker(s) */}
+                            <div>
+                                <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-4 h-4 text-purple-600" />
+                                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">4. Assigned Worker(s) <span className="text-red-500">*</span></h3>
+                                    </div>
+                                    <span className="text-[11px] text-slate-400 font-medium">{addClientSelectedWorkers.length} assigned</span>
+                                </div>
+
+                                {/* Worker Search & Selector */}
+                                <div className="mb-3">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Select &amp; Add Staff Member</label>
+                                    <div className="flex gap-2">
+                                        <select
+                                            onChange={(e) => {
+                                                const selectedId = e.target.value;
+                                                if (!selectedId) return;
+                                                const emp = allWorkers.find(w => w.id === selectedId);
+                                                if (emp && !addClientSelectedWorkers.some(w => w.workerId === selectedId)) {
+                                                    setAddClientSelectedWorkers(prev => [
+                                                        ...prev,
+                                                        { workerId: emp.id, workerName: emp.name || emp.full_name || 'Worker', startDate: addClientStartDate }
+                                                    ]);
+                                                }
+                                                e.target.value = '';
+                                            }}
+                                            className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm"
+                                        >
+                                            <option value="">-- Choose staff member to assign --</option>
+                                            {allWorkers
+                                                .filter(w => !addClientSelectedWorkers.some(sw => sw.workerId === w.id))
+                                                .map(w => (
+                                                    <option key={w.id} value={w.id}>
+                                                        {w.name || w.full_name} ({w.role || w.job_title || 'Staff'})
+                                                    </option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Selected Workers Table / List */}
+                                {addClientSelectedWorkers.length > 0 ? (
+                                    <div className="space-y-2 bg-purple-50/40 p-3 rounded-xl border border-purple-100">
+                                        {addClientSelectedWorkers.map((w, idx) => (
+                                            <div key={w.workerId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-2.5 rounded-lg border border-purple-200/70 shadow-sm">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center">
+                                                        {w.workerName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold text-slate-800 text-xs sm:text-sm">{w.workerName}</span>
+                                                        <span className="text-[10px] text-purple-600 bg-purple-100/70 px-1.5 py-0.5 rounded ml-2 font-medium">Worker #{idx + 1}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <label className="text-[11px] text-slate-500 font-semibold whitespace-nowrap">Assigned Since:</label>
+                                                    <input
+                                                        type="date"
+                                                        value={w.startDate}
+                                                        onChange={e => {
+                                                            const newDate = e.target.value;
+                                                            setAddClientSelectedWorkers(prev => prev.map((item, i) => i === idx ? { ...item, startDate: newDate } : item));
+                                                        }}
+                                                        className="px-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAddClientSelectedWorkers(prev => prev.filter((_, i) => i !== idx))}
+                                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1"
+                                                        title="Remove worker"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="p-3 text-center border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                                        No workers selected yet. Please assign at least one staff member above.
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Section 5: Past Attendance Sync */}
+                            <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/70 space-y-3">
+                                <div className="flex items-start gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        id="autoMarkAttendance"
+                                        checked={addClientAutoMarkAttendance}
+                                        onChange={e => setAddClientAutoMarkAttendance(e.target.checked)}
+                                        className="mt-0.5 rounded border-amber-300 text-[#1AA6A8] focus:ring-[#1AA6A8]"
+                                    />
+                                    <label htmlFor="autoMarkAttendance" className="text-xs font-bold text-slate-800 cursor-pointer">
+                                        Auto-mark assigned worker(s) as "Present" for all past days from Start Date up to Today
+                                        <p className="font-normal text-slate-500 mt-0.5 text-[11px]">
+                                            Populates daily duty attendance records so monthly billing on 31st August and HR attendance reports are accurate right away.
+                                        </p>
+                                    </label>
+                                </div>
+
+                                {addClientAutoMarkAttendance && (
+                                    <div className="pl-6 pt-1 flex items-center gap-3">
+                                        <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">Past Absent Days (if any):</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={addClientAbsentDays}
+                                            onChange={e => setAddClientAbsentDays(e.target.value === '' ? '' : Number(e.target.value))}
+                                            placeholder="0"
+                                            className="w-20 px-3 py-1.5 text-xs font-semibold border border-amber-300 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        />
+                                        <span className="text-[11px] text-slate-400">days</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                disabled={isSubmittingAddClient}
+                                onClick={() => setIsAddClientModalOpen(false)}
+                                className="px-4 py-2 text-xs sm:text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isSubmittingAddClient || !addClientName.trim() || !addClientPhone.trim() || addClientSelectedWorkers.length === 0}
+                                onClick={handleAddManualClient}
+                                className="px-5 py-2 text-xs sm:text-sm font-bold text-white bg-[#1AA6A8] hover:bg-[#1AA6A8]/90 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                {isSubmittingAddClient ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Saving Client...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        Save &amp; Create Client
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>
