@@ -2210,24 +2210,14 @@ export default function Billing() {
                                         />
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Deposit Already Collected (₹)</label>
-                                    <input type="number" min="0" value={ciDeposit} onChange={e => setCiDeposit(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
-                                </div>
                                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-slate-500">{ciDays} day{ciDays !== 1 ? 's' : ''} × ₹{ciRate.toLocaleString('en-IN')}/day</span>
                                         <span className="font-semibold text-slate-800">₹{total.toLocaleString('en-IN')}</span>
                                     </div>
-                                    {ciDeposit > 0 && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-slate-500">Deposit Collected</span>
-                                            <span className="font-semibold text-emerald-600">− ₹{ciDeposit.toLocaleString('en-IN')}</span>
-                                        </div>
-                                    )}
                                     <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
-                                        <span className="text-slate-800">Net Payable</span>
-                                        <span className="text-primary">₹{net.toLocaleString('en-IN')}</span>
+                                        <span className="text-slate-800">Monthly Bill Amount</span>
+                                        <span className="text-primary font-black">₹{total.toLocaleString('en-IN')}</span>
                                     </div>
                                 </div>
                             </div>
@@ -2247,29 +2237,29 @@ export default function Billing() {
                                             const targetBill = {
                                                 ...clientInvoiceBill,
                                                 invoice_no: invoiceNo,
-                                                amount: net.toString(),
+                                                amount: total.toString(),
                                                 totalAmount: total,
                                                 days: ciDays,
                                                 rate: ciRate,
                                                 startDate: ciStartDate,
                                                 endDate: ciEndDate,
-                                                depositCollected: ciDeposit,
+                                                depositCollected: 0,
                                             };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
                                                 phone: clientInvoiceBill.client_phone || '',
                                                 service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
-                                                amount: net,
+                                                amount: total,
                                                 totalAmount: total,
-                                                depositCollected: ciDeposit,
+                                                depositCollected: 0,
                                                 date: new Date().toISOString(),
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
                                                 rate: ciRate,
                                             });
                                             setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
-                                            setInvoiceDepositAmount(net.toString());
+                                            setInvoiceDepositAmount(total.toString());
                                             setIsInvoiceOpen(true);
                                         }}
                                         className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
@@ -2289,22 +2279,22 @@ export default function Billing() {
                                             const targetBill = {
                                                 ...clientInvoiceBill,
                                                 invoice_no: invoiceNo,
-                                                amount: net.toString(),
+                                                amount: total.toString(),
                                                 totalAmount: total,
                                                 days: ciDays,
                                                 rate: ciRate,
                                                 startDate: ciStartDate,
                                                 endDate: ciEndDate,
-                                                depositCollected: ciDeposit,
+                                                depositCollected: 0,
                                             };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
                                                 phone: clientInvoiceBill.client_phone || '',
                                                 service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
-                                                amount: net,
+                                                amount: total,
                                                 totalAmount: total,
-                                                depositCollected: ciDeposit,
+                                                depositCollected: 0,
                                                 date: new Date().toISOString(),
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,

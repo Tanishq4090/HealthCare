@@ -7332,24 +7332,14 @@ export default function CRM() {
                                         <input type="number" min="0" value={ciRate} onChange={e => setCiRate(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Deposit Already Collected (₹)</label>
-                                    <input type="number" min="0" value={ciDeposit} onChange={e => setCiDeposit(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8]" />
-                                </div>
                                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-slate-500">{ciDays} day{ciDays !== 1 ? 's' : ''} × ₹{ciRate.toLocaleString('en-IN')}/day</span>
                                         <span className="font-semibold text-slate-800">₹{total.toLocaleString('en-IN')}</span>
                                     </div>
-                                    {ciDeposit > 0 && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-slate-500">Deposit Collected</span>
-                                            <span className="font-semibold text-emerald-600">− ₹{ciDeposit.toLocaleString('en-IN')}</span>
-                                        </div>
-                                    )}
                                     <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
-                                        <span className="text-slate-800">Net Payable</span>
-                                        <span className="text-[#1AA6A8]">₹{net.toLocaleString('en-IN')}</span>
+                                        <span className="text-slate-800">Monthly Bill Amount</span>
+                                        <span className="text-[#1AA6A8] font-black">₹{total.toLocaleString('en-IN')}</span>
                                     </div>
                                 </div>
                             </div>
@@ -7359,7 +7349,6 @@ export default function CRM() {
                                     <button
                                         onClick={async () => {
                                             const total = ciDays * ciRate;
-                                            const net = Math.max(0, total - ciDeposit);
                                             const lead = clientInvoiceLead;
                                             setIsClientInvoiceOpen(false);
                                             const toastId = toast.loading(`Generating invoice for ${lead.name}...`);
@@ -7378,7 +7367,7 @@ export default function CRM() {
                                                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-                                                    body: JSON.stringify({ lead_id: ciLeadId || lead.id, deposit_amount: net, service_period: formattedPeriod, is_deposit: false })
+                                                    body: JSON.stringify({ lead_id: ciLeadId || lead.id, deposit_amount: total, service_period: formattedPeriod, is_deposit: false })
                                                 });
                                                 if (!invResp.ok) throw new Error(await invResp.text());
                                                 const invData = await invResp.json();
@@ -7397,7 +7386,7 @@ export default function CRM() {
                                                         leadId: lead.id,
                                                         useTemplate: true,
                                                         templateName: 'client_monthly_invoice',
-                                                        templateParams: [lead.name || 'there', String(net)],
+                                                        templateParams: [lead.name || 'there', String(total)],
                                                         sendInvoicePdf: true,
                                                         invoicePdfUrl: invoicePdfUrl,
                                                     })
