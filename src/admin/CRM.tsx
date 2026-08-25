@@ -1628,7 +1628,7 @@ export default function CRM() {
             const [leadsResult, paidAssignmentsResult] = await Promise.all([
                 supabase
                     .from('crm_leads')
-                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                     .is('deleted_at', null)
                     .not('pipeline_stage', 'eq', 'Archived')
                     .order('created_at', { ascending: false }),
@@ -1647,7 +1647,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, created_at), client_consents(*), services(id, status, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -2582,16 +2582,18 @@ export default function CRM() {
                 `Quotation dispatched via WhatsApp: ₹${quotationData.estimatedTotal}${quotationData.isShortTerm ? '' : '/mo'} for ${quotationData.serviceName}`
             );
 
-            // 5. Update Lead Value in DB
+            // 5. Update Lead Value and Rates in DB
             const { error: updateError } = await supabase
                 .from('crm_leads')
                 .update({
-                    estimated_value_monthly: quotationData.estimatedTotal
+                    estimated_value_monthly: quotationData.estimatedTotal,
+                    complete_month_daily_rate: quotationData.completeMonthRate || null,
+                    incomplete_month_daily_rate: quotationData.incompleteMonthRate || null,
                 })
                 .eq('id', quotationTargetLead.id);
 
             if (updateError) {
-                console.error('Failed to update lead value:', updateError);
+                console.error('Failed to update lead value & rates:', updateError);
             }
 
             // 6. Auto-populate Service + Shift into notes so bubbles show on card
@@ -2617,6 +2619,8 @@ export default function CRM() {
                     ...prev,
                     estimated_value_monthly: quotationData.estimatedTotal,
                     valueAmount: quotationData.estimatedTotal,
+                    complete_month_daily_rate: quotationData.completeMonthRate || prev?.complete_month_daily_rate,
+                    incomplete_month_daily_rate: quotationData.incompleteMonthRate || prev?.incomplete_month_daily_rate,
                     serviceDays,
                     isShortTermQuote: quotationData.isShortTerm,
                     value: formatLeadValueDisplay(quotationData.estimatedTotal, serviceDays),
@@ -2631,6 +2635,8 @@ export default function CRM() {
                 ...l,
                 estimated_value_monthly: quotationData.estimatedTotal,
                 valueAmount: quotationData.estimatedTotal,
+                complete_month_daily_rate: quotationData.completeMonthRate || l.complete_month_daily_rate,
+                incomplete_month_daily_rate: quotationData.incompleteMonthRate || l.incomplete_month_daily_rate,
                 serviceDays,
                 isShortTermQuote: quotationData.isShortTerm,
                 value: formatLeadValueDisplay(quotationData.estimatedTotal, serviceDays),
@@ -5923,6 +5929,29 @@ export default function CRM() {
                                 </div>
                                     );
                                 })()}
+                                {/* Complete Month Quote & Partial Month Quote */}
+                                {(() => {
+                                    const latestQuote = selectedInspectorLead.crm_quotations?.[0];
+                                    const completeRate = selectedInspectorLead.complete_month_daily_rate || latestQuote?.complete_month_rate || selectedInspectorLead.services?.[0]?.complete_month_daily_rate;
+                                    const incompleteRate = selectedInspectorLead.incomplete_month_daily_rate || latestQuote?.incomplete_month_rate || selectedInspectorLead.services?.[0]?.incomplete_month_daily_rate;
+
+                                    return (
+                                        <>
+                                            {completeRate ? (
+                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Full Month Rate</span>
+                                                    <span className="text-sm font-bold text-slate-800">₹{Number(completeRate).toLocaleString('en-IN')}/day</span>
+                                                </div>
+                                            ) : null}
+                                            {incompleteRate ? (
+                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Partial Month Rate</span>
+                                                    <span className="text-sm font-bold text-slate-800">₹{Number(incompleteRate).toLocaleString('en-IN')}/day</span>
+                                                </div>
+                                            ) : null}
+                                        </>
+                                    );
+                                })()}
                                 {/* Est. Annual — only for monthly assignments */}
                                 {!(selectedInspectorLead.isShortTermQuote ?? isShortTermService(selectedInspectorLead.serviceDays ?? getLeadServiceDays(selectedInspectorLead))) && (
                                 <div className="flex items-center justify-between px-4 py-3">
@@ -5930,20 +5959,7 @@ export default function CRM() {
                                     <span className="text-sm font-bold text-slate-800">₹{((selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0) * 12).toLocaleString('en-IN')}</span>
                                 </div>
                                 )}
-                                {/* Complete Month Quote */}
-                                {selectedInspectorLead.complete_month_daily_rate && (
-                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
-                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Complete Month Quote</span>
-                                    <span className="text-sm font-bold text-slate-800">₹{selectedInspectorLead.complete_month_daily_rate.toLocaleString('en-IN')}/day</span>
-                                </div>
-                                )}
-                                {/* Incomplete Month Quote */}
-                                {selectedInspectorLead.incomplete_month_daily_rate && (
-                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
-                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Partial Month Quote</span>
-                                    <span className="text-sm font-bold text-slate-800">₹{selectedInspectorLead.incomplete_month_daily_rate.toLocaleString('en-IN')}/day</span>
-                                </div>
-                                )}
+
                                 {/* Priority */}
                                 <div className="flex items-center justify-between px-4 py-3">
                                     <span className="flex items-center gap-2 text-sm text-slate-500"><Star className="w-3.5 h-3.5 text-slate-400" /> Priority</span>
