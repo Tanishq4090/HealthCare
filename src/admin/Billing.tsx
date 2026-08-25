@@ -1265,6 +1265,99 @@ export default function Billing() {
                             setIsDuplicateChoiceOpen(false);
                             setIsManualInvoiceOpen(true);
                         }}
+                        onPrepareInvoice={(service) => {
+                            const activeWorker = (service.service_worker_assignments || []).find(a => !a.end_date) || (service.service_worker_assignments || [])[0];
+                            const billObj = {
+                                id: service.id,
+                                client_id: service.client_id,
+                                client: service.clients?.client_name || 'Client',
+                                client_phone: service.clients?.phone_number || '+91 9016116564',
+                                amount: `₹${service.complete_month_daily_rate || 500}/day`,
+                                status: 'Draft',
+                                month: new Date().toLocaleString('default', { month: 'long' }),
+                                invoice_no: '',
+                                invoice_pdf_url: '',
+                                rawAssignment: {
+                                    id: service.id,
+                                    client_id: service.client_id,
+                                    employee_id: activeWorker?.employee_id,
+                                    service_name: service.service_type || 'Care Service',
+                                    client_billing_rate: service.complete_month_daily_rate || 500,
+                                    complete_month_daily_rate: service.complete_month_daily_rate || 500,
+                                    incomplete_month_daily_rate: service.incomplete_month_daily_rate || 1000,
+                                    deposit_amount: service.deposit_amount || 0,
+                                    start_date: service.start_date || '',
+                                    end_date: service.end_date || '',
+                                }
+                            };
+
+                            setClientInvoiceBill(billObj);
+                            setCiRate(service.complete_month_daily_rate || 500);
+                            setCiDeposit(service.deposit_amount || 0);
+                            const startStr = service.start_date ? service.start_date.split('T')[0] : '';
+                            setCiStartDate(startStr);
+                            setCiEndDate(service.end_date ? service.end_date.split('T')[0] : '');
+                            setCiDays(1);
+                            setCiAttendanceVerified(true);
+                            setIsClientInvoiceOpen(true);
+
+                            if (activeWorker?.employee_id && startStr) {
+                                supabase.from('attendance')
+                                    .select('status, is_half_day')
+                                    .eq('worker_id', activeWorker.employee_id)
+                                    .gte('duty_date', startStr)
+                                    .then(({ data }) => {
+                                        if (data && data.length > 0) {
+                                            const p = data.filter((a: any) => a.status === 'Present').length;
+                                            const h = data.filter((a: any) => a.is_half_day).length;
+                                            setCiDays(p + h * 0.5 || 1);
+                                            setCiAttendanceVerified(true);
+                                        } else {
+                                            setCiDays(0);
+                                            setCiAttendanceVerified(false);
+                                        }
+                                    });
+                            }
+                        }}
+                        onRecordCollection={async (service) => {
+                            const clientName = service.clients?.client_name || 'Client';
+                            
+                            // Guard check if already paid
+                            const { data: existing } = await supabase
+                                .from('payments')
+                                .select('id')
+                                .eq('client_name', clientName)
+                                .eq('payment_type', 'service')
+                                .limit(1);
+
+                            if (existing && existing.length > 0) {
+                                toast.info(`Payment already recorded for ${clientName}.`);
+                                return;
+                            }
+
+                            setIsLoading(true);
+                            try {
+                                const txnId = `TXN-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
+                                const amount = (service.complete_month_daily_rate || 500) * 30;
+
+                                const { error: payError } = await supabase.from('payments').insert([{
+                                    amount,
+                                    client_name: clientName,
+                                    recorded_by: 'admin',
+                                    transaction_ref: txnId,
+                                    payment_date: new Date().toISOString(),
+                                    payment_type: 'service'
+                                }]);
+
+                                if (payError) throw payError;
+                                toast.success(`Payment recorded for ${clientName}. Transaction ID: ${txnId}`);
+                                fetchBillingData();
+                            } catch (err: any) {
+                                toast.error(err.message || 'Failed to record payment');
+                            } finally {
+                                setIsLoading(false);
+                            }
+                        }}
                     />
                 </div>
             ) : (
