@@ -5800,7 +5800,10 @@ export default function CRM() {
                         {/* Assigned Staff Info */}
                         {selectedInspectorLead.services?.some((s: any) => s.status === 'active' || s.status === 'pending') ? (() => {
                             const activeServices = selectedInspectorLead.services.filter((s: any) => s.status === 'active' || s.status === 'pending');
-                            const activeAssignments = activeServices.flatMap((s: any) => s.service_worker_assignments?.filter((swa: any) => !swa.end_date) || []);
+                            const rawAssignments = activeServices.flatMap((s: any) => s.service_worker_assignments?.filter((swa: any) => !swa.end_date) || []);
+                            const activeAssignments = rawAssignments.filter((swa: any, idx: number, self: any[]) =>
+                                idx === self.findIndex((t: any) => (t.employee_id && t.employee_id === swa.employee_id) || (t.id && t.id === swa.id))
+                            );
                             return (
                                 <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex flex-col gap-3">
                                     <div className="flex items-center justify-between">
