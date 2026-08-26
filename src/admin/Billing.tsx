@@ -115,6 +115,22 @@ export default function Billing() {
     const [activeDepositId, setActiveDepositId] = useState<number | null>(null);
     const [depositMethod, setDepositMethod] = useState('Online');
 
+    // Service Bill Collection Modal State
+    const [isRecordCollectionOpen, setIsRecordCollectionOpen] = useState(false);
+    const [collectionTarget, setCollectionTarget] = useState<{
+        service: any;
+        bill: any;
+        clientName: string;
+        invoiceNo: string;
+        period: string;
+        amount: number;
+    } | null>(null);
+    const [collectionAmount, setCollectionAmount] = useState<number>(0);
+    const [collectionMethod, setCollectionMethod] = useState<'UPI' | 'Cash' | 'Bank Transfer' | 'Cheque'>('UPI');
+    const [collectionRef, setCollectionRef] = useState<string>('');
+    const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [isSubmittingCollection, setIsSubmittingCollection] = useState(false);
+
     // Edit Monthly Bill Modal State
     const [isEditBillModalOpen, setIsEditBillModalOpen] = useState(false);
     const [editingBill, setEditingBill] = useState<any>(null);
@@ -524,6 +540,39 @@ export default function Billing() {
             }
         }
         setIsDepositModalOpen(false);
+    };
+
+    const handleConfirmCollection = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!collectionTarget || collectionAmount <= 0) {
+            toast.error('Please enter a valid collection amount');
+            return;
+        }
+
+        setIsSubmittingCollection(true);
+        try {
+            const success = await markServiceBillPaid({
+                billId: collectionTarget.bill?.id,
+                serviceId: collectionTarget.service.id,
+                clientName: collectionTarget.clientName,
+                amount: Number(collectionAmount),
+                paymentMethod: collectionMethod,
+                transactionRef: collectionRef,
+                paymentDate: collectionDate,
+            });
+
+            if (!success) throw new Error('Failed to record payment in database');
+
+            toast.success(`Payment of ₹${Number(collectionAmount).toLocaleString('en-IN')} recorded for ${collectionTarget.clientName}!`);
+            setIsRecordCollectionOpen(false);
+            setCollectionTarget(null);
+            fetchBillingData();
+        } catch (err: any) {
+            console.error('Error recording payment collection:', err);
+            toast.error(err.message || 'Failed to record payment');
+        } finally {
+            setIsSubmittingCollection(false);
+        }
     };
 
     const handleAction = async (action: string, clientName: string, id: number) => {
@@ -1419,27 +1468,37 @@ export default function Billing() {
                                     });
                             }
                         }}
-                        onRecordCollection={async (service: any, bill?: any) => {
+                        onRecordCollection={(service: any, bill?: any) => {
                             const clientName = service.clients?.client_name || 'Client';
-                            const billAmount = bill?.amount || (service.complete_month_daily_rate || 500) * (bill?.total_days || 30);
-
-                            setIsLoading(true);
-                            try {
-                                await markServiceBillPaid({
-                                    billId: bill?.id,
-                                    serviceId: service.id,
-                                    clientName: clientName,
-                                    amount: billAmount,
-                                    paymentMethod: 'UPI'
-                                });
-
-                                toast.success(`Payment of ₹${billAmount.toLocaleString('en-IN')} recorded for ${clientName}!`);
-                                fetchBillingData();
-                            } catch (err: any) {
-                                toast.error(err.message || 'Failed to record payment');
-                            } finally {
-                                setIsLoading(false);
+                            const billAmount = bill?.amount || (service.complete_month_daily_rate || 500) * (bill?.total_days || 1);
+                            
+                            let invNo = 'Invoice';
+                            if (bill?.invoice_number) {
+                                invNo = bill.invoice_number;
+                            } else {
+                                try {
+                                    const parsed = bill?.notes ? JSON.parse(bill.notes) : {};
+                                    if (parsed.invoice_number) invNo = parsed.invoice_number;
+                                } catch {}
                             }
+
+                            const periodStr = bill?.period_start && bill?.period_end
+                                ? `${new Date(bill.period_start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} – ${new Date(bill.period_end).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                                : 'Billing Cycle';
+
+                            setCollectionTarget({
+                                service,
+                                bill,
+                                clientName,
+                                invoiceNo: invNo,
+                                period: periodStr,
+                                amount: billAmount,
+                            });
+                            setCollectionAmount(billAmount);
+                            setCollectionMethod('UPI');
+                            setCollectionRef('');
+                            setCollectionDate(new Date().toISOString().split('T')[0]);
+                            setIsRecordCollectionOpen(true);
                         }}
                     />
                 </div>
@@ -1639,6 +1698,137 @@ export default function Billing() {
                                 </div>
                             );
                         })()}
+                    </div>
+                </div>
+            )}
+
+            {/* Service Bill Collection Modal */}
+            {isRecordCollectionOpen && collectionTarget && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-all">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 flex flex-col">
+                        <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+                                    <RupeeIcon className="w-5 h-5 text-xl font-bold" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-white">Record Invoice Collection</h2>
+                                    <p className="text-xs text-slate-300">
+                                        {collectionTarget.clientName} • {collectionTarget.invoiceNo}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setIsRecordCollectionOpen(false);
+                                    setCollectionTarget(null);
+                                }}
+                                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleConfirmCollection} className="p-6 space-y-4">
+                            {/* Cycle info badge */}
+                            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                                <div>
+                                    <span className="text-slate-500 block font-medium">Billing Period</span>
+                                    <span className="text-slate-800 font-bold">{collectionTarget.period}</span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-slate-500 block font-medium">Billed Amount</span>
+                                    <span className="text-emerald-700 font-extrabold text-sm">
+                                        ₹{collectionTarget.amount.toLocaleString('en-IN')}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                                    Amount Received (₹) <span className="text-red-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₹</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        required
+                                        value={collectionAmount || ''}
+                                        onChange={(e) => setCollectionAmount(parseFloat(e.target.value) || 0)}
+                                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-base font-bold text-slate-800"
+                                        placeholder="2500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                                    Payment Method <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={collectionMethod}
+                                    onChange={(e: any) => setCollectionMethod(e.target.value)}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-sm font-semibold text-slate-700 bg-white"
+                                >
+                                    <option value="UPI">UPI (GooglePay / PhonePe / Paytm / QR)</option>
+                                    <option value="Cash">Cash in Hand</option>
+                                    <option value="Bank Transfer">Bank Transfer (NEFT / IMPS / RTGS)</option>
+                                    <option value="Cheque">Cheque</option>
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                                        Payment Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={collectionDate}
+                                        onChange={(e) => setCollectionDate(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-xs font-medium text-slate-700"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                                        Transaction Ref / Note
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={collectionRef}
+                                        onChange={(e) => setCollectionRef(e.target.value)}
+                                        placeholder="e.g. UPI Ref / Cashier"
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-xs font-medium text-slate-700"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pt-3 flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsRecordCollectionOpen(false);
+                                        setCollectionTarget(null);
+                                    }}
+                                    className="flex-1 py-2.5 rounded-xl font-bold text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmittingCollection}
+                                    className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    {isSubmittingCollection ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                    )}
+                                    Confirm Collection
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

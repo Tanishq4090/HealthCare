@@ -315,17 +315,6 @@ export default function ServicesPanel({
                                                     <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
                                                 </button>
                                             )}
-                                            {onRecordCollection && service.status === 'active' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onRecordCollection(service);
-                                                    }}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors"
-                                                >
-                                                    <IndianRupee className="w-3.5 h-3.5" /> Record Collection
-                                                </button>
-                                            )}
                                         </div>
 
                                         <div className="text-right hidden sm:block">
