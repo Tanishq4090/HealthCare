@@ -1313,10 +1313,36 @@ export default function Billing() {
                             setClientInvoiceBill(billObj);
                             setCiRate(service.complete_month_daily_rate || 500);
                             setCiDeposit(service.deposit_amount || 0);
-                            const startStr = service.start_date ? service.start_date.split('T')[0] : '';
+
+                            // 1. Determine start date: If past bills exist, start the day after latest bill's period_end
+                            let startStr = service.start_date ? service.start_date.split('T')[0] : '';
+                            const pastBills = service.service_bills || [];
+                            if (pastBills.length > 0) {
+                                const sorted = [...pastBills].filter(b => b.period_end).sort((a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime());
+                                if (sorted.length > 0 && sorted[0].period_end) {
+                                    const nextDay = new Date(sorted[0].period_end);
+                                    nextDay.setDate(nextDay.getDate() + 1);
+                                    startStr = nextDay.toISOString().split('T')[0];
+                                }
+                            }
+
+                            // 2. Determine end date: Service end date if specified, otherwise current date (today)
+                            const todayStr = new Date().toISOString().split('T')[0];
+                            const endStr = service.end_date ? service.end_date.split('T')[0] : todayStr;
+
                             setCiStartDate(startStr);
-                            setCiEndDate(service.end_date ? service.end_date.split('T')[0] : '');
-                            setCiDays(1);
+                            setCiEndDate(endStr);
+
+                            // 3. Compute initial calendar days difference
+                            let calculatedDays = 1;
+                            if (startStr && endStr) {
+                                const d1 = new Date(startStr);
+                                const d2 = new Date(endStr);
+                                if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
+                                    calculatedDays = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                }
+                            }
+                            setCiDays(calculatedDays);
                             setCiAttendanceVerified(true);
                             setIsClientInvoiceOpen(true);
 
@@ -1325,15 +1351,16 @@ export default function Billing() {
                                     .select('status, is_half_day')
                                     .eq('worker_id', activeWorker.employee_id)
                                     .gte('duty_date', startStr)
+                                    .lte('duty_date', endStr)
                                     .then(({ data }) => {
                                         if (data && data.length > 0) {
                                             const p = data.filter((a: any) => a.status === 'Present').length;
                                             const h = data.filter((a: any) => a.is_half_day).length;
-                                            setCiDays(p + h * 0.5 || 1);
-                                            setCiAttendanceVerified(true);
-                                        } else {
-                                            setCiDays(0);
-                                            setCiAttendanceVerified(false);
+                                            const attDays = p + h * 0.5;
+                                            if (attDays > 0) {
+                                                setCiDays(attDays);
+                                                setCiAttendanceVerified(true);
+                                            }
                                         }
                                     });
                             }
@@ -2181,11 +2208,41 @@ export default function Billing() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
-                                        <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <input
+                                            type="date"
+                                            value={ciStartDate}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setCiStartDate(val);
+                                                if (val && ciEndDate) {
+                                                    const d1 = new Date(val);
+                                                    const d2 = new Date(ciEndDate);
+                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
+                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
-                                        <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <input
+                                            type="date"
+                                            value={ciEndDate}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setCiEndDate(val);
+                                                if (ciStartDate && val) {
+                                                    const d1 = new Date(ciStartDate);
+                                                    const d2 = new Date(val);
+                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
+                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

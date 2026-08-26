@@ -2046,26 +2046,51 @@ export default function CRM() {
         setClientInvoiceLead(lead);
         setCiLeadId(lead.id || '');
 
-        const [asgnRes, svcRes, quoteRes] = await Promise.all([
+        const [asgnRes, svcRes, quoteRes, billsRes] = await Promise.all([
             supabase.from('worker_assignments').select('*').eq('client_id', lead.id).eq('assignment_status', 'active').maybeSingle(),
             supabase.from('services').select('*, service_worker_assignments(*)').or(`client_id.eq.${lead.id},lead_id.eq.${lead.id}`).eq('status', 'active').maybeSingle(),
             supabase.from('crm_quotations').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+            supabase.from('service_bills').select('*').order('period_end', { ascending: false }),
         ]);
 
         const asgn = asgnRes.data;
         const svc = svcRes.data;
         const quote = quoteRes.data;
 
+        // 1. Resolve agreed daily rate & deposit
         const resolvedRate = svc?.complete_month_daily_rate || quote?.complete_month_rate || lead.complete_month_daily_rate || asgn?.client_billing_rate || parseInt(lead.quoted_monthly_rate?.replace(/[^0-9]/g, '') || '0') || 500;
         const resolvedDeposit = svc?.deposit_amount || quote?.deposit || asgn?.deposit_amount || 5000;
-        const defaultStart = svc?.start_date || asgn?.start_date || '';
-        const defaultEnd = svc?.end_date || asgn?.end_date || '';
+
+        // 2. Resolve start date (day after latest bill, or service start date)
+        let defaultStart = svc?.start_date ? svc.start_date.split('T')[0] : (asgn?.start_date ? asgn.start_date.split('T')[0] : '');
+        if (svc?.id) {
+            const svcBills = (billsRes.data || []).filter((b: any) => b.service_id === svc.id && b.period_end);
+            if (svcBills.length > 0) {
+                const nextDay = new Date(svcBills[0].period_end);
+                nextDay.setDate(nextDay.getDate() + 1);
+                defaultStart = nextDay.toISOString().split('T')[0];
+            }
+        }
+
+        // 3. Resolve end date (service end date if set, otherwise today's date)
+        const todayStr = new Date().toISOString().split('T')[0];
+        const defaultEnd = (svc?.end_date || asgn?.end_date) ? (svc?.end_date || asgn?.end_date).split('T')[0] : todayStr;
 
         setCiRate(resolvedRate);
         setCiDeposit(resolvedDeposit);
-        setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-        setCiEndDate(defaultEnd ? defaultEnd.split('T')[0] : '');
-        setCiDays(1);
+        setCiStartDate(defaultStart);
+        setCiEndDate(defaultEnd);
+
+        // 4. Calculate initial calendar days
+        let calculatedDays = 1;
+        if (defaultStart && defaultEnd) {
+            const d1 = new Date(defaultStart);
+            const d2 = new Date(defaultEnd);
+            if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
+                calculatedDays = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+            }
+        }
+        setCiDays(calculatedDays);
         setCiAttendanceVerified(true);
         setIsClientInvoiceOpen(true);
 
@@ -2075,17 +2100,18 @@ export default function CRM() {
             supabase.from('attendance')
                 .select('status, is_half_day')
                 .eq('worker_id', activeEmpId)
-                .gte('duty_date', defaultStart.split('T')[0])
+                .gte('duty_date', defaultStart)
+                .lte('duty_date', defaultEnd)
                 .then(({ data, error }) => {
                     if (error) console.error("Error fetching attendance:", error);
                     if (data && data.length > 0) {
                         const p = data.filter((a: any) => a.status === 'Present' || a.status === 'present').length;
                         const h = data.filter((a: any) => a.is_half_day).length;
-                        setCiDays(p + h * 0.5 || 1);
-                        setCiAttendanceVerified(true);
-                    } else {
-                        setCiDays(0);
-                        setCiAttendanceVerified(false);
+                        const attDays = p + h * 0.5;
+                        if (attDays > 0) {
+                            setCiDays(attDays);
+                            setCiAttendanceVerified(true);
+                        }
                     }
                 });
         }
@@ -7326,11 +7352,41 @@ export default function CRM() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date</label>
-                                        <input type="date" value={ciStartDate} onChange={e => setCiStartDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
+                                        <input
+                                            type="date"
+                                            value={ciStartDate}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setCiStartDate(val);
+                                                if (val && ciEndDate) {
+                                                    const d1 = new Date(val);
+                                                    const d2 = new Date(ciEndDate);
+                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
+                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800"
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
-                                        <input type="date" value={ciEndDate} onChange={e => setCiEndDate(e.target.value)} className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800" />
+                                        <input
+                                            type="date"
+                                            value={ciEndDate}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setCiEndDate(val);
+                                                if (ciStartDate && val) {
+                                                    const d1 = new Date(ciStartDate);
+                                                    const d2 = new Date(val);
+                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
+                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800"
+                                        />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
