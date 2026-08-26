@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare, Download, Eye } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -1686,18 +1686,65 @@ export default function HR() {
                                     <p className="text-sm text-slate-500 mt-1 max-w-sm">There are no active workers in your directory to track attendance for.</p>
                                 </div>
                             )}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
-                                {activeAssignments.map(assignment => (
-                                    <AssignmentAttendancePanel
-                                        key={assignment.id}
-                                        assignment={assignment}
-                                        onAssignmentCompleted={(completedAssignment) => {
-                                            setAutoCloseAssignmentOnGenerate(true);
-                                            setBillingAssignment(completedAssignment);
-                                            setActiveTab('payroll');
-                                        }}
-                                    />
-                                ))}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50/50">
+                                {(() => {
+                                    const map = new Map<string, { clientId: string; clientName: string; assignments: any[] }>();
+                                    activeAssignments.forEach((asgn) => {
+                                        const clientId = asgn.client_id || asgn.clients?.id || asgn.clients?.client_name || 'unassigned';
+                                        const clientName = asgn.clients?.client_name || asgn.client_name || 'Direct Client';
+
+                                        if (!map.has(clientId)) {
+                                            map.set(clientId, {
+                                                clientId,
+                                                clientName,
+                                                assignments: [],
+                                            });
+                                        }
+                                        map.get(clientId)!.assignments.push(asgn);
+                                    });
+
+                                    return Array.from(map.values()).map((group) => (
+                                        <div
+                                            key={group.clientId}
+                                            className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"
+                                        >
+                                            {/* Unified Client Box Header */}
+                                            <div className="px-5 py-4 bg-gradient-to-r from-slate-50 via-teal-50/20 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-[#1AA6A8] text-white font-bold flex items-center justify-center text-base shadow-xs shrink-0">
+                                                        {group.clientName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h3 className="font-bold text-slate-900 text-base">{group.clientName}</h3>
+                                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                                                {group.assignments.length} Worker{group.assignments.length !== 1 ? 's' : ''} Assigned
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 mt-0.5">
+                                                            Client Deployment & Attendance Tracking
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Worker Cards nested inside Client Container */}
+                                            <div className="p-4 sm:p-5 space-y-4 bg-slate-50/30">
+                                                {group.assignments.map(assignment => (
+                                                    <AssignmentAttendancePanel
+                                                        key={assignment.id}
+                                                        assignment={assignment}
+                                                        onAssignmentCompleted={(completedAssignment) => {
+                                                            setAutoCloseAssignmentOnGenerate(true);
+                                                            setBillingAssignment(completedAssignment);
+                                                            setActiveTab('payroll');
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ));
+                                })()}
                             </div>
                         </div>
                     )}

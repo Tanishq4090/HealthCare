@@ -42,14 +42,12 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         const fallbackStart = assignment.start_date || assignment.assigned_at;
         const startDate = fallbackStart ? parseISO(fallbackStart) : new Date();
 
-        // Fixed end_date → bounded assignment. one_day → single day. No end_date → open-ended (CRM "Open-ended").
-        const openEnded = !assignment.end_date && assignment.service_type !== 'one_day';
+        // No end_date → open-ended. Fixed end_date → bounded assignment.
+        const openEnded = !assignment.end_date;
 
         let endDate: Date;
         if (assignment.end_date) {
             endDate = parseISO(assignment.end_date);
-        } else if (assignment.service_type === 'one_day') {
-            endDate = new Date(startDate);
         } else {
             endDate = new Date(); // open-ended: attendance window grows daily up to today
         }
