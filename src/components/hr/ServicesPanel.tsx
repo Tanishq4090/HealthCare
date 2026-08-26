@@ -304,35 +304,27 @@ export default function ServicesPanel({
                                     <div className="flex items-center gap-3 shrink-0">
                                         {/* Financial Action Buttons */}
                                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                            {paidClients.has((service.clients?.client_name || '').trim().toLowerCase()) ? (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Paid
-                                                </span>
-                                            ) : (
-                                                <>
-                                                    {onPrepareInvoice && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onPrepareInvoice(service);
-                                                            }}
-                                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
-                                                        >
-                                                            <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
-                                                        </button>
-                                                    )}
-                                                    {onRecordCollection && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onRecordCollection(service);
-                                                            }}
-                                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors"
-                                                        >
-                                                            <IndianRupee className="w-3.5 h-3.5" /> Record Collection
-                                                        </button>
-                                                    )}
-                                                </>
+                                            {onPrepareInvoice && service.status === 'active' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onPrepareInvoice(service);
+                                                    }}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
+                                                >
+                                                    <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
+                                                </button>
+                                            )}
+                                            {onRecordCollection && service.status === 'active' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onRecordCollection(service);
+                                                    }}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors"
+                                                >
+                                                    <IndianRupee className="w-3.5 h-3.5" /> Record Collection
+                                                </button>
                                             )}
                                         </div>
 
