@@ -13,6 +13,8 @@ export default function ClientDetailsModal({ client, onClose }: ClientDetailsMod
     const [activities, setActivities] = useState<any[]>([]);
     const [quotations, setQuotations] = useState<any[]>([]);
     const [assignments, setAssignments] = useState<any[]>([]);
+    const [services, setServices] = useState<any[]>([]);
+    const [serviceBills, setServiceBills] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -34,6 +36,16 @@ export default function ClientDetailsModal({ client, onClose }: ClientDetailsMod
                 // 4. Fetch Assignments
                 const { data: assignData } = await supabase.from('worker_assignments').select('*, employees(full_name, job_title)').eq('client_id', clientId).order('assigned_at', { ascending: false });
                 setAssignments(assignData || []);
+
+                // 5. Fetch Services and Invoices
+                const { data: svcData } = await supabase
+                    .from('services')
+                    .select('*, service_bills(*), service_worker_assignments(*, employees(full_name, job_title))')
+                    .or(`client_id.eq.${clientId},lead_id.eq.${clientId}`);
+                setServices(svcData || []);
+
+                const allBills = (svcData || []).flatMap((s: any) => s.service_bills || []);
+                setServiceBills(allBills);
             } catch (err) {
                 console.error("Error fetching client details:", err);
             } finally {
@@ -229,6 +241,67 @@ export default function ClientDetailsModal({ client, onClose }: ClientDetailsMod
                             <pre className="text-sm text-slate-600 whitespace-pre-wrap font-sans bg-slate-50 p-3 rounded-lg border border-slate-100">
                                 {lead?.notes || 'No raw notes available.'}
                             </pre>
+                        </div>
+
+                        {/* Invoices & Billing History */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-primary" /> Invoices & Monthly Billing Ledger ({serviceBills.length})
+                                </h3>
+                                {serviceBills.length > 0 && (
+                                    <span className="text-xs font-bold text-primary">
+                                        Total: ₹{serviceBills.reduce((acc, b) => acc + (b.amount || 0), 0).toLocaleString('en-IN')}
+                                    </span>
+                                )}
+                            </div>
+
+                            {serviceBills.length === 0 ? (
+                                <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg border border-slate-100 text-center">
+                                    No monthly billing invoices recorded yet for this client.
+                                </p>
+                            ) : (
+                                <div className="space-y-2.5">
+                                    {serviceBills.map((bill, i) => {
+                                        let noteData: any = {};
+                                        try {
+                                            noteData = bill.notes ? JSON.parse(bill.notes) : {};
+                                        } catch {
+                                            noteData = {};
+                                        }
+                                        const pdfUrl = noteData.invoice_pdf_url;
+                                        const invNo = noteData.invoice_number || (bill.type === 'final' ? 'FINAL-SETTLEMENT' : `INV-M${i + 1}`);
+
+                                        return (
+                                            <div key={bill.id || i} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
+                                                <div>
+                                                    <p className="font-bold text-slate-800">
+                                                        {formatDate(bill.period_start)} To {formatDate(bill.period_end)}
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                                        {invNo} • {bill.total_days} days @ ₹{bill.daily_rate_used}/day
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="font-extrabold text-sm text-slate-900">
+                                                        ₹{Number(bill.amount || 0).toLocaleString('en-IN')}
+                                                    </span>
+                                                    {pdfUrl && (
+                                                        <a
+                                                            href={pdfUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="px-2.5 py-1 text-xs font-bold bg-white text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors inline-flex items-center gap-1 shadow-2xs"
+                                                        >
+                                                            <FileText className="w-3 h-3" /> PDF
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
 
                         {/* Activity Timeline */}

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { resolveClientBillingRatePerDay } from '../utils/billingRate';
 import ServicesPanel from '../components/hr/ServicesPanel';
+import { recordServiceInvoice, markServiceBillPaid } from '../services/serviceLifecycle';
 
 type ManualInvoiceForm = {
     clientName: string;
@@ -816,7 +817,24 @@ export default function Billing() {
             });
             const waData = await waResp.json();
             if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
-            // 3. Persist to DB so it survives page reload
+            // 3. Persist to unified service_bills ledger
+            const targetServiceId = agentTargetBill.rawAssignment?.id || agentTargetBill.id;
+            if (targetServiceId) {
+                await recordServiceInvoice({
+                    serviceId: targetServiceId,
+                    clientId: agentTargetBill.client_id,
+                    periodStart: startDate,
+                    periodEnd: endDate,
+                    totalDays: serviceDays,
+                    dailyRateUsed: ratePerDay,
+                    amount: netPayable,
+                    invoiceNumber: agentTargetBill.invoice_no || `INV-C${Math.floor(Math.random() * 9000) + 1000}`,
+                    invoicePdfUrl: invoicePdfUrl,
+                    type: 'recurring',
+                });
+            }
+
+            // Also update legacy assignment table
             await supabase
                 .from('worker_assignments')
                 .update({
@@ -826,6 +844,7 @@ export default function Billing() {
                     ...(ratePerDay > 0 ? { client_billing_rate: ratePerDay } : {}),
                 })
                 .eq('id', agentTargetBill.id);
+
             // 4. Move lead to Monthly Billing stage in CRM
             if (agentTargetBill.client_id) {
                 await supabase
@@ -1319,38 +1338,21 @@ export default function Billing() {
                                     });
                             }
                         }}
-                        onRecordCollection={async (service) => {
+                        onRecordCollection={async (service: any, bill?: any) => {
                             const clientName = service.clients?.client_name || 'Client';
-                            
-                            // Guard check if already paid
-                            const { data: existing } = await supabase
-                                .from('payments')
-                                .select('id')
-                                .eq('client_name', clientName)
-                                .eq('payment_type', 'service')
-                                .limit(1);
-
-                            if (existing && existing.length > 0) {
-                                toast.info(`Payment already recorded for ${clientName}.`);
-                                return;
-                            }
+                            const billAmount = bill?.amount || (service.complete_month_daily_rate || 500) * (bill?.total_days || 30);
 
                             setIsLoading(true);
                             try {
-                                const txnId = `TXN-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
-                                const amount = (service.complete_month_daily_rate || 500) * 30;
+                                await markServiceBillPaid({
+                                    billId: bill?.id,
+                                    serviceId: service.id,
+                                    clientName: clientName,
+                                    amount: billAmount,
+                                    paymentMethod: 'UPI'
+                                });
 
-                                const { error: payError } = await supabase.from('payments').insert([{
-                                    amount,
-                                    client_name: clientName,
-                                    recorded_by: 'admin',
-                                    transaction_ref: txnId,
-                                    payment_date: new Date().toISOString(),
-                                    payment_type: 'service'
-                                }]);
-
-                                if (payError) throw payError;
-                                toast.success(`Payment recorded for ${clientName}. Transaction ID: ${txnId}`);
+                                toast.success(`Payment of ₹${billAmount.toLocaleString('en-IN')} recorded for ${clientName}!`);
                                 fetchBillingData();
                             } catch (err: any) {
                                 toast.error(err.message || 'Failed to record payment');

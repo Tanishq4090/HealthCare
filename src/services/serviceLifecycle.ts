@@ -59,6 +59,7 @@ export interface ServiceWithDetails extends Service {
     service_worker_assignments?: (ServiceWorkerAssignment & {
         employees?: { id: string; full_name: string; job_title: string; photo_url: string | null; status: string };
     })[];
+    service_bills?: ServiceBill[];
 }
 
 async function enrichServicesWithPayments(services: any[]): Promise<ServiceWithDetails[]> {
@@ -125,8 +126,8 @@ async function enrichServicesWithPayments(services: any[]): Promise<ServiceWithD
                 ...s,
                 deposit_amount: depositAmt,
                 deposit_status: depositStatus,
-                complete_month_daily_rate: cmRate,
-                incomplete_month_daily_rate: imRate,
+                complete_month_daily_rate: cmRate || 0,
+                incomplete_month_daily_rate: imRate || 0,
             };
         });
     } catch {
@@ -143,7 +144,8 @@ export async function getActiveServices(): Promise<ServiceWithDetails[]> {
             service_worker_assignments(
                 *,
                 employees(id, full_name, job_title, photo_url, status)
-            )
+            ),
+            service_bills(*)
         `)
         .eq('status', 'active')
         .order('created_at', { ascending: false });
@@ -162,7 +164,8 @@ export async function getAllServices(): Promise<ServiceWithDetails[]> {
             service_worker_assignments(
                 *,
                 employees(id, full_name, job_title, photo_url, status)
-            )
+            ),
+            service_bills(*)
         `)
         .order('created_at', { ascending: false });
 
@@ -179,7 +182,8 @@ export async function getServiceById(serviceId: string): Promise<ServiceWithDeta
             service_worker_assignments(
                 *,
                 employees(id, full_name, job_title, photo_url, status)
-            )
+            ),
+            service_bills(*)
         `)
         .eq('id', serviceId)
         .single();
@@ -338,4 +342,131 @@ export async function getServiceBills(serviceId: string): Promise<ServiceBill[]>
 
     if (error) throw new Error(`Failed to fetch bills: ${error.message}`);
     return (data || []) as ServiceBill[];
+}
+
+// ── Record Service Invoice (Unified across CRM & Finance) ──
+
+export interface RecordServiceInvoiceParams {
+    serviceId: string;
+    clientId?: string;
+    periodStart: string;
+    periodEnd: string;
+    totalDays: number;
+    dailyRateUsed: number;
+    amount: number;
+    invoiceNumber: string;
+    invoicePdfUrl: string;
+    type?: 'recurring' | 'final';
+}
+
+export async function recordServiceInvoice(params: RecordServiceInvoiceParams): Promise<ServiceBill | null> {
+    try {
+        const metadata = {
+            invoice_number: params.invoiceNumber,
+            invoice_pdf_url: params.invoicePdfUrl,
+            status: 'pending',
+            generated_at: new Date().toISOString(),
+        };
+
+        const { data: bill, error: billError } = await supabase
+            .from('service_bills')
+            .insert({
+                service_id: params.serviceId,
+                period_start: params.periodStart,
+                period_end: params.periodEnd,
+                total_days: params.totalDays,
+                daily_rate_used: params.dailyRateUsed,
+                amount: params.amount,
+                type: params.type || 'recurring',
+                deposit_applied: 0,
+                deposit_settled: false,
+                notes: JSON.stringify(metadata),
+            })
+            .select()
+            .single();
+
+        if (billError) {
+            console.error('Failed to insert service_bill record:', billError);
+        }
+
+        // Also update legacy worker_assignments / crm_leads if client_id is present
+        if (params.clientId) {
+            await supabase
+                .from('worker_assignments')
+                .update({
+                    final_invoice_generated: true,
+                    invoice_pdf_url: params.invoicePdfUrl,
+                    final_invoice_number: params.invoiceNumber,
+                    client_billing_rate: params.dailyRateUsed,
+                })
+                .eq('client_id', params.clientId);
+
+            await supabase
+                .from('crm_leads')
+                .update({ pipeline_stage: 'Monthly Billing' })
+                .eq('id', params.clientId);
+        }
+
+        return bill as ServiceBill;
+    } catch (err) {
+        console.error('Error recording service invoice:', err);
+        return null;
+    }
+}
+
+// ── Mark Service Bill Paid ────────────────────────────────
+
+export interface MarkServiceBillPaidParams {
+    billId?: string;
+    serviceId?: string;
+    clientName: string;
+    amount: number;
+    paymentMethod: string;
+}
+
+export async function markServiceBillPaid(params: MarkServiceBillPaidParams): Promise<boolean> {
+    try {
+        const txnRef = `${params.paymentMethod.toUpperCase()}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
+
+        // 1. Record in payments table
+        await supabase.from('payments').insert({
+            client_name: params.clientName,
+            amount: params.amount,
+            payment_type: 'service',
+            transaction_ref: txnRef,
+            payment_date: new Date().toISOString(),
+            recorded_by: 'admin',
+        });
+
+        // 2. Update service_bills note metadata if billId is provided
+        if (params.billId) {
+            const { data: bill } = await supabase
+                .from('service_bills')
+                .select('notes')
+                .eq('id', params.billId)
+                .single();
+
+            let notesObj: any = {};
+            try {
+                notesObj = bill?.notes ? JSON.parse(bill.notes) : {};
+            } catch {
+                notesObj = {};
+            }
+
+            notesObj.status = 'paid';
+            notesObj.paid_at = new Date().toISOString();
+            notesObj.payment_method = params.paymentMethod;
+            notesObj.transaction_ref = txnRef;
+
+            await supabase
+                .from('service_bills')
+                .update({ notes: JSON.stringify(notesObj) })
+                .eq('id', params.billId);
+        }
+
+        return true;
+    } catch (err) {
+        console.error('Error marking service bill paid:', err);
+        return false;
+    }
 }

@@ -10,6 +10,7 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { CARE_SERVICES } from '../constants/services';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
+import { recordServiceInvoice } from '../services/serviceLifecycle';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
@@ -2044,26 +2045,36 @@ export default function CRM() {
     const openClientInvoiceGenerator = async (lead: any) => {
         setClientInvoiceLead(lead);
         setCiLeadId(lead.id || '');
-        const { data: asgn } = await supabase
-            .from('worker_assignments')
-            .select('*')
-            .eq('client_id', lead.id)
-            .eq('assignment_status', 'active')
-            .maybeSingle();
 
-        setCiRate(asgn?.client_billing_rate || parseInt(lead.quoted_monthly_rate?.replace(/[^0-9]/g, '') || '0') || 0);
-        setCiDeposit(asgn?.deposit_amount || 0);
-        const defaultStart = asgn?.start_date || '';
+        const [asgnRes, svcRes, quoteRes] = await Promise.all([
+            supabase.from('worker_assignments').select('*').eq('client_id', lead.id).eq('assignment_status', 'active').maybeSingle(),
+            supabase.from('services').select('*, service_worker_assignments(*)').or(`client_id.eq.${lead.id},lead_id.eq.${lead.id}`).eq('status', 'active').maybeSingle(),
+            supabase.from('crm_quotations').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        ]);
+
+        const asgn = asgnRes.data;
+        const svc = svcRes.data;
+        const quote = quoteRes.data;
+
+        const resolvedRate = svc?.complete_month_daily_rate || quote?.complete_month_rate || lead.complete_month_daily_rate || asgn?.client_billing_rate || parseInt(lead.quoted_monthly_rate?.replace(/[^0-9]/g, '') || '0') || 500;
+        const resolvedDeposit = svc?.deposit_amount || quote?.deposit || asgn?.deposit_amount || 5000;
+        const defaultStart = svc?.start_date || asgn?.start_date || '';
+        const defaultEnd = svc?.end_date || asgn?.end_date || '';
+
+        setCiRate(resolvedRate);
+        setCiDeposit(resolvedDeposit);
         setCiStartDate(defaultStart ? defaultStart.split('T')[0] : '');
-        setCiEndDate(asgn?.end_date ? asgn.end_date.split('T')[0] : '');
+        setCiEndDate(defaultEnd ? defaultEnd.split('T')[0] : '');
         setCiDays(1);
         setCiAttendanceVerified(true);
         setIsClientInvoiceOpen(true);
 
-        if (asgn?.employee_id && defaultStart) {
+        const activeEmpId = (svc?.service_worker_assignments || []).find((a: any) => !a.end_date)?.employee_id || asgn?.employee_id;
+
+        if (activeEmpId && defaultStart) {
             supabase.from('attendance')
                 .select('status, is_half_day')
-                .eq('worker_id', asgn.employee_id)
+                .eq('worker_id', activeEmpId)
                 .gte('duty_date', defaultStart.split('T')[0])
                 .then(({ data, error }) => {
                     if (error) console.error("Error fetching attendance:", error);
@@ -7393,12 +7404,36 @@ export default function CRM() {
                                                 });
                                                 const waData = await waResp.json();
                                                 if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
+
+                                                // Record in unified service_bills ledger
+                                                const { data: activeSvc } = await supabase
+                                                    .from('services')
+                                                    .select('id')
+                                                    .or(`client_id.eq.${lead.id},lead_id.eq.${lead.id}`)
+                                                    .eq('status', 'active')
+                                                    .maybeSingle();
+
+                                                if (activeSvc?.id) {
+                                                    await recordServiceInvoice({
+                                                        serviceId: activeSvc.id,
+                                                        clientId: lead.id,
+                                                        periodStart: ciStartDate,
+                                                        periodEnd: ciEndDate,
+                                                        totalDays: ciDays,
+                                                        dailyRateUsed: ciRate,
+                                                        amount: total,
+                                                        invoiceNumber: `INV-C${Math.floor(Math.random() * 9000) + 1000}`,
+                                                        invoicePdfUrl: invoicePdfUrl,
+                                                        type: 'recurring',
+                                                    });
+                                                }
+
                                                 // Move lead to Monthly Billing stage
                                                 await supabase
                                                     .from('crm_leads')
                                                     .update({ pipeline_stage: 'Monthly Billing' })
                                                     .eq('id', ciLeadId || lead.id);
-                                                toast.success(`Invoice sent to ${lead.name} on WhatsApp! ✅ Moved to Monthly Billing.`, { id: toastId, duration: 4000 });
+                                                toast.success(`Invoice sent to ${lead.name} on WhatsApp! ✅ Recorded in Monthly Billing ledger.`, { id: toastId, duration: 4000 });
                                             } catch (err: any) {
                                                 toast.error(err.message || 'Failed to send invoice', { id: toastId });
                                             }
