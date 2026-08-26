@@ -149,13 +149,10 @@ serve(async (req) => {
         const clientName   = manual_invoice ? (client_name || lead.name || 'Client') : (lead.name || 'Client');
         const clientPhone  = manual_invoice ? (client_phone || lead.phone || lead.whatsapp_number || '') : (lead.phone || lead.whatsapp_number || '');
 
-        const rawShift = extractedShift.toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() || '24';
-        const shift = `${rawShift}HRS`;
-        const manualServiceHours = String(service_hours || '10').replace(/\D/g, '') || '10';
-        const manualServiceName = String(service_name || extractedService || 'HOME CARE SERVICE').trim();
-        const service      = manual_invoice
-            ? `${manualServiceHours}-HOUR SHIFT HRS (${manualServiceName.toUpperCase()})`
-            : is_deposit ? 'Security Deposit' : `${shift} (${extractedService.toUpperCase()})`;
+        const rawShift = (service_hours ? String(service_hours).replace(/\D/g, '') : '') || extractedShift.toUpperCase().replace('HR', '').replace('HRS', '').replace('HOURS', '').trim() || '24';
+        const shift = `${rawShift}-HOUR SHIFT`;
+        const activeServiceName = String(service_name || extractedService || 'OLD AGE CARE').trim();
+        const service      = is_deposit ? 'SECURITY DEPOSIT' : `${shift} (${activeServiceName.toUpperCase()})`;
 
         const servicePeriod = manual_invoice && start_date && end_date
             ? `${formatPeriodDate(start_date)} To ${formatPeriodDate(end_date)}`
@@ -249,8 +246,9 @@ serve(async (req) => {
             }
         }
         
-        const titleText = is_deposit ? 'SECURITY DEPOSIT RECEIPT' : 'TAX INVOICE';
-        page.drawText(titleText, { x: 40, y: curY - taxInvoiceYOffset, size: 14, font: bold, color: DARK });
+        if (is_deposit) {
+            page.drawText('SECURITY DEPOSIT RECEIPT', { x: 40, y: curY - taxInvoiceYOffset, size: 14, font: bold, color: DARK });
+        }
 
         // Company Info (Right)
         const cRightX = W - 40;

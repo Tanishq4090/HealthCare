@@ -7436,11 +7436,26 @@ export default function CRM() {
                                                 const formattedPeriod = (ciStartDate && ciEndDate)
                                                     ? `${formatDateStr(ciStartDate)} To ${formatDateStr(ciEndDate)}`
                                                     : 'As agreed';
+                                                const generatedInvNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
                                                 // 1. Generate PDF
                                                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-                                                    body: JSON.stringify({ lead_id: ciLeadId || lead.id, deposit_amount: total, service_period: formattedPeriod, is_deposit: false })
+                                                    body: JSON.stringify({
+                                                        lead_id: ciLeadId || lead.id,
+                                                        manual_invoice: true,
+                                                        rate_per_day: ciRate,
+                                                        start_date: ciStartDate,
+                                                        end_date: ciEndDate,
+                                                        deposit_collected: 0,
+                                                        service_period: formattedPeriod,
+                                                        invoice_number: generatedInvNo,
+                                                        is_deposit: false,
+                                                        client_name: lead.name,
+                                                        client_phone: lead.phone || lead.whatsapp_number,
+                                                        service_name: lead.service_interest,
+                                                        service_hours: lead.shift_duration,
+                                                    })
                                                 });
                                                 if (!invResp.ok) throw new Error(await invResp.text());
                                                 const invData = await invResp.json();

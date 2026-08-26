@@ -7,7 +7,7 @@ const RupeeIcon = ({ className }: { className?: string }) => (
 );
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
-import { resolveClientBillingRatePerDay } from '../utils/billingRate';
+import { resolveClientBillingRatePerDay, numberToWordsINR } from '../utils/billingRate';
 import ServicesPanel from '../components/hr/ServicesPanel';
 import { recordServiceInvoice, markServiceBillPaid } from '../services/serviceLifecycle';
 
@@ -781,13 +781,24 @@ export default function Billing() {
                               due_date: invoiceDueDate,
                               invoice_number: agentTargetBill.invoice_no,
                               is_deposit: false,
+                              client_name: agentTargetBill.client,
+                              client_phone: agentTargetBill.client_phone,
+                              client_address: agentTargetBill.client_address,
+                              service_name: agentTargetBill.service_category || agentTargetBill.rawAssignment?.service_name || 'Old Age Care',
+                              service_hours: agentTargetBill.shift_duration || '24',
                           }
                         : {
                               lead_id: agentTargetBill.client_id,
                               deposit_amount: netPayable,
                               service_period: formattedPeriod,
                               due_date: invoiceDueDate,
+                              invoice_number: agentTargetBill.invoice_no,
                               is_deposit: false,
+                              client_name: agentTargetBill.client,
+                              client_phone: agentTargetBill.client_phone,
+                              client_address: agentTargetBill.client_address,
+                              service_name: agentTargetBill.service_category || agentTargetBill.rawAssignment?.service_name || 'Old Age Care',
+                              service_hours: agentTargetBill.shift_duration || '24',
                           },
                 ),
             });
@@ -1284,13 +1295,50 @@ export default function Billing() {
                             setIsDuplicateChoiceOpen(false);
                             setIsManualInvoiceOpen(true);
                         }}
-                        onPrepareInvoice={(service) => {
+                        onPrepareInvoice={async (service) => {
                             const activeWorker = (service.service_worker_assignments || []).find(a => !a.end_date) || (service.service_worker_assignments || [])[0];
+                            
+                            let clientAddress = '';
+                            let clientServiceName = service.service_type || 'Old Age Care';
+                            let clientShift = '24-Hour Shift';
+
+                            try {
+                                const [leadRes, consentRes] = await Promise.all([
+                                    supabase.from('crm_leads').select('*').eq('id', service.client_id).maybeSingle(),
+                                    supabase.from('client_consents').select('*').eq('lead_id', service.client_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+                                ]);
+                                if (consentRes.data?.address) {
+                                    clientAddress = consentRes.data.address;
+                                } else if (leadRes.data?.notes) {
+                                    const locMatch = leadRes.data.notes.match(/^Location:\s*(.+)$/im);
+                                    if (locMatch) clientAddress = locMatch[1].trim();
+                                }
+                                if (consentRes.data?.service_category) {
+                                    clientServiceName = consentRes.data.service_category;
+                                } else if (leadRes.data?.service_interest) {
+                                    clientServiceName = leadRes.data.service_interest;
+                                } else if (leadRes.data?.notes) {
+                                    const sMatch = leadRes.data.notes.match(/^Service:\s*(.+)$/im);
+                                    if (sMatch) clientServiceName = sMatch[1].trim();
+                                }
+                                if (consentRes.data?.offered_time) {
+                                    clientShift = consentRes.data.offered_time;
+                                } else if (leadRes.data?.notes) {
+                                    const shMatch = leadRes.data.notes.match(/^Shift:\s*(.+)$/im);
+                                    if (shMatch) clientShift = shMatch[1].trim();
+                                }
+                            } catch {
+                                // fallback
+                            }
+
                             const billObj = {
                                 id: service.id,
                                 client_id: service.client_id,
                                 client: service.clients?.client_name || 'Client',
                                 client_phone: service.clients?.phone_number || '+91 9016116564',
+                                client_address: clientAddress,
+                                service_category: clientServiceName,
+                                shift_duration: clientShift,
                                 amount: `₹${service.complete_month_daily_rate || 500}/day`,
                                 status: 'Draft',
                                 month: new Date().toLocaleString('default', { month: 'long' }),
@@ -1300,7 +1348,7 @@ export default function Billing() {
                                     id: service.id,
                                     client_id: service.client_id,
                                     employee_id: activeWorker?.employee_id,
-                                    service_name: service.service_type || 'Care Service',
+                                    service_name: clientServiceName,
                                     client_billing_rate: service.complete_month_daily_rate || 500,
                                     complete_month_daily_rate: service.complete_month_daily_rate || 500,
                                     incomplete_month_daily_rate: service.incomplete_month_daily_rate || 1000,
@@ -1825,13 +1873,10 @@ export default function Billing() {
                         
                         <div className="p-8 overflow-y-auto bg-white custom-scrollbar">
                             {/* Invoice Header */}
-                            <div className="flex justify-between items-start mb-10">
+                            <div className="flex justify-between items-start mb-8">
                                 <div>
-                                    <div className="flex flex-col mb-4">
-                                        <img src="/99care-logo.png" alt="99 CARE" className="h-14 w-auto object-contain" />
-                                    </div>
-                                    <div className="mt-8">
-                                        <h2 className="text-xl font-bold text-slate-800 tracking-[0.2em]">INVOICE</h2>
+                                    <div className="flex flex-col">
+                                        <img src="/99care-logo.png" alt="99 CARE" className="h-16 w-auto object-contain" />
                                     </div>
                                 </div>
                                 <div className="text-right text-xs text-slate-600 flex flex-col items-end gap-1">
@@ -1851,6 +1896,7 @@ export default function Billing() {
                                     <p className="font-bold text-slate-800 mb-1">Bill To:</p>
                                     <p className="font-bold text-lg text-slate-900">{invoiceData.clientName}</p>
                                     <p className="text-slate-600">Ph: {invoiceData.phone}</p>
+                                    {invoiceData.address && <p className="text-slate-600 max-w-xs mt-0.5">{invoiceData.address}</p>}
                                 </div>
                                 <div className="text-sm flex flex-col gap-2 text-right">
                                     <div className="flex justify-end gap-8"><span className="font-bold text-slate-700">Invoice #:</span> <span className="font-semibold">{invoiceData.invoiceNumber}</span></div>
@@ -1879,12 +1925,12 @@ export default function Billing() {
                             </table>
 
                             {/* Totals */}
-                            <div className="flex justify-end mb-10">
+                            <div className="flex justify-end mb-8">
                                 <div className="w-1/2 space-y-1">
-                                    {invoiceData.totalAmount && invoiceData.totalAmount !== invoiceData.amount && (
-                                        <div className="flex justify-between items-center py-1.5 text-sm">
-                                            <span className="text-slate-600">{invoiceData.days} day{invoiceData.days !== 1 ? 's' : ''} × ₹{invoiceData.rate?.toLocaleString('en-IN')}/day</span>
-                                            <span className="font-semibold text-slate-800">₹{invoiceData.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    {invoiceData.days > 0 && invoiceData.rate > 0 && (
+                                        <div className="flex justify-between items-center py-1 text-xs text-slate-600">
+                                            <span>Rate Breakdown ({invoiceData.days} day{invoiceData.days !== 1 ? 's' : ''} × ₹{invoiceData.rate?.toLocaleString('en-IN')}/day)</span>
+                                            <span className="font-semibold text-slate-800">₹{(invoiceData.days * invoiceData.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                         </div>
                                     )}
                                     {invoiceData.depositCollected > 0 && (
@@ -1901,6 +1947,9 @@ export default function Billing() {
                                         <span className="font-semibold text-slate-700">Amount Payable:</span>
                                         <span className="font-bold text-slate-800">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                     </div>
+                                    <p className="text-[11px] text-slate-600 mt-2 text-right">
+                                        Total amount (in words): <span className="font-medium text-slate-800">INR {numberToWordsINR(invoiceData.amount)} Rupees Only.</span>
+                                    </p>
                                 </div>
                             </div>
 
@@ -1926,8 +1975,9 @@ export default function Billing() {
                                 </div>
                                 <div className="text-center flex flex-col items-center justify-end">
                                     <p className="text-[10px] text-slate-500 mb-1">For 99 CARE</p>
-                                    <div className="h-10 w-28 border-b border-slate-400 flex items-end justify-center mb-1"></div>
-                                    <p className="text-[10px] text-slate-600">Authorized Signatory</p>
+                                    <img src="/Signature.png" alt="Authorized Signature" className="h-10 w-auto object-contain mb-1" />
+                                    <div className="w-28 border-b border-slate-400 mb-1"></div>
+                                    <p className="text-[10px] text-slate-600 font-medium">Authorized Signatory</p>
                                 </div>
                             </div>
 
@@ -2299,6 +2349,19 @@ export default function Billing() {
                                             }
                                             setIsClientInvoiceOpen(false);
                                             const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
+                                            const formatDateStr = (ds: string) => {
+                                                if (!ds) return '';
+                                                const [y, m, d] = ds.split('-');
+                                                return `${d}/${m}/${y}`;
+                                            };
+                                            const formattedPeriod = (ciStartDate && ciEndDate)
+                                                ? `${formatDateStr(ciStartDate)} To ${formatDateStr(ciEndDate)}`
+                                                : 'As agreed';
+                                            const rawShift = (clientInvoiceBill.shift_duration || '24').toString().replace(/\D/g, '') || '24';
+                                            const shiftTitle = `${rawShift}-HOUR SHIFT`;
+                                            const serviceTitle = (clientInvoiceBill.service_category || clientInvoiceBill.rawAssignment?.service_name || 'OLD AGE CARE').toUpperCase();
+                                            const itemDescription = `${shiftTitle} (${serviceTitle}) — ${ciDays} DAY${ciDays !== 1 ? 'S' : ''} (${formattedPeriod})`;
+
                                             const targetBill = {
                                                 ...clientInvoiceBill,
                                                 invoice_no: invoiceNo,
@@ -2309,12 +2372,16 @@ export default function Billing() {
                                                 startDate: ciStartDate,
                                                 endDate: ciEndDate,
                                                 depositCollected: 0,
+                                                client_address: clientInvoiceBill.client_address || '',
+                                                service_category: clientInvoiceBill.service_category || 'Old Age Care',
+                                                shift_duration: clientInvoiceBill.shift_duration || '24',
                                             };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
                                                 phone: clientInvoiceBill.client_phone || '',
-                                                service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
+                                                address: clientInvoiceBill.client_address || '',
+                                                service: itemDescription,
                                                 amount: total,
                                                 totalAmount: total,
                                                 depositCollected: 0,
@@ -2322,6 +2389,10 @@ export default function Billing() {
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
                                                 rate: ciRate,
+                                                startDate: ciStartDate,
+                                                endDate: ciEndDate,
+                                                service_name: clientInvoiceBill.service_category || 'Old Age Care',
+                                                service_hours: clientInvoiceBill.shift_duration || '24',
                                             });
                                             setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
                                             setInvoiceDepositAmount(total.toString());
@@ -2341,6 +2412,19 @@ export default function Billing() {
                                             }
                                             setIsClientInvoiceOpen(false);
                                             const invoiceNo = `INV-C${Math.floor(Math.random() * 9000) + 1000}`;
+                                            const formatDateStr = (ds: string) => {
+                                                if (!ds) return '';
+                                                const [y, m, d] = ds.split('-');
+                                                return `${d}/${m}/${y}`;
+                                            };
+                                            const formattedPeriod = (ciStartDate && ciEndDate)
+                                                ? `${formatDateStr(ciStartDate)} To ${formatDateStr(ciEndDate)}`
+                                                : 'As agreed';
+                                            const rawShift = (clientInvoiceBill.shift_duration || '24').toString().replace(/\D/g, '') || '24';
+                                            const shiftTitle = `${rawShift}-HOUR SHIFT`;
+                                            const serviceTitle = (clientInvoiceBill.service_category || clientInvoiceBill.rawAssignment?.service_name || 'OLD AGE CARE').toUpperCase();
+                                            const itemDescription = `${shiftTitle} (${serviceTitle}) — ${ciDays} DAY${ciDays !== 1 ? 'S' : ''} (${formattedPeriod})`;
+
                                             const targetBill = {
                                                 ...clientInvoiceBill,
                                                 invoice_no: invoiceNo,
@@ -2351,12 +2435,16 @@ export default function Billing() {
                                                 startDate: ciStartDate,
                                                 endDate: ciEndDate,
                                                 depositCollected: 0,
+                                                client_address: clientInvoiceBill.client_address || '',
+                                                service_category: clientInvoiceBill.service_category || 'Old Age Care',
+                                                shift_duration: clientInvoiceBill.shift_duration || '24',
                                             };
                                             setAgentTargetBill(targetBill);
                                             setInvoiceData({
                                                 clientName: clientInvoiceBill.client,
                                                 phone: clientInvoiceBill.client_phone || '',
-                                                service: `Home Care Service — ${ciDays} day${ciDays !== 1 ? 's' : ''}`,
+                                                address: clientInvoiceBill.client_address || '',
+                                                service: itemDescription,
                                                 amount: total,
                                                 totalAmount: total,
                                                 depositCollected: 0,
@@ -2364,6 +2452,10 @@ export default function Billing() {
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
                                                 rate: ciRate,
+                                                startDate: ciStartDate,
+                                                endDate: ciEndDate,
+                                                service_name: clientInvoiceBill.service_category || 'Old Age Care',
+                                                service_hours: clientInvoiceBill.shift_duration || '24',
                                             });
                                             const draft = generateWhatsappDraft(targetBill, agentDraftLang);
                                             setAgentDraftText(draft);
