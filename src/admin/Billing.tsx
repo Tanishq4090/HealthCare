@@ -1326,9 +1326,15 @@ export default function Billing() {
                                 }
                             }
 
-                            // 2. Determine end date: Service end date if specified, otherwise current date (today)
-                            const todayStr = new Date().toISOString().split('T')[0];
-                            const endStr = service.end_date ? service.end_date.split('T')[0] : todayStr;
+                            // 2. Determine end date: Service end date if specified, otherwise end of calendar month for startStr
+                            let endStr = service.end_date ? service.end_date.split('T')[0] : '';
+                            if (!endStr && startStr) {
+                                const [y, m] = startStr.split('-').map(Number);
+                                const lastDay = new Date(y, m, 0);
+                                endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+                            } else if (!endStr) {
+                                endStr = new Date().toISOString().split('T')[0];
+                            }
 
                             setCiStartDate(startStr);
                             setCiEndDate(endStr);

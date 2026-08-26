@@ -2072,9 +2072,15 @@ export default function CRM() {
             }
         }
 
-        // 3. Resolve end date (service end date if set, otherwise today's date)
-        const todayStr = new Date().toISOString().split('T')[0];
-        const defaultEnd = (svc?.end_date || asgn?.end_date) ? (svc?.end_date || asgn?.end_date).split('T')[0] : todayStr;
+        // 3. Resolve end date (service end date if set, otherwise calendar month-end of defaultStart)
+        let defaultEnd = (svc?.end_date || asgn?.end_date) ? (svc?.end_date || asgn?.end_date).split('T')[0] : '';
+        if (!defaultEnd && defaultStart) {
+            const [y, m] = defaultStart.split('-').map(Number);
+            const lastDay = new Date(y, m, 0);
+            defaultEnd = `${y}-${String(m).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+        } else if (!defaultEnd) {
+            defaultEnd = new Date().toISOString().split('T')[0];
+        }
 
         setCiRate(resolvedRate);
         setCiDeposit(resolvedDeposit);
