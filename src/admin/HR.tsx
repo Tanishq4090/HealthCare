@@ -161,13 +161,10 @@ export default function HR() {
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
 
-            // Fetch Month-to-Date Stats for all employees
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
+            // Fetch Attendance Stats for all employees
             const { data: monthStats } = await supabase
               .from('attendance')
-              .select('worker_id, status, hours_worked, is_half_day, duty_date')
-              .gte('duty_date', startOfMonth.toISOString().split('T')[0]);
+              .select('worker_id, status, hours_worked, is_half_day, duty_date, assignment_id');
 
             let finalWorkers = [];
             if (employeeError) {
@@ -214,8 +211,24 @@ export default function HR() {
                     const start = a.start_date ? new Date(a.start_date) : null;
                     const end = a.end_date ? new Date(a.end_date) : new Date();
 
-                    // Calculate real verified attendance days from attendance records
-                    const workerAttendance = (monthStats || []).filter(s => s.worker_id === a.employee_id);
+                    // Calculate real verified attendance days strictly for THIS assignment
+                    const workerAttendance = (monthStats || []).filter(s => {
+                        if (s.worker_id !== a.employee_id) return false;
+                        if (s.assignment_id && a.id) {
+                            return s.assignment_id === a.id;
+                        }
+                        // Fallback date matching if legacy attendance log without assignment_id
+                        if (a.start_date) {
+                            const dutyDate = s.duty_date;
+                            const startDateStr = a.start_date.split('T')[0];
+                            if (dutyDate < startDateStr) return false;
+                            if (a.end_date) {
+                                const endDateStr = a.end_date.split('T')[0];
+                                if (dutyDate > endDateStr) return false;
+                            }
+                        }
+                        return true;
+                    });
                     const presentCount = workerAttendance.filter(s => s.status === 'Present' || s.status === 'present' || s.status === 'On Duty').length;
                     const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
                     const verifiedDays = presentCount + (halfCount * 0.5);
@@ -1895,7 +1908,15 @@ export default function HR() {
                                 }
                             });
 
-                            const groups = Array.from(clientGroupsMap.values());
+                            const groups = Array.from(clientGroupsMap.values()).sort((a, b) => {
+                                const getLatestTimestamp = (grp: typeof a) => {
+                                    return Math.max(...grp.items.map(i => {
+                                        const dateStr = i.start_date || i.created_at || i.period_start || '1970-01-01';
+                                        return new Date(dateStr).getTime();
+                                    }));
+                                };
+                                return getLatestTimestamp(b) - getLatestTimestamp(a);
+                            });
 
                             return (
                                 <div className="space-y-5 overflow-y-auto flex-1 pr-1">
