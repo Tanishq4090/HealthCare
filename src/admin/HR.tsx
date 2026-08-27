@@ -1827,185 +1827,285 @@ export default function HR() {
                         </div>
                     </div>
 
-                    <div className="max-w-4xl w-full mx-auto flex-1 overflow-hidden flex flex-col mb-6">
-
-                        {/* Worker Payslips Section */}
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                            <div className="p-4 border-b border-slate-100 bg-[#E6F7F7]/50 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <Users className="w-5 h-5 text-[#1AA6A8]" />
-                                    <h3 className="font-bold text-slate-900">Worker Monthly Payslips</h3>
-                                </div>
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-[#1AA6A8] bg-[#EAFBFB] px-2 py-0.5 rounded-full">Payables</span>
+                    <div className="max-w-4xl w-full mx-auto flex-1 overflow-hidden flex flex-col mb-6 space-y-4">
+                        {isLoading ? (
+                            <div className="bg-white rounded-xl border border-slate-200 p-10 flex flex-col items-center justify-center">
+                                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                <p className="text-xs text-slate-500 mt-2">Loading payroll and payslips...</p>
                             </div>
-                            <div className="flex-1 overflow-auto divide-y divide-slate-100">
-                                {isLoading ? (
-                                     <div className="flex flex-col items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-                                ) : (
-                                    payrollItems.filter(item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type).map((item) => {
-                                        const days = getDays(item);
-                                        const amount = grossFromPayrollItem(item);
-                                        return (
-                                            <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50 transition-colors group">
-                                                <div className="flex justify-between items-center">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-xl bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center font-bold text-sm shadow-sm">
-                                                            {item.worker.charAt(0)}
-                                                        </div>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <p className="font-bold text-slate-900">{item.worker}</p>
-                                                                {(item.status === 'Paid' || item.status === 'Settled') ? (
-                                                                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>
-                                                                ) : item.status === PAYSLIP_SENT_STATUS ? (
-                                                                    <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Sent</span>
-                                                                ) : (
-                                                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>
-                                                                )}
-                                                            </div>
-                                                            {item.client_name && item.client_name !== 'N/A' && (
-                                                                <p className="text-[10px] text-slate-400 font-medium">→ {item.client_name}</p>
-                                                            )}
-                                                            <p className="text-[10px] text-slate-500 font-medium">{days} day{days !== 1 ? 's' : ''} @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'August 2026'}</p>
-                                                        </div>
+                        ) : (() => {
+                            const rawItems = payrollItems.filter(
+                                item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type
+                            );
+
+                            const filtered = rawItems.filter(item => {
+                                if (!workerSearch) return true;
+                                const q = workerSearch.toLowerCase();
+                                return (
+                                    (item.worker || '').toLowerCase().includes(q) ||
+                                    (item.client_name || '').toLowerCase().includes(q)
+                                );
+                            });
+
+                            if (filtered.length === 0) {
+                                return (
+                                    <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
+                                        <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                        <p className="font-bold text-slate-700">No worker payslips found</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Active deployments will automatically appear here.</p>
+                                    </div>
+                                );
+                            }
+
+                            // Group payslips by client service
+                            const clientGroupsMap = new Map<string, {
+                                clientId: string;
+                                clientName: string;
+                                items: any[];
+                                totalPayables: number;
+                                paidCount: number;
+                                pendingCount: number;
+                            }>();
+
+                            filtered.forEach(item => {
+                                const rawClient = (item.client_name || item.client || '').trim();
+                                const clientName = (!rawClient || rawClient === 'N/A' || rawClient === 'Unassigned')
+                                    ? 'Internal / General Operations'
+                                    : rawClient;
+                                const clientKey = clientName.toLowerCase();
+
+                                if (!clientGroupsMap.has(clientKey)) {
+                                    clientGroupsMap.set(clientKey, {
+                                        clientId: clientKey,
+                                        clientName,
+                                        items: [],
+                                        totalPayables: 0,
+                                        paidCount: 0,
+                                        pendingCount: 0,
+                                    });
+                                }
+
+                                const grp = clientGroupsMap.get(clientKey)!;
+                                grp.items.push(item);
+                                grp.totalPayables += grossFromPayrollItem(item);
+                                if (item.status === 'Paid' || item.status === 'Settled') {
+                                    grp.paidCount++;
+                                } else {
+                                    grp.pendingCount++;
+                                }
+                            });
+
+                            const groups = Array.from(clientGroupsMap.values());
+
+                            return (
+                                <div className="space-y-5 overflow-y-auto flex-1 pr-1">
+                                    {groups.map(group => (
+                                        <div
+                                            key={group.clientId}
+                                            className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"
+                                        >
+                                            {/* Client Service Header */}
+                                            <div className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-9 h-9 rounded-xl bg-[#1AA6A8] text-white font-bold flex items-center justify-center text-sm shadow-xs shrink-0">
+                                                        {group.clientName.charAt(0).toUpperCase()}
                                                     </div>
-                                                    <div className="flex flex-col items-end gap-2">
-                                                        <div className="flex items-center gap-3">
-                                                            <p className="text-sm font-bold text-[#1AA6A8]">₹{amount.toFixed(2)}</p>
-                                                            <button 
-                                                                onClick={async () => {
-                                                                    if (!confirm('Are you sure you want to delete this payslip?')) return;
-                                                                    try {
-                                                                        const { error } = await supabase
-                                                                            .from('payroll')
-                                                                            .delete()
-                                                                            .eq('id', item.id);
-                                                                        if (error) throw error;
-                                                                        toast.success("Payslip deleted successfully");
-                                                                        fetchData();
-                                                                    } catch (err: any) {
-                                                                        toast.error(err.message || "Failed to delete payslip");
-                                                                    }
-                                                                }}
-                                                                className="p-1.5 rounded-md bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-sm active:scale-95"
-                                                                title="Delete Payslip"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                            </button>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h3 className="font-bold text-slate-900 text-sm">{group.clientName}</h3>
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                                                {group.items.length} Payslip{group.items.length !== 1 ? 's' : ''}
+                                                            </span>
+                                                            {group.paidCount > 0 && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                                                    {group.paidCount} Paid
+                                                                </span>
+                                                            )}
+                                                            {group.pendingCount > 0 && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                                                                    {group.pendingCount} Pending
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                        <div className="flex flex-wrap gap-2 justify-end">
-                                                            <button 
-                                                                onClick={() => setPreviewPayslip(item)} 
-                                                                className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
-                                                            >
-                                                                <Eye className="w-3 h-3" /> Preview
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => handleGenerateSinglePayslip(item)} 
-                                                                className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
-                                                            >
-                                                                <Download className="w-3 h-3" /> Download
-                                                            </button>
-                                                            <button 
-                                                                onClick={async () => {
-                                                                    const workerRecord = workers.find(w => w.name === item.worker);
-                                                                    let phone = item.worker_phone || '';
-                                                                    if (!phone && workerRecord && workerRecord.phone) {
-                                                                        phone = workerRecord.phone;
-                                                                    }
-                                                                    if (phone) {
-                                                                        phone = phone.replace(/\D/g, '');
-                                                                        if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
-                                                                    }
-                                                                    if (!phone) {
-                                                                        toast.error("No phone number found for this worker.");
-                                                                        return;
-                                                                    }
-                                                                    
-                                                                    const toastId = toast.loading("Generating payslip and dispatching...");
-                                                                    try {
-                                                                        await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
-                                                                    } catch (err: any) {
-                                                                        toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
-                                                                    }
-                                                                }}
-                                                                className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
-                                                            >
-                                                                <Send className="w-3 h-3" /> WhatsApp
-                                                            </button>
-                                                            <button
-                                                                onClick={async () => {
-                                                                    try {
-                                                                        const newStatus = await toggleWorkerPaidStatus(item, item.status);
-                                                                        setPayrollItems(prev => prev.map(p => {
-                                                                            if (p.id === item.id || (item.assignment_id && p.assignment_id === item.assignment_id)) {
-                                                                                return { ...p, status: newStatus };
-                                                                            }
-                                                                            return p;
-                                                                        }));
-                                                                        toast.success(newStatus === 'Paid' ? `Marked salary for ${item.worker} as Paid!` : `Marked salary for ${item.worker} as Pending.`);
-                                                                        fetchData();
-                                                                    } catch (err: any) {
-                                                                        toast.error(`Failed to update payment status: ${err.message}`);
-                                                                    }
-                                                                }}
-                                                                className={`px-2 py-1 text-[10px] font-bold rounded transition-all flex items-center gap-1 ${
-                                                                    item.status === 'Paid' || item.status === 'Settled'
-                                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
-                                                                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
-                                                                }`}
-                                                                title={item.status === 'Paid' || item.status === 'Settled' ? 'Click to mark as Pending' : 'Click to mark as Paid'}
-                                                            >
-                                                                <CheckCircle2 className="w-3 h-3" />
-                                                                {item.status === 'Paid' || item.status === 'Settled' ? 'Paid ✓' : 'Mark Paid'}
-                                                            </button>
-                                                            <button
-                                                                onClick={async () => {
-                                                                    const assignment = activeAssignments.find(a => a.employee_id === item.worker_id || (a.employees && a.employees.full_name === item.worker));
-                                                                    if (assignment) {
-                                                                        setBillingAssignment(assignment);
-                                                                    } else {
-                                                                        let targetEmployeeId = item.worker_id;
-                                                                        if (!targetEmployeeId) {
-                                                                            const worker = workers.find(w => w.name === item.worker);
-                                                                            if (worker) targetEmployeeId = worker.id;
-                                                                        }
-                                                                        
-                                                                        if (targetEmployeeId) {
-                                                                            const { data, error } = await supabase
-                                                                                .from('worker_assignments')
-                                                                                .select('*, employees(*), clients(*)')
-                                                                                .eq('employee_id', targetEmployeeId)
-                                                                                .order('assigned_at', { ascending: false })
-                                                                                .limit(1)
-                                                                                .maybeSingle();
-                                                                            if (error) {
-                                                                                toast.error('Error finding assignment: ' + error.message);
-                                                                            } else if (data) {
-                                                                                setAutoCloseAssignmentOnGenerate(false);
-                                                                                setBillingAssignment(data);
-                                                                            } else {
-                                                                                toast.error('No assignment found for this worker.');
-                                                                            }
-                                                                        } else {
-                                                                            toast.error('Could not identify worker ID.');
-                                                                        }
-                                                                    }
-                                                                }}
-                                                                className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
-                                                                title="Open Live Generator"
-                                                            >
-                                                                <FileText className="w-3 h-3" /> Generator
-                                                            </button>
-                                                        </div>
+                                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                                            Assigned Staff Payslips & Payout Ledger
+                                                        </p>
                                                     </div>
                                                 </div>
+                                                <div className="text-left sm:text-right">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Staff Payout</p>
+                                                    <p className="text-base font-black text-[#1AA6A8]">₹{group.totalPayables.toFixed(2)}</p>
+                                                </div>
                                             </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
+
+                                            {/* Worker Payslips for this Client */}
+                                            <div className="divide-y divide-slate-100 bg-slate-50/20">
+                                                {group.items.map(item => {
+                                                    const days = getDays(item);
+                                                    const amount = grossFromPayrollItem(item);
+                                                    return (
+                                                        <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50/80 transition-colors group">
+                                                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-9 h-9 rounded-xl bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                                                                        {item.worker.charAt(0)}
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <p className="font-bold text-slate-900 text-sm">{item.worker}</p>
+                                                                            {(item.status === 'Paid' || item.status === 'Settled') ? (
+                                                                                <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>
+                                                                            ) : item.status === PAYSLIP_SENT_STATUS ? (
+                                                                                <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Sent</span>
+                                                                            ) : (
+                                                                                <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                                                            {days} day{days !== 1 ? 's' : ''} @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'August 2026'}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                                                                    <p className="text-sm font-bold text-[#1AA6A8]">₹{amount.toFixed(2)}</p>
+
+                                                                    <div className="flex flex-wrap gap-1.5 items-center justify-end">
+                                                                        <button 
+                                                                            onClick={() => setPreviewPayslip(item)} 
+                                                                            className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
+                                                                        >
+                                                                            <Eye className="w-3 h-3" /> Preview
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleGenerateSinglePayslip(item)} 
+                                                                            className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
+                                                                        >
+                                                                            <Download className="w-3 h-3" /> Download
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                const workerRecord = workers.find(w => w.name === item.worker);
+                                                                                let phone = item.worker_phone || '';
+                                                                                if (!phone && workerRecord && workerRecord.phone) {
+                                                                                    phone = workerRecord.phone;
+                                                                                }
+                                                                                if (phone) {
+                                                                                    phone = phone.replace(/\D/g, '');
+                                                                                    if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
+                                                                                }
+                                                                                if (!phone) {
+                                                                                    toast.error("No phone number found for this worker.");
+                                                                                    return;
+                                                                                }
+                                                                                
+                                                                                const toastId = toast.loading("Generating payslip and dispatching...");
+                                                                                try {
+                                                                                    await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
+                                                                                } catch (err: any) {
+                                                                                    toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
+                                                                                }
+                                                                            }}
+                                                                            className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
+                                                                        >
+                                                                            <Send className="w-3 h-3" /> WhatsApp
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    const newStatus = await toggleWorkerPaidStatus(item, item.status);
+                                                                                    setPayrollItems(prev => prev.map(p => {
+                                                                                        if (p.id === item.id || (item.assignment_id && p.assignment_id === item.assignment_id)) {
+                                                                                            return { ...p, status: newStatus };
+                                                                                        }
+                                                                                        return p;
+                                                                                    }));
+                                                                                    toast.success(newStatus === 'Paid' ? `Marked salary for ${item.worker} as Paid!` : `Marked salary for ${item.worker} as Pending.`);
+                                                                                    fetchData();
+                                                                                } catch (err: any) {
+                                                                                    toast.error(`Failed to update payment status: ${err.message}`);
+                                                                                }
+                                                                            }}
+                                                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all flex items-center gap-1 ${
+                                                                                item.status === 'Paid' || item.status === 'Settled'
+                                                                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
+                                                                                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
+                                                                            }`}
+                                                                            title={item.status === 'Paid' || item.status === 'Settled' ? 'Click to mark as Pending' : 'Click to mark as Paid'}
+                                                                        >
+                                                                            <CheckCircle2 className="w-3 h-3" />
+                                                                            {item.status === 'Paid' || item.status === 'Settled' ? 'Paid ✓' : 'Mark Paid'}
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                const assignment = activeAssignments.find(a => a.employee_id === item.worker_id || (a.employees && a.employees.full_name === item.worker));
+                                                                                if (assignment) {
+                                                                                    setBillingAssignment(assignment);
+                                                                                } else {
+                                                                                    let targetEmployeeId = item.worker_id;
+                                                                                    if (!targetEmployeeId) {
+                                                                                        const worker = workers.find(w => w.name === item.worker);
+                                                                                        if (worker) targetEmployeeId = worker.id;
+                                                                                    }
+                                                                                    
+                                                                                    if (targetEmployeeId) {
+                                                                                        const { data, error } = await supabase
+                                                                                            .from('worker_assignments')
+                                                                                            .select('*, employees(*), clients(*)')
+                                                                                            .eq('employee_id', targetEmployeeId)
+                                                                                            .order('assigned_at', { ascending: false })
+                                                                                            .limit(1)
+                                                                                            .maybeSingle();
+                                                                                        if (error) {
+                                                                                            toast.error('Error finding assignment: ' + error.message);
+                                                                                        } else if (data) {
+                                                                                            setAutoCloseAssignmentOnGenerate(false);
+                                                                                            setBillingAssignment(data);
+                                                                                        } else {
+                                                                                            toast.error('No assignment found for this worker.');
+                                                                                        }
+                                                                                    } else {
+                                                                                        toast.error('Could not identify worker ID.');
+                                                                                    }
+                                                                                }
+                                                                            }}
+                                                                            className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
+                                                                            title="Open Live Generator"
+                                                                        >
+                                                                            <FileText className="w-3 h-3" /> Generator
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                if (!confirm('Are you sure you want to delete this payslip?')) return;
+                                                                                try {
+                                                                                    const { error } = await supabase
+                                                                                        .from('payroll')
+                                                                                        .delete()
+                                                                                        .eq('id', item.id);
+                                                                                    if (error) throw error;
+                                                                                    toast.success("Payslip deleted successfully");
+                                                                                    fetchData();
+                                                                                } catch (err: any) {
+                                                                                    toast.error(err.message || "Failed to delete payslip");
+                                                                                }
+                                                                            }}
+                                                                            className="p-1 rounded-md bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-xs active:scale-95 ml-1"
+                                                                            title="Delete Payslip"
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
