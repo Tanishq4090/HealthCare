@@ -17,7 +17,7 @@ import {
     periodDaysInclusive,
     daysInCalendarMonth,
 } from '../utils/workerPayroll';
-import { markPayslipDispatched, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
+import { markPayslipDispatched, toggleWorkerPaidStatus, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
@@ -1932,6 +1932,32 @@ export default function HR() {
                                                                 className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
                                                             >
                                                                 <Send className="w-3 h-3" /> WhatsApp
+                                                            </button>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const newStatus = await toggleWorkerPaidStatus(item, item.status);
+                                                                        setPayrollItems(prev => prev.map(p => {
+                                                                            if (p.id === item.id || (item.assignment_id && p.assignment_id === item.assignment_id)) {
+                                                                                return { ...p, status: newStatus };
+                                                                            }
+                                                                            return p;
+                                                                        }));
+                                                                        toast.success(newStatus === 'Paid' ? `Marked salary for ${item.worker} as Paid!` : `Marked salary for ${item.worker} as Pending.`);
+                                                                        fetchData();
+                                                                    } catch (err: any) {
+                                                                        toast.error(`Failed to update payment status: ${err.message}`);
+                                                                    }
+                                                                }}
+                                                                className={`px-2 py-1 text-[10px] font-bold rounded transition-all flex items-center gap-1 ${
+                                                                    item.status === 'Paid' || item.status === 'Settled'
+                                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                                                                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
+                                                                }`}
+                                                                title={item.status === 'Paid' || item.status === 'Settled' ? 'Click to mark as Pending' : 'Click to mark as Paid'}
+                                                            >
+                                                                <CheckCircle2 className="w-3 h-3" />
+                                                                {item.status === 'Paid' || item.status === 'Settled' ? 'Paid ✓' : 'Mark Paid'}
                                                             </button>
                                                             <button
                                                                 onClick={async () => {

@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 
-export const PAYSLIP_SENT_STATUS = 'Payslip Sent';
+export const PAYSLIP_SENT_STATUS = 'Paid';
 
 export function isSyntheticPayrollItem(item: { id?: string; _isSynthetic?: boolean }): boolean {
     return Boolean(item._isSynthetic || String(item.id || '').startsWith('synth-'));
@@ -8,6 +8,66 @@ export function isSyntheticPayrollItem(item: { id?: string; _isSynthetic?: boole
 
 export function isPayslipDispatchedStatus(status?: string | null): boolean {
     return status === PAYSLIP_SENT_STATUS || status === 'Paid' || status === 'Settled';
+}
+
+/** Toggle worker payment status between Paid and Pending Payment */
+export async function toggleWorkerPaidStatus(
+    item: any,
+    currentStatus?: string
+): Promise<string> {
+    const isCurrentlyPaid = currentStatus === 'Paid' || currentStatus === 'Settled';
+    const newStatus = isCurrentlyPaid ? 'Pending Payment' : 'Paid';
+
+    const payload = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+    };
+
+    if (!isSyntheticPayrollItem(item) && item.id) {
+        const { error } = await supabase.from('payroll').update(payload).eq('id', item.id);
+        if (error) throw error;
+        return newStatus;
+    }
+
+    if (item.assignment_id) {
+        const { data: existing } = await supabase
+            .from('payroll')
+            .select('id')
+            .eq('assignment_id', item.assignment_id)
+            .maybeSingle();
+
+        if (existing?.id) {
+            const { error } = await supabase.from('payroll').update(payload).eq('id', existing.id);
+            if (error) throw error;
+            return newStatus;
+        }
+
+        const { error } = await supabase
+            .from('payroll')
+            .insert({
+                worker: item.worker,
+                worker_id: item.worker_id ?? null,
+                assignment_id: item.assignment_id,
+                client_name: item.client_name || item.client || 'N/A',
+                days_worked: item.days_worked ?? 0,
+                advance_amount: item.advance_amount ?? 0,
+                deposit_received: item.deposit_received ?? 0,
+                period_start: item.start_date || item.period_start || null,
+                period_end: item.end_date || item.period_end || null,
+                service_month: item.month || item.service_month || null,
+                daily_rate: item.daily_rate ?? 0,
+                total_amount: item.total_amount ?? 0,
+                net_balance: item.total_amount ?? 0,
+                payslip_type: 'worker',
+                payroll_type: 'payslip',
+                status: newStatus,
+            });
+
+        if (error) throw error;
+        return newStatus;
+    }
+
+    return newStatus;
 }
 
 /** Persist WhatsApp payslip dispatch — upserts DB row so list badge leaves "Pending". */
