@@ -73,50 +73,12 @@ function AppContent() {
   // Favor specific environment variables (Vercel) or the detected APP_MODE (which handles ports/env vars)
   const mode = appDomain === 'crm' ? 'os' : (appDomain === 'website' ? 'public' : APP_MODE);
 
-  if (mode === 'public') {
-    return (
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          <Route element={<Layout />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/services" element={<ServicesPage />} />
-            <Route path="/services/:slug" element={<ServiceDetailPage />} />
-            <Route path="/blog" element={<BlogPage />} />
-            <Route path="/blog/:slug" element={<BlogDetailPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/appointment" element={<AppointmentPage />} />
-            <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
-            <Route path="/privacy" element={<PrivacyPolicyPage />} />
-            <Route path="/terms" element={<TermsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-          <Route path="/id-card/:token" element={<PublicIDCard />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
-    );
-  }
-
   if (mode === 'os') {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
-          {/* Public pages — same nav works in OS mode */}
-          <Route element={<Layout />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/services" element={<ServicesPage />} />
-            <Route path="/services/:slug" element={<ServiceDetailPage />} />
-            <Route path="/blog" element={<BlogPage />} />
-            <Route path="/blog/:slug" element={<BlogDetailPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/appointment" element={<AppointmentPage />} />
-            <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
-            <Route path="/privacy" element={<PrivacyPolicyPage />} />
-            <Route path="/terms" element={<TermsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
+          {/* In OS/Admin mode (admin.99care.org), root redirects directly to /admin */}
+          <Route path="/" element={<Navigate to="/admin" replace />} />
 
           {/* Shared / utility routes */}
           <Route path="/login" element={<Login />} />
@@ -134,10 +96,69 @@ function AppContent() {
             <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
+
+          {/* Public pages fallback in OS mode */}
+          <Route element={<Layout />}>
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/:slug" element={<ServiceDetailPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/blog/:slug" element={<BlogDetailPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/appointment" element={<AppointmentPage />} />
+            <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+
+          {/* Fallback to admin */}
+          <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </AnimatePresence>
     );
   }
+
+  // Public Mode (www.99care.org / 99care.org)
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route element={<Layout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/services/:slug" element={<ServiceDetailPage />} />
+          <Route path="/blog" element={<BlogPage />} />
+          <Route path="/blog/:slug" element={<BlogDetailPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/appointment" element={<AppointmentPage />} />
+          <Route path="/appointment/confirmed" element={<AppointmentConfirmedPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+
+        {/* Shared / utility routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/client/confirm-staff/:id" element={<ClientConfirmation />} />
+        <Route path="/duty/:id" element={<DutyTracker />} />
+        <Route path="/id-card/:token" element={<PublicIDCard />} />
+
+        {/* Admin / CRM routes (accessible via www.99care.org/admin as well) */}
+        <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+          <Route index element={<Dashboard />} />
+          <Route path="crm" element={<ProtectedRoute requiredModule="crm"><CRM /></ProtectedRoute>} />
+          <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
+          <Route path="hr" element={<ProtectedRoute requiredModule="hr"><HR /></ProtectedRoute>} />
+          <Route path="billing" element={<ProtectedRoute requiredModule="finance"><Billing /></ProtectedRoute>} />
+          <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AnimatePresence>
+  );
 
   // Default block (local development without VITE_APP_DOMAIN set and APP_MODE unset)
   return (

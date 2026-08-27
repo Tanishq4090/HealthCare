@@ -1,21 +1,31 @@
 export type AppMode = 'public' | 'os';
 
 export function getAppMode(): AppMode {
-  // 1. Try environment variable first
-  const raw = import.meta.env.VITE_APP_MODE as string | undefined;
-  if (raw === 'os') return 'os';
-  if (raw === 'public') return 'public';
-
-  // 2. Fallback: infer from current URL port (Best for local dev isolation)
+  // 1. Runtime Hostname & Port detection (Supports multi-domain Vercel deployment)
   if (typeof window !== 'undefined') {
+    const host = window.location.hostname.toLowerCase();
     const port = window.location.port;
+
+    // Subdomain routing for CRM / Admin OS
+    if (
+      host.startsWith('admin.') ||
+      host.startsWith('crm.') ||
+      host.startsWith('os.') ||
+      host.includes('admin-') ||
+      host.includes('-os')
+    ) {
+      return 'os';
+    }
+
+    // Localhost port routing
     if (port === '5173') return 'os';
     if (port === '5174') return 'public';
-
-    // 3. Hostname-based (For production subdomains)
-    const host = window.location.hostname.toLowerCase();
-    if (host.startsWith('os.')) return 'os';
   }
+
+  // 2. Explicit environment variable fallback
+  const raw = (import.meta.env.VITE_APP_MODE || '').toLowerCase();
+  if (raw === 'os') return 'os';
+  if (raw === 'public') return 'public';
 
   return 'public';
 }
