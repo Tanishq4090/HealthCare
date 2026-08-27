@@ -166,7 +166,7 @@ export default function HR() {
             startOfMonth.setDate(1);
             const { data: monthStats } = await supabase
               .from('attendance')
-              .select('worker_id, status, hours_worked')
+              .select('worker_id, status, hours_worked, is_half_day, duty_date')
               .gte('duty_date', startOfMonth.toISOString().split('T')[0]);
 
             let finalWorkers = [];
@@ -178,8 +178,8 @@ export default function HR() {
             } else {
                 finalWorkers = employeeData.map(w => {
                     const wStats = monthStats?.filter(s => s.worker_id === w.id) || [];
-                    const presentDays = wStats.filter(s => s.status === 'present').length;
-                    const absentDays = wStats.filter(s => s.status === 'absent' || (s as any).is_absent).length;
+                    const presentDays = wStats.filter(s => s.status === 'present' || s.status === 'Present' || s.status === 'On Duty').length;
+                    const absentDays = wStats.filter(s => s.status === 'absent' || s.status === 'Absent' || (s as any).is_absent).length;
                     const totalHours = wStats.reduce((sum, s) => sum + (s.hours_worked || 0), 0);
                     const rating = w.rating ? parseFloat(w.rating).toFixed(1) : (4.5 + ((w.full_name || '').length % 6) / 10).toFixed(1);
                     
@@ -213,7 +213,15 @@ export default function HR() {
                     const clientObj = a.clients;
                     const start = a.start_date ? new Date(a.start_date) : null;
                     const end = a.end_date ? new Date(a.end_date) : new Date();
-                    const days = start ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 1;
+
+                    // Calculate real verified attendance days from attendance records
+                    const workerAttendance = (monthStats || []).filter(s => s.worker_id === a.employee_id);
+                    const presentCount = workerAttendance.filter(s => s.status === 'Present' || s.status === 'present' || s.status === 'On Duty').length;
+                    const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
+                    const verifiedDays = presentCount + (halfCount * 0.5);
+
+                    // Use verified attendance days
+                    const days = verifiedDays;
                     const periodDays = start ? periodDaysInclusive(start, end) : daysInCalendarMonth();
 
                     const pay = calculateWorkerPay({
@@ -238,7 +246,7 @@ export default function HR() {
                         days_worked: days,
                         advance_amount: a.advance_paid || 0,
                         status: a.assignment_status === 'completed' ? 'Pending Payment' : 'Active',
-                        month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'May 2026',
+                        month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'August 2026',
                         payroll_type: 'payslip',
                         start_date: a.start_date,
                         end_date: a.end_date || new Date().toISOString().split('T')[0],
@@ -1854,12 +1862,12 @@ export default function HR() {
                                                             {item.client_name && item.client_name !== 'N/A' && (
                                                                 <p className="text-[10px] text-slate-400 font-medium">→ {item.client_name}</p>
                                                             )}
-                                                            <p className="text-[10px] text-slate-500 font-medium">{days} days @ Rs. {item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'May 2026'}</p>
+                                                            <p className="text-[10px] text-slate-500 font-medium">{days} day{days !== 1 ? 's' : ''} @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'August 2026'}</p>
                                                         </div>
                                                     </div>
                                                     <div className="flex flex-col items-end gap-2">
                                                         <div className="flex items-center gap-3">
-                                                            <p className="text-sm font-bold text-[#1AA6A8]">Rs. {amount.toFixed(2)}</p>
+                                                            <p className="text-sm font-bold text-[#1AA6A8]">₹{amount.toFixed(2)}</p>
                                                             <button 
                                                                 onClick={async () => {
                                                                     if (!confirm('Are you sure you want to delete this payslip?')) return;
