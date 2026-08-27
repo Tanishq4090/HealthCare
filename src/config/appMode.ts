@@ -6,12 +6,17 @@ export function getAppMode(): AppMode {
     const host = window.location.hostname.toLowerCase();
     const port = window.location.port;
 
-    // Subdomain routing for CRM / Admin OS
+    // Main website domains -> ALWAYS public website
+    if (host === 'www.99care.org' || host === '99care.org') {
+      return 'public';
+    }
+
+    // Subdomains for CRM / Admin OS
     if (
       host.startsWith('admin.') ||
       host.startsWith('crm.') ||
       host.startsWith('os.') ||
-      host.includes('admin-') ||
+      host.includes('admin') ||
       host.includes('-os')
     ) {
       return 'os';

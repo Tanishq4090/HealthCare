@@ -30,16 +30,15 @@ import NotFoundPage from './pages/NotFoundPage';
 import PublicIDCard from './pages/public/PublicIDCard';
 import PrivacyPolicyPage from './pages/public/PrivacyPolicyPage';
 import TermsPage from './pages/public/TermsPage';
-import { APP_MODE } from './config/appMode';
+import { APP_MODE, getAppMode } from './config/appMode';
 import { useEffect } from 'react';
 
-// Lazy-loaded heavy admin modules (code-split for faster initial load)
 // Lazy-loaded heavy admin modules (code-split for faster initial load)
 
 import './App.css';
 
 function AppMeta() {
-  const mode = APP_MODE;
+  const mode = getAppMode();
 
   useEffect(() => {
     // Ensure OS pages never get indexed if deployed accidentally on public domain.
@@ -69,9 +68,7 @@ import { useAttendanceSocket } from './hooks/useAttendanceSocket';
 function AppContent() {
   useAttendanceSocket();
   const location = useLocation();
-  const appDomain = import.meta.env.VITE_APP_DOMAIN;
-  // Favor specific environment variables (Vercel) or the detected APP_MODE (which handles ports/env vars)
-  const mode = appDomain === 'crm' ? 'os' : (appDomain === 'website' ? 'public' : APP_MODE);
+  const mode = getAppMode();
 
   if (mode === 'os') {
     return (
