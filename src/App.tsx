@@ -225,7 +225,7 @@ function App() {
           <AuthProvider>
             <ScrollToTop />
             <AppMeta />
-            <Toaster position="bottom-right" theme="light" />
+            <Toaster position="bottom-right" theme="light" closeButton />
             <AppContent />
           </AuthProvider>
         </AnalyticsProvider>

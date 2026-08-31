@@ -320,7 +320,7 @@ export default function AdminLayout() {
 
         fetchRecentAlerts().catch(err => console.warn('Failed to fetch global alerts:', err));
 
-        // Month-End Billing Auto-Check & Notification
+        // Month-End Billing Auto-Check
         const checkMonthEndBilling = async () => {
             try {
                 const now = new Date();
@@ -350,13 +350,17 @@ export default function AdminLayout() {
                         }
                     }
 
-                    // Push global alert to bell notification & pop toast
-                    pushGlobalAlert(
-                        `month_end_billing:${monthEnd}`,
-                        `📅 Month-End Billing Active: ${monthName}`,
-                        `Today is the last day of the month (${now.getDate()} ${now.toLocaleString('default', { month: 'short' })}). Monthly client invoices & staff payout ledgers have been generated.`,
-                        { route: '/admin/billing?tab=monthly', severity: 'attention' }
-                    );
+                    // Register in global alerts bell list (without pop toast)
+                    const alertKey = `month_end_billing:${monthEnd}`;
+                    const monthEndAlert = {
+                        id: alertKey,
+                        title: `📅 Month-End Billing Active: ${monthName}`,
+                        body: `Today is the last day of the month (${now.getDate()} ${format(now, 'MMM')}). Monthly client invoices & staff payout ledgers have been generated.`,
+                        route: '/admin/billing?tab=monthly',
+                        severity: 'attention' as const,
+                        created_at: new Date().toISOString(),
+                    };
+                    setGlobalAlerts(prev => [monthEndAlert, ...prev.filter(item => item.id !== alertKey)].slice(0, 25));
                 }
             } catch (err) {
                 console.warn('Failed to check month end billing:', err);
@@ -430,6 +434,67 @@ export default function AdminLayout() {
             supabase.removeChannel(whatsappSub);
         };
     }, []);
+
+    // Show Month-End billing popup ONCE per session, ONLY in Finance or Dashboard
+    useEffect(() => {
+        const now = new Date();
+        const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const isLastDay = now.getDate() === lastDayOfCurrentMonth.getDate();
+        if (!isLastDay) return;
+
+        const monthEnd = format(lastDayOfCurrentMonth, 'yyyy-MM-dd');
+        const sessionKey = `month_end_toast_shown_${monthEnd}`;
+        if (sessionStorage.getItem(sessionKey)) return;
+
+        const isFinanceOrDashboard = 
+            location.pathname === '/admin' || 
+            location.pathname === '/admin/' || 
+            location.pathname.startsWith('/admin/dashboard') || 
+            location.pathname.startsWith('/admin/billing');
+
+        if (!isFinanceOrDashboard) return;
+
+        sessionStorage.setItem(sessionKey, 'true');
+        playNotificationSound();
+
+        toast.custom((t) => (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-4 max-w-sm w-full flex flex-col gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                        <span className="text-base">📅</span>
+                        <h4 className="text-sm font-bold text-slate-900">Month-End Billing Active: {format(now, 'MMMM yyyy')}</h4>
+                    </div>
+                    <button
+                        onClick={() => toast.dismiss(t)}
+                        className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors -mr-1 -mt-1"
+                        title="Close"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                    Today is the last day of the month ({now.getDate()} {format(now, 'MMM')}). Monthly client invoices & staff payout ledgers have been generated.
+                </p>
+                <div className="flex justify-end gap-2 pt-1">
+                    <button
+                        onClick={() => toast.dismiss(t)}
+                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                        Close
+                    </button>
+                    <button
+                        onClick={() => {
+                            toast.dismiss(t);
+                            navigate('/admin/billing?tab=monthly');
+                        }}
+                        className="px-3.5 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-xs"
+                    >
+                        Open
+                    </button>
+                </div>
+            </div>
+        ), { duration: 12000 });
+    }, [location.pathname]);
 
     // Navigation items linked to their required module (null means always visible)
     const navigation = [
