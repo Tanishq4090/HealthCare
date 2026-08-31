@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessModule } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { generateMonthlyBilling } from '../services/serviceLifecycle';
 
 const ATTENTION_EVENT_TYPES = new Set([
     'lead_created',
@@ -318,6 +319,51 @@ export default function AdminLayout() {
         };
 
         fetchRecentAlerts().catch(err => console.warn('Failed to fetch global alerts:', err));
+
+        // Month-End Billing Auto-Check & Notification
+        const checkMonthEndBilling = async () => {
+            try {
+                const now = new Date();
+                const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                const isLastDay = now.getDate() === lastDayOfCurrentMonth.getDate();
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                const monthEnd = lastDayOfCurrentMonth.toISOString().split('T')[0];
+                const monthName = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+                if (isLastDay) {
+                    // Check if recurring monthly billing has been generated for this month
+                    const { data: existingBills } = await supabase
+                        .from('service_bills')
+                        .select('id')
+                        .eq('period_end', monthEnd)
+                        .eq('type', 'recurring')
+                        .limit(1);
+
+                    const billsCount = existingBills?.length || 0;
+
+                    // If not generated, run generateMonthlyBilling automatically
+                    if (billsCount === 0) {
+                        try {
+                            await generateMonthlyBilling(monthStart, monthEnd);
+                        } catch (bErr) {
+                            console.warn('Auto month-end billing generation error:', bErr);
+                        }
+                    }
+
+                    // Push global alert to bell notification & pop toast
+                    pushGlobalAlert(
+                        `month_end_billing:${monthEnd}`,
+                        `📅 Month-End Billing Active: ${monthName}`,
+                        `Today is the last day of the month (${now.getDate()} ${now.toLocaleString('default', { month: 'short' })}). Monthly client invoices & staff payout ledgers have been generated.`,
+                        { route: '/admin/billing?tab=monthly', severity: 'attention' }
+                    );
+                }
+            } catch (err) {
+                console.warn('Failed to check month end billing:', err);
+            }
+        };
+
+        checkMonthEndBilling().catch(err => console.warn('checkMonthEndBilling error:', err));
 
         const leadsSub = supabase.channel('global_alert_leads_v1')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'crm_leads' }, (payload) => {

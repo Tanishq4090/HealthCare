@@ -71,9 +71,34 @@ export default function ServicesPanel({
     const [endResult, setEndResult] = useState<EndServiceResult | null>(null);
     const [isBillingRunning, setIsBillingRunning] = useState(false);
 
+    const now = new Date();
+    const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const isLastDayOfMonth = now.getDate() === lastDayOfCurrentMonth.getDate();
+    const currentMonthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const monthStartStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const monthEndStr = lastDayOfCurrentMonth.toISOString().split('T')[0];
+
     const fetchServices = useCallback(async () => {
         setIsLoading(true);
         try {
+            if (isLastDayOfMonth) {
+                // Check if recurring monthly billing has been generated for this month
+                const { data: existingBills } = await supabase
+                    .from('service_bills')
+                    .select('id')
+                    .eq('period_end', monthEndStr)
+                    .eq('type', 'recurring')
+                    .limit(1);
+
+                if (!existingBills || existingBills.length === 0) {
+                    try {
+                        await generateMonthlyBilling(monthStartStr, monthEndStr);
+                    } catch (bErr) {
+                        console.warn('Auto month-end billing error in ServicesPanel:', bErr);
+                    }
+                }
+            }
+
             const [servicesData, paymentsRes] = await Promise.all([
                 statusFilter === 'all'
                     ? getAllServices()
@@ -91,7 +116,7 @@ export default function ServicesPanel({
         } finally {
             setIsLoading(false);
         }
-    }, [statusFilter]);
+    }, [statusFilter, isLastDayOfMonth, monthStartStr, monthEndStr]);
 
     useEffect(() => { fetchServices(); }, [fetchServices]);
 
@@ -143,11 +168,7 @@ export default function ServicesPanel({
     const handleMonthlyBilling = async () => {
         setIsBillingRunning(true);
         try {
-            const now = new Date();
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-
-            const result = await generateMonthlyBilling(monthStart, monthEnd);
+            const result = await generateMonthlyBilling(monthStartStr, monthEndStr);
             if (result.success) {
                 toast.success(`Monthly billing complete: ${result.bills_created} bills, ${result.payslips_created} payslips generated.`);
                 fetchServices();
@@ -219,6 +240,40 @@ export default function ServicesPanel({
                     </button>
                 </div>
             </div>
+
+            {/* Month-End Billing Alert & Status Banner */}
+            {isLastDayOfMonth && (
+                <div className="m-4 p-4 rounded-2xl bg-gradient-to-r from-teal-50 via-cyan-50 to-emerald-50 border border-teal-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+                    <div className="flex items-start sm:items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1AA6A8] to-[#148B8D] text-white flex items-center justify-center shrink-0 shadow-md shadow-teal-500/20">
+                            <Calendar className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-sm font-bold text-slate-900">
+                                    Month-End Billing Day ({format(now, 'dd MMMM yyyy')})
+                                </h3>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-100 text-teal-800 border border-teal-300">
+                                    Auto-Billing Active
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-0.5">
+                                Today is the last date of the month. All monthly client invoices and worker payout ledgers for <strong>{currentMonthLabel}</strong> have been generated and logged automatically.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={handleMonthlyBilling}
+                            disabled={isBillingRunning}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm"
+                        >
+                            {isBillingRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                            Re-sync Month Billing
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Service List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
