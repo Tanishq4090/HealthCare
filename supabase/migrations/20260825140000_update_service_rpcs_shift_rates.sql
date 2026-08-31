@@ -206,12 +206,15 @@ BEGIN
               AND start_date <= p_month_end
               AND (end_date IS NULL OR end_date >= p_month_start)
         LOOP
-            -- Check if payslip already exists
+            -- Check if payslip already exists for this assignment (either final or recurring for this month)
             IF EXISTS (
                 SELECT 1 FROM public.payroll
                 WHERE assignment_id = v_asgn.id
-                  AND period_start = p_month_start
-                  AND period_end = p_month_end
+                  AND (
+                      type = 'final'
+                      OR (period_start = p_month_start AND period_end = p_month_end)
+                      OR (period_start <= p_month_end AND period_end >= p_month_start)
+                  )
             ) THEN
                 CONTINUE;
             END IF;

@@ -195,35 +195,37 @@ export default function HR() {
                 .from('services')
                 .select('id, legacy_assignment_id, client_id, status, service_worker_assignments(id, employee_id, start_date, end_date)');
 
-            // Build payroll items: prefer DB records, fall back to synthetic items from active assignments
-            const existingPayrollAssignmentIds = new Set<string>();
-            (payrollData || []).forEach((p: any) => {
-                if (p.assignment_id) existingPayrollAssignmentIds.add(p.assignment_id);
-                if (servicesData) {
-                    servicesData.forEach((s: any) => {
-                        const hasMatchingSwa = s.service_worker_assignments?.some((swa: any) => swa.id === p.assignment_id);
-                        if (s.id === p.service_id || hasMatchingSwa) {
-                            if (s.legacy_assignment_id) existingPayrollAssignmentIds.add(s.legacy_assignment_id);
-                        }
-                    });
-                }
-            });
-            
+            // Build payroll items: prefer official DB records, fall back to synthetic items only if no DB payroll exists for that worker & client/service
             const syntheticItems = (assignmentsData || [])
                 .filter((a: any) => {
                     const isActiveOrCompleted = a.assignment_status === 'active' || a.assignment_status === 'completed';
                     if (!isActiveOrCompleted) return false;
                     if (!a.employee_id) return false;
-                    if (existingPayrollAssignmentIds.has(a.id)) return false;
 
-                    // If assignment is completed, also check if there is an existing DB payroll entry for this worker & matching date range
-                    if (a.assignment_status === 'completed') {
-                        const hasMatchingDbPayroll = (payrollData || []).some((p: any) => 
-                            (p.worker_id === a.employee_id || p.worker === a.employees?.full_name) &&
-                            (p.assignment_id === a.id || (p.period_start && a.start_date && p.period_start.split('T')[0] === a.start_date.split('T')[0]))
-                        );
-                        if (hasMatchingDbPayroll) return false;
-                    }
+                    const hasMatchingDbPayroll = (payrollData || []).some((p: any) => {
+                        if (p.assignment_id === a.id) return true;
+                        
+                        const isSameWorker = p.worker_id === a.employee_id || (p.worker && a.employees?.full_name && p.worker.trim().toLowerCase() === a.employees.full_name.trim().toLowerCase());
+                        if (!isSameWorker) return false;
+
+                        const pClient = (p.client_name || '').trim().toLowerCase();
+                        const aClient = (a.clients?.client_name || a.employees?.assigned_client || '').trim().toLowerCase();
+                        if (pClient && aClient && (pClient === aClient || pClient.includes(aClient) || aClient.includes(pClient))) {
+                            return true;
+                        }
+
+                        if (servicesData) {
+                            const matchingSvc = servicesData.find((s: any) => 
+                                (s.id === p.service_id || s.client_id === a.client_id) &&
+                                s.service_worker_assignments?.some((swa: any) => swa.employee_id === a.employee_id)
+                            );
+                            if (matchingSvc) return true;
+                        }
+
+                        return false;
+                    });
+
+                    if (hasMatchingDbPayroll) return false;
 
                     const emp = a.employees;
                     if (!emp) return false;
