@@ -328,6 +328,54 @@ export async function generateMonthlyBilling(
     });
 
     if (error) throw new Error(`Failed to generate billing: ${error.message}`);
+
+    // Automatic Deduplication Safeguard:
+    // If a service already had an existing recorded/paid bill for this cycle, remove any unneeded duplicate rows
+    try {
+        const { data: bills } = await supabase
+            .from('service_bills')
+            .select('id, service_id, period_end, created_at, notes, type')
+            .eq('period_end', monthEnd)
+            .eq('type', 'recurring')
+            .order('created_at', { ascending: false });
+
+        if (bills && bills.length > 0) {
+            // Sort so bills with paid status or PDF attachments are prioritized
+            const sortedBills = [...bills].sort((a, b) => {
+                let aPriority = 0;
+                let bPriority = 0;
+                try {
+                    const pA = a.notes ? JSON.parse(a.notes) : {};
+                    if (pA.status === 'paid') aPriority += 2;
+                    if (pA.invoice_pdf_url) aPriority += 1;
+                } catch {}
+                try {
+                    const pB = b.notes ? JSON.parse(b.notes) : {};
+                    if (pB.status === 'paid') bPriority += 2;
+                    if (pB.invoice_pdf_url) bPriority += 1;
+                } catch {}
+                return bPriority - aPriority;
+            });
+
+            const seenServiceIds = new Set<string>();
+            const duplicatesToDelete: string[] = [];
+
+            for (const b of sortedBills) {
+                if (seenServiceIds.has(b.service_id)) {
+                    duplicatesToDelete.push(b.id);
+                } else {
+                    seenServiceIds.add(b.service_id);
+                }
+            }
+
+            if (duplicatesToDelete.length > 0) {
+                await supabase.from('service_bills').delete().in('id', duplicatesToDelete);
+            }
+        }
+    } catch (cleanErr) {
+        console.warn('Billing deduplication safeguard note:', cleanErr);
+    }
+
     return data as MonthlyBillingResult;
 }
 
