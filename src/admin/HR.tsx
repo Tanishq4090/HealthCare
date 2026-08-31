@@ -297,8 +297,29 @@ export default function HR() {
                     };
                 });
 
-            // Show ALL payroll records from DB — synchronize with verified attendance if pending
-            const validDbPayroll = (payrollData || []).filter((p: any) => !!p.worker).map((p: any) => {
+            // Show ALL payroll records from DB — deduplicate duplicate assignment rows (favoring 'final' payslips) and sync attendance
+            const rawValid = (payrollData || []).filter((p: any) => !!p.worker);
+            
+            // Sort so 'final' payslips take priority, then latest created
+            const sortedDb = [...rawValid].sort((a: any, b: any) => {
+                if (a.type === 'final' && b.type !== 'final') return -1;
+                if (b.type === 'final' && a.type !== 'final') return 1;
+                return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+            });
+
+            const seenAsgnKeys = new Set<string>();
+            const dedupedDbRows: any[] = [];
+            for (const p of sortedDb) {
+                const key = p.assignment_id ? `asgn_${p.assignment_id}` : `wc_${(p.worker || '').trim().toLowerCase()}_${(p.client_name || '').trim().toLowerCase()}`;
+                if (seenAsgnKeys.has(key)) {
+                    if (p.id) supabase.from('payroll').delete().eq('id', p.id).then();
+                    continue;
+                }
+                seenAsgnKeys.add(key);
+                dedupedDbRows.push(p);
+            }
+
+            const validDbPayroll = dedupedDbRows.map((p: any) => {
                 if (p.status === 'Pending Payment' || p.status === 'Pending') {
                     const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
                     if (empId) {
