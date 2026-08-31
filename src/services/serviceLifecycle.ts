@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { calculateClientServiceDaysFromAttendance } from '../utils/billingRate';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -372,11 +373,88 @@ export async function generateMonthlyBilling(
                 await supabase.from('service_bills').delete().in('id', duplicatesToDelete);
             }
         }
+
+        // Attendance Reconciliation:
+        // Synchronize client billable days based on multi-worker attendance reality
+        await syncClientBillsWithAttendance(monthStart, monthEnd);
     } catch (cleanErr) {
-        console.warn('Billing deduplication safeguard note:', cleanErr);
+        console.warn('Billing deduplication/attendance safeguard note:', cleanErr);
     }
 
     return data as MonthlyBillingResult;
+}
+
+export async function syncClientBillsWithAttendance(monthStart: string, monthEnd: string) {
+    try {
+        const { data: services } = await supabase
+            .from('services')
+            .select(`
+                id,
+                start_date,
+                end_date,
+                complete_month_daily_rate,
+                service_worker_assignments (
+                    id,
+                    employee_id,
+                    start_date,
+                    end_date
+                )
+            `)
+            .eq('status', 'active');
+
+        if (!services || services.length === 0) return;
+
+        for (const svc of services) {
+            const workerIds = (svc.service_worker_assignments || [])
+                .map((a: any) => a.employee_id)
+                .filter(Boolean);
+
+            const startStr = svc.start_date && svc.start_date > monthStart ? svc.start_date.split('T')[0] : monthStart;
+            const endStr = svc.end_date && svc.end_date < monthEnd ? svc.end_date.split('T')[0] : monthEnd;
+
+            if (workerIds.length > 0) {
+                const { data: attRecords } = await supabase
+                    .from('attendance')
+                    .select('worker_id, duty_date, status, is_half_day, is_absent')
+                    .in('worker_id', workerIds)
+                    .gte('duty_date', startStr)
+                    .lte('duty_date', endStr);
+
+                if (attRecords && attRecords.length > 0) {
+                    const actualDays = calculateClientServiceDaysFromAttendance(startStr, endStr, attRecords);
+                    const rate = svc.complete_month_daily_rate || 500;
+                    const newAmount = actualDays * rate;
+
+                    const { data: currentBills } = await supabase
+                        .from('service_bills')
+                        .select('id, notes')
+                        .eq('service_id', svc.id)
+                        .eq('type', 'recurring')
+                        .gte('period_end', monthStart);
+
+                    for (const b of currentBills || []) {
+                        let isPaid = false;
+                        try {
+                            const n = b.notes ? JSON.parse(b.notes) : {};
+                            if (n.status === 'paid') isPaid = true;
+                        } catch {}
+
+                        if (!isPaid) {
+                            await supabase
+                                .from('service_bills')
+                                .update({
+                                    total_days: actualDays,
+                                    amount: newAmount,
+                                })
+                                .eq('id', b.id);
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Sync client bills attendance error:', e);
+    }
 }
 
 // ── Get Service Bills ─────────────────────────────────────

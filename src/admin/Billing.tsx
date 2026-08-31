@@ -19,6 +19,7 @@ type ManualInvoiceForm = {
     serviceName: string;
     startDate: string;
     endDate: string;
+    customDays: string;
     ratePerDay: string;
     depositCollected: string;
     serviceHours: '10' | '24';
@@ -55,6 +56,78 @@ const inclusiveDays = (startDate: string, endDate: string) => {
     return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 };
 
+export function calculateClientServiceDaysFromAttendance(
+    startDateStr: string,
+    endDateStr: string,
+    attendanceRecords: Array<{ worker_id?: string; employee_id?: string; duty_date?: string; date?: string; status?: string; is_half_day?: boolean; is_absent?: boolean }>
+): number {
+    if (!startDateStr || !endDateStr) return 0;
+    const start = new Date(`${startDateStr}T00:00:00`);
+    const end = new Date(`${endDateStr}T00:00:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return 0;
+
+    const recordsByDate = new Map<string, Array<any>>();
+    for (const r of attendanceRecords) {
+        const dStr = (r.duty_date || r.date || '').split('T')[0];
+        if (!dStr) continue;
+        if (!recordsByDate.has(dStr)) recordsByDate.set(dStr, []);
+        recordsByDate.get(dStr)!.push(r);
+    }
+
+    let totalServiceDays = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, '0');
+        const d = String(cur.getDate()).padStart(2, '0');
+        const dateKey = `${y}-${m}-${d}`;
+
+        const dayRecords = recordsByDate.get(dateKey) || [];
+        if (dayRecords.length === 0) {
+            totalServiceDays += 1.0;
+        } else {
+            const hasFullPresent = dayRecords.some(r => 
+                !r.is_half_day && 
+                r.status !== 'Half Day' && 
+                r.status !== 'half_day' && 
+                !r.is_absent && 
+                r.status !== 'Absent' && 
+                r.status !== 'absent' &&
+                (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty' || r.status === 'Completed')
+            );
+
+            if (hasFullPresent) {
+                totalServiceDays += 1.0;
+            } else {
+                const hasHalfDay = dayRecords.some(r => 
+                    r.is_half_day || 
+                    r.status === 'Half Day' || 
+                    r.status === 'half_day'
+                );
+
+                if (hasHalfDay) {
+                    totalServiceDays += 0.5;
+                } else {
+                    const allAbsent = dayRecords.every(r => 
+                        r.is_absent || 
+                        r.status === 'Absent' || 
+                        r.status === 'absent'
+                    );
+                    if (allAbsent) {
+                        totalServiceDays += 0.0;
+                    } else {
+                        totalServiceDays += 1.0;
+                    }
+                }
+            }
+        }
+
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    return totalServiceDays;
+}
+
 const normalizePhoneDigits = (phone: string) => phone.replace(/\D/g, '');
 const phoneLast10 = (phone: string) => normalizePhoneDigits(phone).slice(-10);
 
@@ -90,7 +163,8 @@ const manualInvoiceInitialForm = (): ManualInvoiceForm => ({
     serviceName: '',
     startDate: todayInputDate(),
     endDate: todayInputDate(),
-    ratePerDay: '',
+    customDays: '1',
+    ratePerDay: '800',
     depositCollected: '0',
     serviceHours: '10',
 });
@@ -1015,7 +1089,8 @@ export default function Billing() {
 
     const validateManualInvoiceForm = () => {
         const f = manualInvoiceForm;
-        const days = inclusiveDays(f.startDate, f.endDate);
+        const calcDays = inclusiveDays(f.startDate, f.endDate);
+        const days = f.customDays !== undefined && f.customDays !== '' ? parseFloat(f.customDays) || 0 : calcDays;
         const phoneDigits = normalizePhoneDigits(f.phone);
         const rate = Number(f.ratePerDay);
         const deposit = Number(f.depositCollected || 0);
@@ -1025,7 +1100,7 @@ export default function Billing() {
         if (!f.address.trim()) return 'Full address is required.';
         if (!f.serviceName.trim()) return 'Service name is required.';
         if (!f.startDate || !f.endDate) return 'Start date and end date are required.';
-        if (days <= 0) return 'End date must be on or after the start date.';
+        if (days <= 0) return 'Days of service must be greater than 0.';
         if (!Number.isFinite(rate) || rate <= 0) return 'Client rate/day must be greater than 0.';
         if (!Number.isFinite(deposit) || deposit < 0) return 'Deposit already collected cannot be negative.';
         return '';
@@ -1035,9 +1110,10 @@ export default function Billing() {
         const f = manualInvoiceForm;
         const phoneDigits = normalizePhoneDigits(f.phone);
         const normalizedPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
-        const days = inclusiveDays(f.startDate, f.endDate);
+        const calcDays = inclusiveDays(f.startDate, f.endDate);
+        const days = f.customDays !== undefined && f.customDays !== '' ? parseFloat(f.customDays) || 0 : calcDays;
         const grossAmount = days * Number(f.ratePerDay);
-        const notes = buildManualInvoiceNotes(f);
+        const notes = buildManualInvoiceNotes(f, { 'Days': days });
 
         let leadId = match?.id || '';
 
@@ -1101,8 +1177,9 @@ export default function Billing() {
             }, { onConflict: 'id' });
         if (clientError) throw clientError;
 
-        const { error: consentError } = await supabase.from('client_consents').insert([{
-            lead_id: leadId,
+        const { error: consentError } = await supabase.from('client_consent').insert([{
+            client_id: leadId,
+            client_name: f.clientName.trim(),
             phone: normalizedPhone || f.phone.trim(),
             relative_name: f.clientName.trim(),
             patient_name: f.clientName.trim(),
@@ -1131,7 +1208,8 @@ export default function Billing() {
             const { leadId, normalizedPhone } = await ensureManualInvoiceClient(mode, match);
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-            const days = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+            const calcDays = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+            const days = manualInvoiceForm.customDays !== undefined && manualInvoiceForm.customDays !== '' ? parseFloat(manualInvoiceForm.customDays) || 0 : calcDays;
             const grossAmount = days * Number(manualInvoiceForm.ratePerDay);
             const depositCollected = Number(manualInvoiceForm.depositCollected || 0);
             const netAmount = Math.max(0, grossAmount - depositCollected);
@@ -1152,6 +1230,8 @@ export default function Billing() {
                     service_hours: manualInvoiceForm.serviceHours,
                     start_date: manualInvoiceForm.startDate,
                     end_date: manualInvoiceForm.endDate,
+                    days: days,
+                    total_days: days,
                     rate_per_day: Number(manualInvoiceForm.ratePerDay),
                     deposit_collected: Number(manualInvoiceForm.depositCollected || 0),
                     invoice_date: todayInputDate(),
@@ -1485,18 +1565,19 @@ export default function Billing() {
                             setCiAttendanceVerified(true);
                             setIsClientInvoiceOpen(true);
 
-                            if (activeWorker?.employee_id && startStr && !bill?.total_days) {
+                            const allWorkerIds = (service.service_worker_assignments || [])
+                                .map((a: any) => a.employee_id || a.worker_id)
+                                .filter(Boolean);
+                            if (allWorkerIds.length > 0 && startStr && !bill?.total_days) {
                                 supabase.from('attendance')
-                                    .select('status, is_half_day')
-                                    .eq('worker_id', activeWorker.employee_id)
+                                    .select('worker_id, duty_date, status, is_half_day, is_absent')
+                                    .in('worker_id', allWorkerIds)
                                     .gte('duty_date', startStr)
                                     .lte('duty_date', endStr)
                                     .then(({ data }) => {
                                         if (data && data.length > 0) {
-                                            const p = data.filter((a: any) => !a.is_half_day && a.status !== 'Half Day' && (a.status === 'Present' || a.status === 'present' || a.status === 'On Duty')).length;
-                                            const h = data.filter((a: any) => a.is_half_day || a.status === 'Half Day').length;
-                                            const attDays = p + h * 0.5;
-                                            if (attDays > 0) {
+                                            const attDays = calculateClientServiceDaysFromAttendance(startStr, endStr, data);
+                                            if (attDays >= 0) {
                                                 setCiDays(attDays);
                                                 setCiAttendanceVerified(true);
                                             }
@@ -2229,7 +2310,10 @@ export default function Billing() {
             {isManualInvoiceOpen && (() => {
                 const invoiceDate = todayInputDate();
                 const dueDate = addDaysInputDate(invoiceDate, 3);
-                const days = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+                const calcDays = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+                const days = manualInvoiceForm.customDays !== undefined && manualInvoiceForm.customDays !== '' 
+                    ? parseFloat(manualInvoiceForm.customDays) || 0 
+                    : calcDays;
                 const rate = Number(manualInvoiceForm.ratePerDay) || 0;
                 const deposit = Number(manualInvoiceForm.depositCollected) || 0;
                 const gross = days * rate;
@@ -2324,7 +2408,12 @@ export default function Billing() {
                                         <input
                                             type="date"
                                             value={manualInvoiceForm.startDate}
-                                            onChange={e => updateManualInvoiceForm({ startDate: e.target.value, endDate: manualInvoiceForm.endDate && manualInvoiceForm.endDate < e.target.value ? e.target.value : manualInvoiceForm.endDate })}
+                                            onChange={e => {
+                                                const nextStart = e.target.value;
+                                                const nextEnd = manualInvoiceForm.endDate && manualInvoiceForm.endDate < nextStart ? nextStart : manualInvoiceForm.endDate;
+                                                const autoDays = inclusiveDays(nextStart, nextEnd);
+                                                updateManualInvoiceForm({ startDate: nextStart, endDate: nextEnd, customDays: String(autoDays) });
+                                            }}
                                             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
                                         />
                                     </div>
@@ -2334,7 +2423,11 @@ export default function Billing() {
                                             type="date"
                                             min={manualInvoiceForm.startDate}
                                             value={manualInvoiceForm.endDate}
-                                            onChange={e => updateManualInvoiceForm({ endDate: e.target.value })}
+                                            onChange={e => {
+                                                const nextEnd = e.target.value;
+                                                const autoDays = inclusiveDays(manualInvoiceForm.startDate, nextEnd);
+                                                updateManualInvoiceForm({ endDate: nextEnd, customDays: String(autoDays) });
+                                            }}
                                             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
                                         />
                                     </div>
@@ -2350,8 +2443,54 @@ export default function Billing() {
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
-                                        <input value={days || ''} readOnly className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold bg-slate-50 text-slate-700" />
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Days of Service</label>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const cur = Number(manualInvoiceForm.customDays || days) || 0;
+                                                        const next = Math.max(0.5, cur - 0.5);
+                                                        updateManualInvoiceForm({ customDays: next.toString() });
+                                                    }}
+                                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded transition-colors"
+                                                    title="Subtract Half Day (-0.5)"
+                                                >
+                                                    -0.5d
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const cur = Number(manualInvoiceForm.customDays || days) || 0;
+                                                        const next = cur + 0.5;
+                                                        updateManualInvoiceForm({ customDays: next.toString() });
+                                                    }}
+                                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded transition-colors"
+                                                    title="Add Half Day (+0.5)"
+                                                >
+                                                    +0.5d
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        updateManualInvoiceForm({ customDays: '0.5' });
+                                                    }}
+                                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 rounded transition-colors"
+                                                    title="Set to Half Day (0.5)"
+                                                >
+                                                    Half (0.5)
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            min="0.5"
+                                            step="0.5"
+                                            value={manualInvoiceForm.customDays !== undefined ? manualInvoiceForm.customDays : days}
+                                            onChange={e => updateManualInvoiceForm({ customDays: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold outline-none focus:ring-2 focus:ring-primary/30"
+                                            placeholder="e.g. 4.5 or 30.5"
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
@@ -2387,7 +2526,7 @@ export default function Billing() {
                                     </div>
                                     <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
                                         <span className="text-slate-800">Amount Payable</span>
-                                        <span className="text-primary">₹{payable.toLocaleString('en-IN')}</span>
+                                        <span className="text-primary font-black">₹{payable.toLocaleString('en-IN')}</span>
                                     </div>
                                 </div>
                             </div>

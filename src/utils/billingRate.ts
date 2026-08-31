@@ -87,3 +87,83 @@ export function numberToWordsINR(num: number): string {
     
     return word.trim();
 }
+
+/**
+ * Calculates client billable days based on verified attendance of assigned workers.
+ * Multi-Worker Service Delivery Rule:
+ * - On any date, if ANY assigned worker is Present / On Duty -> 1.0 day billed to client.
+ * - Else if ALL workers were not full present, but AT LEAST ONE worked a Half Day -> 0.5 day billed to client.
+ * - Else if ALL workers were Absent on that date -> 0.0 days billed to client.
+ * - If no logs exist for that date in active period -> 1.0 day default.
+ */
+export function calculateClientServiceDaysFromAttendance(
+    startDateStr: string,
+    endDateStr: string,
+    attendanceRecords: Array<{ worker_id?: string; employee_id?: string; duty_date?: string; date?: string; status?: string; is_half_day?: boolean; is_absent?: boolean }>
+): number {
+    if (!startDateStr || !endDateStr) return 0;
+    const start = new Date(`${startDateStr}T00:00:00`);
+    const end = new Date(`${endDateStr}T00:00:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return 0;
+
+    const recordsByDate = new Map<string, Array<any>>();
+    for (const r of attendanceRecords) {
+        const dStr = (r.duty_date || r.date || '').split('T')[0];
+        if (!dStr) continue;
+        if (!recordsByDate.has(dStr)) recordsByDate.set(dStr, []);
+        recordsByDate.get(dStr)!.push(r);
+    }
+
+    let totalServiceDays = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, '0');
+        const d = String(cur.getDate()).padStart(2, '0');
+        const dateKey = `${y}-${m}-${d}`;
+
+        const dayRecords = recordsByDate.get(dateKey) || [];
+        if (dayRecords.length === 0) {
+            totalServiceDays += 1.0;
+        } else {
+            const hasFullPresent = dayRecords.some(r => 
+                !r.is_half_day && 
+                r.status !== 'Half Day' && 
+                r.status !== 'half_day' && 
+                !r.is_absent && 
+                r.status !== 'Absent' && 
+                r.status !== 'absent' &&
+                (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty' || r.status === 'Completed')
+            );
+
+            if (hasFullPresent) {
+                totalServiceDays += 1.0;
+            } else {
+                const hasHalfDay = dayRecords.some(r => 
+                    r.is_half_day || 
+                    r.status === 'Half Day' || 
+                    r.status === 'half_day'
+                );
+
+                if (hasHalfDay) {
+                    totalServiceDays += 0.5;
+                } else {
+                    const allAbsent = dayRecords.every(r => 
+                        r.is_absent || 
+                        r.status === 'Absent' || 
+                        r.status === 'absent'
+                    );
+                    if (allAbsent) {
+                        totalServiceDays += 0.0;
+                    } else {
+                        totalServiceDays += 1.0;
+                    }
+                }
+            }
+        }
+
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    return totalServiceDays;
+}
