@@ -190,17 +190,41 @@ export default function HR() {
             }
             setWorkers(finalWorkers);
 
-            // Build payroll items: prefer DB records, fall back to synthetic items from assignments
-            const existingPayrollAssignmentIds = new Set((payrollData || []).map((p: any) => p.assignment_id).filter(Boolean));
+            // Fetch services to map legacy assignments and service assignments for accurate deduplication
+            const { data: servicesData } = await supabase
+                .from('services')
+                .select('id, legacy_assignment_id, client_id, status, service_worker_assignments(id, employee_id, start_date, end_date)');
+
+            // Build payroll items: prefer DB records, fall back to synthetic items from active assignments
+            const existingPayrollAssignmentIds = new Set<string>();
+            (payrollData || []).forEach((p: any) => {
+                if (p.assignment_id) existingPayrollAssignmentIds.add(p.assignment_id);
+                if (servicesData) {
+                    servicesData.forEach((s: any) => {
+                        const hasMatchingSwa = s.service_worker_assignments?.some((swa: any) => swa.id === p.assignment_id);
+                        if (s.id === p.service_id || hasMatchingSwa) {
+                            if (s.legacy_assignment_id) existingPayrollAssignmentIds.add(s.legacy_assignment_id);
+                        }
+                    });
+                }
+            });
             
             const syntheticItems = (assignmentsData || [])
-                // Include both active AND completed assignments that don't yet have a payroll record.
-                // This ensures that when an assignment is auto-completed after the last attendance mark,
-                // the worker still appears in payroll so the payslip can be generated.
                 .filter((a: any) => {
                     const isActiveOrCompleted = a.assignment_status === 'active' || a.assignment_status === 'completed';
                     if (!isActiveOrCompleted) return false;
-                    if (!a.employee_id || existingPayrollAssignmentIds.has(a.id)) return false;
+                    if (!a.employee_id) return false;
+                    if (existingPayrollAssignmentIds.has(a.id)) return false;
+
+                    // If assignment is completed, also check if there is an existing DB payroll entry for this worker & matching date range
+                    if (a.assignment_status === 'completed') {
+                        const hasMatchingDbPayroll = (payrollData || []).some((p: any) => 
+                            (p.worker_id === a.employee_id || p.worker === a.employees?.full_name) &&
+                            (p.assignment_id === a.id || (p.period_start && a.start_date && p.period_start.split('T')[0] === a.start_date.split('T')[0]))
+                        );
+                        if (hasMatchingDbPayroll) return false;
+                    }
+
                     const emp = a.employees;
                     if (!emp) return false;
                     return true;
@@ -229,7 +253,7 @@ export default function HR() {
                         }
                         return true;
                     });
-                    const presentCount = workerAttendance.filter(s => s.status === 'Present' || s.status === 'present' || s.status === 'On Duty').length;
+                    const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
                     const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
                     const verifiedDays = presentCount + (halfCount * 0.5);
 
@@ -1755,9 +1779,8 @@ export default function HR() {
                                                     <AssignmentAttendancePanel
                                                         key={assignment.id}
                                                         assignment={assignment}
-                                                        onAssignmentCompleted={(completedAssignment) => {
-                                                            setAutoCloseAssignmentOnGenerate(true);
-                                                            setBillingAssignment(completedAssignment);
+                                                        onAssignmentCompleted={async () => {
+                                                            await fetchData();
                                                             setActiveTab('payroll');
                                                         }}
                                                     />
@@ -2059,35 +2082,62 @@ export default function HR() {
                                                                         </button>
                                                                         <button
                                                                             onClick={async () => {
-                                                                                const assignment = activeAssignments.find(a => a.employee_id === item.worker_id || (a.employees && a.employees.full_name === item.worker));
+                                                                                let targetEmployeeId = item.worker_id;
+                                                                                if (!targetEmployeeId) {
+                                                                                    const worker = workers.find(w => w.name === item.worker);
+                                                                                    if (worker) targetEmployeeId = worker.id;
+                                                                                }
+
+                                                                                let assignment = null;
+                                                                                if (item.assignment_id) {
+                                                                                    const { data: directAsgn } = await supabase
+                                                                                        .from('worker_assignments')
+                                                                                        .select('*, employees(*), clients(*)')
+                                                                                        .eq('id', item.assignment_id)
+                                                                                        .maybeSingle();
+                                                                                    if (directAsgn) assignment = directAsgn;
+                                                                                }
+
+                                                                                if (!assignment && targetEmployeeId) {
+                                                                                    const { data } = await supabase
+                                                                                        .from('worker_assignments')
+                                                                                        .select('*, employees(*), clients(*)')
+                                                                                        .eq('employee_id', targetEmployeeId)
+                                                                                        .order('assigned_at', { ascending: false })
+                                                                                        .limit(1)
+                                                                                        .maybeSingle();
+                                                                                    if (data) assignment = data;
+                                                                                }
+
                                                                                 if (assignment) {
-                                                                                    setBillingAssignment(assignment);
+                                                                                    const generatorAssignment = {
+                                                                                        ...assignment,
+                                                                                        start_date: item.period_start || item.start_date || assignment.start_date,
+                                                                                        end_date: item.period_end || item.end_date || assignment.end_date,
+                                                                                    };
+                                                                                    setAutoCloseAssignmentOnGenerate(false);
+                                                                                    setBillingAssignment(generatorAssignment);
+                                                                                } else if (targetEmployeeId) {
+                                                                                    const empRecord = workers.find(w => w.id === targetEmployeeId || w.name === item.worker);
+                                                                                    setAutoCloseAssignmentOnGenerate(false);
+                                                                                    setBillingAssignment({
+                                                                                        id: item.assignment_id || `temp-${item.id}`,
+                                                                                        employee_id: targetEmployeeId,
+                                                                                        start_date: item.period_start || item.start_date,
+                                                                                        end_date: item.period_end || item.end_date || new Date().toISOString().split('T')[0],
+                                                                                        hours_per_day: item.hours_per_day || 24,
+                                                                                        employees: empRecord ? {
+                                                                                            id: empRecord.id,
+                                                                                            full_name: empRecord.name,
+                                                                                            job_title: empRecord.role,
+                                                                                            phone: empRecord.phone,
+                                                                                            rate_10hr: empRecord.rate_10hr || item.daily_rate,
+                                                                                            rate_24hr: empRecord.rate_24hr || item.daily_rate,
+                                                                                        } : null,
+                                                                                        clients: { client_name: item.client_name || item.client || 'Client' }
+                                                                                    });
                                                                                 } else {
-                                                                                    let targetEmployeeId = item.worker_id;
-                                                                                    if (!targetEmployeeId) {
-                                                                                        const worker = workers.find(w => w.name === item.worker);
-                                                                                        if (worker) targetEmployeeId = worker.id;
-                                                                                    }
-                                                                                    
-                                                                                    if (targetEmployeeId) {
-                                                                                        const { data, error } = await supabase
-                                                                                            .from('worker_assignments')
-                                                                                            .select('*, employees(*), clients(*)')
-                                                                                            .eq('employee_id', targetEmployeeId)
-                                                                                            .order('assigned_at', { ascending: false })
-                                                                                            .limit(1)
-                                                                                            .maybeSingle();
-                                                                                        if (error) {
-                                                                                            toast.error('Error finding assignment: ' + error.message);
-                                                                                        } else if (data) {
-                                                                                            setAutoCloseAssignmentOnGenerate(false);
-                                                                                            setBillingAssignment(data);
-                                                                                        } else {
-                                                                                            toast.error('No assignment found for this worker.');
-                                                                                        }
-                                                                                    } else {
-                                                                                        toast.error('Could not identify worker ID.');
-                                                                                    }
+                                                                                    toast.error('Could not identify worker details for generator.');
                                                                                 }
                                                                             }}
                                                                             className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"

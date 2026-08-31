@@ -255,13 +255,24 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         // Use the new service lifecycle release
         const { error } = await supabase.rpc('release_worker', { p_assignment_id: newAssignmentId });
         if (error) throw error;
+
+        // Also sync legacy worker_assignments record to completed if it exists
+        await supabase.from('worker_assignments').update({
+          assignment_status: 'completed',
+          end_date: new Date().toISOString().split('T')[0]
+        }).eq('id', assignment.id);
+        await supabase.from('id_card_links').update({ is_active: false }).eq('assignment_id', assignment.id);
+
         toast.success(`${assignment.employees?.full_name} released and payslip generated!`, { id: toastId });
         
-        // Reload to update parent state (activeAssignments)
-        setTimeout(() => window.location.reload(), 1500);
+        await fetchAttendance();
+        onAssignmentCompleted?.(assignment);
       } else {
         // Fallback to legacy logic if no service was migrated
-        await supabase.from('worker_assignments').update({ assignment_status: 'completed' }).eq('id', assignment.id);
+        await supabase.from('worker_assignments').update({
+          assignment_status: 'completed',
+          end_date: new Date().toISOString().split('T')[0]
+        }).eq('id', assignment.id);
         await supabase.from('id_card_links').update({ is_active: false }).eq('assignment_id', assignment.id);
         await supabase.from('employees').update({ status: 'available', assigned_client: null, updated_at: new Date().toISOString() }).eq('id', assignment.employee_id);
         
@@ -273,8 +284,9 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             assigned_worker_role: null
           }).eq('id', clientId);
         }
-        toast.success(`${assignment.employees?.full_name} released! (Legacy)`, { id: toastId });
+        toast.success(`${assignment.employees?.full_name} released!`, { id: toastId });
         
+        await fetchAttendance();
         onAssignmentCompleted?.(assignment);
       }
     } catch (err: any) {

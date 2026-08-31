@@ -74,18 +74,39 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         p_assignment_id: assignment.id
       });
       if (error) throw error;
-      setAttendanceSummary(data?.[0] || null);
+      const res = data?.[0];
+      if (res) {
+        const full = Math.max(0, parseFloat(res.days_present || 0) - (parseInt(res.days_half || 0, 10) * 0.5));
+        setAttendanceSummary({
+          ...res,
+          days_full: full,
+          days_present: parseFloat(res.days_present || 0),
+          days_half: parseInt(res.days_half || 0, 10),
+          days_absent: parseInt(res.days_absent || 0, 10),
+          total_days: parseInt(res.total_days || totalPeriodDays, 10)
+        });
+      } else {
+        throw new Error('No RPC summary data');
+      }
     } catch (err: any) {
       // Fallback: manual count
       const { data, error: fetchErr } = await supabase
         .from('attendance')
-        .select('status, is_half_day, duty_date')
-        .eq('assignment_id', assignment.id);
+        .select('status, is_half_day, duty_date, is_absent')
+        .eq('worker_id', assignment.employee_id)
+        .gte('duty_date', safeStartDate.toISOString().split('T')[0])
+        .lte('duty_date', endDate.toISOString().split('T')[0]);
       if (fetchErr) { toast.error('Failed to fetch attendance'); return; }
-      const present = (data || []).filter(r => !r.is_half_day && (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty')).length;
-      const half = (data || []).filter(r => r.is_half_day).length;
-      const absent = (data || []).filter(r => r.status === 'Absent' || r.status === 'absent').length;
-      setAttendanceSummary({ days_present: present + half * 0.5, days_absent: absent, days_half: half, total_days: totalPeriodDays });
+      const present = (data || []).filter(r => !r.is_half_day && r.status !== 'Half Day' && (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty')).length;
+      const half = (data || []).filter(r => r.is_half_day || r.status === 'Half Day').length;
+      const absent = (data || []).filter(r => r.is_absent || r.status === 'Absent' || r.status === 'absent').length;
+      setAttendanceSummary({
+        days_full: present,
+        days_present: present + half * 0.5,
+        days_absent: absent,
+        days_half: half,
+        total_days: totalPeriodDays
+      });
     } finally {
       setIsLoadingAttendance(false);
     }
@@ -211,8 +232,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       head: [['Attendance Summary', 'Value']],
       body: [
         ['Total Days in Period', `${totalPeriodDays} days`],
-        ['Days Present', `${attendanceSummary?.days_present || 0} days`],
-        ['Half Days', `${attendanceSummary?.days_half || 0} days`],
+        ['Full Days Present', `${attendanceSummary?.days_full ?? (attendanceSummary?.days_present ? Math.max(0, attendanceSummary.days_present - (attendanceSummary.days_half || 0) * 0.5) : 0)} days`],
+        ['Half Days', `${attendanceSummary?.days_half || 0} days (0.5 day/each)`],
         ['Days Absent', `${attendanceSummary?.days_absent || 0} days`],
         ['Effective Working Days', `${daysWorked} days`],
       ],
@@ -499,8 +520,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
             ) : attendanceSummary ? (
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: 'Days Present', value: attendanceSummary.days_present, color: 'text-emerald-600' },
-                  { label: 'Half Days', value: attendanceSummary.days_half, color: 'text-amber-600' },
+                  { label: 'Full Days Present', value: attendanceSummary.days_full ?? Math.max(0, attendanceSummary.days_present - (attendanceSummary.days_half || 0) * 0.5), color: 'text-emerald-600' },
+                  { label: 'Half Days (0.5d)', value: attendanceSummary.days_half, color: 'text-amber-600' },
                   { label: 'Days Absent', value: attendanceSummary.days_absent, color: 'text-red-500' },
                   { label: 'Effective Days', value: daysWorked, color: 'text-primary font-bold' },
                 ].map(({ label, value, color }) => (

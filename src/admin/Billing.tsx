@@ -1457,8 +1457,8 @@ export default function Billing() {
                                     .lte('duty_date', endStr)
                                     .then(({ data }) => {
                                         if (data && data.length > 0) {
-                                            const p = data.filter((a: any) => a.status === 'Present').length;
-                                            const h = data.filter((a: any) => a.is_half_day).length;
+                                            const p = data.filter((a: any) => !a.is_half_day && a.status !== 'Half Day' && (a.status === 'Present' || a.status === 'present' || a.status === 'On Duty')).length;
+                                            const h = data.filter((a: any) => a.is_half_day || a.status === 'Half Day').length;
                                             const attDays = p + h * 0.5;
                                             if (attDays > 0) {
                                                 setCiDays(attDays);
