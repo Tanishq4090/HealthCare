@@ -195,12 +195,18 @@ serve(async (req) => {
             ? Math.max(0, numberOfDays * Number(rate_per_day || 0))
             : Number(deposit_amount || lead.quoted_monthly_rate || 15000);
         const depositCollected = manual_invoice ? Math.max(0, Number(deposit_collected || 0)) : 0;
-        const amount = manual_invoice ? Math.max(0, grossAmount - depositCollected) : grossAmount;
+        const netDifference = grossAmount - depositCollected;
+        const isRefund = manual_invoice && netDifference < 0;
+        const refundAmount = Math.abs(netDifference);
+        const amount = isRefund ? 0 : Math.max(0, netDifference);
 
         const grossAmountStr = grossAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const depositCollectedStr = depositCollected.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const refundAmountStr = refundAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const amountStr    = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const amountWords  = `INR ${numberToWordsINR(Math.round(amount))} Rupees Only.`;
+        const amountWords  = isRefund
+            ? `INR ${numberToWordsINR(Math.round(refundAmount))} Rupees Refund Due to Client.`
+            : `INR ${numberToWordsINR(Math.round(amount))} Rupees Only.`;
 
         // ── Fetch Images ─────────────────────────────────────────
         const fetchImage = async (path: string) => {
@@ -388,9 +394,19 @@ serve(async (req) => {
             curY -= 16;
         }
 
+        if (isRefund) {
+            const refLbl = 'Refund Due to Client';
+            const refLblW = bold.widthOfTextAtSize(refLbl, 10);
+            page.drawText(refLbl, { x: COL_3 + 10 - refLblW, y: curY, size: 10, font: bold, color: rgb(0.8, 0.35, 0.1) });
+            const refVal = `Rs. ${refundAmountStr} (Refund)`;
+            const refValW = bold.widthOfTextAtSize(refVal, 10);
+            page.drawText(refVal, { x: COL_4 - refValW, y: curY, size: 10, font: bold, color: rgb(0.8, 0.35, 0.1) });
+            curY -= 16;
+        }
+
         // Total Items & Words
         page.drawText('Total Items / Qty : 1 / 1', { x: 40, y: curY, size: 8, font: regular, color: GRAY });
-        const wordText = `Total amount (in words): ${amountWords}`;
+        const wordText = isRefund ? `Refund amount (in words): ${amountWords}` : `Total amount (in words): ${amountWords}`;
         const wordW = regular.widthOfTextAtSize(wordText, 8);
         page.drawText(wordText, { x: W - 40 - wordW, y: curY, size: 8, font: regular, color: DARK });
 
@@ -399,13 +415,13 @@ serve(async (req) => {
 
         // Amount Payable
         curY -= 16;
-        const pLbl = 'Amount Payable:';
+        const pLbl = isRefund ? 'Amount to Return:' : 'Amount Payable:';
         const pLblW = bold.widthOfTextAtSize(pLbl, 10);
-        page.drawText(pLbl, { x: COL_3 + 10 - pLblW, y: curY, size: 10, font: bold, color: GRAY });
+        page.drawText(pLbl, { x: COL_3 + 10 - pLblW, y: curY, size: 10, font: bold, color: isRefund ? rgb(0.8, 0.35, 0.1) : GRAY });
         
-        const payableValue = `Rs. ${amountStr}`;
+        const payableValue = isRefund ? `Rs. ${refundAmountStr} (Refund)` : `Rs. ${amountStr}`;
         const pValW = bold.widthOfTextAtSize(payableValue, 10);
-        page.drawText(payableValue, { x: COL_4 - pValW, y: curY, size: 10, font: bold, color: DARK });
+        page.drawText(payableValue, { x: COL_4 - pValW, y: curY, size: 10, font: bold, color: isRefund ? rgb(0.8, 0.35, 0.1) : DARK });
 
         curY -= 40;
 

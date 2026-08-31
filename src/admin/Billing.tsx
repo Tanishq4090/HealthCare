@@ -1346,7 +1346,10 @@ export default function Billing() {
         const rate = Number(manualInvoiceForm.ratePerDay) || 800;
         const deposit = Number(manualInvoiceForm.depositCollected) || 0;
         const gross = days * rate;
-        const payable = Math.max(0, gross - deposit);
+        const netBalance = gross - deposit;
+        const isRefund = netBalance < 0;
+        const refundAmount = Math.abs(netBalance);
+        const payable = Math.max(0, netBalance);
 
         const formatDateStr = (ds: string) => {
             if (!ds) return '';
@@ -1369,14 +1372,16 @@ export default function Billing() {
             service_category: manualInvoiceForm.serviceName.trim(),
             shift_duration: manualInvoiceForm.serviceHours,
             invoice_no: invoiceNo,
-            amount: payable.toString(),
-            totalAmount: payable,
+            amount: isRefund ? `₹${refundAmount} (Refund)` : payable.toString(),
+            totalAmount: isRefund ? 0 : payable,
             depositCollected: deposit,
             days: days,
             rate: rate,
             startDate: manualInvoiceForm.startDate,
             endDate: manualInvoiceForm.endDate,
             isManual: true,
+            isRefund: isRefund,
+            refundAmount: refundAmount,
         };
 
         setAgentTargetBill(targetBill);
@@ -1385,8 +1390,8 @@ export default function Billing() {
             phone: manualInvoiceForm.phone.trim(),
             address: manualInvoiceForm.address.trim(),
             service: itemDescription,
-            amount: payable,
-            totalAmount: payable,
+            amount: isRefund ? 0 : payable,
+            totalAmount: isRefund ? 0 : payable,
             depositCollected: deposit,
             date: new Date().toISOString(),
             invoiceNumber: invoiceNo,
@@ -1396,6 +1401,8 @@ export default function Billing() {
             endDate: manualInvoiceForm.endDate,
             service_name: manualInvoiceForm.serviceName.trim(),
             service_hours: manualInvoiceForm.serviceHours,
+            isRefund: isRefund,
+            refundAmount: refundAmount,
         });
         setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
         setInvoiceDepositAmount(payable.toString());
@@ -2315,17 +2322,35 @@ export default function Billing() {
                                             <span className="font-semibold text-emerald-600">− ₹{invoiceData.depositCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                         </div>
                                     )}
-                                    <div className="flex justify-between items-center py-2 border-t border-slate-300">
-                                        <span className="font-bold text-lg text-slate-800">Net Payable</span>
-                                        <span className="font-bold text-xl text-slate-900">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center py-2 text-sm bg-slate-100 px-2 mt-1">
-                                        <span className="font-semibold text-slate-700">Amount Payable:</span>
-                                        <span className="font-bold text-slate-800">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                    </div>
-                                    <p className="text-[11px] text-slate-600 mt-2 text-right">
-                                        Total amount (in words): <span className="font-medium text-slate-800">INR {numberToWordsINR(invoiceData.amount)} Rupees Only.</span>
-                                    </p>
+                                    {invoiceData.isRefund || (invoiceData.depositCollected > (invoiceData.days * invoiceData.rate)) ? (
+                                        <>
+                                            <div className="flex justify-between items-center py-2 border-t border-slate-300">
+                                                <span className="font-bold text-lg text-amber-800">Refund Due to Client</span>
+                                                <span className="font-bold text-xl text-amber-600">₹{(invoiceData.refundAmount || (invoiceData.depositCollected - (invoiceData.days * invoiceData.rate))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center py-2 text-sm bg-amber-50 px-2 mt-1 rounded border border-amber-200">
+                                                <span className="font-semibold text-amber-800">Amount to Return:</span>
+                                                <span className="font-bold text-amber-700">₹{(invoiceData.refundAmount || (invoiceData.depositCollected - (invoiceData.days * invoiceData.rate))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-600 mt-2 text-right">
+                                                Refund amount (in words): <span className="font-medium text-slate-800">INR {numberToWordsINR(invoiceData.refundAmount || (invoiceData.depositCollected - (invoiceData.days * invoiceData.rate)))} Rupees Refund Due to Client.</span>
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex justify-between items-center py-2 border-t border-slate-300">
+                                                <span className="font-bold text-lg text-slate-800">Net Payable</span>
+                                                <span className="font-bold text-xl text-slate-900">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center py-2 text-sm bg-slate-100 px-2 mt-1">
+                                                <span className="font-semibold text-slate-700">Amount Payable:</span>
+                                                <span className="font-bold text-slate-800">₹{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-600 mt-2 text-right">
+                                                Total amount (in words): <span className="font-medium text-slate-800">INR {numberToWordsINR(invoiceData.amount)} Rupees Only.</span>
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
@@ -2386,7 +2411,10 @@ export default function Billing() {
                 const rate = Number(manualInvoiceForm.ratePerDay) || 0;
                 const deposit = Number(manualInvoiceForm.depositCollected) || 0;
                 const gross = days * rate;
-                const payable = Math.max(0, gross - deposit);
+                const netBalance = gross - deposit;
+                const isRefund = netBalance < 0;
+                const refundAmount = Math.abs(netBalance);
+                const payable = Math.max(0, netBalance);
 
                 return (
                     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[80]">
@@ -2593,10 +2621,22 @@ export default function Billing() {
                                         <span className="text-slate-500">Deposit Collected</span>
                                         <span className="font-semibold text-emerald-600">− ₹{deposit.toLocaleString('en-IN')}</span>
                                     </div>
-                                    <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
-                                        <span className="text-slate-800">Amount Payable</span>
-                                        <span className="text-primary font-black">₹{payable.toLocaleString('en-IN')}</span>
-                                    </div>
+                                    {isRefund ? (
+                                        <div className="border-t border-amber-200 pt-2 mt-1 space-y-1">
+                                            <div className="flex justify-between text-base font-bold">
+                                                <span className="text-amber-800 flex items-center gap-1.5">
+                                                    Refund Due to Client <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 uppercase tracking-wide">To Return</span>
+                                                </span>
+                                                <span className="text-amber-600 font-black text-lg">₹{refundAmount.toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <p className="text-[11px] font-medium text-amber-700">Deposit collected (₹{deposit.toLocaleString('en-IN')}) exceeds total service charges by ₹{refundAmount.toLocaleString('en-IN')}.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
+                                            <span className="text-slate-800">Amount Payable</span>
+                                            <span className="text-primary font-black">₹{payable.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
