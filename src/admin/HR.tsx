@@ -294,9 +294,57 @@ export default function HR() {
                     };
                 });
 
-            // Show ALL payroll records from DB — do not filter by active workforce.
-            // Records persist even if the worker is no longer in the employees table.
-            const validDbPayroll = (payrollData || []).filter((p: any) => !!p.worker);
+            // Show ALL payroll records from DB — synchronize with verified attendance if pending
+            const validDbPayroll = (payrollData || []).filter((p: any) => !!p.worker).map((p: any) => {
+                if (p.status === 'Pending Payment' || p.status === 'Pending') {
+                    const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
+                    if (empId) {
+                        const workerAttendance = (monthStats || []).filter(s => {
+                            if (s.worker_id !== empId) return false;
+                            if (p.assignment_id && s.assignment_id && s.assignment_id === p.assignment_id) {
+                                return true;
+                            }
+                            if (p.period_start) {
+                                const dutyDate = s.duty_date;
+                                const startStr = p.period_start.split('T')[0];
+                                if (dutyDate < startStr) return false;
+                                if (p.period_end) {
+                                    const endStr = p.period_end.split('T')[0];
+                                    if (dutyDate > endStr) return false;
+                                }
+                            }
+                            return true;
+                        });
+
+                        if (workerAttendance.length > 0) {
+                            const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
+                            const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
+                            const verifiedDays = presentCount + (halfCount * 0.5);
+
+                            if (verifiedDays > 0 && verifiedDays !== p.days_worked) {
+                                const newTotal = verifiedDays * (p.daily_rate || 800);
+                                const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
+
+                                supabase.from('payroll').update({
+                                    days_worked: verifiedDays,
+                                    days_counted: verifiedDays,
+                                    total_amount: newTotal,
+                                    net_balance: newNet
+                                }).eq('id', p.id).then();
+
+                                return {
+                                    ...p,
+                                    days_worked: verifiedDays,
+                                    days_counted: verifiedDays,
+                                    total_amount: newTotal,
+                                    net_balance: newNet
+                                };
+                            }
+                        }
+                    }
+                }
+                return p;
+            });
 
             // DB entries and synthetic items are combined. 
             // Synthetic items are already filtered above to exclude assignments that have DB payroll records.
@@ -1656,19 +1704,19 @@ export default function HR() {
                 {/* Module Tabs */}
                 <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0 overflow-x-auto hide-scrollbar">
                     <button
-                        onClick={() => setActiveTab('allocation')}
+                        onClick={() => { setActiveTab('allocation'); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'allocation' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Allocation
                     </button>
                     <button
-                        onClick={() => setActiveTab('attendance')}
+                        onClick={() => { setActiveTab('attendance'); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'attendance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Attendance
                     </button>
                     <button
-                        onClick={() => setActiveTab('payroll')}
+                        onClick={() => { setActiveTab('payroll'); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'payroll' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Payroll
@@ -1779,6 +1827,9 @@ export default function HR() {
                                                     <AssignmentAttendancePanel
                                                         key={assignment.id}
                                                         assignment={assignment}
+                                                        onSummaryChange={() => {
+                                                            fetchData();
+                                                        }}
                                                         onAssignmentCompleted={async () => {
                                                             await fetchData();
                                                             setActiveTab('payroll');
