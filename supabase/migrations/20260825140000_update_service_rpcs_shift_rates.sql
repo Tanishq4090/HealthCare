@@ -187,13 +187,13 @@ BEGIN
         -- Bill using complete_month_daily_rate (prorated for the days active)
         v_bill_amount := v_days_in_period * COALESCE(v_svc.complete_month_daily_rate, 0);
 
-        -- Create client bill
+        -- Create client bill with the actual active period for this billing cycle
         INSERT INTO public.service_bills (
             service_id, period_start, period_end,
             total_days, daily_rate_used, amount,
             type, deposit_applied, deposit_settled
         ) VALUES (
-            v_svc.id, p_month_start, p_month_end,
+            v_svc.id, v_asgn_start, v_asgn_end,
             v_days_in_period, v_svc.complete_month_daily_rate, v_bill_amount,
             'recurring', 0, false
         );

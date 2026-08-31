@@ -6,6 +6,7 @@ const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
 );
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';
 import { resolveClientBillingRatePerDay, numberToWordsINR } from '../utils/billingRate';
 import ServicesPanel from '../components/hr/ServicesPanel';
@@ -1344,7 +1345,7 @@ export default function Billing() {
                             setIsDuplicateChoiceOpen(false);
                             setIsManualInvoiceOpen(true);
                         }}
-                        onPrepareInvoice={async (service) => {
+                        onPrepareInvoice={async (service, bill) => {
                             const activeWorker = (service.service_worker_assignments || []).find(a => !a.end_date) || (service.service_worker_assignments || [])[0];
                             
                             let clientAddress = '';
@@ -1380,6 +1381,12 @@ export default function Billing() {
                                 // fallback
                             }
 
+                            let noteData: any = {};
+                            if (bill?.notes) {
+                                try { noteData = JSON.parse(bill.notes); } catch {}
+                            }
+
+                            const billRate = bill?.daily_rate_used || service.complete_month_daily_rate || 500;
                             const billObj = {
                                 id: service.id,
                                 client_id: service.client_id,
@@ -1388,57 +1395,70 @@ export default function Billing() {
                                 client_address: clientAddress,
                                 service_category: clientServiceName,
                                 shift_duration: clientShift,
-                                amount: `₹${service.complete_month_daily_rate || 500}/day`,
-                                status: 'Draft',
-                                month: new Date().toLocaleString('default', { month: 'long' }),
-                                invoice_no: '',
-                                invoice_pdf_url: '',
+                                amount: `₹${billRate}/day`,
+                                status: noteData.status === 'paid' ? 'Paid' : 'Draft',
+                                month: bill?.period_start ? format(new Date(bill.period_start), 'MMMM yyyy') : new Date().toLocaleString('default', { month: 'long' }),
+                                invoice_no: noteData.invoice_number || bill?.invoice_number || '',
+                                invoice_pdf_url: noteData.invoice_pdf_url || '',
                                 rawAssignment: {
                                     id: service.id,
                                     client_id: service.client_id,
                                     employee_id: activeWorker?.employee_id,
                                     service_name: clientServiceName,
-                                    client_billing_rate: service.complete_month_daily_rate || 500,
+                                    client_billing_rate: billRate,
                                     complete_month_daily_rate: service.complete_month_daily_rate || 500,
                                     incomplete_month_daily_rate: service.incomplete_month_daily_rate || 1000,
                                     deposit_amount: service.deposit_amount || 0,
-                                    start_date: service.start_date || '',
-                                    end_date: service.end_date || '',
+                                    start_date: bill?.period_start ? bill.period_start.split('T')[0] : (service.start_date || ''),
+                                    end_date: bill?.period_end ? bill.period_end.split('T')[0] : (service.end_date || ''),
                                 }
                             };
 
                             setClientInvoiceBill(billObj);
-                            setCiRate(service.complete_month_daily_rate || 500);
+                            setCiRate(billRate);
                             setCiDeposit(service.deposit_amount || 0);
 
-                            // 1. Determine start date: If past bills exist, start the day after latest bill's period_end
-                            let startStr = service.start_date ? service.start_date.split('T')[0] : '';
-                            const pastBills = service.service_bills || [];
-                            if (pastBills.length > 0) {
-                                const sorted = [...pastBills].filter(b => b.period_end).sort((a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime());
-                                if (sorted.length > 0 && sorted[0].period_end) {
-                                    const nextDay = new Date(sorted[0].period_end);
-                                    nextDay.setDate(nextDay.getDate() + 1);
-                                    startStr = nextDay.toISOString().split('T')[0];
+                            // 1. Determine start date:
+                            let startStr = '';
+                            if (bill?.period_start) {
+                                // If bill start date is before service start date, prefer the service start date
+                                const bStart = bill.period_start.split('T')[0];
+                                const sStart = service.start_date ? service.start_date.split('T')[0] : '';
+                                startStr = (sStart && sStart > bStart) ? sStart : bStart;
+                            } else {
+                                startStr = service.start_date ? service.start_date.split('T')[0] : '';
+                                const pastBills = service.service_bills || [];
+                                if (pastBills.length > 0) {
+                                    const sorted = [...pastBills].filter(b => b.period_end).sort((a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime());
+                                    if (sorted.length > 0 && sorted[0].period_end) {
+                                        const nextDay = new Date(sorted[0].period_end);
+                                        nextDay.setDate(nextDay.getDate() + 1);
+                                        startStr = format(nextDay, 'yyyy-MM-dd');
+                                    }
                                 }
                             }
 
-                            // 2. Determine end date: Service end date if specified, otherwise end of calendar month for startStr
-                            let endStr = service.end_date ? service.end_date.split('T')[0] : '';
-                            if (!endStr && startStr) {
-                                const [y, m] = startStr.split('-').map(Number);
-                                const lastDay = new Date(y, m, 0);
-                                endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
-                            } else if (!endStr) {
-                                endStr = new Date().toISOString().split('T')[0];
+                            // 2. Determine end date:
+                            let endStr = '';
+                            if (bill?.period_end) {
+                                endStr = bill.period_end.split('T')[0];
+                            } else {
+                                endStr = service.end_date ? service.end_date.split('T')[0] : '';
+                                if (!endStr && startStr) {
+                                    const [y, m] = startStr.split('-').map(Number);
+                                    const lastDay = new Date(y, m, 0);
+                                    endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+                                } else if (!endStr) {
+                                    endStr = format(new Date(), 'yyyy-MM-dd');
+                                }
                             }
 
                             setCiStartDate(startStr);
                             setCiEndDate(endStr);
 
-                            // 3. Compute initial calendar days difference
-                            let calculatedDays = 1;
-                            if (startStr && endStr) {
+                            // 3. Compute days
+                            let calculatedDays = bill?.total_days || 1;
+                            if (!bill?.total_days && startStr && endStr) {
                                 const d1 = new Date(startStr);
                                 const d2 = new Date(endStr);
                                 if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
@@ -1449,7 +1469,7 @@ export default function Billing() {
                             setCiAttendanceVerified(true);
                             setIsClientInvoiceOpen(true);
 
-                            if (activeWorker?.employee_id && startStr) {
+                            if (activeWorker?.employee_id && startStr && !bill?.total_days) {
                                 supabase.from('attendance')
                                     .select('status, is_half_day')
                                     .eq('worker_id', activeWorker.employee_id)
