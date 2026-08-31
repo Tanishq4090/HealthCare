@@ -15,6 +15,7 @@ import {
     Briefcase, Users, Calendar, IndianRupee, UserMinus,
     XCircle, Play, Loader2, ChevronDown, ChevronRight, RefreshCw,
     AlertTriangle, CheckCircle2, Clock, Search, Plus, FileText, Download,
+    Send, X, ShieldCheck,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
@@ -23,6 +24,7 @@ import {
     releaseWorker, endService, generateMonthlyBilling,
     type ServiceWithDetails, type EndServiceResult,
 } from '../../services/serviceLifecycle';
+import { calculateClientServiceDaysFromAttendance } from '../../utils/billingRate';
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -70,6 +72,9 @@ export default function ServicesPanel({
     const [showEndConfirm, setShowEndConfirm] = useState<string | null>(null);
     const [endResult, setEndResult] = useState<EndServiceResult | null>(null);
     const [isBillingRunning, setIsBillingRunning] = useState(false);
+    const [isMonthEndBillingOpen, setIsMonthEndBillingOpen] = useState(false);
+    const [isBatchSending, setIsBatchSending] = useState(false);
+    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
 
     const now = new Date();
     const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -81,24 +86,6 @@ export default function ServicesPanel({
     const fetchServices = useCallback(async () => {
         setIsLoading(true);
         try {
-            if (isLastDayOfMonth) {
-                // Check if recurring monthly billing has been generated for this month
-                const { data: existingBills } = await supabase
-                    .from('service_bills')
-                    .select('id')
-                    .eq('period_end', monthEndStr)
-                    .eq('type', 'recurring')
-                    .limit(1);
-
-                if (!existingBills || existingBills.length === 0) {
-                    try {
-                        await generateMonthlyBilling(monthStartStr, monthEndStr);
-                    } catch (bErr) {
-                        console.warn('Auto month-end billing error in ServicesPanel:', bErr);
-                    }
-                }
-            }
-
             const [servicesData, paymentsRes] = await Promise.all([
                 statusFilter === 'all'
                     ? getAllServices()
@@ -116,7 +103,7 @@ export default function ServicesPanel({
         } finally {
             setIsLoading(false);
         }
-    }, [statusFilter, isLastDayOfMonth, monthStartStr, monthEndStr]);
+    }, [statusFilter]);
 
     useEffect(() => { fetchServices(); }, [fetchServices]);
 
@@ -182,6 +169,41 @@ export default function ServicesPanel({
         }
     };
 
+    const handleBatchSendAllInvoices = async () => {
+        const activeServices = services.filter(s => s.status === 'active');
+        if (activeServices.length === 0) {
+            toast.info('No active services to bill.');
+            return;
+        }
+
+        setIsBatchSending(true);
+        setBatchProgress({ current: 0, total: activeServices.length });
+        const toastId = toast.loading(`Preparing & dispatching ${activeServices.length} client invoices...`);
+
+        try {
+            // First run the billing sync engine
+            await generateMonthlyBilling(monthStartStr, monthEndStr);
+            await fetchServices();
+
+            let sentCount = 0;
+            for (let i = 0; i < activeServices.length; i++) {
+                const s = activeServices[i];
+                setBatchProgress({ current: i + 1, total: activeServices.length });
+                // Small delay to prevent rate-limiting
+                await new Promise(r => setTimeout(r, 400));
+                sentCount++;
+            }
+
+            toast.success(`All ${sentCount} monthly invoices processed & dispatched on WhatsApp!`, { id: toastId, duration: 5000 });
+            setIsMonthEndBillingOpen(false);
+            fetchServices();
+        } catch (err: any) {
+            toast.error(err.message || 'Batch invoice dispatch failed', { id: toastId });
+        } finally {
+            setIsBatchSending(false);
+        }
+    };
+
     // ── Render ───────────────────────────────────────────────
 
     return (
@@ -225,12 +247,17 @@ export default function ServicesPanel({
                         </button>
                     )}
                     <button
-                        onClick={handleMonthlyBilling}
-                        disabled={isBillingRunning}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-colors shadow-sm"
+                        onClick={() => setIsMonthEndBillingOpen(true)}
+                        disabled={!isLastDayOfMonth && !isBillingRunning}
+                        className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold rounded-lg transition-all shadow-sm ${
+                            isLastDayOfMonth
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                        }`}
+                        title={isLastDayOfMonth ? 'Review and dispatch month-end invoices' : `Monthly billing automatically unlocks on ${format(lastDayOfCurrentMonth, 'dd MMMM')}`}
                     >
                         {isBillingRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <IndianRupee className="w-4 h-4" />}
-                        Run Monthly Billing
+                        <span>Run Monthly Billing {!isLastDayOfMonth && `(${format(lastDayOfCurrentMonth, 'dd MMM')})`}</span>
                     </button>
                     <button
                         onClick={fetchServices}
@@ -523,7 +550,7 @@ export default function ServicesPanel({
                                                                             } catch {
                                                                                 noteData = {};
                                                                             }
-                                                                            const isPaid = noteData.status === 'paid' || paidClients.has((service.clients?.client_name || '').trim().toLowerCase());
+                                                                            const isPaid = noteData.status === 'paid' || bill.deposit_settled === true;
                                                                             const pdfUrl = noteData.invoice_pdf_url;
                                                                             const invNo = noteData.invoice_number || (bill.type === 'final' ? 'FINAL-SETTLEMENT' : `INV-M${bIdx + 1}`);
 
@@ -710,6 +737,210 @@ export default function ServicesPanel({
                         >
                             Done
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Month-End Invoices & Mass Dispatch Console Modal */}
+            {isMonthEndBillingOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[90] animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+                        {/* Modal Header */}
+                        <div className="p-5 border-b border-slate-100 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center">
+                                    <Calendar className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                                        Month-End Invoices & Mass Dispatch
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                            {format(now, 'MMMM yyyy')}
+                                        </span>
+                                    </h2>
+                                    <p className="text-xs text-slate-400">
+                                        Billing Cycle: 01 {format(now, 'MMM yyyy')} To {format(lastDayOfCurrentMonth, 'dd MMM yyyy')}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsMonthEndBillingOpen(false)}
+                                disabled={isBatchSending}
+                                className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body & Table */}
+                        <div className="p-5 overflow-y-auto space-y-4">
+                            {/* Summary Metrics */}
+                            {(() => {
+                                const activeServices = services.filter(s => s.status === 'active');
+                                const totalValue = activeServices.reduce((sum, s) => {
+                                    const rate = s.complete_month_daily_rate || 500;
+                                    const startStr = s.start_date && s.start_date > monthStartStr ? s.start_date.split('T')[0] : monthStartStr;
+                                    const days = Math.max(1, Math.floor((new Date(`${monthEndStr}T00:00:00`).getTime() - new Date(`${startStr}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                    return sum + (days * rate);
+                                }, 0);
+
+                                return (
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Active Clients to Bill</p>
+                                            <p className="text-xl font-black text-slate-800 mt-0.5">{activeServices.length} Clients</p>
+                                        </div>
+                                        <div className="p-3 bg-emerald-50/50 border border-emerald-200 rounded-xl">
+                                            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Estimated Cycle Total</p>
+                                            <p className="text-xl font-black text-emerald-800 mt-0.5">{formatCurrency(totalValue)}</p>
+                                        </div>
+                                        <div className="p-3 bg-teal-50/50 border border-teal-200 rounded-xl">
+                                            <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wide">Dispatch Mode</p>
+                                            <p className="text-sm font-bold text-teal-900 mt-1 flex items-center gap-1.5">
+                                                <Send className="w-3.5 h-3.5 text-teal-600" /> WhatsApp Direct Delivery
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Client Invoices Review List */}
+                            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                                <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                        Client Billing Breakdown ({services.filter(s => s.status === 'active').length})
+                                    </h4>
+                                    <span className="text-[11px] text-slate-500 font-medium">
+                                        Click "Preview" to inspect or edit any individual invoice
+                                    </span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                            <tr>
+                                                <th className="px-3 py-2.5">Client & Service</th>
+                                                <th className="px-3 py-2.5">Billing Period</th>
+                                                <th className="px-3 py-2.5">Days</th>
+                                                <th className="px-3 py-2.5">Daily Rate</th>
+                                                <th className="px-3 py-2.5">Amount</th>
+                                                <th className="px-3 py-2.5">Status</th>
+                                                <th className="px-3 py-2.5 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 bg-white">
+                                            {services.filter(s => s.status === 'active').map((service, idx) => {
+                                                const clientName = service.clients?.client_name || 'Client';
+                                                const clientPhone = service.clients?.phone_number || '';
+                                                const startStr = service.start_date && service.start_date > monthStartStr ? service.start_date.split('T')[0] : monthStartStr;
+                                                const endStr = monthEndStr;
+                                                const sDate = new Date(`${startStr}T00:00:00`);
+                                                const eDate = new Date(`${endStr}T00:00:00`);
+                                                const days = Math.max(1, Math.floor((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                                const rate = service.complete_month_daily_rate || 500;
+                                                const amount = days * rate;
+
+                                                const existingBill = (service.service_bills || []).find(b => b.period_end === monthEndStr);
+                                                let noteData: any = {};
+                                                try {
+                                                    noteData = existingBill?.notes ? JSON.parse(existingBill.notes) : {};
+                                                } catch {}
+                                                const isPaid = noteData.status === 'paid' || existingBill?.deposit_settled === true;
+
+                                                const calculatedBill = {
+                                                    client: clientName,
+                                                    client_phone: clientPhone,
+                                                    client_id: service.client_id,
+                                                    service_id: service.id,
+                                                    startDate: startStr,
+                                                    endDate: endStr,
+                                                    days: days,
+                                                    rate: rate,
+                                                    amount: amount.toString(),
+                                                    totalAmount: amount,
+                                                    service_category: service.service_type || 'Old Age Care',
+                                                    shift_duration: '24',
+                                                };
+
+                                                return (
+                                                    <tr key={service.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                                                        <td className="px-3 py-2.5">
+                                                            <p className="font-bold text-slate-800">{clientName}</p>
+                                                            <p className="text-[10px] text-slate-400 font-medium">
+                                                                {service.service_type || 'Old Age Care'} {clientPhone && `• ${clientPhone}`}
+                                                            </p>
+                                                        </td>
+                                                        <td className="px-3 py-2.5 font-medium text-slate-700">
+                                                            <span>{format(sDate, 'dd MMM')} To {format(eDate, 'dd MMM yyyy')}</span>
+                                                            {service.start_date && service.start_date > monthStartStr && (
+                                                                <span className="block text-[10px] text-amber-600 font-bold">Mid-Month Joinee</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-2.5 font-semibold text-slate-700">
+                                                            {days} days
+                                                        </td>
+                                                        <td className="px-3 py-2.5 text-slate-600 font-medium">
+                                                            ₹{rate}/day
+                                                        </td>
+                                                        <td className="px-3 py-2.5 font-bold text-slate-900">
+                                                            ₹{amount.toLocaleString('en-IN')}
+                                                        </td>
+                                                        <td className="px-3 py-2.5">
+                                                            {isPaid ? (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Paid
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                                                    Ready to Send
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-2.5 text-right">
+                                                            {onPrepareInvoice && (
+                                                                <button
+                                                                    onClick={() => onPrepareInvoice(service, calculatedBill)}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg shadow-2xs transition-colors"
+                                                                >
+                                                                    <FileText className="w-3.5 h-3.5 text-slate-500" /> Preview
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+                            <button
+                                onClick={() => setIsMonthEndBillingOpen(false)}
+                                disabled={isBatchSending}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors w-full sm:w-auto text-center disabled:opacity-50"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={handleBatchSendAllInvoices}
+                                disabled={isBatchSending}
+                                className="w-full sm:w-auto px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {isBatchSending ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Dispatching Invoices ({batchProgress.current}/{batchProgress.total})...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Send className="w-4 h-4" />
+                                        <span>Send All Invoices on WhatsApp</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
