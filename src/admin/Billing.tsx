@@ -1331,6 +1331,76 @@ export default function Billing() {
             setIsManualInvoiceGenerating(false);
         }
     };
+    const handlePreviewManualInvoice = () => {
+        const validationError = validateManualInvoiceForm();
+        if (validationError) {
+            toast.error(validationError);
+            return;
+        }
+
+        const invoiceNo = `INV-M${Math.floor(Math.random() * 9000) + 1000}`;
+        const calcDays = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
+        const days = manualInvoiceForm.customDays !== undefined && manualInvoiceForm.customDays !== '' 
+            ? parseFloat(manualInvoiceForm.customDays) || 0 
+            : calcDays;
+        const rate = Number(manualInvoiceForm.ratePerDay) || 800;
+        const deposit = Number(manualInvoiceForm.depositCollected) || 0;
+        const gross = days * rate;
+        const payable = Math.max(0, gross - deposit);
+
+        const formatDateStr = (ds: string) => {
+            if (!ds) return '';
+            const [y, m, d] = ds.split('-');
+            return `${d}/${m}/${y}`;
+        };
+        const formattedPeriod = (manualInvoiceForm.startDate && manualInvoiceForm.endDate)
+            ? `${formatDateStr(manualInvoiceForm.startDate)} To ${formatDateStr(manualInvoiceForm.endDate)}`
+            : 'As agreed';
+        const rawShift = (manualInvoiceForm.serviceHours || '24').toString().replace(/\D/g, '') || '24';
+        const shiftTitle = `${rawShift}-HOUR SHIFT`;
+        const serviceTitle = (manualInvoiceForm.serviceName || 'OLD AGE CARE').trim().toUpperCase();
+        const itemDescription = `${shiftTitle} (${serviceTitle}) — ${days} DAY${days !== 1 ? 'S' : ''} (${formattedPeriod})`;
+
+        const targetBill = {
+            id: `manual-preview-${Date.now()}`,
+            client: manualInvoiceForm.clientName.trim(),
+            client_phone: manualInvoiceForm.phone.trim(),
+            client_address: manualInvoiceForm.address.trim(),
+            service_category: manualInvoiceForm.serviceName.trim(),
+            shift_duration: manualInvoiceForm.serviceHours,
+            invoice_no: invoiceNo,
+            amount: payable.toString(),
+            totalAmount: payable,
+            depositCollected: deposit,
+            days: days,
+            rate: rate,
+            startDate: manualInvoiceForm.startDate,
+            endDate: manualInvoiceForm.endDate,
+            isManual: true,
+        };
+
+        setAgentTargetBill(targetBill);
+        setInvoiceData({
+            clientName: manualInvoiceForm.clientName.trim(),
+            phone: manualInvoiceForm.phone.trim(),
+            address: manualInvoiceForm.address.trim(),
+            service: itemDescription,
+            amount: payable,
+            totalAmount: payable,
+            depositCollected: deposit,
+            date: new Date().toISOString(),
+            invoiceNumber: invoiceNo,
+            days: days,
+            rate: rate,
+            startDate: manualInvoiceForm.startDate,
+            endDate: manualInvoiceForm.endDate,
+            service_name: manualInvoiceForm.serviceName.trim(),
+            service_hours: manualInvoiceForm.serviceHours,
+        });
+        setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
+        setInvoiceDepositAmount(payable.toString());
+        setIsInvoiceOpen(true);
+    };
 
     const handleManualInvoiceGenerate = async () => {
         const validationError = validateManualInvoiceForm();
@@ -1342,13 +1412,12 @@ export default function Billing() {
         try {
             const matches = await findManualInvoiceMatches(manualInvoiceForm.phone);
             if (matches.length > 0) {
-                setManualDuplicateMatches(matches);
-                setIsDuplicateChoiceOpen(true);
-                return;
+                await generateManualInvoice('link', matches[0]);
+            } else {
+                await generateManualInvoice('new');
             }
-            await generateManualInvoice('new');
         } catch (err: any) {
-            toast.error(err.message || 'Failed to check existing clients.');
+            toast.error(err.message || 'Failed to generate manual invoice.');
         }
     };
 
@@ -2539,14 +2608,24 @@ export default function Billing() {
                                 >
                                     Cancel
                                 </button>
-                                <button
-                                    onClick={handleManualInvoiceGenerate}
-                                    disabled={isManualInvoiceGenerating}
-                                    className="px-5 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                    {isManualInvoiceGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                    Generate & Send WhatsApp
-                                </button>
+                                <div className="flex gap-3 flex-1 sm:flex-none w-full sm:w-auto">
+                                    <button
+                                        type="button"
+                                        onClick={handlePreviewManualInvoice}
+                                        disabled={isManualInvoiceGenerating}
+                                        className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-60"
+                                    >
+                                        <FileText className="w-4 h-4 text-slate-600" /> Preview
+                                    </button>
+                                    <button
+                                        onClick={handleManualInvoiceGenerate}
+                                        disabled={isManualInvoiceGenerating}
+                                        className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
+                                    >
+                                        {isManualInvoiceGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                        Generate & Send WhatsApp
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

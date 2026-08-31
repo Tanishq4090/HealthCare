@@ -158,31 +158,37 @@ serve(async (req) => {
             ? `${formatPeriodDate(start_date)} To ${formatPeriodDate(end_date)}`
             : service_period || 'As agreed';
 
-        // Calculate number of days from servicePeriod (Format: "DD/MM/YYYY To DD/MM/YYYY")
+        // Calculate number of days (or use explicitly passed fractional days)
         let numberOfDays = 1;
-        try {
-            if (manual_invoice && start_date && end_date) {
-                const start = new Date(`${start_date}T00:00:00`);
-                const end = new Date(`${end_date}T00:00:00`);
-                if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
-                    numberOfDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        if (body.days !== undefined && body.days !== null && Number(body.days) > 0) {
+            numberOfDays = Number(body.days);
+        } else if (body.total_days !== undefined && body.total_days !== null && Number(body.total_days) > 0) {
+            numberOfDays = Number(body.total_days);
+        } else {
+            try {
+                if (manual_invoice && start_date && end_date) {
+                    const start = new Date(`${start_date}T00:00:00`);
+                    const end = new Date(`${end_date}T00:00:00`);
+                    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
+                        numberOfDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                    }
+                } else if (servicePeriod.includes(' To ')) {
+                    const [startStr, endStr] = servicePeriod.split(' To ');
+                    const parseDate = (dStr: string) => {
+                        const [d, m, y] = dStr.split('/');
+                        return new Date(Number(y), Number(m) - 1, Number(d));
+                    };
+                    const sDate = parseDate(startStr);
+                    const eDate = parseDate(endStr);
+                    if (!isNaN(sDate.getTime()) && !isNaN(eDate.getTime())) {
+                        const diffTime = Math.abs(eDate.getTime() - sDate.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive
+                        if (diffDays > 0) numberOfDays = diffDays;
+                    }
                 }
-            } else if (servicePeriod.includes(' To ')) {
-                const [startStr, endStr] = servicePeriod.split(' To ');
-                const parseDate = (dStr: string) => {
-                    const [d, m, y] = dStr.split('/');
-                    return new Date(Number(y), Number(m) - 1, Number(d));
-                };
-                const sDate = parseDate(startStr);
-                const eDate = parseDate(endStr);
-                if (!isNaN(sDate.getTime()) && !isNaN(eDate.getTime())) {
-                    const diffTime = Math.abs(eDate.getTime() - sDate.getTime());
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive
-                    if (diffDays > 0) numberOfDays = diffDays;
-                }
+            } catch (e) {
+                // Ignore parse errors, fallback to 1
             }
-        } catch (e) {
-            // Ignore parse errors, fallback to 1
         }
 
         const grossAmount = manual_invoice
