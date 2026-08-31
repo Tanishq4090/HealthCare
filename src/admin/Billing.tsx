@@ -1456,31 +1456,17 @@ export default function Billing() {
                                 const sStart = service.start_date ? service.start_date.split('T')[0] : '';
                                 startStr = (sStart && sStart > bStart) ? sStart : bStart;
                             } else {
-                                startStr = service.start_date ? service.start_date.split('T')[0] : '';
-                                const pastBills = service.service_bills || [];
-                                if (pastBills.length > 0) {
-                                    const sorted = [...pastBills].filter(b => b.period_end).sort((a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime());
-                                    if (sorted.length > 0 && sorted[0].period_end) {
-                                        const nextDay = new Date(sorted[0].period_end);
-                                        nextDay.setDate(nextDay.getDate() + 1);
-                                        startStr = format(nextDay, 'yyyy-MM-dd');
-                                    }
-                                }
+                                startStr = service.start_date ? service.start_date.split('T')[0] : format(new Date(), 'yyyy-MM-dd');
                             }
 
                             // 2. Determine end date:
                             let endStr = '';
                             if (bill?.period_end) {
                                 endStr = bill.period_end.split('T')[0];
+                            } else if (service.end_date) {
+                                endStr = service.end_date.split('T')[0];
                             } else {
-                                endStr = service.end_date ? service.end_date.split('T')[0] : '';
-                                if (!endStr && startStr) {
-                                    const [y, m] = startStr.split('-').map(Number);
-                                    const lastDay = new Date(y, m, 0);
-                                    endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
-                                } else if (!endStr) {
-                                    endStr = format(new Date(), 'yyyy-MM-dd');
-                                }
+                                endStr = format(new Date(), 'yyyy-MM-dd');
                             }
 
                             setCiStartDate(startStr);
