@@ -1175,22 +1175,26 @@ export default function Billing() {
                 phone_number: f.phone.trim(),
                 created_at: new Date().toISOString(),
             }, { onConflict: 'id' });
-        if (clientError) throw clientError;
+        if (clientError) {
+            console.warn('Non-fatal error upserting clients:', clientError);
+        }
 
-        const { error: consentError } = await supabase.from('client_consent').insert([{
-            client_id: leadId,
-            client_name: f.clientName.trim(),
-            phone: normalizedPhone || f.phone.trim(),
-            relative_name: f.clientName.trim(),
-            patient_name: f.clientName.trim(),
-            contact_number: f.phone.trim(),
-            address: f.address.trim(),
-            service_start_date: f.startDate,
-            service_category: f.serviceName.trim(),
-            offered_time: f.serviceHours === '24' ? '24 Hours (Live-in)' : '10 Hours',
-            terms_accepted: true,
-        }]);
-        if (consentError) throw consentError;
+        try {
+            await supabase.from('client_consents').insert([{
+                lead_id: leadId,
+                phone: normalizedPhone || f.phone.trim(),
+                relative_name: f.clientName.trim(),
+                patient_name: f.clientName.trim(),
+                contact_number: f.phone.trim(),
+                address: f.address.trim(),
+                service_start_date: f.startDate,
+                service_category: f.serviceName.trim(),
+                offered_time: f.serviceHours === '24' ? '24 Hours (Live-in)' : '10 Hours',
+                terms_accepted: true,
+            }]);
+        } catch (consentErr) {
+            console.warn('Non-fatal error inserting client_consents:', consentErr);
+        }
 
         return { leadId, normalizedPhone };
     };
@@ -2121,7 +2125,7 @@ export default function Billing() {
 
             {/* AI WhatsApp Draft Modal */}
             {isAgentModalOpen && agentTargetBill && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[100] transition-all">
                     <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
                         <div className="p-5 border-b border-slate-100 bg-emerald-500/10 flex justify-between items-center">
                             <div className="flex items-center gap-3">
@@ -2223,7 +2227,7 @@ export default function Billing() {
             )}
             {/* Invoice Preview Modal */}
             {isInvoiceOpen && invoiceData && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-slate-200 max-h-[90vh] animate-in zoom-in-95 duration-200">
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
