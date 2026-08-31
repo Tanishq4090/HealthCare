@@ -368,25 +368,64 @@ export async function recordServiceInvoice(params: RecordServiceInvoiceParams): 
             generated_at: new Date().toISOString(),
         };
 
-        const { data: bill, error: billError } = await supabase
+        // Check if an existing bill exists for this service and matching period
+        const { data: existingBills } = await supabase
             .from('service_bills')
-            .insert({
-                service_id: params.serviceId,
-                period_start: params.periodStart,
-                period_end: params.periodEnd,
-                total_days: params.totalDays,
-                daily_rate_used: params.dailyRateUsed,
-                amount: params.amount,
-                type: params.type || 'recurring',
-                deposit_applied: 0,
-                deposit_settled: false,
-                notes: JSON.stringify(metadata),
-            })
-            .select()
-            .single();
+            .select('id, notes, amount, total_days')
+            .eq('service_id', params.serviceId)
+            .eq('period_start', params.periodStart)
+            .eq('period_end', params.periodEnd)
+            .limit(1);
 
-        if (billError) {
-            console.error('Failed to insert service_bill record:', billError);
+        let bill: any = null;
+
+        if (existingBills && existingBills.length > 0) {
+            const existing = existingBills[0];
+            let existingNotes: any = {};
+            try { existingNotes = existing.notes ? JSON.parse(existing.notes) : {}; } catch {}
+
+            const mergedNotes = {
+                ...existingNotes,
+                invoice_number: params.invoiceNumber,
+                invoice_pdf_url: params.invoicePdfUrl,
+                generated_at: new Date().toISOString(),
+                status: existingNotes.status === 'paid' ? 'paid' : 'pending',
+            };
+
+            const { data: updatedBill, error: updateError } = await supabase
+                .from('service_bills')
+                .update({
+                    total_days: params.totalDays,
+                    daily_rate_used: params.dailyRateUsed,
+                    amount: params.amount,
+                    notes: JSON.stringify(mergedNotes),
+                })
+                .eq('id', existing.id)
+                .select()
+                .single();
+
+            if (updateError) console.error('Failed to update service_bill record:', updateError);
+            bill = updatedBill;
+        } else {
+            const { data: insertedBill, error: billError } = await supabase
+                .from('service_bills')
+                .insert({
+                    service_id: params.serviceId,
+                    period_start: params.periodStart,
+                    period_end: params.periodEnd,
+                    total_days: params.totalDays,
+                    daily_rate_used: params.dailyRateUsed,
+                    amount: params.amount,
+                    type: params.type || 'recurring',
+                    deposit_applied: 0,
+                    deposit_settled: false,
+                    notes: JSON.stringify(metadata),
+                })
+                .select()
+                .single();
+
+            if (billError) console.error('Failed to insert service_bill record:', billError);
+            bill = insertedBill;
         }
 
         // Also update legacy worker_assignments / crm_leads if client_id is present
