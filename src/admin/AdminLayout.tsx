@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import type { AccessModule } from '../contexts/AuthContext';
+import { useAuth, type AccessModule } from '../contexts/AuthContext';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { generateMonthlyBilling } from '../services/serviceLifecycle';
 
@@ -326,9 +326,9 @@ export default function AdminLayout() {
                 const now = new Date();
                 const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
                 const isLastDay = now.getDate() === lastDayOfCurrentMonth.getDate();
-                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                const monthEnd = lastDayOfCurrentMonth.toISOString().split('T')[0];
-                const monthName = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+                const monthStart = format(new Date(now.getFullYear(), now.getMonth(), 1), 'yyyy-MM-dd');
+                const monthEnd = format(lastDayOfCurrentMonth, 'yyyy-MM-dd');
+                const monthName = format(now, 'MMMM yyyy');
 
                 if (isLastDay) {
                     // Check if recurring monthly billing has been generated for this month

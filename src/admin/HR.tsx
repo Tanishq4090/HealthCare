@@ -153,7 +153,8 @@ export default function HR() {
             const { data: assignmentsData } = await supabase
                 .from('worker_assignments')
                 .select('*, employees(*), clients(*), service_type, client_id')
-                .neq('assignment_status', 'cancelled');
+                .neq('assignment_status', 'cancelled')
+                .order('assigned_at', { ascending: false });
             if (assignmentsData) setActiveAssignments(assignmentsData.filter((a: any) => a.assignment_status === 'active'));
             const { data: leadData } = await supabase
                 .from('crm_leads')
@@ -318,30 +319,28 @@ export default function HR() {
                             return true;
                         });
 
-                        if (workerAttendance.length > 0) {
-                            const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
-                            const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
-                            const verifiedDays = presentCount + (halfCount * 0.5);
+                        const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
+                        const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
+                        const verifiedDays = presentCount + (halfCount * 0.5);
 
-                            if (verifiedDays > 0 && verifiedDays !== p.days_worked) {
-                                const newTotal = verifiedDays * (p.daily_rate || 800);
-                                const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
+                        if (verifiedDays !== p.days_worked) {
+                            const newTotal = verifiedDays * (p.daily_rate || 800);
+                            const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
 
-                                supabase.from('payroll').update({
-                                    days_worked: verifiedDays,
-                                    days_counted: verifiedDays,
-                                    total_amount: newTotal,
-                                    net_balance: newNet
-                                }).eq('id', p.id).then();
+                            supabase.from('payroll').update({
+                                days_worked: verifiedDays,
+                                days_counted: verifiedDays,
+                                total_amount: newTotal,
+                                net_balance: newNet
+                            }).eq('id', p.id).then();
 
-                                return {
-                                    ...p,
-                                    days_worked: verifiedDays,
-                                    days_counted: verifiedDays,
-                                    total_amount: newTotal,
-                                    net_balance: newNet
-                                };
-                            }
+                            return {
+                                ...p,
+                                days_worked: verifiedDays,
+                                days_counted: verifiedDays,
+                                total_amount: newTotal,
+                                net_balance: newNet
+                            };
                         }
                     }
                 }
@@ -1783,22 +1782,31 @@ export default function HR() {
                             )}
                             <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50/50">
                                 {(() => {
-                                    const map = new Map<string, { clientId: string; clientName: string; assignments: any[] }>();
+                                    const map = new Map<string, { clientId: string; clientName: string; assignments: any[]; latestAssignedAt: number }>();
                                     activeAssignments.forEach((asgn) => {
                                         const clientId = asgn.client_id || asgn.clients?.id || asgn.clients?.client_name || 'unassigned';
                                         const clientName = asgn.clients?.client_name || asgn.client_name || 'Direct Client';
+                                        const assignedTime = new Date(asgn.assigned_at || asgn.created_at || asgn.start_date || 0).getTime();
 
                                         if (!map.has(clientId)) {
                                             map.set(clientId, {
                                                 clientId,
                                                 clientName,
                                                 assignments: [],
+                                                latestAssignedAt: assignedTime,
                                             });
                                         }
-                                        map.get(clientId)!.assignments.push(asgn);
+                                        const group = map.get(clientId)!;
+                                        group.assignments.push(asgn);
+                                        if (assignedTime > group.latestAssignedAt) {
+                                            group.latestAssignedAt = assignedTime;
+                                        }
                                     });
 
-                                    return Array.from(map.values()).map((group) => (
+                                    // Sort client groups so the newest active client (e.g. Tanishq) always appears at the TOP
+                                    const sortedGroups = Array.from(map.values()).sort((a, b) => b.latestAssignedAt - a.latestAssignedAt);
+
+                                    return sortedGroups.map((group) => (
                                         <div
                                             key={group.clientId}
                                             className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"

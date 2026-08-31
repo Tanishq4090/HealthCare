@@ -74,9 +74,9 @@ export default function ServicesPanel({
     const now = new Date();
     const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const isLastDayOfMonth = now.getDate() === lastDayOfCurrentMonth.getDate();
-    const currentMonthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' });
-    const monthStartStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const monthEndStr = lastDayOfCurrentMonth.toISOString().split('T')[0];
+    const currentMonthLabel = format(now, 'MMMM yyyy');
+    const monthStartStr = format(new Date(now.getFullYear(), now.getMonth(), 1), 'yyyy-MM-dd');
+    const monthEndStr = format(lastDayOfCurrentMonth, 'yyyy-MM-dd');
 
     const fetchServices = useCallback(async () => {
         setIsLoading(true);
