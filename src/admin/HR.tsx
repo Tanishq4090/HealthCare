@@ -260,9 +260,9 @@ export default function HR() {
                     const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
                     const verifiedDays = presentCount + (halfCount * 0.5);
 
-                    // Use verified attendance days
-                    const days = verifiedDays;
                     const periodDays = start ? periodDaysInclusive(start, end) : daysInCalendarMonth();
+                    // Prefer verified attendance if logs cover the period, otherwise fallback to assignment duration
+                    const days = (verifiedDays > 0 && workerAttendance.length >= periodDays) ? verifiedDays : (periodDays > 0 ? periodDays : (verifiedDays || 1));
 
                     const pay = calculateWorkerPay({
                         rate_10hr: emp?.rate_10hr,
@@ -344,7 +344,8 @@ export default function HR() {
                         const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
                         const verifiedDays = presentCount + (halfCount * 0.5);
 
-                        if (verifiedDays !== p.days_worked) {
+                        // Only auto-update if verifiedDays has new complete attendance exceeding saved days, or if p.days_worked is not set
+                        if (verifiedDays > 0 && p.days_worked && verifiedDays > p.days_worked) {
                             const newTotal = verifiedDays * (p.daily_rate || 800);
                             const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
 
