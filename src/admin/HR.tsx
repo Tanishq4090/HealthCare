@@ -344,22 +344,37 @@ export default function HR() {
                         const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
                         const verifiedDays = presentCount + (halfCount * 0.5);
 
-                        // Only auto-update if verifiedDays has new complete attendance exceeding saved days, or if p.days_worked is not set
-                        if (verifiedDays > 0 && p.days_worked && verifiedDays > p.days_worked) {
-                            const newTotal = verifiedDays * (p.daily_rate || 800);
+                        // Find matching assignment to get full duty duration
+                        const asgn = (assignmentsData || []).find((a: any) => (p.assignment_id && a.id === p.assignment_id) || (a.employee_id === empId));
+                        let asgnDays = 0;
+                        if (asgn && asgn.start_date) {
+                            const sDate = new Date(asgn.start_date);
+                            const eDate = asgn.end_date ? new Date(asgn.end_date) : new Date();
+                            asgnDays = periodDaysInclusive(sDate, eDate);
+                        } else if (p.period_start) {
+                            const sDate = new Date(p.period_start);
+                            const eDate = p.period_end ? new Date(p.period_end) : new Date();
+                            asgnDays = periodDaysInclusive(sDate, eDate);
+                        }
+
+                        const targetDays = Math.max(verifiedDays, asgnDays, p.days_worked || 0);
+
+                        // Update DB if targetDays exceeds current saved days (resolving corrupted 0.5 values)
+                        if (targetDays > 0 && targetDays > (p.days_worked || 0)) {
+                            const newTotal = targetDays * (p.daily_rate || 800);
                             const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
 
                             supabase.from('payroll').update({
-                                days_worked: verifiedDays,
-                                days_counted: verifiedDays,
+                                days_worked: targetDays,
+                                days_counted: targetDays,
                                 total_amount: newTotal,
                                 net_balance: newNet
                             }).eq('id', p.id).then();
 
                             return {
                                 ...p,
-                                days_worked: verifiedDays,
-                                days_counted: verifiedDays,
+                                days_worked: targetDays,
+                                days_counted: targetDays,
                                 total_amount: newTotal,
                                 net_balance: newNet
                             };
