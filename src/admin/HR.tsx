@@ -206,21 +206,18 @@ export default function HR() {
                     const hasMatchingDbPayroll = (payrollData || []).some((p: any) => {
                         if (p.assignment_id === a.id) return true;
                         
-                        const isSameWorker = p.worker_id === a.employee_id || (p.worker && a.employees?.full_name && p.worker.trim().toLowerCase() === a.employees.full_name.trim().toLowerCase());
-                        if (!isSameWorker) return false;
-
-                        const pClient = (p.client_name || '').trim().toLowerCase();
-                        const aClient = (a.clients?.client_name || a.employees?.assigned_client || '').trim().toLowerCase();
-                        if (pClient && aClient && (pClient === aClient || pClient.includes(aClient) || aClient.includes(pClient))) {
-                            return true;
-                        }
-
-                        if (servicesData) {
-                            const matchingSvc = servicesData.find((s: any) => 
-                                (s.id === p.service_id || s.client_id === a.client_id) &&
-                                s.service_worker_assignments?.some((swa: any) => swa.employee_id === a.employee_id)
-                            );
-                            if (matchingSvc) return true;
+                        // Check if p.assignment_id maps to this specific worker assignment through service_worker_assignments
+                        if (servicesData && p.assignment_id) {
+                            for (const s of servicesData) {
+                                const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
+                                if (swa && swa.employee_id === a.employee_id) {
+                                    const aStart = a.start_date ? a.start_date.split('T')[0] : '';
+                                    const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
+                                    if (aStart && swaStart && aStart === swaStart) {
+                                        return true;
+                                    }
+                                }
+                            }
                         }
 
                         return false;
@@ -239,21 +236,11 @@ export default function HR() {
                     const end = a.end_date ? new Date(a.end_date) : new Date();
 
                     // Calculate real verified attendance days strictly for THIS assignment
-                    const matchingAsgnIds = new Set<string>();
-                    if (a.id) matchingAsgnIds.add(a.id);
-                    if (servicesData) {
-                        servicesData.forEach((s: any) => {
-                            if (s.client_id === a.client_id) {
-                                s.service_worker_assignments?.filter((swa: any) => swa.employee_id === a.employee_id).forEach((swa: any) => {
-                                    matchingAsgnIds.add(swa.id);
-                                });
-                            }
-                        });
-                    }
-
                     const workerAttendance = (monthStats || []).filter(s => {
                         if (s.worker_id !== a.employee_id) return false;
-                        if (s.assignment_id && matchingAsgnIds.has(s.assignment_id)) return true;
+                        if (s.assignment_id) {
+                            return s.assignment_id === a.id;
+                        }
                         if (a.start_date) {
                             const dutyDate = s.duty_date;
                             const startDateStr = a.start_date.split('T')[0];
@@ -318,7 +305,7 @@ export default function HR() {
             const seenAsgnKeys = new Set<string>();
             const dedupedDbRows: any[] = [];
             for (const p of sortedDb) {
-                const key = p.assignment_id ? `asgn_${p.assignment_id}` : `wc_${(p.worker || '').trim().toLowerCase()}_${(p.client_name || '').trim().toLowerCase()}`;
+                const key = p.assignment_id ? `asgn_${p.assignment_id}` : `wc_${(p.worker || '').trim().toLowerCase()}_${(p.client_name || '').trim().toLowerCase()}_${p.period_start || ''}`;
                 if (seenAsgnKeys.has(key)) {
                     if (p.id) supabase.from('payroll').delete().eq('id', p.id).then();
                     continue;
@@ -331,34 +318,46 @@ export default function HR() {
                 if (p.status === 'Pending Payment' || p.status === 'Pending') {
                     const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
                     if (empId) {
-                        // Find all assignment IDs associated with this worker & client / service
-                        const matchingAsgnIds = new Set<string>();
-                        if (p.assignment_id) matchingAsgnIds.add(p.assignment_id);
-
-                        (assignmentsData || []).filter((a: any) => a.employee_id === empId).forEach((a: any) => {
-                            const clientName = a.clients?.client_name || '';
-                            const isClientMatch = clientName && p.client_name && clientName.trim().toLowerCase() === p.client_name.trim().toLowerCase();
-                            const isServiceMatch = p.service_id && (servicesData || []).some((s: any) => s.id === p.service_id && s.client_id === a.client_id);
-                            if (isClientMatch || isServiceMatch || a.id === p.assignment_id) {
-                                matchingAsgnIds.add(a.id);
+                        // Find the SPECIFIC assignment that corresponds to this payroll entry
+                        let matchedAsgn = (assignmentsData || []).find((a: any) => a.id === p.assignment_id);
+                        if (!matchedAsgn && p.assignment_id && servicesData) {
+                            for (const s of servicesData) {
+                                const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
+                                if (swa && swa.employee_id === empId) {
+                                    const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
+                                    matchedAsgn = (assignmentsData || []).find((a: any) => 
+                                        a.employee_id === empId && 
+                                        a.start_date?.split('T')[0] === swaStart
+                                    );
+                                    if (matchedAsgn) break;
+                                }
                             }
-                        });
+                        }
 
-                        (servicesData || []).forEach((s: any) => {
-                            const isServiceMatch = (p.service_id && s.id === p.service_id) || (p.client_name && s.client_id && (assignmentsData || []).some((a: any) => a.client_id === s.client_id && a.clients?.client_name?.toLowerCase() === p.client_name.toLowerCase()));
-                            if (isServiceMatch) {
-                                s.service_worker_assignments?.filter((swa: any) => swa.employee_id === empId).forEach((swa: any) => {
-                                    matchingAsgnIds.add(swa.id);
-                                });
-                            }
-                        });
+                        const targetAsgnIds = new Set<string>();
+                        if (p.assignment_id) targetAsgnIds.add(p.assignment_id);
+                        if (matchedAsgn) targetAsgnIds.add(matchedAsgn.id);
 
                         const workerAttendance = (monthStats || []).filter(s => {
                             if (s.worker_id !== empId) return false;
-                            if (s.assignment_id && matchingAsgnIds.has(s.assignment_id)) return true;
-                            if (!s.assignment_id && p.period_start) {
+                            if (s.assignment_id) {
+                                return targetAsgnIds.has(s.assignment_id);
+                            }
+                            if (matchedAsgn?.start_date) {
                                 const d = s.duty_date;
-                                if (d >= p.period_start && (!p.period_end || d <= p.period_end)) return true;
+                                const sStr = matchedAsgn.start_date.split('T')[0];
+                                const eStr = matchedAsgn.end_date?.split('T')[0];
+                                if (d < sStr) return false;
+                                if (eStr && d > eStr) return false;
+                                return true;
+                            }
+                            if (p.period_start) {
+                                const d = s.duty_date;
+                                const sStr = p.period_start.split('T')[0];
+                                const eStr = p.period_end?.split('T')[0];
+                                if (d < sStr) return false;
+                                if (eStr && d > eStr) return false;
+                                return true;
                             }
                             return false;
                         });
