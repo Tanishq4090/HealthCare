@@ -239,12 +239,21 @@ export default function HR() {
                     const end = a.end_date ? new Date(a.end_date) : new Date();
 
                     // Calculate real verified attendance days strictly for THIS assignment
+                    const matchingAsgnIds = new Set<string>();
+                    if (a.id) matchingAsgnIds.add(a.id);
+                    if (servicesData) {
+                        servicesData.forEach((s: any) => {
+                            if (s.client_id === a.client_id) {
+                                s.service_worker_assignments?.filter((swa: any) => swa.employee_id === a.employee_id).forEach((swa: any) => {
+                                    matchingAsgnIds.add(swa.id);
+                                });
+                            }
+                        });
+                    }
+
                     const workerAttendance = (monthStats || []).filter(s => {
                         if (s.worker_id !== a.employee_id) return false;
-                        if (s.assignment_id && a.id) {
-                            return s.assignment_id === a.id;
-                        }
-                        // Fallback date matching if legacy attendance log without assignment_id
+                        if (s.assignment_id && matchingAsgnIds.has(s.assignment_id)) return true;
                         if (a.start_date) {
                             const dutyDate = s.duty_date;
                             const startDateStr = a.start_date.split('T')[0];
@@ -261,8 +270,7 @@ export default function HR() {
                     const verifiedDays = presentCount + (halfCount * 0.5);
 
                     const periodDays = start ? periodDaysInclusive(start, end) : daysInCalendarMonth();
-                    // Prefer verified attendance if logs cover the period, otherwise fallback to assignment duration
-                    const days = (verifiedDays > 0 && workerAttendance.length >= periodDays) ? verifiedDays : (periodDays > 0 ? periodDays : (verifiedDays || 1));
+                    const days = workerAttendance.length > 0 ? verifiedDays : (periodDays > 0 ? periodDays : 1);
 
                     const pay = calculateWorkerPay({
                         rate_10hr: emp?.rate_10hr,
@@ -323,61 +331,62 @@ export default function HR() {
                 if (p.status === 'Pending Payment' || p.status === 'Pending') {
                     const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
                     if (empId) {
-                        const workerAttendance = (monthStats || []).filter(s => {
-                            if (s.worker_id !== empId) return false;
-                            if (p.assignment_id && s.assignment_id && s.assignment_id === p.assignment_id) {
-                                return true;
+                        // Find all assignment IDs associated with this worker & client / service
+                        const matchingAsgnIds = new Set<string>();
+                        if (p.assignment_id) matchingAsgnIds.add(p.assignment_id);
+
+                        (assignmentsData || []).filter((a: any) => a.employee_id === empId).forEach((a: any) => {
+                            const clientName = a.clients?.client_name || '';
+                            const isClientMatch = clientName && p.client_name && clientName.trim().toLowerCase() === p.client_name.trim().toLowerCase();
+                            const isServiceMatch = p.service_id && (servicesData || []).some((s: any) => s.id === p.service_id && s.client_id === a.client_id);
+                            if (isClientMatch || isServiceMatch || a.id === p.assignment_id) {
+                                matchingAsgnIds.add(a.id);
                             }
-                            if (p.period_start) {
-                                const dutyDate = s.duty_date;
-                                const startStr = p.period_start.split('T')[0];
-                                if (dutyDate < startStr) return false;
-                                if (p.period_end) {
-                                    const endStr = p.period_end.split('T')[0];
-                                    if (dutyDate > endStr) return false;
-                                }
-                            }
-                            return true;
                         });
 
-                        const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
-                        const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
-                        const verifiedDays = presentCount + (halfCount * 0.5);
+                        (servicesData || []).forEach((s: any) => {
+                            const isServiceMatch = (p.service_id && s.id === p.service_id) || (p.client_name && s.client_id && (assignmentsData || []).some((a: any) => a.client_id === s.client_id && a.clients?.client_name?.toLowerCase() === p.client_name.toLowerCase()));
+                            if (isServiceMatch) {
+                                s.service_worker_assignments?.filter((swa: any) => swa.employee_id === empId).forEach((swa: any) => {
+                                    matchingAsgnIds.add(swa.id);
+                                });
+                            }
+                        });
 
-                        // Find matching assignment to get full duty duration
-                        const asgn = (assignmentsData || []).find((a: any) => (p.assignment_id && a.id === p.assignment_id) || (a.employee_id === empId));
-                        let asgnDays = 0;
-                        if (asgn && asgn.start_date) {
-                            const sDate = new Date(asgn.start_date);
-                            const eDate = asgn.end_date ? new Date(asgn.end_date) : new Date();
-                            asgnDays = periodDaysInclusive(sDate, eDate);
-                        } else if (p.period_start) {
-                            const sDate = new Date(p.period_start);
-                            const eDate = p.period_end ? new Date(p.period_end) : new Date();
-                            asgnDays = periodDaysInclusive(sDate, eDate);
-                        }
+                        const workerAttendance = (monthStats || []).filter(s => {
+                            if (s.worker_id !== empId) return false;
+                            if (s.assignment_id && matchingAsgnIds.has(s.assignment_id)) return true;
+                            if (!s.assignment_id && p.period_start) {
+                                const d = s.duty_date;
+                                if (d >= p.period_start && (!p.period_end || d <= p.period_end)) return true;
+                            }
+                            return false;
+                        });
 
-                        const targetDays = Math.max(verifiedDays, asgnDays, p.days_worked || 0);
+                        if (workerAttendance.length > 0) {
+                            const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
+                            const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
+                            const verifiedDays = presentCount + (halfCount * 0.5);
 
-                        // Update DB if targetDays exceeds current saved days (resolving corrupted 0.5 values)
-                        if (targetDays > 0 && targetDays > (p.days_worked || 0)) {
-                            const newTotal = targetDays * (p.daily_rate || 800);
-                            const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
+                            if (verifiedDays !== p.days_worked) {
+                                const newTotal = verifiedDays * (p.daily_rate || 800);
+                                const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
 
-                            supabase.from('payroll').update({
-                                days_worked: targetDays,
-                                days_counted: targetDays,
-                                total_amount: newTotal,
-                                net_balance: newNet
-                            }).eq('id', p.id).then();
+                                supabase.from('payroll').update({
+                                    days_worked: verifiedDays,
+                                    days_counted: verifiedDays,
+                                    total_amount: newTotal,
+                                    net_balance: newNet
+                                }).eq('id', p.id).then();
 
-                            return {
-                                ...p,
-                                days_worked: targetDays,
-                                days_counted: targetDays,
-                                total_amount: newTotal,
-                                net_balance: newNet
-                            };
+                                return {
+                                    ...p,
+                                    days_worked: verifiedDays,
+                                    days_counted: verifiedDays,
+                                    total_amount: newTotal,
+                                    net_balance: newNet
+                                };
+                            }
                         }
                     }
                 }
