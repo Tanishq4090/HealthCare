@@ -516,7 +516,7 @@ export async function endService(
             .update({
                 total_days: verifiedDays,
                 daily_rate_used: rateUsed,
-                amount: trueCost,
+                amount: netFinalBillAmount,
                 deposit_applied: depositAmount,
                 deposit_settled: true,
                 settlement_amount: settlement,
@@ -533,7 +533,7 @@ export async function endService(
                 period_end: effectiveEndDate,
                 total_days: verifiedDays,
                 daily_rate_used: rateUsed,
-                amount: trueCost,
+                amount: netFinalBillAmount,
                 type: 'final',
                 deposit_applied: depositAmount,
                 deposit_settled: true,

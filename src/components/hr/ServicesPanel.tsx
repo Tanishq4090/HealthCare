@@ -533,11 +533,7 @@ export default function ServicesPanel({
                                                             </h4>
                                                             {sortedBills.length > 0 && (
                                                                 <span className="text-xs text-slate-500 font-semibold">
-                                                                    Total Billed: {(() => {
-                                                                        const finalBill = sortedBills.find(b => b.type === 'final');
-                                                                        if (finalBill) return formatCurrency(finalBill.amount || 0);
-                                                                        return formatCurrency(sortedBills.reduce((sum, b) => sum + (b.amount || 0), 0));
-                                                                    })()}
+                                                                    Total Billed: {formatCurrency(sortedBills.reduce((sum, b) => sum + (b.amount || 0), 0))}
                                                                 </span>
                                                             )}
                                                         </div>
