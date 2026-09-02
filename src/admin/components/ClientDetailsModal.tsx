@@ -275,12 +275,26 @@ export default function ClientDetailsModal({ client, onClose }: ClientDetailsMod
                                         return (
                                             <div key={bill.id || i} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
                                                 <div>
-                                                    <p className="font-bold text-slate-800">
-                                                        {formatDate(bill.period_start)} To {formatDate(bill.period_end)}
-                                                    </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="font-bold text-slate-800">
+                                                            {formatDate(bill.period_start)} To {formatDate(bill.period_end)}
+                                                        </p>
+                                                        {bill.type === 'final' && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-[#1AA6A8] uppercase tracking-wide">
+                                                                Final Settlement
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <p className="text-[11px] text-slate-500 font-mono mt-0.5">
                                                         {invNo} • {bill.total_days} days @ ₹{bill.daily_rate_used}/day
+                                                        {noteData.previously_billed ? ` (Less ₹${Number(noteData.previously_billed).toLocaleString('en-IN')} prev billed)` : ''}
                                                     </p>
+                                                    {noteData.refund_amount > 0 && (
+                                                        <p className="text-[11px] font-bold text-amber-600 mt-1 flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                                            Refund Due: ₹{Number(noteData.refund_amount).toLocaleString('en-IN')} (Deposit settled)
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-3">
                                                     <span className="font-extrabold text-sm text-slate-900">

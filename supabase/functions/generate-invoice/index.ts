@@ -83,6 +83,7 @@ serve(async (req) => {
             end_date,
             rate_per_day,
             deposit_collected,
+            previously_billed,
         } = body;
         if (!lead_id) throw new Error('lead_id is required');
 
@@ -194,13 +195,16 @@ serve(async (req) => {
         const grossAmount = manual_invoice
             ? Math.max(0, numberOfDays * Number(rate_per_day || 0))
             : Number(deposit_amount || lead.quoted_monthly_rate || 15000);
+        const previouslyBilled = manual_invoice ? Math.max(0, Number(previously_billed || 0)) : 0;
         const depositCollected = manual_invoice ? Math.max(0, Number(deposit_collected || 0)) : 0;
-        const netDifference = grossAmount - depositCollected;
+        const totalDeductions = previouslyBilled + depositCollected;
+        const netDifference = grossAmount - totalDeductions;
         const isRefund = manual_invoice && netDifference < 0;
         const refundAmount = Math.abs(netDifference);
         const amount = isRefund ? 0 : Math.max(0, netDifference);
 
         const grossAmountStr = grossAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const previouslyBilledStr = previouslyBilled.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const depositCollectedStr = depositCollected.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const refundAmountStr = refundAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const amountStr    = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -384,8 +388,18 @@ serve(async (req) => {
 
         curY -= 20;
 
+        if (manual_invoice && previouslyBilled > 0) {
+            const prevLbl = 'Collected Earlier';
+            const prevLblW = regular.widthOfTextAtSize(prevLbl, 10);
+            page.drawText(prevLbl, { x: COL_3 + 10 - prevLblW, y: curY, size: 10, font: regular, color: GRAY });
+            const prevVal = `- Rs. ${previouslyBilledStr}`;
+            const prevValW = regular.widthOfTextAtSize(prevVal, 10);
+            page.drawText(prevVal, { x: COL_4 - prevValW, y: curY, size: 10, font: regular, color: GRAY });
+            curY -= 16;
+        }
+
         if (manual_invoice && depositCollected > 0) {
-            const depLbl = 'Deposit Collected';
+            const depLbl = 'Security Deposit';
             const depLblW = regular.widthOfTextAtSize(depLbl, 10);
             page.drawText(depLbl, { x: COL_3 + 10 - depLblW, y: curY, size: 10, font: regular, color: GRAY });
             const depVal = `- Rs. ${depositCollectedStr}`;

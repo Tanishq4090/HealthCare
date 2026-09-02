@@ -424,7 +424,8 @@ export async function endService(
                 end_date: effectiveEndDate,
                 days: verifiedDays,
                 rate_per_day: rateUsed,
-                deposit_collected: totalAlreadyPaid,
+                deposit_collected: depositAmount,
+                previously_billed: previouslyBilled,
                 invoice_date: effectiveEndDate,
             }
         });
@@ -438,16 +439,20 @@ export async function endService(
     }
 
     // 5. Update or insert the final bill record in service_bills with invoice info
+    const netFinalBillAmount = Math.max(0, trueCost - previouslyBilled);
     const finalBillNotes = JSON.stringify({
         invoice_number: invoiceNumber || `INV-F${Math.floor(1000 + Math.random() * 9000)}`,
         invoice_pdf_url: invoicePdfUrl,
         status: settlement <= 0 ? 'settled' : 'pending',
         type: 'final_settlement',
+        gross_amount: trueCost,
+        previously_billed: previouslyBilled,
+        net_amount: netFinalBillAmount,
+        deposit: depositAmount,
         settlement_amount: settlement,
         refund_amount: settlement < 0 ? Math.abs(settlement) : 0,
-        previously_billed: previouslyBilled,
-        deposit: depositAmount,
         verified_days: verifiedDays,
+        rate_used: rateUsed,
         generated_at: new Date().toISOString()
     });
 
@@ -464,7 +469,9 @@ export async function endService(
             .update({
                 total_days: verifiedDays,
                 daily_rate_used: rateUsed,
-                amount: trueCost,
+                amount: netFinalBillAmount,
+                deposit_applied: depositAmount,
+                deposit_settled: true,
                 settlement_amount: settlement,
                 notes: finalBillNotes,
                 period_end: effectiveEndDate
@@ -479,7 +486,7 @@ export async function endService(
                 period_end: effectiveEndDate,
                 total_days: verifiedDays,
                 daily_rate_used: rateUsed,
-                amount: trueCost,
+                amount: netFinalBillAmount,
                 type: 'final',
                 deposit_applied: depositAmount,
                 deposit_settled: true,
