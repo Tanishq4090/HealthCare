@@ -661,9 +661,16 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
           const { data: lead } = await supabase
             .from('crm_leads')
-            .select('complete_month_daily_rate, incomplete_month_daily_rate')
+            .select('complete_month_daily_rate, incomplete_month_daily_rate, service_needed, assigned_worker_role, notes')
             .eq('id', selectedClient.id)
             .maybeSingle();
+
+          let resolvedServiceName = lead?.service_needed || lead?.assigned_worker_role;
+          if (!resolvedServiceName && lead?.notes) {
+            const match = lead.notes.match(/Service:\s*([^\n\r]+)/i);
+            if (match && match[1]) resolvedServiceName = match[1].trim();
+          }
+          if (!resolvedServiceName) resolvedServiceName = 'Home Care Service';
 
           const cmRate = quote?.complete_month_rate || lead?.complete_month_daily_rate || (hoursPerDay === 24 ? 1000 : 500);
           const imRate = quote?.incomplete_month_rate || lead?.incomplete_month_daily_rate || (hoursPerDay === 24 ? 2000 : 1000);
@@ -674,7 +681,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
             .insert({
               client_id: selectedClient.id,
               lead_id: selectedClient.id,
-              service_type: 'date_range',
+              service_type: resolvedServiceName,
               hours_per_day: hoursPerDay,
               start_date: startDate,
               end_date: endDate || null,

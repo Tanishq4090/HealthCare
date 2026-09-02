@@ -1970,9 +1970,16 @@ export default function CRM() {
 
                     const { data: lead } = await supabase
                         .from('crm_leads')
-                        .select('complete_month_daily_rate, incomplete_month_daily_rate')
+                        .select('complete_month_daily_rate, incomplete_month_daily_rate, service_needed, assigned_worker_role, notes')
                         .eq('id', staffPickerTargetLead.id)
                         .maybeSingle();
+
+                    let resolvedServiceName = lead?.service_needed || lead?.assigned_worker_role;
+                    if (!resolvedServiceName && lead?.notes) {
+                        const match = lead.notes.match(/Service:\s*([^\n\r]+)/i);
+                        if (match && match[1]) resolvedServiceName = match[1].trim();
+                    }
+                    if (!resolvedServiceName) resolvedServiceName = 'Home Care Service';
 
                     const cmRate = quote?.complete_month_rate || lead?.complete_month_daily_rate || (serviceHours === 24 ? 1000 : 500);
                     const icmRate = quote?.incomplete_month_rate || lead?.incomplete_month_daily_rate || (serviceHours === 24 ? 2000 : 1000);
@@ -1984,7 +1991,7 @@ export default function CRM() {
                         .insert({
                             client_id: staffPickerTargetLead.id,
                             lead_id: staffPickerTargetLead.id,
-                            service_type: 'date_range',
+                            service_type: resolvedServiceName,
                             hours_per_day: serviceHours,
                             start_date: serviceStartDate,
                             end_date: serviceEndDate ? serviceEndDate : null,
@@ -3957,7 +3964,7 @@ export default function CRM() {
                 .insert([{
                     client_id: newLead.id,
                     lead_id: newLead.id,
-                    service_type: addClientIsOpenEnded ? 'open_ended' : 'date_range',
+                    service_type: addClientServiceName || 'Home Care Service',
                     hours_per_day: addClientShiftHours,
                     start_date: addClientStartDate,
                     end_date: addClientIsOpenEnded ? null : (addClientEndDate || null),

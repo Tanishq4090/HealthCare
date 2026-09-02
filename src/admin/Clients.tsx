@@ -88,7 +88,8 @@ export default function Clients() {
 
     const openDepositModal = (client: any) => {
         const activeSvc = client.activeService || (client.services && client.services[0]);
-        const serviceName = activeSvc?.service_type || 'Home Care Service';
+        const currentCycle = client.allServiceCycles?.find((c: any) => c.isCurrent);
+        const serviceName = currentCycle?.serviceType || (activeSvc?.service_type && activeSvc.service_type !== 'date_range' && activeSvc.service_type !== 'open_ended' ? activeSvc.service_type : 'Home Care Service');
         const startDate = activeSvc?.start_date || new Date().toISOString().split('T')[0];
         const amount = client.securityDeposit || 5000;
         const initialMethod = 'UPI';
@@ -553,14 +554,14 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // 1. Fetch leads in client stages WITH their pipeline_stage
+            // 1. Fetch leads in client stages WITH their pipeline_stage and service metadata
             // Also include leads with null pipeline_stage (removed from pipeline but still clients)
             const [activeLeadsResult, archivedLeadsResult, trashLeadsResult] = await Promise.all([
-                supabase.from('crm_leads').select('id, pipeline_stage')
+                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role, service_needed')
                     .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
-                supabase.from('crm_leads').select('id, pipeline_stage')
+                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role, service_needed')
                     .eq('pipeline_stage', 'Archived'),
-                supabase.from('crm_leads').select('id, pipeline_stage')
+                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role, service_needed')
                     .eq('pipeline_stage', 'Trash')
             ]);
 
@@ -568,9 +569,13 @@ export default function Clients() {
 
             const allLeads = [...(activeLeadsResult.data || []), ...(archivedLeadsResult.data || []), ...(trashLeadsResult.data || [])];
             const clientIds = allLeads.map(l => l.id);
-            // Build a map of lead_id -> pipeline_stage for status badge
+            // Build a map of lead_id -> pipeline_stage and lead_id -> lead data for status badge and service metadata
             const stageMap: Record<string, string> = {};
-            allLeads.forEach(l => { stageMap[l.id] = l.pipeline_stage || 'Archived'; });
+            const leadMap: Record<string, any> = {};
+            allLeads.forEach(l => {
+                stageMap[l.id] = l.pipeline_stage || 'Archived';
+                leadMap[l.id] = l;
+            });
 
             // 2. Fetch records from the clients table
             const { data: allClientsRes, error: clientError } = await supabase
@@ -584,7 +589,7 @@ export default function Clients() {
             // 3. Fetch worker_assignments with employee status & dates
             const { data: allAssignmentsData, error: assignAllError } = await supabase
                 .from('worker_assignments')
-                .select('id, client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, service_type, assigned_at, employees(status, full_name)');
+                .select('id, client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, service_type, assigned_at, notes, employees(status, full_name)');
 
             if (assignAllError) throw assignAllError;
 
@@ -596,7 +601,7 @@ export default function Clients() {
                     .eq('payment_type', 'deposit'),
                 supabase
                     .from('services')
-                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at')
+                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes')
             ]);
 
             if (paymentsError) throw paymentsError;
@@ -663,9 +668,22 @@ export default function Clients() {
                 }
 
                 // Build unified service cycles history with deposit tracking
-                const formatServiceLabel = (type?: string) => {
-                    if (!type || type === 'date_range' || type.trim() === '') return 'Home Care Service';
-                    return type;
+                const leadInfo = leadMap[c.id];
+                const formatServiceLabel = (type?: string, notes?: string) => {
+                    if (type && type !== 'date_range' && type !== 'open_ended' && type !== 'one_day' && type.trim() !== '') {
+                        return type;
+                    }
+                    if (leadInfo?.service_needed) return leadInfo.service_needed;
+                    if (leadInfo?.assigned_worker_role) return leadInfo.assigned_worker_role;
+                    if (leadInfo?.notes) {
+                        const match = leadInfo.notes.match(/Service:\s*([^\n\r]+)/i);
+                        if (match && match[1]?.trim()) return match[1].trim();
+                    }
+                    if (notes) {
+                        const match = notes.match(/Service:\s*([^\n\r]+)/i);
+                        if (match && match[1]?.trim()) return match[1].trim();
+                    }
+                    return 'Home Care Service';
                 };
 
                 const allServiceCycles: any[] = [];
@@ -675,7 +693,7 @@ export default function Clients() {
                         const isCurrent = activeService ? s.id === activeService.id : s.id === latestService?.id;
                         allServiceCycles.push({
                             id: s.id,
-                            serviceType: formatServiceLabel(s.service_type),
+                            serviceType: formatServiceLabel(s.service_type, s.notes),
                             startDate: s.start_date,
                             endDate: s.end_date,
                             isCurrent: isCurrent,
@@ -689,7 +707,7 @@ export default function Clients() {
                         const isCurrent = activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id;
                         allServiceCycles.push({
                             id: a.id,
-                            serviceType: formatServiceLabel(a.service_type),
+                            serviceType: formatServiceLabel(a.service_type, a.notes),
                             startDate: a.start_date,
                             endDate: a.end_date,
                             isCurrent: isCurrent,
