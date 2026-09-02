@@ -287,7 +287,11 @@ export interface EndServiceResult {
     success: boolean;
     service_id?: string;
     total_lifetime_days?: number;
+    calendar_days?: number;
     rate_used?: number;
+    rate_tier?: 'incomplete_month' | 'complete_month';
+    tier_reason?: string;
+    is_incomplete_month?: boolean;
     true_cost?: number;
     previously_billed?: number;
     deposit?: number;
@@ -368,10 +372,49 @@ export async function endService(
         verifiedDays = rpcData?.total_lifetime_days || 1;
     }
 
-    // Rate determination: if total lifetime days < 30, use incomplete_month_daily_rate, else complete_month_daily_rate
-    const rateUsed = verifiedDays < 30
-        ? (service.incomplete_month_daily_rate || 1000)
-        : (service.complete_month_daily_rate || 500);
+    // 3. Compute calendar lifetime days as well as verified attendance days
+    const startDateStr = service.start_date ? service.start_date.split('T')[0] : effectiveEndDate;
+    const dStart = new Date(`${startDateStr}T00:00:00`);
+    const dEnd = new Date(`${effectiveEndDate}T00:00:00`);
+    const calendarDays = (!isNaN(dStart.getTime()) && !isNaN(dEnd.getTime()) && dEnd >= dStart)
+        ? Math.round((dEnd.getTime() - dStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
+        : verifiedDays;
+
+    // 30-Day Threshold Rule:
+    // If service ended before completing 30 days (< 30 days), charge the incomplete month daily rate.
+    // If service ran 30 or more days (>= 30 days), charge the standard complete month daily rate.
+    const isIncompleteMonth = calendarDays < 30 || verifiedDays < 30;
+
+    // Fetch lead and quotation rates as fallback to ensure incomplete rate is accurately captured
+    const [leadRateRes, quoteRateRes] = await Promise.all([
+        supabase.from('crm_leads')
+            .select('complete_month_daily_rate, incomplete_month_daily_rate, estimated_value_monthly')
+            .eq('id', service.client_id)
+            .maybeSingle(),
+        supabase.from('crm_quotations')
+            .select('complete_month_rate, incomplete_month_rate')
+            .eq('lead_id', service.client_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+    ]);
+
+    const completeDailyRate = Number(service.complete_month_daily_rate)
+        || Number(leadRateRes.data?.complete_month_daily_rate)
+        || Number(quoteRateRes.data?.complete_month_rate)
+        || (leadRateRes.data?.estimated_value_monthly ? Math.round(Number(leadRateRes.data.estimated_value_monthly) / 30) : 500);
+
+    const incompleteDailyRate = Number(service.incomplete_month_daily_rate)
+        || Number(leadRateRes.data?.incomplete_month_daily_rate)
+        || Number(quoteRateRes.data?.incomplete_month_rate)
+        || (completeDailyRate > 0 ? completeDailyRate * 2 : 1000)
+        || (service.hours_per_day === 24 ? 2000 : 1000);
+
+    const rateUsed = isIncompleteMonth ? incompleteDailyRate : completeDailyRate;
+    const rateTier: 'incomplete_month' | 'complete_month' = isIncompleteMonth ? 'incomplete_month' : 'complete_month';
+    const tierReason = isIncompleteMonth
+        ? `Service ended before 30 days (< 30 days) — billed at incomplete month daily rate of ₹${rateUsed.toLocaleString('en-IN')}/day`
+        : `Service completed 30+ days (≥ 30 days) — billed at complete month daily rate of ₹${rateUsed.toLocaleString('en-IN')}/day`;
 
     const trueCost = verifiedDays * rateUsed;
 
@@ -452,7 +495,11 @@ export async function endService(
         settlement_amount: settlement,
         refund_amount: settlement < 0 ? Math.abs(settlement) : 0,
         verified_days: verifiedDays,
+        calendar_days: calendarDays,
         rate_used: rateUsed,
+        rate_tier: rateTier,
+        tier_reason: tierReason,
+        is_incomplete_month: isIncompleteMonth,
         generated_at: new Date().toISOString()
     });
 
@@ -523,7 +570,11 @@ export async function endService(
         success: true,
         service_id: serviceId,
         total_lifetime_days: verifiedDays,
+        calendar_days: calendarDays,
         rate_used: rateUsed,
+        rate_tier: rateTier,
+        tier_reason: tierReason,
+        is_incomplete_month: isIncompleteMonth,
         true_cost: trueCost,
         previously_billed: previouslyBilled,
         deposit: depositAmount,

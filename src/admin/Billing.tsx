@@ -1576,7 +1576,19 @@ export default function Billing() {
                                 try { noteData = JSON.parse(bill.notes); } catch {}
                             }
 
-                            const billRate = bill?.daily_rate_used || service.complete_month_daily_rate || 500;
+                            const isEndedEarly = service.status === 'ended' || bill?.type === 'final';
+                            const sStartDt = service.start_date ? new Date(`${service.start_date.split('T')[0]}T00:00:00`) : null;
+                            const sEndDt = (bill?.period_end || service.end_date) ? new Date(`${(bill?.period_end || service.end_date).split('T')[0]}T00:00:00`) : null;
+                            const lifetimeDays = (sStartDt && sEndDt && !isNaN(sStartDt.getTime()) && !isNaN(sEndDt.getTime()) && sEndDt >= sStartDt)
+                                ? Math.round((sEndDt.getTime() - sStartDt.getTime()) / (1000 * 60 * 60 * 24)) + 1
+                                : (bill?.total_days || 0);
+
+                            const isLessThan30 = isEndedEarly && lifetimeDays > 0 && lifetimeDays < 30;
+                            const applicableDefaultRate = isLessThan30
+                                ? (service.incomplete_month_daily_rate || (service.complete_month_daily_rate ? service.complete_month_daily_rate * 2 : 1000))
+                                : (service.complete_month_daily_rate || 500);
+
+                            const billRate = bill?.daily_rate_used || applicableDefaultRate;
                             const billObj = {
                                 id: service.id,
                                 client_id: service.client_id,

@@ -708,9 +708,25 @@ export default function ServicesPanel({
                                 <span className="text-slate-500">Total Working Days (Attendance Verified)</span>
                                 <span className="font-bold text-slate-800">{endResult.total_lifetime_days}</span>
                             </div>
-                            <div className="flex justify-between p-2 bg-slate-50 rounded-lg">
-                                <span className="text-slate-500">Rate Used</span>
-                                <span className="font-bold">{formatCurrency(endResult.rate_used || 0)}/day</span>
+                            <div className="flex justify-between items-center p-2.5 bg-slate-50 rounded-lg">
+                                <div>
+                                    <span className="text-slate-500 text-xs block">Rate Applied</span>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md inline-block mt-0.5 border ${
+                                        endResult.is_incomplete_month || (endResult.total_lifetime_days || 0) < 30
+                                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                            : 'bg-teal-50 text-teal-800 border-teal-200'
+                                    }`}>
+                                        {endResult.is_incomplete_month || (endResult.total_lifetime_days || 0) < 30
+                                            ? 'Incomplete Month (< 30 days)'
+                                            : 'Standard Monthly (≥ 30 days)'}
+                                    </span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="font-bold text-slate-900 text-base">{formatCurrency(endResult.rate_used || 0)}/day</span>
+                                    {endResult.is_incomplete_month && (
+                                        <span className="block text-[10px] text-amber-600 font-medium">Service ended &lt; 30 days</span>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex justify-between p-2 bg-slate-50 rounded-lg">
                                 <span className="text-slate-500">True Cost</span>
