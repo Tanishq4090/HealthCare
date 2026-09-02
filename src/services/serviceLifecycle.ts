@@ -286,6 +286,9 @@ export async function releaseWorker(
 export interface EndServiceResult {
     success: boolean;
     service_id?: string;
+    client_id?: string;
+    client_name?: string;
+    client_phone?: string;
     total_lifetime_days?: number;
     calendar_days?: number;
     rate_used?: number;
@@ -569,6 +572,9 @@ export async function endService(
     return {
         success: true,
         service_id: serviceId,
+        client_id: service.client_id,
+        client_name: (service.clients as any)?.client_name || 'Client',
+        client_phone: (service.clients as any)?.phone_number || '',
         total_lifetime_days: verifiedDays,
         calendar_days: calendarDays,
         rate_used: rateUsed,
