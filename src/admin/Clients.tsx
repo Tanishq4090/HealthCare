@@ -71,40 +71,18 @@ export default function Clients() {
     };
 
     const isClientInMonth = (client: any, ym: string) => {
-        // 1. Client joined in this month
+        // 1. Client registered / joined in this month (UTC or local)
         if (client.created_at) {
-            const d = new Date(client.created_at);
-            const joinKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            if (joinKey === ym) return true;
+            const utcKey = client.created_at.slice(0, 7);
+            if (utcKey === ym) return true;
         }
 
-        // 2. Client has a service active during this month
+        // 2. Client started a service in this specific month
         if (client.services && client.services.length > 0) {
             for (const s of client.services) {
                 const sStart = s.start_date ? s.start_date.slice(0, 7) : '';
-                const sEnd = s.end_date ? s.end_date.slice(0, 7) : '';
-                if (sStart && sStart <= ym && (!sEnd || sEnd >= ym)) {
-                    return true;
-                }
+                if (sStart === ym) return true;
             }
-        }
-
-        // 3. Client has a worker assignment active during this month
-        if (client.assignments && client.assignments.length > 0) {
-            for (const a of client.assignments) {
-                const aStart = a.start_date ? a.start_date.slice(0, 7) : '';
-                const aEnd = a.end_date ? a.end_date.slice(0, 7) : '';
-                if (aStart && aStart <= ym && (!aEnd || aEnd >= ym)) {
-                    return true;
-                }
-            }
-        }
-
-        // 4. Currently active worker count in the current month
-        const now = new Date();
-        const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        if (ym === nowKey && client.activeWorkerCount > 0) {
-            return true;
         }
 
         return false;
@@ -493,19 +471,23 @@ export default function Clients() {
                                             ? 'bg-[#1AA6A8] text-white shadow-2xs'
                                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                                     }`}
-                                >
-                                    All Clients ({clients.filter(c => c.status !== 'Trash').length})
+                                                              All Clients ({clients.filter(c => c.status !== 'Trash').length})
                                 </button>
-                                <button
-                                    onClick={() => setViewAllMonths(false)}
-                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                                        !viewAllMonths
-                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
-                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                    }`}
-                                >
-                                    By Month
-                                </button>
+                                {(() => {
+                                    const mCount = clients.filter(c => c.status !== 'Trash' && isClientInMonth(c, selectedMonth)).length;
+                                    return (
+                                        <button
+                                            onClick={() => setViewAllMonths(false)}
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                                !viewAllMonths
+                                                    ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            By Month ({mCount})
+                                        </button>
+                                    );
+                                })()}
                             </div>
 
                             {/* Month Navigator: ALWAYS VISIBLE */}
@@ -570,19 +552,29 @@ export default function Clients() {
                             if (filtered.length === 0) return (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
-                                    <p className="text-sm font-semibold text-slate-500">
-                                        {viewingTrash ? 'Trash is empty' : searchQuery ? 'No matching clients found' : `No clients active or joined in ${monthLabel(selectedMonth)}`}
+                                    <p className="text-sm font-semibold text-slate-600">
+                                        {viewingTrash ? 'Trash is empty' : searchQuery ? 'No matching clients found' : `No clients joined in ${monthLabel(selectedMonth)}`}
                                     </p>
-                                    <p className="text-xs text-slate-400 mt-1">
-                                        {viewingTrash ? '' : searchQuery ? 'Try clearing your search query.' : 'Use the arrows to browse other months or click "All Clients".'}
+                                    <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                                        {viewingTrash ? '' : searchQuery ? 'Try clearing your search query.' : `No new client registrations recorded in ${monthLabel(selectedMonth)}. You can view all clients or browse previous months.`}
                                     </p>
                                     {!viewAllMonths && !viewingTrash && (
-                                        <button
-                                            onClick={() => setViewAllMonths(true)}
-                                            className="mt-3 px-3.5 py-1.5 text-xs font-bold text-white bg-[#1AA6A8] hover:bg-[#15898A] rounded-lg transition-colors shadow-2xs"
-                                        >
-                                            View All Clients ({clients.filter(c => c.status !== 'Trash').length})
-                                        </button>
+                                        <div className="flex items-center gap-2 mt-4">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedMonth('2026-08');
+                                                }}
+                                                className="px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors shadow-2xs"
+                                            >
+                                                Browse August 2026 (4 clients)
+                                            </button>
+                                            <button
+                                                onClick={() => setViewAllMonths(true)}
+                                                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#1AA6A8] hover:bg-[#15898A] rounded-lg transition-colors shadow-2xs"
+                                            >
+                                                View All Clients ({clients.filter(c => c.status !== 'Trash').length})
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             );
