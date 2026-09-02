@@ -38,6 +38,7 @@ export default function Clients() {
     const [restartModal, setRestartModal] = useState<any>(null);
     const [restartStartDate, setRestartStartDate] = useState('');
     const [restartEndDate, setRestartEndDate] = useState('');
+    const [restartIsOngoing, setRestartIsOngoing] = useState(true);
     const [restartWorkers, setRestartWorkers] = useState<any[]>([]);
     const [restartSelectedWorker, setRestartSelectedWorker] = useState<any>(null);
     const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
@@ -941,9 +942,40 @@ export default function Clients() {
                                         className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">End Date</label>
-                                    <input type="date" value={restartEndDate} onChange={e => setRestartEndDate(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">End Date</label>
+                                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-xs font-bold text-primary hover:opacity-80">
+                                            <input
+                                                type="checkbox"
+                                                checked={restartIsOngoing}
+                                                onChange={e => {
+                                                    const checked = e.target.checked;
+                                                    setRestartIsOngoing(checked);
+                                                    if (checked) setRestartEndDate('');
+                                                }}
+                                                className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                                            />
+                                            <span>Ongoing</span>
+                                        </label>
+                                    </div>
+                                    {restartIsOngoing ? (
+                                        <div 
+                                            onClick={() => setRestartIsOngoing(false)}
+                                            className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 text-primary text-sm font-semibold flex items-center justify-between cursor-pointer hover:bg-primary/10 transition-colors"
+                                            title="Click to specify a custom end date"
+                                        >
+                                            <span className="flex items-center gap-1.5 text-xs">
+                                                <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                                                Ongoing Service
+                                            </span>
+                                            <span className="text-[10px] font-bold uppercase tracking-wider bg-white border border-primary/20 px-2 py-0.5 rounded text-primary">
+                                                No End Date
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <input type="date" value={restartEndDate} onChange={e => setRestartEndDate(e.target.value)}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                    )}
                                 </div>
                             </div>
                             <div>

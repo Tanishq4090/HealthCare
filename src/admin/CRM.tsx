@@ -562,6 +562,7 @@ export default function CRM() {
     const [invoiceDepositAmount, setInvoiceDepositAmount] = useState('');
     const [invoiceStartDate, setInvoiceStartDate] = useState('');
     const [invoiceEndDate, setInvoiceEndDate] = useState('');
+    const [isInvoiceOngoing, setIsInvoiceOngoing] = useState(false);
     const [invoiceDueDate, setInvoiceDueDate] = useState('');
 
     // Service Period Modal State
@@ -2695,9 +2696,11 @@ export default function CRM() {
                     return `${d}/${m}/${y}`;
                 };
 
-                const formattedPeriod = (invoiceStartDate && invoiceEndDate)
+                const formattedPeriod = (invoiceStartDate && !isInvoiceOngoing && invoiceEndDate)
                     ? `${formatDateStr(invoiceStartDate)} To ${formatDateStr(invoiceEndDate)}`
-                    : 'As agreed';
+                    : invoiceStartDate
+                        ? `${formatDateStr(invoiceStartDate)} To Ongoing`
+                        : 'Ongoing';
 
                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                     method: 'POST',
@@ -2709,6 +2712,8 @@ export default function CRM() {
                         lead_id: agentTargetLead?.id,
                         deposit_amount: invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000,
                         service_period: formattedPeriod,
+                        start_date: invoiceStartDate || null,
+                        end_date: isInvoiceOngoing ? 'Ongoing' : (invoiceEndDate || null),
                         due_date: invoiceDueDate,
                         is_deposit: agentTargetAction === 'deposit'
                     })
@@ -5440,13 +5445,50 @@ export default function CRM() {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={invoiceEndDate}
-                                                        onChange={e => setInvoiceEndDate(e.target.value)}
-                                                        className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
-                                                    />
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">End Date</label>
+                                                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-bold text-[#1AA6A8] hover:text-[#15898A]">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isInvoiceOngoing}
+                                                                onChange={e => {
+                                                                    const checked = e.target.checked;
+                                                                    setIsInvoiceOngoing(checked);
+                                                                    if (checked) {
+                                                                        setInvoiceEndDate('');
+                                                                    } else {
+                                                                        const d = new Date(invoiceStartDate || new Date());
+                                                                        d.setDate(d.getDate() + 30);
+                                                                        setInvoiceEndDate(d.toISOString().split('T')[0]);
+                                                                    }
+                                                                }}
+                                                                className="w-3.5 h-3.5 rounded border-slate-300 text-[#1AA6A8] focus:ring-[#1AA6A8] cursor-pointer"
+                                                            />
+                                                            <span>Ongoing</span>
+                                                        </label>
+                                                    </div>
+                                                    {isInvoiceOngoing ? (
+                                                        <div
+                                                            onClick={() => setIsInvoiceOngoing(false)}
+                                                            className="w-full text-sm font-semibold border-2 border-dashed border-[#1AA6A8]/50 bg-[#EAFBFB] rounded-lg px-3 py-2 text-[#1AA6A8] flex items-center justify-between cursor-pointer hover:bg-[#E0F8F8] transition-colors"
+                                                            title="Click to specify a custom end date"
+                                                        >
+                                                            <span className="flex items-center gap-1.5 text-xs">
+                                                                <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse"></span>
+                                                                Ongoing Service
+                                                            </span>
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/80 border border-[#1AA6A8]/30 px-2 py-0.5 rounded text-[#1AA6A8]">
+                                                                No End Date
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <input
+                                                            type="date"
+                                                            value={invoiceEndDate}
+                                                            onChange={e => setInvoiceEndDate(e.target.value)}
+                                                            className="w-full text-sm font-semibold border-2 border-slate-200 bg-white rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] text-slate-800"
+                                                        />
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-3">

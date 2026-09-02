@@ -219,6 +219,7 @@ export default function Billing() {
     const [invoiceDepositAmount, setInvoiceDepositAmount] = useState('');
     const [invoiceStartDate, setInvoiceStartDate] = useState('');
     const [invoiceEndDate, setInvoiceEndDate] = useState('');
+    const [isInvoiceOngoing, setIsInvoiceOngoing] = useState(false);
     const [invoiceDueDate, setInvoiceDueDate] = useState('');
 
     // Invoice Modal State
@@ -807,9 +808,11 @@ export default function Billing() {
                     return `${d}/${m}/${y}`;
                 };
 
-                const formattedPeriod = (invoiceStartDate && invoiceEndDate)
+                const formattedPeriod = (invoiceStartDate && !isInvoiceOngoing && invoiceEndDate)
                     ? `${formatDateStr(invoiceStartDate)} To ${formatDateStr(invoiceEndDate)}`
-                    : 'As agreed';
+                    : invoiceStartDate
+                        ? `${formatDateStr(invoiceStartDate)} To Ongoing`
+                        : 'Ongoing';
 
                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                     method: 'POST',
@@ -2190,13 +2193,50 @@ export default function Billing() {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">End Date</label>
-                                            <input 
-                                                type="date" 
-                                                value={invoiceEndDate} 
-                                                onChange={e => setInvoiceEndDate(e.target.value)} 
-                                                className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" 
-                                            />
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">End Date</label>
+                                                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-bold text-emerald-600 hover:text-emerald-700">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isInvoiceOngoing}
+                                                        onChange={e => {
+                                                            const checked = e.target.checked;
+                                                            setIsInvoiceOngoing(checked);
+                                                            if (checked) {
+                                                                setInvoiceEndDate('');
+                                                            } else {
+                                                                const d = new Date(invoiceStartDate || new Date());
+                                                                d.setDate(d.getDate() + 30);
+                                                                setInvoiceEndDate(d.toISOString().split('T')[0]);
+                                                            }
+                                                        }}
+                                                        className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                                    />
+                                                    <span>Ongoing</span>
+                                                </label>
+                                            </div>
+                                            {isInvoiceOngoing ? (
+                                                <div 
+                                                    onClick={() => setIsInvoiceOngoing(false)}
+                                                    className="w-full text-xs font-semibold border-2 border-dashed border-emerald-300 bg-emerald-50/60 rounded px-2.5 py-1.5 text-emerald-800 flex items-center justify-between cursor-pointer hover:bg-emerald-100/50 transition-colors"
+                                                    title="Click to specify an end date"
+                                                >
+                                                    <span className="flex items-center gap-1.5">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                        Ongoing
+                                                    </span>
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider bg-white/80 border border-emerald-200 px-1.5 py-0.5 rounded text-emerald-700">
+                                                        No End Date
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <input 
+                                                    type="date" 
+                                                    value={invoiceEndDate} 
+                                                    onChange={e => setInvoiceEndDate(e.target.value)} 
+                                                    className="w-full text-xs font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500" 
+                                                />
+                                            )}
                                         </div>
                                     </div>
                                 </div>
