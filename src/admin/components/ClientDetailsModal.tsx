@@ -85,7 +85,6 @@ export default function ClientDetailsModal({ client, onClose }: ClientDetailsMod
         if (type && type !== 'date_range' && type !== 'open_ended' && type !== 'one_day' && type.trim() !== '') {
             return type;
         }
-        if (lead?.service_needed) return lead.service_needed;
         if (lead?.assigned_worker_role) return lead.assigned_worker_role;
         if (lead?.notes) {
             const match = lead.notes.match(/Service:\s*([^\n\r]+)/i);

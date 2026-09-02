@@ -557,11 +557,11 @@ export default function Clients() {
             // 1. Fetch leads in client stages WITH their pipeline_stage and service metadata
             // Also include leads with null pipeline_stage (removed from pipeline but still clients)
             const [activeLeadsResult, archivedLeadsResult, trashLeadsResult] = await Promise.all([
-                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role, service_needed')
+                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role')
                     .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
-                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role, service_needed')
+                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role')
                     .eq('pipeline_stage', 'Archived'),
-                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role, service_needed')
+                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role')
                     .eq('pipeline_stage', 'Trash')
             ]);
 
@@ -673,7 +673,6 @@ export default function Clients() {
                     if (type && type !== 'date_range' && type !== 'open_ended' && type !== 'one_day' && type.trim() !== '') {
                         return type;
                     }
-                    if (leadInfo?.service_needed) return leadInfo.service_needed;
                     if (leadInfo?.assigned_worker_role) return leadInfo.assigned_worker_role;
                     if (leadInfo?.notes) {
                         const match = leadInfo.notes.match(/Service:\s*([^\n\r]+)/i);

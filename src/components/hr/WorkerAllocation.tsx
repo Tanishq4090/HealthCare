@@ -661,11 +661,11 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
 
           const { data: lead } = await supabase
             .from('crm_leads')
-            .select('complete_month_daily_rate, incomplete_month_daily_rate, service_needed, assigned_worker_role, notes')
+            .select('complete_month_daily_rate, incomplete_month_daily_rate, assigned_worker_role, notes')
             .eq('id', selectedClient.id)
             .maybeSingle();
 
-          let resolvedServiceName = lead?.service_needed || lead?.assigned_worker_role;
+          let resolvedServiceName = lead?.assigned_worker_role;
           if (!resolvedServiceName && lead?.notes) {
             const match = lead.notes.match(/Service:\s*([^\n\r]+)/i);
             if (match && match[1]) resolvedServiceName = match[1].trim();
