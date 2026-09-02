@@ -49,9 +49,17 @@ export default function Clients() {
     const [restartDepositMethod, setRestartDepositMethod] = useState('UPI');
     const [restartWorkers, setRestartWorkers] = useState<any[]>([]);
     const [restartWorkerSearch, setRestartWorkerSearch] = useState('');
-    const [restartSelectedWorker, setRestartSelectedWorker] = useState<any>(null);
+    const [restartSelectedWorkers, setRestartSelectedWorkers] = useState<any[]>([]);
     const [restartNotes, setRestartNotes] = useState('');
     const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
+
+    const toggleRestartWorker = (w: any) => {
+        setRestartSelectedWorkers(prev => {
+            const exists = prev.some(item => item.id === w.id);
+            if (exists) return prev.filter(item => item.id !== w.id);
+            return [...prev, w];
+        });
+    };
     // Track which clients have had review sent this session
     const [reviewSentIds, setReviewSentIds] = useState<Set<string>>(new Set());
     const [googleReviews, setGoogleReviews] = useState<any>(null);
@@ -219,7 +227,7 @@ export default function Clients() {
         setRestartDepositStatus('collected');
         setRestartDepositMethod('UPI');
         setRestartWorkerSearch('');
-        setRestartSelectedWorker(null);
+        setRestartSelectedWorkers([]);
         setRestartNotes('');
 
         // Fetch workers with their stored 10hr and 24hr daily payout rates
@@ -235,14 +243,17 @@ export default function Clients() {
         if (!restartServiceType.trim()) return toast.error('Please specify the service name.');
         if (!restartCompleteRate || Number(restartCompleteRate) <= 0) return toast.error('Please enter a valid complete month daily rate.');
         if (!restartIncompleteRate || Number(restartIncompleteRate) <= 0) return toast.error('Please enter a valid incomplete month daily rate.');
-        if (!restartSelectedWorker) return toast.error('Please select a staff member to assign.');
+        if (restartSelectedWorkers.length === 0) return toast.error('Please select at least one staff member to assign.');
 
         setIsRestartSubmitting(true);
         try {
             // Automatically determine worker payout according to their stored shift rate
-            const workerPay = restartShiftHours === 24
-                ? (restartSelectedWorker.rate_24hr ? Number(restartSelectedWorker.rate_24hr) : undefined)
-                : (restartSelectedWorker.rate_10hr ? Number(restartSelectedWorker.rate_10hr) : undefined);
+            const workersPayload = restartSelectedWorkers.map(w => ({
+                workerId: w.id,
+                workerPayoutRate: restartShiftHours === 24
+                    ? (w.rate_24hr ? Number(w.rate_24hr) : undefined)
+                    : (w.rate_10hr ? Number(w.rate_10hr) : undefined)
+            }));
 
             const result = await restartClientService({
                 clientId: restartModal.id,
@@ -256,8 +267,7 @@ export default function Clients() {
                 depositAmount: Number(restartDepositAmount) || 0,
                 depositStatus: restartDepositStatus,
                 depositPaymentMethod: restartDepositMethod,
-                workerId: restartSelectedWorker.id,
-                workerPayoutRate: workerPay,
+                workers: workersPayload,
                 notes: restartNotes.trim() || undefined,
             });
 
@@ -1256,15 +1266,15 @@ export default function Clients() {
                                 )}
                             </div>
 
-                            {/* 4. Staff Member Assignment */}
+                            {/* 4. Staff Member Assignment (Multi-Worker Support) */}
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                                     <div className="flex items-center gap-2">
                                         <Users className="w-4 h-4 text-purple-600" />
-                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">4. Assign Staff Member *</h3>
+                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">4. Assign Staff Member(s) *</h3>
                                     </div>
-                                    <span className="text-[11px] font-bold text-slate-500">
-                                        {restartWorkers.filter(w => w.status === 'available').length} available in directory
+                                    <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
+                                        {restartSelectedWorkers.length} selected • {restartWorkers.filter(w => w.status === 'available').length} available
                                     </span>
                                 </div>
 
@@ -1289,16 +1299,16 @@ export default function Clients() {
                                             return (w.full_name || '').toLowerCase().includes(q) || (w.job_title || '').toLowerCase().includes(q);
                                         })
                                         .map(w => {
-                                            const isSelected = restartSelectedWorker?.id === w.id;
+                                            const isSelected = restartSelectedWorkers.some(sw => sw.id === w.id);
                                             const isAvail = w.status === 'available';
                                             return (
                                                 <button
                                                     key={w.id}
                                                     type="button"
-                                                    onClick={() => setRestartSelectedWorker(w)}
+                                                    onClick={() => toggleRestartWorker(w)}
                                                     className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
                                                         isSelected
-                                                            ? 'border-purple-600 bg-purple-50/60 ring-2 ring-purple-600/20'
+                                                            ? 'border-purple-600 bg-purple-50/70 ring-2 ring-purple-600/20 shadow-xs'
                                                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70'
                                                     }`}
                                                 >
@@ -1310,7 +1320,11 @@ export default function Clients() {
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex items-center justify-between">
                                                             <p className="font-bold text-xs text-slate-900 truncate">{w.full_name}</p>
-                                                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
+                                                            {isSelected ? (
+                                                                <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                                                            ) : (
+                                                                <div className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" />
+                                                            )}
                                                         </div>
                                                         <div className="flex items-center gap-1.5 mt-0.5">
                                                             <span className="text-[10px] text-slate-500 truncate">{w.job_title || 'Caregiver'}</span>
@@ -1329,23 +1343,48 @@ export default function Clients() {
                                         })}
                                 </div>
 
-                                {restartSelectedWorker && (() => {
-                                    const dailyPay = restartShiftHours === 24
-                                        ? (restartSelectedWorker.rate_24hr || 0)
-                                        : (restartSelectedWorker.rate_10hr || 0);
-                                    return (
-                                        <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 flex items-center justify-between text-xs">
-                                            <span className="font-medium text-purple-900">
-                                                Assigned: <strong>{restartSelectedWorker.full_name}</strong> ({restartSelectedWorker.job_title})
+                                {/* Selected Workers Panel */}
+                                {restartSelectedWorkers.length > 0 && (
+                                    <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100 space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <span className="font-bold text-purple-900">
+                                                Assigned Staff ({restartSelectedWorkers.length}):
                                             </span>
-                                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-purple-200 text-purple-900 font-bold text-xs shadow-2xs">
-                                                <span className="text-slate-500 font-normal">Worker Daily Pay:</span>
-                                                <span className="text-purple-700 font-extrabold text-sm">₹{dailyPay.toLocaleString('en-IN')}/day</span>
-                                                <span className="text-[10px] text-slate-400 font-normal">({restartShiftHours}h profile rate)</span>
-                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setRestartSelectedWorkers([])}
+                                                className="text-[11px] text-purple-600 hover:text-red-500 font-semibold transition-colors"
+                                            >
+                                                Clear all
+                                            </button>
                                         </div>
-                                    );
-                                })()}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {restartSelectedWorkers.map(w => {
+                                                const dailyPay = restartShiftHours === 24
+                                                    ? (w.rate_24hr || 0)
+                                                    : (w.rate_10hr || 0);
+                                                return (
+                                                    <div key={w.id} className="p-2 bg-white rounded-lg border border-purple-200/80 flex items-center justify-between text-xs shadow-2xs">
+                                                        <div className="min-w-0 flex-1 pr-2">
+                                                            <p className="font-bold text-slate-900 truncate">{w.full_name}</p>
+                                                            <p className="text-[10px] text-purple-700 font-semibold">
+                                                                ₹{dailyPay.toLocaleString('en-IN')}/day <span className="text-slate-400 font-normal">({restartShiftHours}h rate)</span>
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleRestartWorker(w)}
+                                                            className="p-1 text-slate-400 hover:text-red-500 hover:bg-slate-100 rounded-lg transition-colors"
+                                                            title="Remove worker"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* 5. Additional Notes */}
@@ -1364,10 +1403,12 @@ export default function Clients() {
                         {/* Modal Footer */}
                         <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
                             <div className="text-xs text-slate-500">
-                                {restartSelectedWorker ? (
-                                    <span>Caregiver: <strong className="text-slate-800">{restartSelectedWorker.full_name}</strong> • Rate: <strong className="text-slate-800">₹{restartCompleteRate}/day</strong></span>
+                                {restartSelectedWorkers.length > 0 ? (
+                                    <span>
+                                        Staff: <strong className="text-slate-800">{restartSelectedWorkers.map(w => w.full_name).join(', ')}</strong> ({restartSelectedWorkers.length} assigned) • Rate: <strong className="text-slate-800">₹{restartCompleteRate}/day</strong>
+                                    </span>
                                 ) : (
-                                    <span className="text-amber-600 font-medium">⚠️ Please select a staff member to proceed</span>
+                                    <span className="text-amber-600 font-medium">⚠️ Please select at least one staff member to proceed</span>
                                 )}
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1381,7 +1422,7 @@ export default function Clients() {
                                 <button
                                     type="button"
                                     onClick={handleRestartService}
-                                    disabled={isRestartSubmitting || !restartStartDate || !restartSelectedWorker || !restartServiceType}
+                                    disabled={isRestartSubmitting || !restartStartDate || restartSelectedWorkers.length === 0 || !restartServiceType}
                                     className="flex-1 sm:flex-none px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
                                     {isRestartSubmitting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}

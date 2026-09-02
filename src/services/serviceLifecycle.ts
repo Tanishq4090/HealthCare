@@ -261,6 +261,11 @@ export async function assignWorkerToService(
 
 // ── Restart Service for Client ────────────────────────────
 
+export interface RestartWorkerAssignment {
+    workerId: string;
+    workerPayoutRate?: number;
+}
+
 export interface RestartClientServiceInput {
     clientId: string;
     clientName: string;
@@ -273,8 +278,9 @@ export interface RestartClientServiceInput {
     depositAmount: number;
     depositStatus: 'collected' | 'pending';
     depositPaymentMethod?: string;
-    workerId: string;
+    workerId?: string;
     workerPayoutRate?: number;
+    workers?: RestartWorkerAssignment[];
     notes?: string;
 }
 
@@ -297,19 +303,23 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             notes: input.notes,
         });
 
-        // 2. Assign worker to service
-        if (input.workerId) {
-            await assignWorkerToService(service.id, input.workerId, input.startDate);
+        // 2. Assign workers to service (multi-worker support)
+        const workersList: RestartWorkerAssignment[] = input.workers && input.workers.length > 0
+            ? input.workers
+            : (input.workerId ? [{ workerId: input.workerId, workerPayoutRate: input.workerPayoutRate }] : []);
+
+        for (const w of workersList) {
+            await assignWorkerToService(service.id, w.workerId, input.startDate);
 
             // Also create legacy worker_assignments record for backwards compatibility
             await supabase.from('worker_assignments').insert([{
                 client_id: input.clientId,
-                employee_id: input.workerId,
+                employee_id: w.workerId,
                 start_date: input.startDate,
                 end_date: input.endDate || null,
                 assignment_status: 'active',
                 client_billing_rate: input.completeMonthDailyRate,
-                worker_payout_rate: input.workerPayoutRate || undefined,
+                worker_payout_rate: w.workerPayoutRate || undefined,
                 deposit_amount: input.depositAmount,
                 deposit_paid: input.depositStatus === 'collected' ? input.depositAmount : 0,
                 assigned_at: new Date().toISOString(),
@@ -320,7 +330,7 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
                 status: 'assigned',
                 assigned_client: input.clientName,
                 updated_at: new Date().toISOString()
-            }).eq('id', input.workerId);
+            }).eq('id', w.workerId);
         }
 
         // 3. If deposit is marked as collected, record in payments table
