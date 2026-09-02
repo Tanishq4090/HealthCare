@@ -259,6 +259,98 @@ export async function assignWorkerToService(
     return data as ServiceWorkerAssignment;
 }
 
+// ── Restart Service for Client ────────────────────────────
+
+export interface RestartClientServiceInput {
+    clientId: string;
+    clientName: string;
+    serviceType: string;
+    hoursPerDay: number;
+    startDate: string;
+    endDate?: string | null;
+    completeMonthDailyRate: number;
+    incompleteMonthDailyRate: number;
+    depositAmount: number;
+    depositStatus: 'collected' | 'pending';
+    depositPaymentMethod?: string;
+    workerId: string;
+    workerPayoutRate?: number;
+    notes?: string;
+}
+
+export async function restartClientService(input: RestartClientServiceInput): Promise<{
+    success: boolean;
+    serviceId?: string;
+    error?: string;
+}> {
+    try {
+        // 1. Create new service record in services table
+        const service = await createService({
+            client_id: input.clientId,
+            service_type: input.serviceType,
+            hours_per_day: input.hoursPerDay,
+            start_date: input.startDate,
+            end_date: input.endDate || undefined,
+            complete_month_daily_rate: input.completeMonthDailyRate,
+            incomplete_month_daily_rate: input.incompleteMonthDailyRate,
+            deposit_amount: input.depositAmount,
+            notes: input.notes,
+        });
+
+        // 2. Assign worker to service
+        if (input.workerId) {
+            await assignWorkerToService(service.id, input.workerId, input.startDate);
+
+            // Also create legacy worker_assignments record for backwards compatibility
+            await supabase.from('worker_assignments').insert([{
+                client_id: input.clientId,
+                employee_id: input.workerId,
+                start_date: input.startDate,
+                end_date: input.endDate || null,
+                assignment_status: 'active',
+                client_billing_rate: input.completeMonthDailyRate,
+                worker_payout_rate: input.workerPayoutRate || undefined,
+                deposit_amount: input.depositAmount,
+                deposit_paid: input.depositStatus === 'collected' ? input.depositAmount : 0,
+                assigned_at: new Date().toISOString(),
+            }]);
+
+            // Update employee status & assigned client name
+            await supabase.from('employees').update({
+                status: 'assigned',
+                assigned_client: input.clientName,
+                updated_at: new Date().toISOString()
+            }).eq('id', input.workerId);
+        }
+
+        // 3. If deposit is marked as collected, record in payments table
+        if (input.depositStatus === 'collected' && input.depositAmount > 0) {
+            await supabase.from('payments').insert([{
+                client_name: input.clientName,
+                amount: input.depositAmount,
+                payment_type: 'deposit',
+                payment_method: input.depositPaymentMethod || 'UPI',
+                payment_date: input.startDate,
+                status: 'completed',
+                notes: `Security deposit for restarted service (${input.serviceType})`
+            }]);
+        }
+
+        // 4. Update CRM lead pipeline stage to Active Client
+        await supabase.from('crm_leads').update({
+            pipeline_stage: 'Active Client',
+            service_interest: input.serviceType,
+            quoted_monthly_rate: input.completeMonthDailyRate * 30,
+            updated_at: new Date().toISOString()
+        }).eq('id', input.clientId);
+
+        return { success: true, serviceId: service.id };
+    } catch (err: any) {
+        console.error('restartClientService error:', err);
+        return { success: false, error: err.message || 'Failed to restart service' };
+    }
+}
+
 // ── Release Worker (calls RPC) ────────────────────────────
 
 export interface ReleaseWorkerResult {

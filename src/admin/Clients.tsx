@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ClientDetailsModal from './components/ClientDetailsModal';
+import { restartClientService } from '../services/serviceLifecycle';
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
 const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
@@ -36,11 +37,21 @@ export default function Clients() {
 
     // Restart Service modal state
     const [restartModal, setRestartModal] = useState<any>(null);
+    const [restartServiceType, setRestartServiceType] = useState('Old Age Care');
+    const [restartShiftHours, setRestartShiftHours] = useState(10);
     const [restartStartDate, setRestartStartDate] = useState('');
     const [restartEndDate, setRestartEndDate] = useState('');
     const [restartIsOngoing, setRestartIsOngoing] = useState(true);
+    const [restartCompleteRate, setRestartCompleteRate] = useState<number | ''>(800);
+    const [restartIncompleteRate, setRestartIncompleteRate] = useState<number | ''>(1500);
+    const [restartDepositAmount, setRestartDepositAmount] = useState<number | ''>(5000);
+    const [restartDepositStatus, setRestartDepositStatus] = useState<'collected' | 'pending'>('collected');
+    const [restartDepositMethod, setRestartDepositMethod] = useState('UPI');
     const [restartWorkers, setRestartWorkers] = useState<any[]>([]);
+    const [restartWorkerSearch, setRestartWorkerSearch] = useState('');
     const [restartSelectedWorker, setRestartSelectedWorker] = useState<any>(null);
+    const [restartWorkerPayout, setRestartWorkerPayout] = useState<number | ''>('');
+    const [restartNotes, setRestartNotes] = useState('');
     const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
     // Track which clients have had review sent this session
     const [reviewSentIds, setReviewSentIds] = useState<Set<string>>(new Set());
@@ -172,38 +183,88 @@ export default function Clients() {
 
     const openRestartModal = async (client: any) => {
         setRestartModal(client);
-        setRestartStartDate('');
+
+        // Extract previous service configuration if available
+        const services = client.services || [];
+        const lastService = services.length > 0 ? services[services.length - 1] : null;
+
+        let leadInterest = '';
+        let leadQuotedRate = 0;
+        try {
+            const { data: leadData } = await supabase
+                .from('crm_leads')
+                .select('service_interest, quoted_monthly_rate')
+                .eq('id', client.id)
+                .maybeSingle();
+            if (leadData) {
+                leadInterest = leadData.service_interest || '';
+                leadQuotedRate = leadData.quoted_monthly_rate || 0;
+            }
+        } catch {}
+
+        const initialService = lastService?.service_type || leadInterest || 'Old Age Care';
+        const initialHours = lastService?.hours_per_day || 10;
+        const initialComplete = lastService?.complete_month_daily_rate || (leadQuotedRate ? Math.round(leadQuotedRate / 30) : 800);
+        const initialIncomplete = lastService?.incomplete_month_daily_rate || 1500;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        setRestartServiceType(initialService);
+        setRestartShiftHours(initialHours);
+        setRestartStartDate(todayStr);
         setRestartEndDate('');
+        setRestartIsOngoing(true);
+        setRestartCompleteRate(initialComplete);
+        setRestartIncompleteRate(initialIncomplete);
+        setRestartDepositAmount(5000);
+        setRestartDepositStatus('collected');
+        setRestartDepositMethod('UPI');
+        setRestartWorkerSearch('');
         setRestartSelectedWorker(null);
-        // Fetch available workers
-        const { data } = await supabase.from('employees').select('id, full_name, job_title, status').eq('status', 'available');
+        setRestartWorkerPayout('');
+        setRestartNotes('');
+
+        // Fetch workers (available first, then all active)
+        const { data } = await supabase
+            .from('employees')
+            .select('id, full_name, job_title, status, photo_url')
+            .order('full_name');
         setRestartWorkers(data || []);
     };
 
     const handleRestartService = async () => {
-        if (!restartStartDate) return toast.error('Please select a start date.');
-        if (!restartSelectedWorker) return toast.error('Please select a staff member.');
+        if (!restartStartDate) return toast.error('Please select a service start date.');
+        if (!restartServiceType.trim()) return toast.error('Please specify the service name.');
+        if (!restartCompleteRate || Number(restartCompleteRate) <= 0) return toast.error('Please enter a valid complete month daily rate.');
+        if (!restartIncompleteRate || Number(restartIncompleteRate) <= 0) return toast.error('Please enter a valid incomplete month daily rate.');
+        if (!restartSelectedWorker) return toast.error('Please select a staff member to assign.');
+
         setIsRestartSubmitting(true);
         try {
-            // 1. Move lead back to Active Client
-            await supabase.from('crm_leads').update({ pipeline_stage: 'Active Client' }).eq('id', restartModal.id);
-            // 2. Create new worker assignment
-            await supabase.from('worker_assignments').insert([{
-                client_id: restartModal.id,
-                employee_id: restartSelectedWorker.id,
-                start_date: restartStartDate,
-                end_date: restartEndDate || null,
-                assignment_status: 'active',
-                assigned_at: new Date().toISOString(),
-            }]);
-            // 3. Update worker status
-            await supabase.from('employees').update({ status: 'assigned', assigned_client: restartModal.name }).eq('id', restartSelectedWorker.id);
-            setClients(prev => prev.map(c => c.id === restartModal.id ? { ...c, status: 'Active Client' } : c));
-            toast.success(`Service restarted for ${restartModal.name}! Moved to Active Client. ✅`);
+            const result = await restartClientService({
+                clientId: restartModal.id,
+                clientName: restartModal.name,
+                serviceType: restartServiceType.trim(),
+                hoursPerDay: Number(restartShiftHours) || 10,
+                startDate: restartStartDate,
+                endDate: restartIsOngoing ? null : (restartEndDate || null),
+                completeMonthDailyRate: Number(restartCompleteRate),
+                incompleteMonthDailyRate: Number(restartIncompleteRate),
+                depositAmount: Number(restartDepositAmount) || 0,
+                depositStatus: restartDepositStatus,
+                depositPaymentMethod: restartDepositMethod,
+                workerId: restartSelectedWorker.id,
+                workerPayoutRate: restartWorkerPayout ? Number(restartWorkerPayout) : undefined,
+                notes: restartNotes.trim() || undefined,
+            });
+
+            if (!result.success) throw new Error(result.error);
+
+            toast.success(`Service restarted for ${restartModal.name}! 🎉 Moved back to Active Client.`);
             setRestartModal(null);
             fetchClients();
         } catch (err: any) {
-            toast.error(`Failed to restart service: ${err.message}`);
+            console.error('Failed to restart service:', err);
+            toast.error(`Failed to restart service: ${err.message || 'Unknown error'}`);
         } finally {
             setIsRestartSubmitting(false);
         }
@@ -917,35 +978,116 @@ export default function Clients() {
                 </div>
             )}
 
-            {/* Restart Service Modal */}
+            {/* Comprehensive Restart Service Modal */}
             {restartModal && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-100 bg-emerald-50 flex justify-between items-center">
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 via-teal-50/40 to-white flex justify-between items-center shrink-0">
                             <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 bg-emerald-100 rounded-lg flex items-center justify-center">
-                                    <RotateCcw className="w-5 h-5 text-emerald-600" />
+                                <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center shadow-xs">
+                                    <RotateCcw className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h2 className="text-base font-bold text-slate-900">Restart Service</h2>
-                                    <p className="text-xs text-slate-500">{restartModal.name}</p>
+                                    <h2 className="text-base sm:text-lg font-bold text-slate-900">Restart Service Onboarding</h2>
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
+                                        <span className="font-bold text-slate-800">{restartModal.name}</span>
+                                        {restartModal.phone && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" />{restartModal.phone}</span>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                            <button onClick={() => setRestartModal(null)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-white/50 transition-colors">
+                            <button 
+                                onClick={() => setRestartModal(null)} 
+                                className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                            >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="p-5 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Start Date *</label>
-                                    <input type="date" value={restartStartDate} onChange={e => setRestartStartDate(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+
+                        {/* Modal Body: Scrollable */}
+                        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 text-slate-800">
+                            {/* 1. Service Selection & Shift Duration */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-100">
+                                    <Clock className="w-4 h-4 text-teal-600" />
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">1. Service &amp; Shift Configuration</h3>
                                 </div>
+
+                                {/* Preset Service Buttons */}
                                 <div>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">End Date</label>
-                                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-xs font-bold text-primary hover:opacity-80">
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Select Service Category</label>
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                        {['Old Age Care', 'New Born Baby Care', 'Japa Maid / Mother Care', 'Patient Care', 'Nursing Services'].map(cat => (
+                                            <button
+                                                key={cat}
+                                                type="button"
+                                                onClick={() => setRestartServiceType(cat)}
+                                                className={`px-2.5 py-1 text-xs rounded-lg font-semibold border transition-all ${
+                                                    restartServiceType === cat
+                                                        ? 'bg-teal-500 text-white border-teal-500 shadow-xs'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {cat}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={restartServiceType}
+                                        onChange={e => setRestartServiceType(e.target.value)}
+                                        placeholder="Or type custom service name..."
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8]"
+                                    />
+                                </div>
+
+                                {/* Shift Hours & Start Date */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Shift Duration</label>
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                            {[
+                                                { h: 10, label: '10h Shift' },
+                                                { h: 12, label: '12h Shift' },
+                                                { h: 24, label: '24h Live-in' }
+                                            ].map(s => (
+                                                <button
+                                                    key={s.h}
+                                                    type="button"
+                                                    onClick={() => setRestartShiftHours(s.h)}
+                                                    className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all ${
+                                                        restartShiftHours === s.h
+                                                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    {s.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Service Start Date *</label>
+                                        <input
+                                            type="date"
+                                            value={restartStartDate}
+                                            onChange={e => setRestartStartDate(e.target.value)}
+                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8]"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Duration: Ongoing vs Fixed End Date */}
+                                <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-100">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="text-xs font-bold text-slate-700">Duration Format</label>
+                                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-xs font-bold text-teal-600 hover:opacity-80">
                                             <input
                                                 type="checkbox"
                                                 checked={restartIsOngoing}
@@ -954,60 +1096,292 @@ export default function Clients() {
                                                     setRestartIsOngoing(checked);
                                                     if (checked) setRestartEndDate('');
                                                 }}
-                                                className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                                                className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
                                             />
-                                            <span>Ongoing</span>
+                                            <span>Ongoing (No End Date)</span>
                                         </label>
                                     </div>
+
                                     {restartIsOngoing ? (
                                         <div 
                                             onClick={() => setRestartIsOngoing(false)}
-                                            className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 text-primary text-sm font-semibold flex items-center justify-between cursor-pointer hover:bg-primary/10 transition-colors"
+                                            className="w-full px-3 py-2 rounded-lg border border-dashed border-teal-300 bg-teal-50/50 text-teal-800 text-xs font-semibold flex items-center justify-between cursor-pointer hover:bg-teal-50 transition-colors"
                                             title="Click to specify a custom end date"
                                         >
-                                            <span className="flex items-center gap-1.5 text-xs">
-                                                <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                                                Ongoing Service
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                                Active ongoing service with automatic monthly billing cycles
                                             </span>
-                                            <span className="text-[10px] font-bold uppercase tracking-wider bg-white border border-primary/20 px-2 py-0.5 rounded text-primary">
-                                                No End Date
+                                            <span className="text-[10px] font-bold uppercase tracking-wider bg-white border border-teal-200 px-2 py-0.5 rounded text-teal-700">
+                                                Ongoing
                                             </span>
                                         </div>
                                     ) : (
-                                        <input type="date" value={restartEndDate} onChange={e => setRestartEndDate(e.target.value)}
-                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <div>
+                                            <label className="block text-[11px] text-slate-500 font-semibold mb-1">Service End Date</label>
+                                            <input
+                                                type="date"
+                                                value={restartEndDate}
+                                                onChange={e => setRestartEndDate(e.target.value)}
+                                                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30"
+                                            />
+                                        </div>
                                     )}
                                 </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Assign Staff Member *</label>
-                                {restartWorkers.length === 0 ? (
-                                    <p className="text-sm text-slate-400 italic py-2">No available staff members. Please mark a worker as available in HR first.</p>
-                                ) : (
-                                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                                        {restartWorkers.map(w => (
-                                            <button key={w.id} onClick={() => setRestartSelectedWorker(w)}
-                                                className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors flex items-center gap-2 ${restartSelectedWorker?.id === w.id ? 'border-primary bg-primary/5 text-primary font-bold' : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}>
-                                                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                                                    {w.full_name?.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <p className="font-semibold">{w.full_name}</p>
-                                                    <p className="text-xs text-slate-400">{w.job_title}</p>
-                                                </div>
+
+                            {/* 2. Service Quoting & Daily Rates */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-100">
+                                    <Wallet className="w-4 h-4 text-indigo-600" />
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">2. Service Quoting &amp; Daily Rates</h3>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="p-3.5 rounded-xl border border-indigo-100 bg-indigo-50/30">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs font-bold text-slate-800">Complete Month Rate *</label>
+                                            <span className="text-[10px] font-bold uppercase text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">≥ 30 Days</span>
+                                        </div>
+                                        <div className="relative mt-1">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₹</span>
+                                            <input
+                                                type="number"
+                                                value={restartCompleteRate}
+                                                onChange={e => setRestartCompleteRate(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 800"
+                                                className="w-full pl-7 pr-3 py-2 rounded-lg border border-slate-200 text-sm font-bold bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                            />
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                                            ≈ ₹{((Number(restartCompleteRate) || 0) * 30).toLocaleString('en-IN')}/month standard cycle
+                                        </p>
+                                    </div>
+
+                                    <div className="p-3.5 rounded-xl border border-amber-100 bg-amber-50/30">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs font-bold text-slate-800">Partial Month Rate *</label>
+                                            <span className="text-[10px] font-bold uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">&lt; 30 Days</span>
+                                        </div>
+                                        <div className="relative mt-1">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₹</span>
+                                            <input
+                                                type="number"
+                                                value={restartIncompleteRate}
+                                                onChange={e => setRestartIncompleteRate(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 1500"
+                                                className="w-full pl-7 pr-3 py-2 rounded-lg border border-slate-200 text-sm font-bold bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                                            />
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                                            Applied if care concludes before 30 days
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. Security Deposit */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 pb-1.5 border-b border-slate-100">
+                                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">3. Security Deposit Collection</h3>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Deposit Amount (₹)</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₹</span>
+                                            <input
+                                                type="number"
+                                                value={restartDepositAmount}
+                                                onChange={e => setRestartDepositAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 5000"
+                                                className="w-full pl-7 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Deposit Status</label>
+                                        <div className="grid grid-cols-2 gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setRestartDepositStatus('collected')}
+                                                className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                                                    restartDepositStatus === 'collected'
+                                                        ? 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                Already Collected
                                             </button>
-                                        ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => setRestartDepositStatus('pending')}
+                                                className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                                                    restartDepositStatus === 'pending'
+                                                        ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                Pending / Bill Later
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {restartDepositStatus === 'collected' && (
+                                    <div className="p-3 bg-emerald-50/40 rounded-xl border border-emerald-100 flex items-center gap-3">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-semibold text-emerald-900 mb-1">Payment Method</label>
+                                            <select
+                                                value={restartDepositMethod}
+                                                onChange={e => setRestartDepositMethod(e.target.value)}
+                                                className="w-full px-3 py-1.5 rounded-lg border border-emerald-200 text-xs font-semibold bg-white text-slate-800"
+                                            >
+                                                <option value="UPI">UPI / GPay / PhonePe</option>
+                                                <option value="Cash">Cash</option>
+                                                <option value="Bank Transfer">Bank Transfer / NEFT</option>
+                                                <option value="Cheque">Cheque</option>
+                                            </select>
+                                        </div>
+                                        <div className="text-xs text-emerald-800 font-medium pt-4">
+                                            ₹{(Number(restartDepositAmount) || 0).toLocaleString('en-IN')} will be recorded in deposit ledger
+                                        </div>
                                     </div>
                                 )}
                             </div>
+
+                            {/* 4. Staff Member Assignment */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-4 h-4 text-purple-600" />
+                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">4. Assign Staff Member *</h3>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-slate-500">
+                                        {restartWorkers.filter(w => w.status === 'available').length} available in directory
+                                    </span>
+                                </div>
+
+                                {/* Worker Search */}
+                                <div className="relative">
+                                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={restartWorkerSearch}
+                                        onChange={e => setRestartWorkerSearch(e.target.value)}
+                                        placeholder="Search available caregivers by name or role..."
+                                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
+                                    />
+                                </div>
+
+                                {/* Worker List */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                                    {restartWorkers
+                                        .filter(w => {
+                                            if (!restartWorkerSearch.trim()) return true;
+                                            const q = restartWorkerSearch.toLowerCase();
+                                            return (w.full_name || '').toLowerCase().includes(q) || (w.job_title || '').toLowerCase().includes(q);
+                                        })
+                                        .map(w => {
+                                            const isSelected = restartSelectedWorker?.id === w.id;
+                                            const isAvail = w.status === 'available';
+                                            return (
+                                                <button
+                                                    key={w.id}
+                                                    type="button"
+                                                    onClick={() => setRestartSelectedWorker(w)}
+                                                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
+                                                        isSelected
+                                                            ? 'border-purple-600 bg-purple-50/60 ring-2 ring-purple-600/20'
+                                                            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70'
+                                                    }`}
+                                                >
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                                        isSelected ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700'
+                                                    }`}>
+                                                        {w.full_name?.charAt(0) || 'W'}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="font-bold text-xs text-slate-900 truncate">{w.full_name}</p>
+                                                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <span className="text-[10px] text-slate-500 truncate">{w.job_title || 'Caregiver'}</span>
+                                                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
+                                                                isAvail ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                                            }`}>
+                                                                {w.status || 'Active'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                </div>
+
+                                {restartSelectedWorker && (
+                                    <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 flex items-center justify-between text-xs">
+                                        <span className="font-medium text-purple-900">
+                                            Assigned: <strong>{restartSelectedWorker.full_name}</strong> ({restartSelectedWorker.job_title})
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500 text-[11px]">Worker Payout (₹/day):</span>
+                                            <input
+                                                type="number"
+                                                value={restartWorkerPayout}
+                                                onChange={e => setRestartWorkerPayout(e.target.value === '' ? '' : Number(e.target.value))}
+                                                placeholder="e.g. 400"
+                                                className="w-24 px-2 py-1 rounded border border-purple-200 text-xs font-bold bg-white"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 5. Additional Notes */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1">Care Notes &amp; Special Instructions (Optional)</label>
+                                <textarea
+                                    rows={2}
+                                    value={restartNotes}
+                                    onChange={e => setRestartNotes(e.target.value)}
+                                    placeholder="Doctor guidelines, shift timings, patient conditions..."
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30"
+                                />
+                            </div>
                         </div>
-                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-                            <button onClick={() => setRestartModal(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
-                            <button onClick={handleRestartService} disabled={isRestartSubmitting || !restartStartDate || !restartSelectedWorker}
-                                className="flex-1 py-2.5 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
-                                {isRestartSubmitting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                                Restart Service
-                            </button>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                            <div className="text-xs text-slate-500">
+                                {restartSelectedWorker ? (
+                                    <span>Caregiver: <strong className="text-slate-800">{restartSelectedWorker.full_name}</strong> • Rate: <strong className="text-slate-800">₹{restartCompleteRate}/day</strong></span>
+                                ) : (
+                                    <span className="text-amber-600 font-medium">⚠️ Please select a staff member to proceed</span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setRestartModal(null)}
+                                    className="flex-1 sm:flex-none px-4 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleRestartService}
+                                    disabled={isRestartSubmitting || !restartStartDate || !restartSelectedWorker || !restartServiceType}
+                                    className="flex-1 sm:flex-none px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isRestartSubmitting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                                    Confirm &amp; Restart Service
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
