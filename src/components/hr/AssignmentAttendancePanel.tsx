@@ -49,7 +49,9 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         if (assignment.end_date) {
             endDate = parseISO(assignment.end_date);
         } else {
-            endDate = new Date(); // open-ended: attendance window grows daily up to today
+            const now = new Date();
+            // open-ended: attendance window grows daily up to today, or includes at least up to startDate if future
+            endDate = isAfter(startDate, now) ? startDate : now;
         }
 
         startDate.setHours(0, 0, 0, 0);

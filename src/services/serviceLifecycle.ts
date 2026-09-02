@@ -308,22 +308,38 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             ? input.workers
             : (input.workerId ? [{ workerId: input.workerId, workerPayoutRate: input.workerPayoutRate }] : []);
 
+        const assignedWorkerNames: string[] = [];
+
         for (const w of workersList) {
             await assignWorkerToService(service.id, w.workerId, input.startDate);
 
             // Also create legacy worker_assignments record for backwards compatibility
-            await supabase.from('worker_assignments').insert([{
+            // Note: service_type in worker_assignments has a CHECK constraint: ('one_day', 'date_range')
+            // And worker_payout_rate does NOT exist in worker_assignments table.
+            const { data: newAsgn, error: asgnError } = await supabase.from('worker_assignments').insert([{
                 client_id: input.clientId,
                 employee_id: w.workerId,
                 start_date: input.startDate,
                 end_date: input.endDate || null,
                 assignment_status: 'active',
+                service_type: 'date_range',
+                hours_per_day: input.hoursPerDay || 10,
                 client_billing_rate: input.completeMonthDailyRate,
-                worker_payout_rate: w.workerPayoutRate || undefined,
                 deposit_amount: input.depositAmount,
                 deposit_paid: input.depositStatus === 'collected' ? input.depositAmount : 0,
                 assigned_at: new Date().toISOString(),
-            }]);
+                notes: input.serviceType,
+            }]).select();
+
+            if (asgnError) {
+                console.error('Error inserting worker_assignment:', asgnError);
+            }
+
+            // Fetch employee details to update status and record name for CRM
+            const { data: empData } = await supabase.from('employees').select('full_name, job_title').eq('id', w.workerId).single();
+            if (empData?.full_name) {
+                assignedWorkerNames.push(empData.full_name);
+            }
 
             // Update employee status & assigned client name
             await supabase.from('employees').update({
@@ -331,6 +347,21 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
                 assigned_client: input.clientName,
                 updated_at: new Date().toISOString()
             }).eq('id', w.workerId);
+
+            // Auto-initialize attendance row if service start date is today or in past
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (input.startDate <= todayStr && newAsgn && newAsgn[0]) {
+                await supabase.from('attendance').insert([{
+                    worker_id: w.workerId,
+                    assignment_id: newAsgn[0].id,
+                    duty_date: input.startDate,
+                    status: 'Present',
+                    is_half_day: false,
+                    is_absent: false,
+                    hours_worked: input.hoursPerDay || 10,
+                    notes: `Initialized on service restart (${input.serviceType})`
+                }]);
+            }
         }
 
         // 3. If deposit is marked as collected, record in payments table
@@ -347,12 +378,24 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
         }
 
         // 4. Update CRM lead pipeline stage to Active Client
-        await supabase.from('crm_leads').update({
+        const leadUpdatePayload: any = {
             pipeline_stage: 'Active Client',
-            service_interest: input.serviceType,
-            quoted_monthly_rate: input.completeMonthDailyRate * 30,
+            estimated_value_monthly: input.completeMonthDailyRate * 30,
+            complete_month_daily_rate: input.completeMonthDailyRate,
+            incomplete_month_daily_rate: input.incompleteMonthDailyRate,
             updated_at: new Date().toISOString()
-        }).eq('id', input.clientId);
+        };
+        if (assignedWorkerNames.length > 0) {
+            leadUpdatePayload.assigned_worker_name = assignedWorkerNames.join(', ');
+        }
+        const { error: leadUpdateError } = await supabase
+            .from('crm_leads')
+            .update(leadUpdatePayload)
+            .eq('id', input.clientId);
+
+        if (leadUpdateError) {
+            console.error('Error updating CRM lead to Active Client:', leadUpdateError);
+        }
 
         return { success: true, serviceId: service.id };
     } catch (err: any) {
