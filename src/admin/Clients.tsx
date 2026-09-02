@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -69,6 +69,8 @@ export default function Clients() {
         depositStatus: 'collected' | 'pending' | 'settled';
         serviceName: string;
         startDate: string;
+        allCycles: any[];
+        pastDepositTotal: number;
     } | null>(null);
     const [depositPaymentMethod, setDepositPaymentMethod] = useState('UPI');
     const [depositPaymentAmount, setDepositPaymentAmount] = useState<number | ''>(5000);
@@ -78,11 +80,18 @@ export default function Clients() {
     const [generatedInvoiceUrl, setGeneratedInvoiceUrl] = useState<string | null>(null);
     const [copiedInvoiceLink, setCopiedInvoiceLink] = useState(false);
 
+    const generateDepositRef = (method: string) => {
+        const cleanMethod = (method || 'UPI').toUpperCase().replace(/\s+/g, '-');
+        const randomPart = crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase();
+        return `${cleanMethod}-${randomPart}`;
+    };
+
     const openDepositModal = (client: any) => {
         const activeSvc = client.activeService || (client.services && client.services[0]);
         const serviceName = activeSvc?.service_type || 'Home Care Service';
         const startDate = activeSvc?.start_date || new Date().toISOString().split('T')[0];
         const amount = client.securityDeposit || 5000;
+        const initialMethod = 'UPI';
 
         setDepositModal({
             client,
@@ -90,10 +99,12 @@ export default function Clients() {
             depositStatus: client.depositStatus || 'pending',
             serviceName,
             startDate,
+            allCycles: client.allServiceCycles || [],
+            pastDepositTotal: client.pastDepositTotal || 0,
         });
         setDepositPaymentAmount(amount);
-        setDepositPaymentMethod('UPI');
-        setDepositPaymentRef('');
+        setDepositPaymentMethod(initialMethod);
+        setDepositPaymentRef(generateDepositRef(initialMethod));
         setGeneratedInvoiceUrl(null);
         setCopiedInvoiceLink(false);
     };
@@ -109,6 +120,17 @@ export default function Clients() {
         }
 
         msg += `\nPayment complete karne ke baad kripya yahan transaction screenshot share karein taaki humari team verify kar sake.\n\nDhanyawad,\n99 Care Support Team`;
+
+        const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+        window.open(waUrl, '_blank');
+    };
+
+    const handleShareDepositReceiptWhatsApp = (client: any, amount: number, method: string, ref: string, serviceName: string) => {
+        const rawPhone = (client.phone || '').replace(/\D/g, '');
+        const cleanPhone = rawPhone.startsWith('91') ? rawPhone : `91${rawPhone}`;
+        const todayFormatted = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        const msg = `Namaste ${client.name} ji! 🙏\n\nHumne aapka 99 Care security deposit payment successfully receive kar liya hai.\n\n💰 *Amount Received*: ₹${amount.toLocaleString('en-IN')}\n💳 *Payment Mode*: ${method}\n🔖 *Reference ID*: ${ref}\n💼 *Service*: ${serviceName}\n📅 *Date*: ${todayFormatted}\n\nAapki care service smoothly active hai. Kisi bhi sahayata ke liye humse sampark karein.\n\nDhanyawad,\n99 Care Support Team`;
 
         const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
         window.open(waUrl, '_blank');
@@ -152,10 +174,11 @@ export default function Clients() {
         const amount = Number(depositPaymentAmount) || depositModal.depositAmount;
         if (amount <= 0) return toast.error('Please enter a valid deposit amount.');
 
+        const finalRef = depositPaymentRef.trim() || generateDepositRef(depositPaymentMethod);
         setIsRecordingPayment(true);
         try {
             const client = depositModal.client;
-            const todayStr = new Date().toISOString().split('T')[0];
+            const nowIso = new Date().toISOString();
 
             // 1. Update active service
             await supabase
@@ -163,7 +186,7 @@ export default function Clients() {
                 .update({
                     deposit_status: 'collected',
                     deposit_amount: amount,
-                    updated_at: new Date().toISOString(),
+                    updated_at: nowIso,
                 })
                 .eq('client_id', client.id)
                 .eq('status', 'active');
@@ -179,25 +202,45 @@ export default function Clients() {
                 .eq('client_id', client.id)
                 .eq('assignment_status', 'active');
 
-            // 3. Insert record in payments table
-            await supabase.from('payments').insert([{
+            // 3. Insert record in payments table (connected to Global Payment History & Finance)
+            const { error: insertPayError } = await supabase.from('payments').insert([{
                 client_name: client.name,
                 amount: amount,
-                payment_date: todayStr,
+                payment_date: nowIso,
                 payment_type: 'deposit',
-                payment_method: depositPaymentMethod,
-                transaction_ref: depositPaymentRef.trim() || undefined,
-                status: 'completed',
-                notes: `Security deposit collected for ${depositModal.serviceName}`,
+                recorded_by: 'admin',
+                transaction_ref: finalRef,
             }]);
 
-            // 4. Also make sure lead is in Active Client
+            if (insertPayError) throw insertPayError;
+
+            // 4. Ensure lead is in Active Client
             await supabase.from('crm_leads').update({
                 pipeline_stage: 'Active Client',
-                updated_at: new Date().toISOString(),
+                updated_at: nowIso,
             }).eq('id', client.id);
 
-            toast.success(`Deposit payment of ₹${amount.toLocaleString('en-IN')} recorded for ${client.name}! 🎉`);
+            // 5. Connect Activity Log in crm_lead_activity
+            await supabase.from('crm_lead_activity').insert([{
+                lead_id: client.id,
+                event_type: 'payment_recorded',
+                description: `Deposit collection recorded: ₹${amount.toLocaleString('en-IN')} via ${depositPaymentMethod} (Ref: ${finalRef})`,
+                metadata: {
+                    amount,
+                    payment_type: 'deposit',
+                    payment_method: depositPaymentMethod,
+                    transaction_ref: finalRef,
+                }
+            }]);
+
+            toast.success(`Deposit payment of ₹${amount.toLocaleString('en-IN')} recorded for ${client.name}! 🎉`, {
+                action: {
+                    label: 'WhatsApp Receipt',
+                    onClick: () => handleShareDepositReceiptWhatsApp(client, amount, depositPaymentMethod, finalRef, depositModal.serviceName),
+                },
+                duration: 6000,
+            });
+
             setDepositModal(null);
             fetchClients();
         } catch (err: any) {
@@ -619,6 +662,42 @@ export default function Clients() {
                     depositStatus = 'collected';
                 }
 
+                // Build unified service cycles history with deposit tracking
+                const allServiceCycles: any[] = [];
+                if (clientServices.length > 0) {
+                    const sortedServices = [...clientServices].sort((a, b) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime());
+                    sortedServices.forEach(s => {
+                        const isCurrent = activeService ? s.id === activeService.id : s.id === latestService?.id;
+                        allServiceCycles.push({
+                            id: s.id,
+                            serviceType: s.service_type || 'Care Service',
+                            startDate: s.start_date,
+                            endDate: s.end_date,
+                            isCurrent: isCurrent,
+                            depositAmount: Number(s.deposit_amount) || 0,
+                            depositStatus: isCurrent ? depositStatus : (s.deposit_status || 'settled'),
+                        });
+                    });
+                } else if (clientAssignments.length > 0) {
+                    const sortedAsgns = [...clientAssignments].sort((a, b) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime());
+                    sortedAsgns.forEach(a => {
+                        const isCurrent = activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id;
+                        allServiceCycles.push({
+                            id: a.id,
+                            serviceType: a.service_type || 'Care Service',
+                            startDate: a.start_date,
+                            endDate: a.end_date,
+                            isCurrent: isCurrent,
+                            depositAmount: Number(a.deposit_amount) || 0,
+                            depositStatus: isCurrent ? depositStatus : 'settled',
+                        });
+                    });
+                }
+
+                const pastDepositTotal = allServiceCycles
+                    .filter(cyc => !cyc.isCurrent)
+                    .reduce((sum, cyc) => sum + (Number(cyc.depositAmount) || 0), 0);
+
                 return {
                     id: c.id,
                     name: c.client_name,
@@ -631,6 +710,8 @@ export default function Clients() {
                     lifetimeValue: '₹0',
                     securityDeposit: depositAmount,
                     depositStatus: depositStatus,
+                    pastDepositTotal: pastDepositTotal,
+                    allServiceCycles: allServiceCycles,
                     activeService: activeService || latestService,
                     activeAssignment: activeAssignment || latestAssignment,
                     created_at: c.created_at,
@@ -882,23 +963,34 @@ export default function Clients() {
                                             </span>
                                         </div>
                                         <div className="flex items-center justify-between mt-0.5">
-                                            <p className={`text-sm font-bold ${
-                                                client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
-                                            }`}>
-                                                ₹{client.securityDeposit.toLocaleString()}
-                                            </p>
-                                            {client.depositStatus === 'pending' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openDepositModal(client);
-                                                    }}
-                                                    className="text-[10px] font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
-                                                    title="Send Deposit Invoice or Record Payment"
-                                                >
-                                                    <Receipt className="w-2.5 h-2.5" /> Collect
-                                                </button>
-                                            )}
+                                            <div>
+                                                <p className={`text-sm font-bold ${
+                                                    client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
+                                                }`}>
+                                                    ₹{client.securityDeposit.toLocaleString()}
+                                                </p>
+                                                {client.pastDepositTotal > 0 && (
+                                                    <p className="text-[10px] text-slate-500 font-medium flex items-center gap-0.5 mt-0.5" title="Previous service deposit settled upon completion">
+                                                        <HistoryIcon className="w-2.5 h-2.5 text-slate-400" />
+                                                        Prev: ₹{client.pastDepositTotal.toLocaleString()} (Settled)
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openDepositModal(client);
+                                                }}
+                                                className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1 transition-colors cursor-pointer ${
+                                                    client.depositStatus === 'pending'
+                                                        ? 'text-amber-800 bg-amber-100/90 hover:bg-amber-200 border-amber-300'
+                                                        : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
+                                                }`}
+                                                title="View deposit history, send invoice, or record payment"
+                                            >
+                                                <Receipt className="w-2.5 h-2.5" />
+                                                {client.depositStatus === 'pending' ? 'Collect' : 'History'}
+                                            </button>
                                         </div>
                                     </div>
                                     <div className="col-span-1 sm:col-span-2 lg:col-span-2 flex items-center gap-2 flex-wrap">
@@ -931,13 +1023,21 @@ export default function Clients() {
                                                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                                                     {reviewSentIds.has(client.id) ? 'Resend Review' : 'Review'}
                                                 </button>
-                                                {client.depositStatus === 'pending' && (
+                                                {client.depositStatus === 'pending' ? (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); openDepositModal(client); }}
                                                         className="px-3 py-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-all flex items-center justify-center gap-1.5 shadow-xs"
                                                         title="Share deposit invoice or record payment"
                                                     >
                                                         <Receipt className="w-3.5 h-3.5 text-amber-600" /> Deposit Invoice
+                                                    </button>
+                                                ) : client.pastDepositTotal > 0 && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); openDepositModal(client); }}
+                                                        className="px-2.5 py-2 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition-all flex items-center justify-center gap-1.5 shadow-2xs"
+                                                        title="View complete deposit & service history"
+                                                    >
+                                                        <HistoryIcon className="w-3.5 h-3.5 text-slate-400" /> Deposit History
                                                     </button>
                                                 )}
                                                 {client.status === 'Closed Won' && (
@@ -1730,9 +1830,86 @@ export default function Clients() {
                                     <span className="text-xs text-slate-500">Start Date: {depositModal.startDate}</span>
                                 </div>
                                 <div className="text-right">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Pending Deposit</span>
-                                    <p className="text-xl font-extrabold text-amber-700">₹{depositModal.depositAmount.toLocaleString('en-IN')}</p>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                                        {depositModal.depositStatus === 'collected' ? 'Collected Deposit' : 'Pending Deposit'}
+                                    </span>
+                                    <p className={`text-xl font-extrabold ${depositModal.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                        ₹{depositModal.depositAmount.toLocaleString('en-IN')}
+                                    </p>
                                 </div>
+                            </div>
+
+                            {/* Service Cycles & Previous Deposit Breakdown */}
+                            <div className="bg-slate-50/80 rounded-2xl border border-slate-200/90 p-4 space-y-3">
+                                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                        <HistoryIcon className="w-3.5 h-3.5 text-primary" /> Service Cycles &amp; Deposit History
+                                    </h3>
+                                    <span className="text-[11px] font-semibold text-slate-500">
+                                        {depositModal.allCycles?.length || 1} Cycle{(depositModal.allCycles?.length || 1) > 1 ? 's' : ''}
+                                    </span>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {depositModal.allCycles && depositModal.allCycles.length > 0 ? (
+                                        depositModal.allCycles.map((cycle: any, idx: number) => (
+                                            <div
+                                                key={cycle.id || idx}
+                                                className={`p-3 rounded-xl border flex items-center justify-between text-xs transition-all ${
+                                                    cycle.isCurrent
+                                                        ? 'bg-white border-amber-200 shadow-2xs'
+                                                        : 'bg-slate-100/70 border-slate-200 opacity-90'
+                                                }`}
+                                            >
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-slate-800">
+                                                            {cycle.serviceType}
+                                                        </span>
+                                                        {cycle.isCurrent ? (
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200 uppercase">
+                                                                Current Service
+                                                            </span>
+                                                        ) : (
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase">
+                                                                Previous Service (Ended)
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                                        {cycle.startDate || 'Start'} {cycle.endDate ? `to ${cycle.endDate}` : 'to Ongoing'}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="font-extrabold text-sm text-slate-900">
+                                                        ₹{Number(cycle.depositAmount || 0).toLocaleString('en-IN')}
+                                                    </span>
+                                                    <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${
+                                                        cycle.isCurrent
+                                                            ? (depositModal.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700')
+                                                            : 'text-slate-500'
+                                                    }`}>
+                                                        {cycle.isCurrent
+                                                            ? (depositModal.depositStatus === 'collected' ? '✓ Paid' : '⏳ Pending')
+                                                            : '✓ Settled on End'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs">
+                                            <span className="font-bold text-slate-800">{depositModal.serviceName}</span>
+                                            <span className="font-extrabold text-slate-900">₹{depositModal.depositAmount.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {depositModal.pastDepositTotal > 0 && (
+                                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                                        <span>Previous Service Deposit (Settled):</span>
+                                        <span className="font-bold text-slate-700">₹{depositModal.pastDepositTotal.toLocaleString('en-IN')}</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Section 1: Share Deposit Invoice */}
@@ -1830,7 +2007,11 @@ export default function Clients() {
                                         <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
                                         <select
                                             value={depositPaymentMethod}
-                                            onChange={e => setDepositPaymentMethod(e.target.value)}
+                                            onChange={e => {
+                                                const m = e.target.value;
+                                                setDepositPaymentMethod(m);
+                                                setDepositPaymentRef(generateDepositRef(m));
+                                            }}
                                             className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
                                         >
                                             <option value="UPI">UPI / GPay / PhonePe</option>
@@ -1842,14 +2023,41 @@ export default function Clients() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-600 mb-1">UTR / Reference ID (Optional)</label>
-                                    <input
-                                        type="text"
-                                        value={depositPaymentRef}
-                                        onChange={e => setDepositPaymentRef(e.target.value)}
-                                        placeholder="e.g. UPI Ref 4291048291..."
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                                    />
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs font-semibold text-slate-600">
+                                            Transaction Reference ID (Auto-Generated)
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
+                                            className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
+                                            title="Generate new reference code"
+                                        >
+                                            <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
+                                        </button>
+                                    </div>
+                                    <div className="relative flex items-center">
+                                        <input
+                                            type="text"
+                                            value={depositPaymentRef}
+                                            onChange={e => setDepositPaymentRef(e.target.value)}
+                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(depositPaymentRef);
+                                                toast.success('Reference ID copied');
+                                            }}
+                                            className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
+                                            title="Copy Reference ID"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">
+                                        Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
+                                    </p>
                                 </div>
                             </div>
                         </div>
