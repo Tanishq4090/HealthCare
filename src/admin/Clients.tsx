@@ -50,7 +50,6 @@ export default function Clients() {
     const [restartWorkers, setRestartWorkers] = useState<any[]>([]);
     const [restartWorkerSearch, setRestartWorkerSearch] = useState('');
     const [restartSelectedWorker, setRestartSelectedWorker] = useState<any>(null);
-    const [restartWorkerPayout, setRestartWorkerPayout] = useState<number | ''>('');
     const [restartNotes, setRestartNotes] = useState('');
     const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
     // Track which clients have had review sent this session
@@ -203,7 +202,8 @@ export default function Clients() {
         } catch {}
 
         const initialService = lastService?.service_type || leadInterest || 'Old Age Care';
-        const initialHours = lastService?.hours_per_day || 10;
+        const rawHours = lastService?.hours_per_day || 10;
+        const initialHours = rawHours >= 20 ? 24 : 10;
         const initialComplete = lastService?.complete_month_daily_rate || (leadQuotedRate ? Math.round(leadQuotedRate / 30) : 800);
         const initialIncomplete = lastService?.incomplete_month_daily_rate || 1500;
         const todayStr = new Date().toISOString().split('T')[0];
@@ -220,13 +220,12 @@ export default function Clients() {
         setRestartDepositMethod('UPI');
         setRestartWorkerSearch('');
         setRestartSelectedWorker(null);
-        setRestartWorkerPayout('');
         setRestartNotes('');
 
-        // Fetch workers (available first, then all active)
+        // Fetch workers with their stored 10hr and 24hr daily payout rates
         const { data } = await supabase
             .from('employees')
-            .select('id, full_name, job_title, status, photo_url')
+            .select('id, full_name, job_title, status, photo_url, rate_10hr, rate_24hr')
             .order('full_name');
         setRestartWorkers(data || []);
     };
@@ -240,11 +239,16 @@ export default function Clients() {
 
         setIsRestartSubmitting(true);
         try {
+            // Automatically determine worker payout according to their stored shift rate
+            const workerPay = restartShiftHours === 24
+                ? (restartSelectedWorker.rate_24hr ? Number(restartSelectedWorker.rate_24hr) : undefined)
+                : (restartSelectedWorker.rate_10hr ? Number(restartSelectedWorker.rate_10hr) : undefined);
+
             const result = await restartClientService({
                 clientId: restartModal.id,
                 clientName: restartModal.name,
                 serviceType: restartServiceType.trim(),
-                hoursPerDay: Number(restartShiftHours) || 10,
+                hoursPerDay: Number(restartShiftHours) === 24 ? 24 : 10,
                 startDate: restartStartDate,
                 endDate: restartIsOngoing ? null : (restartEndDate || null),
                 completeMonthDailyRate: Number(restartCompleteRate),
@@ -253,7 +257,7 @@ export default function Clients() {
                 depositStatus: restartDepositStatus,
                 depositPaymentMethod: restartDepositMethod,
                 workerId: restartSelectedWorker.id,
-                workerPayoutRate: restartWorkerPayout ? Number(restartWorkerPayout) : undefined,
+                workerPayoutRate: workerPay,
                 notes: restartNotes.trim() || undefined,
             });
 
@@ -1050,17 +1054,16 @@ export default function Clients() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-semibold text-slate-600 mb-1.5">Shift Duration</label>
-                                        <div className="grid grid-cols-3 gap-1.5">
+                                        <div className="grid grid-cols-2 gap-2">
                                             {[
-                                                { h: 10, label: '10h Shift' },
-                                                { h: 12, label: '12h Shift' },
-                                                { h: 24, label: '24h Live-in' }
+                                                { h: 10, label: '10-Hour Shift' },
+                                                { h: 24, label: '24-Hour Live-in' }
                                             ].map(s => (
                                                 <button
                                                     key={s.h}
                                                     type="button"
                                                     onClick={() => setRestartShiftHours(s.h)}
-                                                    className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all ${
+                                                    className={`py-2 px-2 text-center rounded-xl text-xs font-bold border transition-all ${
                                                         restartShiftHours === s.h
                                                             ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                                                             : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
@@ -1317,29 +1320,32 @@ export default function Clients() {
                                                                 {w.status || 'Active'}
                                                             </span>
                                                         </div>
+                                                        <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                                            Pay: {restartShiftHours === 24 ? `24h: ₹${w.rate_24hr || '-'}/day` : `10h: ₹${w.rate_10hr || '-'}/day`}
+                                                        </div>
                                                     </div>
                                                 </button>
                                             );
                                         })}
                                 </div>
 
-                                {restartSelectedWorker && (
-                                    <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 flex items-center justify-between text-xs">
-                                        <span className="font-medium text-purple-900">
-                                            Assigned: <strong>{restartSelectedWorker.full_name}</strong> ({restartSelectedWorker.job_title})
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-slate-500 text-[11px]">Worker Payout (₹/day):</span>
-                                            <input
-                                                type="number"
-                                                value={restartWorkerPayout}
-                                                onChange={e => setRestartWorkerPayout(e.target.value === '' ? '' : Number(e.target.value))}
-                                                placeholder="e.g. 400"
-                                                className="w-24 px-2 py-1 rounded border border-purple-200 text-xs font-bold bg-white"
-                                            />
+                                {restartSelectedWorker && (() => {
+                                    const dailyPay = restartShiftHours === 24
+                                        ? (restartSelectedWorker.rate_24hr || 0)
+                                        : (restartSelectedWorker.rate_10hr || 0);
+                                    return (
+                                        <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 flex items-center justify-between text-xs">
+                                            <span className="font-medium text-purple-900">
+                                                Assigned: <strong>{restartSelectedWorker.full_name}</strong> ({restartSelectedWorker.job_title})
+                                            </span>
+                                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-purple-200 text-purple-900 font-bold text-xs shadow-2xs">
+                                                <span className="text-slate-500 font-normal">Worker Daily Pay:</span>
+                                                <span className="text-purple-700 font-extrabold text-sm">₹{dailyPay.toLocaleString('en-IN')}/day</span>
+                                                <span className="text-[10px] text-slate-400 font-normal">({restartShiftHours}h profile rate)</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </div>
 
                             {/* 5. Additional Notes */}
