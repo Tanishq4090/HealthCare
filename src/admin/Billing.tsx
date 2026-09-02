@@ -395,7 +395,9 @@ export default function Billing() {
                     });
 
                     if (activeSvc) {
-                        const matchingAsgn = clientAsgns.find(a => a.assignment_status === 'active') || clientAsgns[0];
+                        const matchingAsgn = clientAsgns.find(a => a.assignment_status === 'active' && a.invoice_pdf_url)
+                            || clientAsgns.find(a => a.assignment_status === 'active')
+                            || clientAsgns[0];
                         const depositAmt = activeSvc.deposit_amount || matchingAsgn?.deposit_amount || quotesMap[cId]?.deposit || 0;
                         const isPaid = activeSvc.deposit_status === 'collected' || (matchingAsgn?.deposit_paid && matchingAsgn.deposit_paid >= depositAmt && depositAmt > 0);
                         const depStatus = isPaid ? 'Paid' : (matchingAsgn?.deposit_invoice_sent ? 'Invoice Sent' : 'Pending Invoice');
@@ -996,14 +998,17 @@ export default function Billing() {
 
                 if (!waResp.ok) throw new Error(await waResp.text());
 
-                await supabase
-                    .from('worker_assignments')
-                    .update({
-                        deposit_amount: Number(invoiceDepositAmount) || 15000,
-                        deposit_invoice_sent: true,
-                        invoice_pdf_url: invoicePdfUrl
-                    })
-                    .eq('id', agentTargetBill.id);
+                const targetAsgnId = agentTargetBill.assignment_id || agentTargetBill.id;
+                if (targetAsgnId) {
+                    await supabase
+                        .from('worker_assignments')
+                        .update({
+                            deposit_amount: Number(invoiceDepositAmount) || 15000,
+                            deposit_invoice_sent: true,
+                            invoice_pdf_url: invoicePdfUrl
+                        })
+                        .eq('id', targetAsgnId);
+                }
 
                 if (agentTargetBill.client_id) {
                     await supabase
