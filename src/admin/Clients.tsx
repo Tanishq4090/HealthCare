@@ -663,6 +663,11 @@ export default function Clients() {
                 }
 
                 // Build unified service cycles history with deposit tracking
+                const formatServiceLabel = (type?: string) => {
+                    if (!type || type === 'date_range' || type.trim() === '') return 'Home Care Service';
+                    return type;
+                };
+
                 const allServiceCycles: any[] = [];
                 if (clientServices.length > 0) {
                     const sortedServices = [...clientServices].sort((a, b) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime());
@@ -670,7 +675,7 @@ export default function Clients() {
                         const isCurrent = activeService ? s.id === activeService.id : s.id === latestService?.id;
                         allServiceCycles.push({
                             id: s.id,
-                            serviceType: s.service_type || 'Care Service',
+                            serviceType: formatServiceLabel(s.service_type),
                             startDate: s.start_date,
                             endDate: s.end_date,
                             isCurrent: isCurrent,
@@ -684,7 +689,7 @@ export default function Clients() {
                         const isCurrent = activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id;
                         allServiceCycles.push({
                             id: a.id,
-                            serviceType: a.service_type || 'Care Service',
+                            serviceType: formatServiceLabel(a.service_type),
                             startDate: a.start_date,
                             endDate: a.end_date,
                             isCurrent: isCurrent,
