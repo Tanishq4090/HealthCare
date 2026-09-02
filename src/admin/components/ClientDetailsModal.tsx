@@ -251,7 +251,13 @@ export default function ClientDetailsModal({ client, onClose }: ClientDetailsMod
                                 </h3>
                                 {serviceBills.length > 0 && (
                                     <span className="text-xs font-bold text-primary">
-                                        Total: ₹{serviceBills.reduce((acc, b) => acc + (b.amount || 0), 0).toLocaleString('en-IN')}
+                                        Total: ₹{(() => {
+                                            const finalBill = serviceBills.find(b => b.type === 'final');
+                                            if (finalBill) {
+                                                return Number(finalBill.amount || 0).toLocaleString('en-IN');
+                                            }
+                                            return serviceBills.reduce((acc, b) => acc + (b.amount || 0), 0).toLocaleString('en-IN');
+                                        })()}
                                     </span>
                                 )}
                             </div>
