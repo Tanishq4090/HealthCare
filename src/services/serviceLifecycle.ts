@@ -488,6 +488,30 @@ export async function endService(
             });
     }
 
+    // 6. Synchronize workers' payroll records: cap period_end at effectiveEndDate and mark type 'final'
+    try {
+        const { data: servicePayrolls } = await supabase
+            .from('payroll')
+            .select('id, worker_id, period_start, period_end, days_worked, daily_rate')
+            .eq('service_id', serviceId);
+
+        if (servicePayrolls && servicePayrolls.length > 0) {
+            for (const p of servicePayrolls) {
+                if (p.period_end && p.period_end > effectiveEndDate) {
+                    await supabase
+                        .from('payroll')
+                        .update({
+                            period_end: effectiveEndDate,
+                            type: 'final'
+                        })
+                        .eq('id', p.id);
+                }
+            }
+        }
+    } catch (paySyncErr) {
+        console.error('Failed to sync worker payroll dates on service end:', paySyncErr);
+    }
+
     return {
         success: true,
         service_id: serviceId,

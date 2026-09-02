@@ -367,7 +367,23 @@ export default function HR() {
                             const halfCount = workerAttendance.filter(s => s.is_half_day || s.status === 'Half Day').length;
                             const verifiedDays = presentCount + (halfCount * 0.5);
 
-                            if (verifiedDays !== p.days_worked) {
+                            // Sync period boundaries with actual assignment if present
+                            const asgnStart = matchedAsgn?.start_date ? matchedAsgn.start_date.split('T')[0] : '';
+                            const asgnEnd = matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : '';
+                            let updatedStart = p.period_start;
+                            let updatedEnd = p.period_end;
+                            let datesChanged = false;
+
+                            if (asgnStart && p.period_start && p.period_start > asgnStart) {
+                                updatedStart = asgnStart;
+                                datesChanged = true;
+                            }
+                            if (asgnEnd && p.period_end && p.period_end > asgnEnd) {
+                                updatedEnd = asgnEnd;
+                                datesChanged = true;
+                            }
+
+                            if (verifiedDays !== p.days_worked || datesChanged) {
                                 const newTotal = verifiedDays * (p.daily_rate || 800);
                                 const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
 
@@ -375,7 +391,10 @@ export default function HR() {
                                     days_worked: verifiedDays,
                                     days_counted: verifiedDays,
                                     total_amount: newTotal,
-                                    net_balance: newNet
+                                    net_balance: newNet,
+                                    period_start: updatedStart,
+                                    period_end: updatedEnd,
+                                    ...(asgnEnd ? { type: 'final' } : {})
                                 }).eq('id', p.id).then();
 
                                 return {
@@ -383,7 +402,10 @@ export default function HR() {
                                     days_worked: verifiedDays,
                                     days_counted: verifiedDays,
                                     total_amount: newTotal,
-                                    net_balance: newNet
+                                    net_balance: newNet,
+                                    period_start: updatedStart,
+                                    period_end: updatedEnd,
+                                    ...(asgnEnd ? { type: 'final' } : {})
                                 };
                             }
                         }
@@ -2216,10 +2238,17 @@ export default function HR() {
                                                                                 }
 
                                                                                 if (assignment) {
+                                                                                    const effectiveStart = assignment.start_date
+                                                                                        ? assignment.start_date.split('T')[0]
+                                                                                        : (item.period_start || item.start_date);
+                                                                                    const effectiveEnd = assignment.end_date
+                                                                                        ? assignment.end_date.split('T')[0]
+                                                                                        : (item.period_end || item.end_date);
+
                                                                                     const generatorAssignment = {
                                                                                         ...assignment,
-                                                                                        start_date: item.period_start || item.start_date || assignment.start_date,
-                                                                                        end_date: item.period_end || item.end_date || assignment.end_date,
+                                                                                        start_date: effectiveStart,
+                                                                                        end_date: effectiveEnd,
                                                                                     };
                                                                                     setAutoCloseAssignmentOnGenerate(false);
                                                                                     setBillingAssignment(generatorAssignment);
