@@ -7,6 +7,7 @@
 
 import { supabase } from '../lib/supabase';
 import { calculateClientServiceDaysFromAttendance } from '../utils/billingRate';
+import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -457,28 +458,59 @@ export async function endService(
             else if (leadRes.data?.service_interest) serviceCategory = leadRes.data.service_interest;
         } catch {}
 
-        const invResp = await supabase.functions.invoke('generate-invoice', {
-            body: {
-                lead_id: service.client_id,
-                manual_invoice: true,
-                client_name: clientName,
-                client_phone: clientPhone,
-                client_address: clientAddress,
-                service_name: serviceCategory,
-                service_hours: service.hours_per_day ? String(service.hours_per_day) : '24',
-                start_date: service.start_date ? service.start_date.split('T')[0] : effectiveEndDate,
-                end_date: effectiveEndDate,
-                days: verifiedDays,
-                rate_per_day: rateUsed,
-                deposit_collected: depositAmount,
-                previously_billed: previouslyBilled,
-                invoice_date: effectiveEndDate,
-            }
-        });
+        invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+        const formatDateStr = (dStr: string) => {
+            if (!dStr) return '';
+            const [y, m, d] = dStr.split('-');
+            return `${d}/${m}/${y}`;
+        };
+        const sDate = service.start_date ? service.start_date.split('T')[0] : effectiveEndDate;
+        const periodStr = `${formatDateStr(sDate)} To ${formatDateStr(effectiveEndDate)}`;
 
-        if (invResp.data?.success) {
-            invoiceNumber = invResp.data.invoice_number || '';
-            invoicePdfUrl = invResp.data.public_url || '';
+        try {
+            invoicePdfUrl = await generateAndUploadInvoicePdf({
+                clientId: service.client_id,
+                clientName: clientName,
+                clientPhone: clientPhone,
+                clientAddress: clientAddress,
+                invoiceNumber: invoiceNumber,
+                invoiceDate: effectiveEndDate,
+                dueDate: effectiveEndDate,
+                serviceName: `${service.hours_per_day || 10}-HOUR SHIFT (${serviceCategory})`,
+                servicePeriod: periodStr,
+                days: verifiedDays,
+                ratePerDay: rateUsed,
+                grossAmount: trueCost,
+                previouslyBilled: previouslyBilled,
+                depositCollected: depositAmount,
+                settlementAmount: settlement,
+                isFinalSettlement: true
+            });
+        } catch (clientPdfErr) {
+            console.warn('Client-side PDF generation failed, falling back to function:', clientPdfErr);
+            const invResp = await supabase.functions.invoke('generate-invoice', {
+                body: {
+                    lead_id: service.client_id,
+                    manual_invoice: true,
+                    client_name: clientName,
+                    client_phone: clientPhone,
+                    client_address: clientAddress,
+                    service_name: serviceCategory,
+                    service_hours: service.hours_per_day ? String(service.hours_per_day) : '24',
+                    start_date: service.start_date ? service.start_date.split('T')[0] : effectiveEndDate,
+                    end_date: effectiveEndDate,
+                    days: verifiedDays,
+                    rate_per_day: rateUsed,
+                    deposit_collected: depositAmount,
+                    previously_billed: previouslyBilled,
+                    invoice_date: effectiveEndDate,
+                }
+            });
+
+            if (invResp.data?.success) {
+                invoiceNumber = invResp.data.invoice_number || invoiceNumber;
+                invoicePdfUrl = invResp.data.public_url || '';
+            }
         }
     } catch (genErr) {
         console.error('Final invoice generation error:', genErr);
