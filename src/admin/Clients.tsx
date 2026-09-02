@@ -52,12 +52,12 @@ export default function Clients() {
 
     const monthLabel = (m: string) => {
         const [y, mo] = m.split('-');
-        return new Date(Number(y), Number(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+        return new Date(Number(y), Number(mo) - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
     };
 
     const prevMonth = () => {
         const [y, m] = selectedMonth.split('-').map(Number);
-        const d = new Date(y, m - 2);
+        const d = new Date(y, m - 2, 1);
         setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     };
 
@@ -65,9 +65,49 @@ export default function Clients() {
         const [y, m] = selectedMonth.split('-').map(Number);
         const now = new Date();
         const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const next = new Date(y, m);
+        const next = new Date(y, m, 1);
         const nextKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
         if (nextKey <= nowKey) setSelectedMonth(nextKey);
+    };
+
+    const isClientInMonth = (client: any, ym: string) => {
+        // 1. Client joined in this month
+        if (client.created_at) {
+            const d = new Date(client.created_at);
+            const joinKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            if (joinKey === ym) return true;
+        }
+
+        // 2. Client has a service active during this month
+        if (client.services && client.services.length > 0) {
+            for (const s of client.services) {
+                const sStart = s.start_date ? s.start_date.slice(0, 7) : '';
+                const sEnd = s.end_date ? s.end_date.slice(0, 7) : '';
+                if (sStart && sStart <= ym && (!sEnd || sEnd >= ym)) {
+                    return true;
+                }
+            }
+        }
+
+        // 3. Client has a worker assignment active during this month
+        if (client.assignments && client.assignments.length > 0) {
+            for (const a of client.assignments) {
+                const aStart = a.start_date ? a.start_date.slice(0, 7) : '';
+                const aEnd = a.end_date ? a.end_date.slice(0, 7) : '';
+                if (aStart && aStart <= ym && (!aEnd || aEnd >= ym)) {
+                    return true;
+                }
+            }
+        }
+
+        // 4. Currently active worker count in the current month
+        const now = new Date();
+        const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (ym === nowKey && client.activeWorkerCount > 0) {
+            return true;
+        }
+
+        return false;
     };
 
     // Remove from pipeline confirmation state
@@ -296,23 +336,29 @@ export default function Clients() {
             if (clientError) throw clientError;
             const clientData = allClientsRes || [];
 
-            // 3. Fetch worker_assignments with employee status — this is the source of truth
+            // 3. Fetch worker_assignments with employee status & dates
             const { data: allAssignmentsData, error: assignAllError } = await supabase
                 .from('worker_assignments')
-                .select('client_id, assignment_status, employee_id, deposit_amount, deposit_paid, employees(status)');
+                .select('client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, employees(status)');
 
             if (assignAllError) throw assignAllError;
 
-            // 4. Fetch payment data for deposit fallback
-            const { data: depositPaymentsData, error: paymentsError } = await supabase
-                .from('payments')
-                .select('client_name, amount, payment_type')
-                .eq('payment_type', 'deposit');
+            // 4. Fetch payment data for deposit fallback & all services for monthly activity
+            const [{ data: depositPaymentsData, error: paymentsError }, { data: allServicesData }] = await Promise.all([
+                supabase
+                    .from('payments')
+                    .select('client_name, amount, payment_type')
+                    .eq('payment_type', 'deposit'),
+                supabase
+                    .from('services')
+                    .select('client_id, start_date, end_date, status')
+            ]);
 
             if (paymentsError) throw paymentsError;
 
             const assignments = allAssignmentsData || [];
             const depositPayments = depositPaymentsData || [];
+            const services = allServicesData || [];
 
             // Build workerMap keyed by client_id from worker_assignments (reliable source of truth)
             const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
@@ -365,6 +411,8 @@ export default function Clients() {
                     || requestedDepositByClientId[c.id]
                     || 0,
                 created_at: c.created_at,
+                services: services.filter(s => s.client_id === c.id),
+                assignments: assignments.filter(a => a.client_id === c.id),
             }));
 
             setClients(enrichedClients);
@@ -423,28 +471,80 @@ export default function Clients() {
                                 className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                             />
                         </div>
-                        {/* Month slider / All toggle */}
-                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden shrink-0">
+                        {/* View Controls: All Clients vs By Month toggle + ALWAYS-VISIBLE Month Navigator + Trash */}
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
                             <button
                                 onClick={() => setViewingTrash(!viewingTrash)}
-                                className={`px-3 py-1.5 text-xs font-semibold transition-colors border-r border-slate-200 ${viewingTrash ? 'bg-red-50 text-red-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+                                    viewingTrash 
+                                        ? 'bg-red-50 text-red-600 border-red-200 font-bold' 
+                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                }`}
                             >
                                 {viewingTrash ? 'Exit Trash' : 'View Trash'}
                             </button>
-                            <button
-                                onClick={() => setViewAllMonths(!viewAllMonths)}
-                                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!viewAllMonths ? 'border-r border-slate-200' : ''} ${viewAllMonths ? 'bg-teal-50 text-[#1AA6A8] font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
-                            >
-                                {viewAllMonths ? 'All Clients' : 'By Month'}
-                            </button>
-                            {!viewAllMonths && (
-                                <>
-                                    <button onClick={prevMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm">‹</button>
-                                    <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[120px] text-center border-x border-slate-200">{monthLabel(selectedMonth)}</span>
-                                    <button onClick={nextMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30"
-                                        disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; })()}>›</button>
-                                </>
-                            )}
+
+                            {/* All vs By Month segmented tabs */}
+                            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                                <button
+                                    onClick={() => setViewAllMonths(true)}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                        viewAllMonths
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    All Clients ({clients.filter(c => c.status !== 'Trash').length})
+                                </button>
+                                <button
+                                    onClick={() => setViewAllMonths(false)}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                        !viewAllMonths
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    By Month
+                                </button>
+                            </div>
+
+                            {/* Month Navigator: ALWAYS VISIBLE */}
+                            <div className={`flex items-center bg-white border rounded-lg overflow-hidden transition-all ${
+                                !viewAllMonths 
+                                    ? 'border-[#1AA6A8] ring-2 ring-[#1AA6A8]/20 shadow-xs' 
+                                    : 'border-slate-200 opacity-80 hover:opacity-100'
+                            }`}>
+                                <button 
+                                    onClick={() => {
+                                        setViewAllMonths(false);
+                                        prevMonth();
+                                    }} 
+                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm"
+                                    title="Previous Month"
+                                >
+                                    ‹
+                                </button>
+                                <span 
+                                    onClick={() => setViewAllMonths(false)}
+                                    className={`px-3 py-1.5 text-xs font-bold min-w-[125px] text-center border-x border-slate-200 select-none cursor-pointer transition-colors ${
+                                        !viewAllMonths ? 'text-[#1AA6A8] bg-teal-50/50' : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                    title="Click to view by this month"
+                                >
+                                    {monthLabel(selectedMonth)}
+                                </span>
+                                <button 
+                                    onClick={() => {
+                                        setViewAllMonths(false);
+                                        nextMonth();
+                                    }} 
+                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30 disabled:hover:bg-transparent"
+                                    disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; })()}
+                                    title="Next Month"
+                                >
+                                    ›
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -465,16 +565,25 @@ export default function Clients() {
 
                                 if (viewAllMonths) return true;
 
-                                if (!c.created_at) return true;
-                                const d = new Date(c.created_at);
-                                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-                                return key === selectedMonth || (c.activeWorkerCount > 0);
+                                return isClientInMonth(c, selectedMonth);
                             });
                             if (filtered.length === 0) return (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
-                                    <p className="text-sm font-semibold text-slate-500">{viewingTrash ? 'Trash is empty' : searchQuery ? 'No matching clients found' : `No clients found in ${monthLabel(selectedMonth)}`}</p>
-                                    <p className="text-xs text-slate-400 mt-1">{viewingTrash ? '' : searchQuery ? 'Try clearing your search query.' : 'Switch to "All Clients" or browse other months.'}</p>
+                                    <p className="text-sm font-semibold text-slate-500">
+                                        {viewingTrash ? 'Trash is empty' : searchQuery ? 'No matching clients found' : `No clients active or joined in ${monthLabel(selectedMonth)}`}
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        {viewingTrash ? '' : searchQuery ? 'Try clearing your search query.' : 'Use the arrows to browse other months or click "All Clients".'}
+                                    </p>
+                                    {!viewAllMonths && !viewingTrash && (
+                                        <button
+                                            onClick={() => setViewAllMonths(true)}
+                                            className="mt-3 px-3.5 py-1.5 text-xs font-bold text-white bg-[#1AA6A8] hover:bg-[#15898A] rounded-lg transition-colors shadow-2xs"
+                                        >
+                                            View All Clients ({clients.filter(c => c.status !== 'Trash').length})
+                                        </button>
+                                    )}
                                 </div>
                             );
                             return filtered.map(client => (
