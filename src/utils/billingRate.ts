@@ -124,7 +124,8 @@ export function calculateClientServiceDaysFromAttendance(
 
         const dayRecords = recordsByDate.get(dateKey) || [];
         if (dayRecords.length === 0) {
-            totalServiceDays += 1.0;
+            // If attendance records were supplied for this service, days with no attendance logs mean no worker attended
+            totalServiceDays += (attendanceRecords.length > 0 ? 0.0 : 1.0);
         } else {
             const hasFullPresent = dayRecords.some(r => 
                 !r.is_half_day && 
@@ -140,9 +141,10 @@ export function calculateClientServiceDaysFromAttendance(
                 totalServiceDays += 1.0;
             } else {
                 const hasHalfDay = dayRecords.some(r => 
-                    r.is_half_day || 
-                    r.status === 'Half Day' || 
-                    r.status === 'half_day'
+                    (r.is_half_day || r.status === 'Half Day' || r.status === 'half_day') &&
+                    !r.is_absent &&
+                    r.status !== 'Absent' &&
+                    r.status !== 'absent'
                 );
 
                 if (hasHalfDay) {
@@ -156,7 +158,7 @@ export function calculateClientServiceDaysFromAttendance(
                     if (allAbsent) {
                         totalServiceDays += 0.0;
                     } else {
-                        totalServiceDays += 1.0;
+                        totalServiceDays += 0.0;
                     }
                 }
             }

@@ -293,6 +293,8 @@ export interface EndServiceResult {
     deposit?: number;
     settlement?: number;
     workers_released?: number;
+    invoice_number?: string;
+    invoice_pdf_url?: string;
     error?: string;
 }
 
@@ -300,13 +302,205 @@ export async function endService(
     serviceId: string,
     endDate?: string
 ): Promise<EndServiceResult> {
-    const { data, error } = await supabase.rpc('end_service', {
+    const effectiveEndDate = endDate || new Date().toISOString().split('T')[0];
+
+    // 1. Fetch service details with worker assignments and client info
+    const { data: service, error: svcError } = await supabase
+        .from('services')
+        .select(`
+            id,
+            client_id,
+            start_date,
+            end_date,
+            status,
+            complete_month_daily_rate,
+            incomplete_month_daily_rate,
+            deposit_amount,
+            service_type,
+            hours_per_day,
+            clients (id, client_name, phone_number),
+            service_worker_assignments (
+                id,
+                employee_id,
+                start_date,
+                end_date
+            )
+        `)
+        .eq('id', serviceId)
+        .single();
+
+    if (svcError || !service) {
+        throw new Error(`Failed to find service: ${svcError?.message || 'Not found'}`);
+    }
+
+    // 2. Auto-release active workers and mark service ended in DB via RPC
+    const { data: rpcData, error: rpcError } = await supabase.rpc('end_service', {
         p_service_id: serviceId,
-        p_end_date: endDate || new Date().toISOString().split('T')[0],
+        p_end_date: effectiveEndDate,
+    });
+    if (rpcError) throw new Error(`Failed to end service: ${rpcError.message}`);
+
+    // 3. Compute verified working days strictly from multi-worker attendance
+    const workerIds = (service.service_worker_assignments || [])
+        .map((a: any) => a.employee_id)
+        .filter(Boolean);
+
+    let verifiedDays = 0;
+    if (workerIds.length > 0 && service.start_date) {
+        const { data: attRecords } = await supabase
+            .from('attendance')
+            .select('worker_id, duty_date, status, is_half_day, is_absent')
+            .in('worker_id', workerIds)
+            .gte('duty_date', service.start_date.split('T')[0])
+            .lte('duty_date', effectiveEndDate);
+
+        if (attRecords && attRecords.length > 0) {
+            verifiedDays = calculateClientServiceDaysFromAttendance(
+                service.start_date.split('T')[0],
+                effectiveEndDate,
+                attRecords
+            );
+        }
+    }
+
+    // Fallback if no attendance records exist at all
+    if (verifiedDays <= 0) {
+        verifiedDays = rpcData?.total_lifetime_days || 1;
+    }
+
+    // Rate determination: if total lifetime days < 30, use incomplete_month_daily_rate, else complete_month_daily_rate
+    const rateUsed = verifiedDays < 30
+        ? (service.incomplete_month_daily_rate || 1000)
+        : (service.complete_month_daily_rate || 500);
+
+    const trueCost = verifiedDays * rateUsed;
+
+    // Previously billed (exclude any final settlement bills)
+    const { data: prevBills } = await supabase
+        .from('service_bills')
+        .select('id, amount, type')
+        .eq('service_id', serviceId)
+        .neq('type', 'final');
+
+    const previouslyBilled = (prevBills || []).reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+    const depositAmount = Number(service.deposit_amount) || 0;
+    const totalAlreadyPaid = previouslyBilled + depositAmount;
+    const settlement = trueCost - totalAlreadyPaid;
+
+    // 4. Generate the Final Settlement Tax Invoice
+    let invoiceNumber = '';
+    let invoicePdfUrl = '';
+
+    try {
+        const clientName = (service.clients as any)?.client_name || 'Client';
+        const clientPhone = (service.clients as any)?.phone_number || '';
+        
+        let clientAddress = '';
+        let serviceCategory = service.service_type || 'Old Age Care';
+        try {
+            const [leadRes, consentRes] = await Promise.all([
+                supabase.from('crm_leads').select('notes, service_interest').eq('id', service.client_id).maybeSingle(),
+                supabase.from('client_consents').select('address, service_category, offered_time').eq('lead_id', service.client_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+            ]);
+            if (consentRes.data?.address) clientAddress = consentRes.data.address;
+            else if (leadRes.data?.notes) {
+                const locMatch = leadRes.data.notes.match(/^Location:\s*(.+)$/im);
+                if (locMatch) clientAddress = locMatch[1].trim();
+            }
+            if (consentRes.data?.service_category) serviceCategory = consentRes.data.service_category;
+            else if (leadRes.data?.service_interest) serviceCategory = leadRes.data.service_interest;
+        } catch {}
+
+        const invResp = await supabase.functions.invoke('generate-invoice', {
+            body: {
+                lead_id: service.client_id,
+                manual_invoice: true,
+                client_name: clientName,
+                client_phone: clientPhone,
+                client_address: clientAddress,
+                service_name: serviceCategory,
+                service_hours: service.hours_per_day ? String(service.hours_per_day) : '24',
+                start_date: service.start_date ? service.start_date.split('T')[0] : effectiveEndDate,
+                end_date: effectiveEndDate,
+                days: verifiedDays,
+                rate_per_day: rateUsed,
+                deposit_collected: totalAlreadyPaid,
+                invoice_date: effectiveEndDate,
+            }
+        });
+
+        if (invResp.data?.success) {
+            invoiceNumber = invResp.data.invoice_number || '';
+            invoicePdfUrl = invResp.data.public_url || '';
+        }
+    } catch (genErr) {
+        console.error('Final invoice generation error:', genErr);
+    }
+
+    // 5. Update or insert the final bill record in service_bills with invoice info
+    const finalBillNotes = JSON.stringify({
+        invoice_number: invoiceNumber || `INV-F${Math.floor(1000 + Math.random() * 9000)}`,
+        invoice_pdf_url: invoicePdfUrl,
+        status: settlement <= 0 ? 'settled' : 'pending',
+        type: 'final_settlement',
+        settlement_amount: settlement,
+        refund_amount: settlement < 0 ? Math.abs(settlement) : 0,
+        previously_billed: previouslyBilled,
+        deposit: depositAmount,
+        verified_days: verifiedDays,
+        generated_at: new Date().toISOString()
     });
 
-    if (error) throw new Error(`Failed to end service: ${error.message}`);
-    return data as EndServiceResult;
+    const { data: finalBill } = await supabase
+        .from('service_bills')
+        .select('id')
+        .eq('service_id', serviceId)
+        .eq('type', 'final')
+        .maybeSingle();
+
+    if (finalBill?.id) {
+        await supabase
+            .from('service_bills')
+            .update({
+                total_days: verifiedDays,
+                daily_rate_used: rateUsed,
+                amount: trueCost,
+                settlement_amount: settlement,
+                notes: finalBillNotes,
+                period_end: effectiveEndDate
+            })
+            .eq('id', finalBill.id);
+    } else {
+        await supabase
+            .from('service_bills')
+            .insert({
+                service_id: serviceId,
+                period_start: service.start_date ? service.start_date.split('T')[0] : effectiveEndDate,
+                period_end: effectiveEndDate,
+                total_days: verifiedDays,
+                daily_rate_used: rateUsed,
+                amount: trueCost,
+                type: 'final',
+                deposit_applied: depositAmount,
+                deposit_settled: true,
+                settlement_amount: settlement,
+                notes: finalBillNotes
+            });
+    }
+
+    return {
+        success: true,
+        service_id: serviceId,
+        total_lifetime_days: verifiedDays,
+        rate_used: rateUsed,
+        true_cost: trueCost,
+        previously_billed: previouslyBilled,
+        deposit: depositAmount,
+        settlement: settlement,
+        workers_released: rpcData?.workers_released || (service.service_worker_assignments?.length || 0),
+        invoice_number: invoiceNumber,
+        invoice_pdf_url: invoicePdfUrl
+    };
 }
 
 // ── Generate Monthly Billing (calls RPC) ──────────────────

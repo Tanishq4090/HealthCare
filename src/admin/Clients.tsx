@@ -24,6 +24,10 @@ export default function Clients() {
 
     const [inspectingClient, setInspectingClient] = useState<any>(null);
 
+    // Search and View All filters
+    const [searchQuery, setSearchQuery] = useState('');
+    const [viewAllMonths, setViewAllMonths] = useState(true);
+
     // Monthly slider state
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
         const now = new Date();
@@ -283,18 +287,14 @@ export default function Clients() {
             const stageMap: Record<string, string> = {};
             allLeads.forEach(l => { stageMap[l.id] = l.pipeline_stage || 'Archived'; });
 
-            // 2. Fetch records from the clients table for these lead IDs
-            let clientData = [];
-            if (clientIds.length > 0) {
-                const { data, error } = await supabase
-                    .from('clients')
-                    .select('*')
-                    .in('id', clientIds)
-                    .order('created_at', { ascending: false });
-                
-                if (error) throw error;
-                clientData = data || [];
-            }
+            // 2. Fetch records from the clients table
+            const { data: allClientsRes, error: clientError } = await supabase
+                .from('clients')
+                .select('*')
+                .order('created_at', { ascending: false });
+            
+            if (clientError) throw clientError;
+            const clientData = allClientsRes || [];
 
             // 3. Fetch worker_assignments with employee status — this is the source of truth
             const { data: allAssignmentsData, error: assignAllError } = await supabase
@@ -417,11 +417,13 @@ export default function Clients() {
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                             <input
                                 type="text"
-                                placeholder="Search clients..."
+                                placeholder="Search clients by name, phone..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
                                 className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                             />
                         </div>
-                        {/* Month slider */}
+                        {/* Month slider / All toggle */}
                         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden shrink-0">
                             <button
                                 onClick={() => setViewingTrash(!viewingTrash)}
@@ -429,10 +431,20 @@ export default function Clients() {
                             >
                                 {viewingTrash ? 'Exit Trash' : 'View Trash'}
                             </button>
-                            <button onClick={prevMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm">‹</button>
-                            <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[120px] text-center border-x border-slate-200">{monthLabel(selectedMonth)}</span>
-                            <button onClick={nextMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30"
-                                disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; })()}>›</button>
+                            <button
+                                onClick={() => setViewAllMonths(!viewAllMonths)}
+                                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!viewAllMonths ? 'border-r border-slate-200' : ''} ${viewAllMonths ? 'bg-teal-50 text-[#1AA6A8] font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
+                            >
+                                {viewAllMonths ? 'All Clients' : 'By Month'}
+                            </button>
+                            {!viewAllMonths && (
+                                <>
+                                    <button onClick={prevMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm">‹</button>
+                                    <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 min-w-[120px] text-center border-x border-slate-200">{monthLabel(selectedMonth)}</span>
+                                    <button onClick={nextMonth} className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30"
+                                        disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; })()}>›</button>
+                                </>
+                            )}
                         </div>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -440,19 +452,29 @@ export default function Clients() {
                             const filtered = clients.filter(c => {
                                 if (viewingTrash) {
                                     return c.status === 'Trash';
-                                } else {
-                                    if (c.status === 'Trash') return false;
-                                    if (!c.created_at) return true;
-                                    const d = new Date(c.created_at);
-                                    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-                                    return key === selectedMonth;
                                 }
+                                if (c.status === 'Trash') return false;
+
+                                if (searchQuery.trim()) {
+                                    const q = searchQuery.toLowerCase();
+                                    const nameMatch = (c.name || '').toLowerCase().includes(q);
+                                    const phoneMatch = (c.phone || '').toLowerCase().includes(q);
+                                    const emailMatch = (c.email || '').toLowerCase().includes(q);
+                                    if (!nameMatch && !phoneMatch && !emailMatch) return false;
+                                }
+
+                                if (viewAllMonths) return true;
+
+                                if (!c.created_at) return true;
+                                const d = new Date(c.created_at);
+                                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                                return key === selectedMonth || (c.activeWorkerCount > 0);
                             });
                             if (filtered.length === 0) return (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
-                                    <p className="text-sm font-semibold text-slate-500">{viewingTrash ? 'Trash is empty' : `No clients joined in ${monthLabel(selectedMonth)}`}</p>
-                                    <p className="text-xs text-slate-400 mt-1">{viewingTrash ? '' : 'Use the arrows to browse other months.'}</p>
+                                    <p className="text-sm font-semibold text-slate-500">{viewingTrash ? 'Trash is empty' : searchQuery ? 'No matching clients found' : `No clients found in ${monthLabel(selectedMonth)}`}</p>
+                                    <p className="text-xs text-slate-400 mt-1">{viewingTrash ? '' : searchQuery ? 'Try clearing your search query.' : 'Switch to "All Clients" or browse other months.'}</p>
                                 </div>
                             );
                             return filtered.map(client => (

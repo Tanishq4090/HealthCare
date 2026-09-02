@@ -140,7 +140,8 @@ export default function ServicesPanel({
             const result = await endService(serviceId);
             if (result.success) {
                 setEndResult(result);
-                toast.success('Service ended successfully. See settlement details.');
+                setStatusFilter('all');
+                toast.success('Service ended successfully! Final settlement invoice generated.');
                 fetchServices();
             } else {
                 toast.error(result.error || 'Failed to end service');
@@ -232,11 +233,11 @@ export default function ServicesPanel({
                     <select
                         value={statusFilter}
                         onChange={e => setStatusFilter(e.target.value as any)}
-                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-[#1AA6A8]"
+                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-[#1AA6A8] font-medium text-slate-700"
                     >
-                        <option value="active">Active</option>
-                        <option value="ended">Ended</option>
-                        <option value="all">All</option>
+                        <option value="active">Active ({services.filter(s => s.status === 'active').length})</option>
+                        <option value="ended">Ended ({services.filter(s => s.status === 'ended').length})</option>
+                        <option value="all">All Services ({services.length})</option>
                     </select>
                     {onOpenManualInvoice && (
                         <button
@@ -395,6 +396,18 @@ export default function ServicesPanel({
                                                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
                                                 >
                                                     <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
+                                                </button>
+                                            )}
+                                            {onPrepareInvoice && service.status === 'ended' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const finalBill = service.service_bills?.find(b => b.type === 'final');
+                                                        onPrepareInvoice(service, finalBill);
+                                                    }}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-50 text-[#1AA6A8] hover:bg-teal-100 border border-teal-200 shadow-2xs transition-colors"
+                                                >
+                                                    <FileText className="w-3.5 h-3.5 text-[#1AA6A8]" /> Final Invoice
                                                 </button>
                                             )}
                                         </div>
@@ -692,8 +705,8 @@ export default function ServicesPanel({
 
                         <div className="space-y-2 text-sm">
                             <div className="flex justify-between p-2 bg-slate-50 rounded-lg">
-                                <span className="text-slate-500">Total Days</span>
-                                <span className="font-bold">{endResult.total_lifetime_days}</span>
+                                <span className="text-slate-500">Total Working Days (Attendance Verified)</span>
+                                <span className="font-bold text-slate-800">{endResult.total_lifetime_days}</span>
                             </div>
                             <div className="flex justify-between p-2 bg-slate-50 rounded-lg">
                                 <span className="text-slate-500">Rate Used</span>
@@ -708,7 +721,7 @@ export default function ServicesPanel({
                                 <span className="font-bold">{formatCurrency(endResult.previously_billed || 0)}</span>
                             </div>
                             <div className="flex justify-between p-2 bg-slate-50 rounded-lg">
-                                <span className="text-slate-500">Deposit</span>
+                                <span className="text-slate-500">Security Deposit</span>
                                 <span className="font-bold">{formatCurrency(endResult.deposit || 0)}</span>
                             </div>
                             <div className={`flex justify-between p-3 rounded-lg border-2 ${
@@ -729,14 +742,46 @@ export default function ServicesPanel({
                                 <span className="text-slate-500">Workers Released</span>
                                 <span className="font-bold">{endResult.workers_released}</span>
                             </div>
+
+                            {/* Final Settlement Invoice Details */}
+                            {endResult.invoice_number && (
+                                <div className="p-3 bg-teal-50/80 border border-teal-200 rounded-xl flex items-center justify-between mt-2">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">Final Settlement Tax Invoice</p>
+                                        <p className="font-mono font-bold text-slate-800 text-sm mt-0.5">{endResult.invoice_number}</p>
+                                    </div>
+                                    {endResult.invoice_pdf_url && (
+                                        <a
+                                            href={endResult.invoice_pdf_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-3 py-1.5 bg-[#1AA6A8] text-white text-xs font-bold rounded-lg hover:bg-[#15898A] transition-colors flex items-center gap-1 shadow-xs"
+                                        >
+                                            <FileText className="w-3.5 h-3.5" /> View PDF
+                                        </a>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
-                        <button
-                            onClick={() => setEndResult(null)}
-                            className="w-full py-2 text-sm font-medium bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
-                        >
-                            Done
-                        </button>
+                        <div className="flex gap-2 pt-2">
+                            {endResult.invoice_pdf_url && (
+                                <a
+                                    href={endResult.invoice_pdf_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 py-2 text-xs font-bold text-center border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                    <Download className="w-3.5 h-3.5" /> Download PDF
+                                </a>
+                            )}
+                            <button
+                                onClick={() => setEndResult(null)}
+                                className="flex-1 py-2 text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
+                            >
+                                Done
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
