@@ -472,7 +472,8 @@ export default function Clients() {
                                             ? 'bg-[#1AA6A8] text-white shadow-2xs'
                                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                                     }`}
-                                                              All Clients ({clients.filter(c => c.status !== 'Trash').length})
+                                >
+                                    All Clients ({clients.filter(c => c.status !== 'Trash').length})
                                 </button>
                                 {(() => {
                                     const mCount = clients.filter(c => c.status !== 'Trash' && isClientInMonth(c, selectedMonth)).length;
