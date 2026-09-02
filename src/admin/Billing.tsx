@@ -187,7 +187,7 @@ export default function Billing() {
 
     // Deposit Collect Modal State
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
-    const [activeDepositId, setActiveDepositId] = useState<number | null>(null);
+    const [activeDepositId, setActiveDepositId] = useState<any | null>(null);
     const [depositMethod, setDepositMethod] = useState('Online');
 
     // Service Bill Collection Modal State
@@ -246,8 +246,8 @@ export default function Billing() {
     const fetchBillingData = async () => {
         setIsLoading(true);
         try {
-            // Run all 4 queries in parallel for ~3x faster load
-            const [assignmentsResult, leadsResult, quotesResult, servicePaymentsResult, manualLeadsResult] = await Promise.all([
+            // Run all queries in parallel for fast loading
+            const [assignmentsResult, leadsResult, quotesResult, servicePaymentsResult, manualLeadsResult, servicesResult] = await Promise.all([
                 supabase
                     .from('worker_assignments')
                     .select(`
@@ -266,12 +266,13 @@ export default function Billing() {
                         final_invoice_number,
                         hours_per_day,
                         assignment_status,
+                        notes,
                         clients (client_name, phone_number, id),
                         employees (id, full_name, job_title, phone, rate_10hr, rate_24hr)
                     `)
                     .neq('assignment_status', 'cancelled')
                     .order('assigned_at', { ascending: false }),
-                supabase.from('crm_leads').select('id, estimated_value_monthly'),
+                supabase.from('crm_leads').select('id, estimated_value_monthly, notes, assigned_worker_role'),
                 supabase
                     .from('crm_quotations')
                     .select('lead_id, complete_month_rate, incomplete_month_rate, duration, start_date, deposit')
@@ -282,6 +283,10 @@ export default function Billing() {
                     .select('id, name, phone, whatsapp_number, source, status, pipeline_stage, estimated_value_monthly, created_at, notes')
                     .eq('pipeline_stage', 'Monthly Billing')
                     .is('deleted_at', null),
+                supabase
+                    .from('services')
+                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes, legacy_assignment_id, clients(id, client_name, phone_number)')
+                    .order('created_at', { ascending: false }),
             ]);
 
             const { data, error } = assignmentsResult;
@@ -290,10 +295,12 @@ export default function Billing() {
 
             let leadsMap: Record<string, number> = {};
             let activeLeadIds = new Set<string>();
+            const leadsMetaMap: Record<string, { notes?: string, role?: string }> = {};
             if (leadsResult.data) {
                 leadsResult.data.forEach((l: any) => {
                     activeLeadIds.add(l.id);
                     if (l.estimated_value_monthly) leadsMap[l.id] = l.estimated_value_monthly;
+                    leadsMetaMap[l.id] = { notes: l.notes, role: l.assigned_worker_role };
                 });
             }
 
@@ -315,7 +322,6 @@ export default function Billing() {
                 });
 
                 // Fetch paid service clients BEFORE building state so status is correct on first render
-                const paidClients = new Set<string>();
                 try {
                     const { data: servicePayments } = await supabase
                         .from('payments')
@@ -328,42 +334,111 @@ export default function Billing() {
                     console.warn('Could not fetch service payments:', err);
                 }
 
-                // Map to deposits (deduplicated by client so we only show one deposit entry per client)
-                const uniqueClientAssignments: any[] = [];
-                const seenClients = new Set();
-                
-                // Sort assignments so we pick the most recently active one for the deposit status
-                const sortedAssignments = [...activeAssignments].sort((a: any, b: any) => 
-                    new Date(b.assigned_at || b.start_date).getTime() - new Date(a.assigned_at || a.start_date).getTime()
-                );
-                
-                for (const asgn of sortedAssignments) {
-                    const clientId = (asgn as any).clients?.id;
-                    if (clientId && !seenClients.has(clientId)) {
-                        // Prefer paid/invoiced assignments over pending ones when deduplicating
-                        const existingPaid = sortedAssignments.find(a => (a as any).clients?.id === clientId && ((a as any).deposit_paid > 0 || a.deposit_invoice_sent));
-                        if (existingPaid && existingPaid.id !== asgn.id) continue;
-                        
-                        seenClients.add(clientId);
-                        uniqueClientAssignments.push(existingPaid || asgn);
+                // Helper to format clean care service name
+                const formatServiceName = (type?: string, notes?: string, leadRole?: string) => {
+                    if (type && type !== 'date_range' && type !== 'open_ended' && type !== 'one_day' && type.trim() !== '') {
+                        return type;
                     }
+                    if (leadRole) return leadRole;
+                    if (notes) {
+                        const match = notes.match(/Service:\s*([^\n\r]+)/i);
+                        if (match && match[1]?.trim()) return match[1].trim();
+                    }
+                    return 'Home Care Service';
+                };
+
+                const allSvcs = servicesResult.data || [];
+                const asgns = data || [];
+                const asgnsByClient: Record<string, any[]> = {};
+                for (const a of asgns) {
+                    const cId = (a as any).clients?.id || (a as any).client_id;
+                    if (!cId) continue;
+                    if (!asgnsByClient[cId]) asgnsByClient[cId] = [];
+                    asgnsByClient[cId].push(a);
                 }
 
-                const mappedDeposits = uniqueClientAssignments.map(asgn => {
-                    const clientId = (asgn as any).clients?.id;
-                    const depositAmt = asgn.deposit_amount || quotesMap[clientId]?.deposit || 0;
-                    return {
+                const mappedDeposits: any[] = [];
+                const coveredClientIds = new Set<string>();
+
+                // 1. Process services table (prioritizes active restarted services first, then ended services)
+                const sortedSvcs = [...allSvcs].sort((a, b) => {
+                    if (a.status === 'active' && b.status !== 'active') return -1;
+                    if (b.status === 'active' && a.status !== 'active') return 1;
+                    return new Date(b.start_date || b.created_at || 0).getTime() - new Date(a.start_date || a.created_at || 0).getTime();
+                });
+
+                for (const s of sortedSvcs) {
+                    const cId = s.client_id;
+                    if (!cId || !activeLeadIds.has(cId)) continue;
+                    coveredClientIds.add(cId);
+
+                    const clientAsgns = asgnsByClient[cId] || [];
+                    const matchingAsgn = clientAsgns.find(a => 
+                        s.status === 'active' 
+                            ? a.assignment_status === 'active' 
+                            : (a.start_date === s.start_date || a.id === s.legacy_assignment_id)
+                    ) || (s.status === 'active' ? clientAsgns.find(a => a.assignment_status === 'active') : null);
+
+                    const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || quotesMap[cId]?.deposit || 0;
+                    const isPaid = s.deposit_status === 'collected' || (matchingAsgn?.deposit_paid && matchingAsgn.deposit_paid >= depositAmt && depositAmt > 0);
+                    const isSettled = s.deposit_status === 'settled';
+
+                    let depStatus = 'Pending Invoice';
+                    if (s.status === 'active') {
+                        depStatus = isPaid ? 'Paid' : (matchingAsgn?.deposit_invoice_sent ? 'Invoice Sent' : 'Pending Invoice');
+                    } else {
+                        depStatus = isSettled ? 'Settled' : (isPaid ? 'Paid' : 'Settled');
+                    }
+
+                    const leadMeta = leadsMetaMap[cId];
+                    const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
+
+                    mappedDeposits.push({
+                        id: matchingAsgn?.id || s.id,
+                        assignment_id: matchingAsgn?.id,
+                        service_id: s.id,
+                        client_id: cId,
+                        client: (s as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
+                        service_name: serviceName,
+                        client_phone: (s as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
+                        amount: `₹${depositAmt}`,
+                        status: depStatus,
+                        is_active_cycle: s.status === 'active',
+                        date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        invoice_no: "",
+                        invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null
+                    });
+                }
+
+                // 2. Add legacy client assignments that have no record in services table
+                for (const asgn of activeAssignments) {
+                    const cId = (asgn as any).clients?.id;
+                    if (!cId || coveredClientIds.has(cId)) continue;
+                    coveredClientIds.add(cId);
+
+                    const depositAmt = asgn.deposit_amount || quotesMap[cId]?.deposit || 0;
+                    const isPaid = asgn.deposit_paid && asgn.deposit_paid > 0;
+                    const depStatus = isPaid ? 'Paid' : (asgn.deposit_invoice_sent ? 'Invoice Sent' : 'Pending Invoice');
+                    const leadMeta = leadsMetaMap[cId];
+                    const serviceName = formatServiceName(asgn.notes, leadMeta?.notes, leadMeta?.role);
+
+                    mappedDeposits.push({
                         id: asgn.id,
-                        client_id: clientId,
+                        assignment_id: asgn.id,
+                        service_id: null,
+                        client_id: cId,
                         client: (asgn as any).clients?.client_name || 'Unknown',
+                        service_name: serviceName,
                         client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
                         amount: `₹${depositAmt}`,
-                        status: ((asgn as any).deposit_paid && (asgn as any).deposit_paid > 0) ? "Paid" : (asgn.deposit_invoice_sent ? "Invoice Sent" : "Pending Invoice"),
+                        status: depStatus,
+                        is_active_cycle: asgn.assignment_status === 'active',
                         date: new Date(asgn.assigned_at || asgn.start_date || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                         invoice_no: "",
-                        invoice_pdf_url: asgn.invoice_pdf_url
-                    };
-                });
+                        invoice_pdf_url: asgn.invoice_pdf_url || null
+                    });
+                }
+
                 setDeposits(mappedDeposits);
 
                 const assignedClientIds = new Set(activeAssignments.map(asgn => (asgn as any).clients?.id).filter(Boolean));
@@ -589,17 +664,28 @@ export default function Billing() {
                         .eq('id', deposit.client_id)
                         .eq('pipeline_stage', 'Deposit Pending'); // only advance if still in Deposit Pending
 
-                    await supabase
-                        .from('services')
-                        .update({
-                            deposit_amount: depositAmount,
-                            deposit_status: 'collected',
-                        })
-                        .or(`client_id.eq.${deposit.client_id},lead_id.eq.${deposit.client_id}`);
+                    if (deposit.service_id) {
+                        await supabase
+                            .from('services')
+                            .update({
+                                deposit_amount: depositAmount,
+                                deposit_status: 'collected',
+                            })
+                            .eq('id', deposit.service_id);
+                    } else if (deposit.client_id) {
+                        await supabase
+                            .from('services')
+                            .update({
+                                deposit_amount: depositAmount,
+                                deposit_status: 'collected',
+                            })
+                            .eq('status', 'active')
+                            .or(`client_id.eq.${deposit.client_id},lead_id.eq.${deposit.client_id}`);
+                    }
                 }
 
                 // 4. Update local UI immediately
-                setDeposits(prev => prev.map(d => d.id === activeDepositId ? { ...d, status: 'Paid' } : d));
+                setDeposits(prev => prev.map(d => (d.id === activeDepositId || (deposit.service_id && d.service_id === deposit.service_id)) ? { ...d, status: 'Paid' } : d));
 
                 try {
                     await sendDepositCollectionAlert(deposit, depositAmount);
@@ -1474,14 +1560,30 @@ export default function Billing() {
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-4">
                         {deposits.map(dep => (
-                            <div key={dep.id} className="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-sm transition-shadow">
+                            <div key={`${dep.service_id || dep.id}-${dep.date}`} className="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-sm transition-shadow">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shrink-0">
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                                        dep.is_active_cycle ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-500'
+                                    }`}>
                                         <RupeeIcon className="w-6 h-6 text-xl" />
                                     </div>
                                     <div>
-                                        <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                                        <h3 className="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                                             {dep.client}
+                                            {dep.service_name && (
+                                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                                    {dep.service_name}
+                                                </span>
+                                            )}
+                                            {dep.is_active_cycle ? (
+                                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
+                                                    Current Service
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">
+                                                    Ended Service
+                                                </span>
+                                            )}
                                         </h3>
                                         <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
                                             <span className="font-semibold text-slate-700">{dep.amount}</span>
@@ -1492,33 +1594,37 @@ export default function Billing() {
                                 </div>
 
                                 <div className="flex items-center gap-3 flex-wrap">
-                                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${dep.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' :
+                                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                                        dep.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' :
                                         dep.status === 'Invoice Sent' ? 'bg-amber-100 text-amber-700' :
-                                            'bg-slate-100 text-slate-700'
-                                        }`}>
-                                        {dep.status}
+                                        dep.status === 'Settled' ? 'bg-teal-100 text-teal-700 border border-teal-200' :
+                                        'bg-slate-100 text-slate-700'
+                                    }`}>
+                                        {dep.status === 'Settled' ? 'Settled on Final Bill' : dep.status}
                                     </span>
 
                                     {dep.status === 'Pending Invoice' && (
-                                        <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2">
+                                        <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
                                             <FileText className="w-4 h-4" /> Prepare Invoice
                                         </button>
                                     )}
 
-                                    {(dep.status === 'Invoice Sent' || dep.status === 'Paid') && (
+                                    {(dep.status === 'Invoice Sent' || dep.status === 'Paid' || dep.status === 'Settled') && (
                                         <>
                                             {dep.invoice_pdf_url && (
-                                                <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+                                                <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer">
                                                     <FileText className="w-4 h-4 text-primary" /> View PDF
                                                 </button>
                                             )}
-                                            <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5">
-                                                <Send className="w-4 h-4" /> Resend Invoice
-                                            </button>
                                             {dep.status === 'Invoice Sent' && (
-                                                <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5">
-                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
-                                                </button>
+                                                <>
+                                                    <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer">
+                                                        <Send className="w-4 h-4" /> Resend Invoice
+                                                    </button>
+                                                    <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5 cursor-pointer">
+                                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
+                                                    </button>
+                                                </>
                                             )}
                                         </>
                                     )}

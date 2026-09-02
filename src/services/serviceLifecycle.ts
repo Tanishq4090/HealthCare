@@ -204,6 +204,7 @@ export interface CreateServiceInput {
     start_date: string;
     end_date?: string;
     deposit_amount?: number;
+    deposit_status?: 'pending' | 'collected' | 'settled';
     complete_month_daily_rate: number;
     incomplete_month_daily_rate: number;
     notes?: string;
@@ -220,7 +221,7 @@ export async function createService(input: CreateServiceInput): Promise<Service>
             start_date: input.start_date,
             end_date: input.end_date || null,
             deposit_amount: input.deposit_amount || 0,
-            deposit_status: (input.deposit_amount && input.deposit_amount > 0) ? 'collected' : 'pending',
+            deposit_status: input.deposit_status || 'pending',
             complete_month_daily_rate: input.complete_month_daily_rate,
             incomplete_month_daily_rate: input.incomplete_month_daily_rate,
             notes: input.notes || null,
@@ -300,6 +301,7 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             complete_month_daily_rate: input.completeMonthDailyRate,
             incomplete_month_daily_rate: input.incompleteMonthDailyRate,
             deposit_amount: input.depositAmount,
+            deposit_status: input.depositStatus === 'collected' ? 'collected' : 'pending',
             notes: input.notes,
         });
 
