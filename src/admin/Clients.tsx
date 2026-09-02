@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ClientDetailsModal from './components/ClientDetailsModal';
 import { restartClientService } from '../services/serviceLifecycle';
+import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
 const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
@@ -60,6 +61,153 @@ export default function Clients() {
             return [...prev, w];
         });
     };
+
+    // Deposit Invoice & Payment Modal State
+    const [depositModal, setDepositModal] = useState<{
+        client: any;
+        depositAmount: number;
+        depositStatus: 'collected' | 'pending' | 'settled';
+        serviceName: string;
+        startDate: string;
+    } | null>(null);
+    const [depositPaymentMethod, setDepositPaymentMethod] = useState('UPI');
+    const [depositPaymentAmount, setDepositPaymentAmount] = useState<number | ''>(5000);
+    const [depositPaymentRef, setDepositPaymentRef] = useState('');
+    const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [generatedInvoiceUrl, setGeneratedInvoiceUrl] = useState<string | null>(null);
+    const [copiedInvoiceLink, setCopiedInvoiceLink] = useState(false);
+
+    const openDepositModal = (client: any) => {
+        const activeSvc = client.activeService || (client.services && client.services[0]);
+        const serviceName = activeSvc?.service_type || 'Home Care Service';
+        const startDate = activeSvc?.start_date || new Date().toISOString().split('T')[0];
+        const amount = client.securityDeposit || 5000;
+
+        setDepositModal({
+            client,
+            depositAmount: amount,
+            depositStatus: client.depositStatus || 'pending',
+            serviceName,
+            startDate,
+        });
+        setDepositPaymentAmount(amount);
+        setDepositPaymentMethod('UPI');
+        setDepositPaymentRef('');
+        setGeneratedInvoiceUrl(null);
+        setCopiedInvoiceLink(false);
+    };
+
+    const handleShareDepositWhatsApp = (client: any, amount: number, serviceName: string, startDate: string, pdfUrl?: string) => {
+        const rawPhone = (client.phone || '').replace(/\D/g, '');
+        const cleanPhone = rawPhone.startsWith('91') ? rawPhone : `91${rawPhone}`;
+
+        let msg = `Namaste ${client.name} ji! 🙏\n\nAapka 99 Care security deposit invoice ready hai.\n\n💰 *Security Deposit Amount*: ₹${amount.toLocaleString('en-IN')}\n💼 *Service*: ${serviceName}\n📅 *Start Date*: ${startDate}\n\n*Payment Details:*\n• UPI ID: 99care@upi\n• Google Pay / PhonePe / Paytm: 99care@upi\n• Bank: 99 Care Healthcare Services\n  A/C: 921020048192841\n  IFSC: UTIB0000160\n  Axis Bank, Surat\n`;
+
+        if (pdfUrl) {
+            msg += `\n📄 *Invoice PDF*: ${pdfUrl}\n`;
+        }
+
+        msg += `\nPayment complete karne ke baad kripya yahan transaction screenshot share karein taaki humari team verify kar sake.\n\nDhanyawad,\n99 Care Support Team`;
+
+        const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+        window.open(waUrl, '_blank');
+    };
+
+    const handleGenerateDepositPdf = async () => {
+        if (!depositModal) return;
+        setIsGeneratingPdf(true);
+        try {
+            const invNum = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
+            const pdfUrl = await generateAndUploadInvoicePdf({
+                clientId: depositModal.client.id,
+                clientName: depositModal.client.name,
+                clientPhone: depositModal.client.phone,
+                invoiceNumber: invNum,
+                invoiceDate: new Date().toISOString().split('T')[0],
+                dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+                serviceName: `Security Deposit — ${depositModal.serviceName}`,
+                servicePeriod: `${depositModal.startDate} to Ongoing`,
+                days: 1,
+                ratePerDay: Number(depositModal.depositAmount),
+                grossAmount: Number(depositModal.depositAmount),
+                previouslyBilled: 0,
+                depositCollected: 0,
+                settlementAmount: Number(depositModal.depositAmount),
+                isFinalSettlement: false,
+            });
+
+            setGeneratedInvoiceUrl(pdfUrl);
+            toast.success('Deposit invoice PDF generated successfully!');
+        } catch (err: any) {
+            console.error('Error generating deposit invoice PDF:', err);
+            toast.error(`Failed to generate PDF: ${err.message || 'Error'}`);
+        } finally {
+            setIsGeneratingPdf(false);
+        }
+    };
+
+    const handleRecordDepositPayment = async () => {
+        if (!depositModal) return;
+        const amount = Number(depositPaymentAmount) || depositModal.depositAmount;
+        if (amount <= 0) return toast.error('Please enter a valid deposit amount.');
+
+        setIsRecordingPayment(true);
+        try {
+            const client = depositModal.client;
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            // 1. Update active service
+            await supabase
+                .from('services')
+                .update({
+                    deposit_status: 'collected',
+                    deposit_amount: amount,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('client_id', client.id)
+                .eq('status', 'active');
+
+            // 2. Update active worker_assignments
+            await supabase
+                .from('worker_assignments')
+                .update({
+                    deposit_paid: amount,
+                    deposit_amount: amount,
+                    deposit_invoice_sent: true,
+                })
+                .eq('client_id', client.id)
+                .eq('assignment_status', 'active');
+
+            // 3. Insert record in payments table
+            await supabase.from('payments').insert([{
+                client_name: client.name,
+                amount: amount,
+                payment_date: todayStr,
+                payment_type: 'deposit',
+                payment_method: depositPaymentMethod,
+                transaction_ref: depositPaymentRef.trim() || undefined,
+                status: 'completed',
+                notes: `Security deposit collected for ${depositModal.serviceName}`,
+            }]);
+
+            // 4. Also make sure lead is in Active Client
+            await supabase.from('crm_leads').update({
+                pipeline_stage: 'Active Client',
+                updated_at: new Date().toISOString(),
+            }).eq('id', client.id);
+
+            toast.success(`Deposit payment of ₹${amount.toLocaleString('en-IN')} recorded for ${client.name}! 🎉`);
+            setDepositModal(null);
+            fetchClients();
+        } catch (err: any) {
+            console.error('Failed to record deposit payment:', err);
+            toast.error(`Failed to record deposit payment: ${err.message || 'Error'}`);
+        } finally {
+            setIsRecordingPayment(false);
+        }
+    };
+
     // Track which clients have had review sent this session
     const [reviewSentIds, setReviewSentIds] = useState<Set<string>>(new Set());
     const [googleReviews, setGoogleReviews] = useState<any>(null);
@@ -393,11 +541,11 @@ export default function Clients() {
             // 3. Fetch worker_assignments with employee status & dates
             const { data: allAssignmentsData, error: assignAllError } = await supabase
                 .from('worker_assignments')
-                .select('client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, employees(status)');
+                .select('id, client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, service_type, assigned_at, employees(status, full_name)');
 
             if (assignAllError) throw assignAllError;
 
-            // 4. Fetch payment data for deposit fallback & all services for monthly activity
+            // 4. Fetch payment data for deposit fallback & all services with deposit info
             const [{ data: depositPaymentsData, error: paymentsError }, { data: allServicesData }] = await Promise.all([
                 supabase
                     .from('payments')
@@ -405,7 +553,7 @@ export default function Clients() {
                     .eq('payment_type', 'deposit'),
                 supabase
                     .from('services')
-                    .select('client_id, start_date, end_date, status')
+                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at')
             ]);
 
             if (paymentsError) throw paymentsError;
@@ -431,17 +579,7 @@ export default function Clients() {
 
             const normalizeClientName = (name?: string | null) => (name || '').trim().toLowerCase();
 
-            // Map deposits by client ID. Prefer money actually marked as paid, then fall
-            // back to the requested deposit amount for older assignment records.
-            const paidDepositByClientId: Record<string, number> = {};
-            const requestedDepositByClientId: Record<string, number> = {};
-            assignments.forEach(a => {
-                paidDepositByClientId[a.client_id] = (paidDepositByClientId[a.client_id] || 0) + (Number(a.deposit_paid) || 0);
-                requestedDepositByClientId[a.client_id] = (requestedDepositByClientId[a.client_id] || 0) + (Number(a.deposit_amount) || 0);
-            });
-
-            // Collection history stores client_name rather than client_id, so keep it as
-            // a fallback for deposits recorded before deposit_paid was backfilled.
+            // Map deposits by client name for legacy fallback
             const paidDepositByClientName: Record<string, number> = {};
             depositPayments.forEach(p => {
                 const clientName = normalizeClientName(p.client_name);
@@ -449,25 +587,57 @@ export default function Clients() {
                 paidDepositByClientName[clientName] = (paidDepositByClientName[clientName] || 0) + (Number(p.amount) || 0);
             });
 
-            // 5. Map database clients to UI structure
-            const enrichedClients = (clientData || []).map(c => ({
-                id: c.id,
-                name: c.client_name,
-                phone: c.phone_number,
-                email: c.email || '-',
-                contact: c.client_name,
-                status: stageMap[c.id] || 'Active',
-                workerCount: workerMap[c.id]?.workerCount || 0,
-                activeWorkerCount: workerMap[c.id]?.activeWorkerCount || 0,
-                lifetimeValue: '₹0',
-                securityDeposit: paidDepositByClientId[c.id]
-                    || paidDepositByClientName[normalizeClientName(c.client_name)]
-                    || requestedDepositByClientId[c.id]
-                    || 0,
-                created_at: c.created_at,
-                services: services.filter(s => s.client_id === c.id),
-                assignments: assignments.filter(a => a.client_id === c.id),
-            }));
+            // 5. Map database clients to UI structure (Per-service deposit calculation - NEVER merge across cycles)
+            const enrichedClients = (clientData || []).map(c => {
+                const clientServices = services.filter(s => s.client_id === c.id);
+                const clientAssignments = assignments.filter(a => a.client_id === c.id);
+
+                const activeService = clientServices.find(s => s.status === 'active');
+                const activeAssignment = clientAssignments.find(a => a.assignment_status === 'active');
+
+                const latestService = [...clientServices].sort((a, b) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime())[0];
+                const latestAssignment = [...clientAssignments].sort((a, b) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime())[0];
+
+                let depositAmount = 0;
+                let depositStatus: 'collected' | 'pending' | 'settled' = 'collected';
+
+                if (activeService) {
+                    depositAmount = Number(activeService.deposit_amount) || (activeAssignment ? Number(activeAssignment.deposit_amount) : 5000);
+                    const isAsgnPending = activeAssignment && Number(activeAssignment.deposit_paid) < depositAmount;
+                    depositStatus = (activeService.deposit_status === 'pending' || isAsgnPending) ? 'pending' : 'collected';
+                } else if (activeAssignment) {
+                    depositAmount = Number(activeAssignment.deposit_amount) || 0;
+                    depositStatus = (Number(activeAssignment.deposit_paid) >= depositAmount && depositAmount > 0) ? 'collected' : 'pending';
+                } else if (latestService) {
+                    depositAmount = Number(latestService.deposit_amount) || 0;
+                    depositStatus = latestService.deposit_status || 'settled';
+                } else if (latestAssignment) {
+                    depositAmount = Number(latestAssignment.deposit_amount) || 0;
+                    depositStatus = (Number(latestAssignment.deposit_paid) >= depositAmount && depositAmount > 0) ? 'collected' : 'pending';
+                } else {
+                    depositAmount = paidDepositByClientName[normalizeClientName(c.client_name)] || 0;
+                    depositStatus = 'collected';
+                }
+
+                return {
+                    id: c.id,
+                    name: c.client_name,
+                    phone: c.phone_number,
+                    email: c.email || '-',
+                    contact: c.client_name,
+                    status: stageMap[c.id] || 'Active',
+                    workerCount: workerMap[c.id]?.workerCount || 0,
+                    activeWorkerCount: workerMap[c.id]?.activeWorkerCount || 0,
+                    lifetimeValue: '₹0',
+                    securityDeposit: depositAmount,
+                    depositStatus: depositStatus,
+                    activeService: activeService || latestService,
+                    activeAssignment: activeAssignment || latestAssignment,
+                    created_at: c.created_at,
+                    services: clientServices,
+                    assignments: clientAssignments,
+                };
+            });
 
             setClients(enrichedClients);
         } catch (error) {
@@ -692,11 +862,44 @@ export default function Clients() {
                                         </p>
                                         <p className="text-sm font-bold text-slate-700 truncate">{client.phone || 'N/A'}</p>
                                     </div>
-                                    <div className="bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100 flex flex-col justify-center">
-                                        <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                                            <Wallet className="w-3 h-3" /> Security Deposit
-                                        </p>
-                                        <p className="text-sm font-bold text-emerald-700">₹{client.securityDeposit.toLocaleString()}</p>
+                                    <div className={`p-2.5 rounded-xl border flex flex-col justify-center transition-all ${
+                                        client.depositStatus === 'pending'
+                                            ? 'bg-amber-50/60 border-amber-200'
+                                            : 'bg-emerald-50/50 border-emerald-100'
+                                    }`}>
+                                        <div className="flex items-center justify-between">
+                                            <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 ${
+                                                client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-600'
+                                            }`}>
+                                                <Wallet className="w-3 h-3" /> Security Deposit
+                                            </p>
+                                            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border ${
+                                                client.depositStatus === 'pending'
+                                                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                            }`}>
+                                                {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between mt-0.5">
+                                            <p className={`text-sm font-bold ${
+                                                client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
+                                            }`}>
+                                                ₹{client.securityDeposit.toLocaleString()}
+                                            </p>
+                                            {client.depositStatus === 'pending' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openDepositModal(client);
+                                                    }}
+                                                    className="text-[10px] font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
+                                                    title="Send Deposit Invoice or Record Payment"
+                                                >
+                                                    <Receipt className="w-2.5 h-2.5" /> Collect
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="col-span-1 sm:col-span-2 lg:col-span-2 flex items-center gap-2 flex-wrap">
                                         {client.status === 'Trash' ? (
@@ -728,6 +931,15 @@ export default function Clients() {
                                                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                                                     {reviewSentIds.has(client.id) ? 'Resend Review' : 'Review'}
                                                 </button>
+                                                {client.depositStatus === 'pending' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); openDepositModal(client); }}
+                                                        className="px-3 py-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                                                        title="Share deposit invoice or record payment"
+                                                    >
+                                                        <Receipt className="w-3.5 h-3.5 text-amber-600" /> Deposit Invoice
+                                                    </button>
+                                                )}
                                                 {client.status === 'Closed Won' && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); openRestartModal(client); }}
@@ -1478,6 +1690,189 @@ export default function Clients() {
                                 )}
                                 <button onClick={confirmDeleteClient} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm">Delete Forever</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Deposit Invoice & Payment Modal */}
+            {depositModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150 border border-slate-100">
+                        {/* Header */}
+                        <div className="p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-white flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                                    <Receipt className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-slate-900">Security Deposit Management</h2>
+                                    <p className="text-xs text-slate-500">
+                                        {depositModal.client.name} • {depositModal.client.phone || 'No Phone'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setDepositModal(null)}
+                                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
+                            {/* Summary Card */}
+                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Service</span>
+                                    <p className="font-bold text-sm text-slate-800">{depositModal.serviceName}</p>
+                                    <span className="text-xs text-slate-500">Start Date: {depositModal.startDate}</span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Pending Deposit</span>
+                                    <p className="text-xl font-extrabold text-amber-700">₹{depositModal.depositAmount.toLocaleString('en-IN')}</p>
+                                </div>
+                            </div>
+
+                            {/* Section 1: Share Deposit Invoice */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                                    <Send className="w-4 h-4 text-emerald-600" />
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">1. Share Deposit Invoice</h3>
+                                </div>
+
+                                <p className="text-xs text-slate-500">
+                                    Send payment request directly to the client via WhatsApp, or generate an official PDF invoice.
+                                </p>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleShareDepositWhatsApp(
+                                            depositModal.client,
+                                            depositModal.depositAmount,
+                                            depositModal.serviceName,
+                                            depositModal.startDate,
+                                            generatedInvoiceUrl || undefined
+                                        )}
+                                        className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                                    >
+                                        <MessageSquare className="w-4 h-4" /> Send on WhatsApp
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleGenerateDepositPdf}
+                                        disabled={isGeneratingPdf}
+                                        className="p-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {isGeneratingPdf ? (
+                                            <RotateCcw className="w-4 h-4 animate-spin text-slate-500" />
+                                        ) : (
+                                            <Download className="w-4 h-4 text-slate-600" />
+                                        )}
+                                        {generatedInvoiceUrl ? 'Regenerate PDF' : 'Generate PDF Invoice'}
+                                    </button>
+                                </div>
+
+                                {generatedInvoiceUrl && (
+                                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                            <span className="font-semibold text-emerald-900 truncate">Invoice PDF Ready</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(generatedInvoiceUrl);
+                                                    setCopiedInvoiceLink(true);
+                                                    setTimeout(() => setCopiedInvoiceLink(false), 2000);
+                                                }}
+                                                className="px-2.5 py-1 bg-white border border-emerald-300 rounded-lg text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                                            >
+                                                {copiedInvoiceLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                                {copiedInvoiceLink ? 'Copied' : 'Copy Link'}
+                                            </button>
+                                            <a
+                                                href={generatedInvoiceUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="px-2.5 py-1 bg-emerald-600 rounded-lg text-[11px] font-bold text-white hover:bg-emerald-700 transition-colors flex items-center gap-1"
+                                            >
+                                                <ExternalLink className="w-3 h-3" /> View
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Section 2: Record Payment Received */}
+                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                                    <Wallet className="w-4 h-4 text-blue-600" />
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">2. Record Payment Received</h3>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Amount Received (₹) *</label>
+                                        <input
+                                            type="number"
+                                            value={depositPaymentAmount}
+                                            onChange={e => setDepositPaymentAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
+                                        <select
+                                            value={depositPaymentMethod}
+                                            onChange={e => setDepositPaymentMethod(e.target.value)}
+                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        >
+                                            <option value="UPI">UPI / GPay / PhonePe</option>
+                                            <option value="Cash">Cash</option>
+                                            <option value="Bank Transfer">Bank Transfer (IMPS / NEFT)</option>
+                                            <option value="Cheque">Cheque</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1">UTR / Reference ID (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={depositPaymentRef}
+                                        onChange={e => setDepositPaymentRef(e.target.value)}
+                                        placeholder="e.g. UPI Ref 4291048291..."
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setDepositModal(null)}
+                                className="px-4 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                Close
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleRecordDepositPayment}
+                                disabled={isRecordingPayment || !depositPaymentAmount || Number(depositPaymentAmount) <= 0}
+                                className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                            >
+                                {isRecordingPayment ? <RotateCcw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                Confirm Payment Received
+                            </button>
                         </div>
                     </div>
                 </div>
