@@ -1102,16 +1102,25 @@ export default function CRM() {
 
     // ── Inspector: Save a field (email or service_interest) ───────────────
     const saveInspectorField = async (leadId: string, field: string, value: string) => {
+        const previousLead = leads.find(l => l.id === leadId);
+        const previousVal = previousLead ? (previousLead as any)[field] : undefined;
+
         // Optimistic update
         setSelectedInspectorLead((prev: any) => prev ? { ...prev, [field]: value } : null);
         setLeads(prev => prev.map(l => l.id === leadId ? { ...l, [field]: value } : l));
+
         if (leadId.length >= 10) {
             const { error } = await supabase.from('crm_leads').update({ [field]: value }).eq('id', leadId);
             if (error) {
                 console.error('saveInspectorField failed:', error.message);
-                toast.error('Failed to save field. Please try again.');
-                // Revert optimistic update
-                fetchLeads();
+                toast.error(`Failed to save ${field}: ${error.message}`);
+                // Revert optimistic update accurately
+                if (previousVal !== undefined) {
+                    setSelectedInspectorLead((prev: any) => prev ? { ...prev, [field]: previousVal } : null);
+                    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, [field]: previousVal } : l));
+                } else {
+                    fetchLeads();
+                }
             } else {
                 // Keep clients table in sync if identity fields changed
                 try {
@@ -3018,13 +3027,16 @@ export default function CRM() {
         };
     }, []);
 
-    const handleMoveLead = async (id: string, newStage: string) => {
+    const handleMoveLead = async (id: string, newStage: string): Promise<boolean> => {
         // If this is a hardcoded mock lead (ID length < 10), move and return
         if (id.length < 10) {
             setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
             toast.info(`Mock lead moved to ${newStage}`);
-            return;
+            return true;
         }
+
+        const currentLead = leads.find(l => l.id === id);
+        const previousStage = currentLead?.pipeline_stage;
 
         const toastId = toast.loading(`Moving lead to "${newStage}"...`);
 
@@ -3044,7 +3056,7 @@ export default function CRM() {
                         `Cannot move to "${newStage}" — please assign a staff member first using the "Assign Staff Member" button.`,
                         { id: toastId, duration: 5000 }
                     );
-                    return;
+                    return false;
                 }
             }
 
@@ -3102,10 +3114,19 @@ export default function CRM() {
 
             // Background refresh to ensure full consistency (assigned worker names, etc)
             fetchLeads();
+            return true;
         } catch (error: any) {
             console.error("Error updating lead stage:", error);
             toast.error(`Persistence Error: ${error.message}. Change reverted.`, { id: toastId });
+            // Revert state if previous stage was known
+            if (previousStage) {
+                setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: previousStage } : lead));
+                if (selectedInspectorLead && selectedInspectorLead.id === id) {
+                    setSelectedInspectorLead((prev: any) => ({ ...prev, pipeline_stage: previousStage }));
+                }
+            }
             fetchLeads(); // Force re-fetch to restore correct state
+            return false;
         }
     };
 
@@ -5951,10 +5972,12 @@ export default function CRM() {
                                         if (!confirmed) return;
                                     }
 
-                                    await handleMoveLead(selectedInspectorLead.id, newStage);
-                                    await logActivity(selectedInspectorLead.id, 'stage_changed', `Moved to "${newStage}"`, { from: selectedInspectorLead.pipeline_stage, to: newStage });
-                                    setSelectedInspectorLead((prev: any) => prev ? { ...prev, pipeline_stage: newStage } : null);
-                                    setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'stage_changed', description: `Moved to "${newStage}"`, created_at: new Date().toISOString() }]);
+                                    const success = await handleMoveLead(selectedInspectorLead.id, newStage);
+                                    if (success) {
+                                        await logActivity(selectedInspectorLead.id, 'stage_changed', `Moved to "${newStage}"`, { from: selectedInspectorLead.pipeline_stage, to: newStage });
+                                        setSelectedInspectorLead((prev: any) => prev ? { ...prev, pipeline_stage: newStage } : null);
+                                        setInspectorActivity(prev => [...prev, { id: Date.now().toString(), event_type: 'stage_changed', description: `Moved to "${newStage}"`, created_at: new Date().toISOString() }]);
+                                    }
                                 }}
                                 className="w-full text-sm font-bold bg-white border border-slate-200 text-slate-800 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-primary cursor-pointer transition-shadow shadow-sm"
                             >

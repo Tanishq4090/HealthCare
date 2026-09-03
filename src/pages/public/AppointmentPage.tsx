@@ -60,70 +60,69 @@ export default function AppointmentPage() {
     try {
       setIsLoading(true);
       
-      // 1. Attempt save to Supabase appointments table (CRM)
-      try {
-        const { error } = await supabase
-          .from('appointments')
-          .insert([{
-            full_name: data.fullName,
-            phone: data.phone,
-            email: data.email || null,
-            service: data.serviceId,
-            preferred_date: format(data.date, 'yyyy-MM-dd'),
-            preferred_time: data.timeSlot,
-            location: data.location,
-            notes: data.notes || null,
-            status: 'pending'
-          }]);
-        if (error) console.warn('Supabase appointment insert note:', error);
-      } catch (dbErr) {
-        console.warn('Supabase DB error:', dbErr);
+      // 1. Primary persistence: Save to Supabase appointments table (triggers CRM sync)
+      const { error: dbError } = await supabase
+        .from('appointments')
+        .insert([{
+          full_name: data.fullName,
+          phone: data.phone,
+          email: data.email || null,
+          service: data.serviceId,
+          preferred_date: format(data.date, 'yyyy-MM-dd'),
+          preferred_time: data.timeSlot,
+          location: data.location,
+          notes: data.notes || null,
+          status: 'pending'
+        }]);
+
+      if (dbError) {
+        throw new Error(dbError.message || 'Failed to save appointment in database');
       }
 
-      // 2. Direct Email Lead Notification to 99careforyou@gmail.com via FormSubmit AJAX
-      try {
-        await fetch("https://formsubmit.co/ajax/99careforyou@gmail.com", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-          },
-          body: JSON.stringify({
-            _subject: `99 Care NEW APPOINTMENT BOOKING: ${data.fullName}`,
-            "Patient Name": data.fullName,
-            "Phone Number": data.phone,
-            "Email": data.email || "N/A",
-            "Service Requested": data.serviceId,
-            "Preferred Date": format(data.date, 'EEEE, MMMM d, yyyy'),
-            "Preferred Time": data.timeSlot,
-            "Location in Surat": data.location,
-            "Notes / Special Requirements": data.notes || "None",
-            "Submitted At": new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-            "_captcha": "false"
-          })
-        });
-      } catch (emailErr) {
-        console.warn('Appointment email dispatch note:', emailErr);
-      }
-
-      // 3. Fire WhatsApp confirmation trigger
+      // 2. Secondary dispatches: Email Lead Notification & WhatsApp Confirmation (non-blocking)
       const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN as string | undefined;
       const bookingConfirmUrl = backendOrigin
         ? `${backendOrigin}/api/whatsapp/send-booking-confirmation`
         : `/api/whatsapp/send-booking-confirmation`;
 
-      fetch(bookingConfirmUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: data.phone,
-          name: data.fullName,
-          service: data.serviceId,
-          date: format(data.date, 'EEEE, MMMM d yyyy'),
-          time: data.timeSlot,
-          location: data.location,
-        }),
-      }).catch(() => { /* silently ignore if backend is down */ });
+      try {
+        await Promise.allSettled([
+          fetch("https://formsubmit.co/ajax/99careforyou@gmail.com", {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              "Accept": "application/json"
+            },
+            body: JSON.stringify({
+              _subject: `99 Care NEW APPOINTMENT BOOKING: ${data.fullName}`,
+              "Patient Name": data.fullName,
+              "Phone Number": data.phone,
+              "Email": data.email || "N/A",
+              "Service Requested": data.serviceId,
+              "Preferred Date": format(data.date, 'EEEE, MMMM d, yyyy'),
+              "Preferred Time": data.timeSlot,
+              "Location in Surat": data.location,
+              "Notes / Special Requirements": data.notes || "None",
+              "Submitted At": new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+              "_captcha": "false"
+            })
+          }),
+          fetch(bookingConfirmUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone: data.phone,
+              name: data.fullName,
+              service: data.serviceId,
+              date: format(data.date, 'EEEE, MMMM d yyyy'),
+              time: data.timeSlot,
+              location: data.location,
+            }),
+          })
+        ]);
+      } catch (notifyErr) {
+        console.warn('Secondary notification dispatch warning:', notifyErr);
+      }
 
       trackAppointmentBooking(data.serviceId, {
         name: data.fullName,
