@@ -1112,6 +1112,19 @@ export default function CRM() {
                 toast.error('Failed to save field. Please try again.');
                 // Revert optimistic update
                 fetchLeads();
+            } else {
+                // Keep clients table in sync if identity fields changed
+                try {
+                    if (field === 'name') {
+                        await supabase.from('clients').update({ client_name: value }).eq('id', leadId);
+                    } else if (field === 'phone') {
+                        await supabase.from('clients').update({ phone_number: value }).eq('id', leadId);
+                    } else if (field === 'email') {
+                        await supabase.from('clients').update({ email: value }).eq('id', leadId);
+                    }
+                } catch (clientSyncErr) {
+                    console.warn('Clients sync warning:', clientSyncErr);
+                }
             }
         }
     };
@@ -3053,6 +3066,24 @@ export default function CRM() {
 
             if (error) throw error;
 
+            // Ensure client exists in clients table with same UUID when promoted to active/master stages
+            if (['Active Client', 'Closed Won', 'Monthly Billing'].includes(newStage)) {
+                try {
+                    const targetLead = leads.find(l => l.id === id);
+                    if (targetLead) {
+                        await supabase.from('clients').upsert({
+                            id: targetLead.id,
+                            client_name: targetLead.name,
+                            phone_number: targetLead.phone || targetLead.whatsapp_number || null,
+                            email: targetLead.email || null,
+                            source: targetLead.source || null,
+                        }, { onConflict: 'id' });
+                    }
+                } catch (clientUpsertErr) {
+                    console.warn('Clients upsert warning on stage move:', clientUpsertErr);
+                }
+            }
+
             // Sync UI only after database confirms
             setLeads(prev => prev.map(lead => lead.id === id ? { ...lead, pipeline_stage: newStage } : lead));
             if (selectedInspectorLead && selectedInspectorLead.id === id) {
@@ -3213,6 +3244,19 @@ export default function CRM() {
                 .eq('id', lead.id);
 
             if (updateLeadError) throw updateLeadError;
+
+            // Ensure client exists in clients table with matching UUID
+            try {
+                await supabase.from('clients').upsert({
+                    id: lead.id,
+                    client_name: lead.name,
+                    phone_number: lead.phone || lead.whatsapp_number || null,
+                    email: lead.email || null,
+                    source: lead.source || null,
+                }, { onConflict: 'id' });
+            } catch (clientUpsertErr) {
+                console.warn('Clients upsert warning on deposit confirm:', clientUpsertErr);
+            }
 
             setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, pipeline_stage: 'Active Client' } : item));
             setSelectedInspectorLead((prev: any) => prev?.id === lead.id ? { ...prev, pipeline_stage: 'Active Client' } : prev);

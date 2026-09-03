@@ -46,7 +46,7 @@ export default function Clients() {
     const [restartCompleteRate, setRestartCompleteRate] = useState<number | ''>(800);
     const [restartIncompleteRate, setRestartIncompleteRate] = useState<number | ''>(1500);
     const [restartDepositAmount, setRestartDepositAmount] = useState<number | ''>(5000);
-    const [restartDepositStatus, setRestartDepositStatus] = useState<'collected' | 'pending'>('collected');
+    const [restartDepositStatus, setRestartDepositStatus] = useState<'collected' | 'pending'>('pending');
     const [restartDepositMethod, setRestartDepositMethod] = useState('UPI');
     const [restartWorkers, setRestartWorkers] = useState<any[]>([]);
     const [restartWorkerSearch, setRestartWorkerSearch] = useState('');
@@ -520,7 +520,7 @@ export default function Clients() {
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            // 1. Update Client (including phone)
+            // 1. Update Client (including phone and email)
             const { error: clientError } = await supabase
                 .from('clients')
                 .update({ 
@@ -531,6 +531,17 @@ export default function Clients() {
                 .eq('id', editingClient.id);
 
             if (clientError) throw clientError;
+
+            // 1b. Keep crm_leads synchronized with same name, phone, and email
+            await supabase
+                .from('crm_leads')
+                .update({
+                    name: editingClient.name,
+                    phone: editingClient.phone,
+                    whatsapp_number: editingClient.phone,
+                    email: editingClient.email
+                })
+                .eq('id', editingClient.id);
 
             // 2. Sync with Employees (As requested: Employee gets rating from Client's company service review)
             const { error: workerError } = await supabase

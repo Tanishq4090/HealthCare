@@ -109,7 +109,10 @@ async function enrichServicesWithPayments(services: any[]): Promise<ServiceWithD
                 ? s.deposit_amount 
                 : (quote?.deposit || collectedDeposit);
 
-            const depositStatus = depositAmt > 0 ? 'collected' : (s.deposit_status || 'pending');
+            // Respect s.deposit_status as definitive authority; only fall back to checking if payment was collected
+            const depositStatus = s.deposit_status 
+                ? s.deposit_status 
+                : (collectedDeposit >= depositAmt && depositAmt > 0 ? 'collected' : 'pending');
 
             // Resolve agreed daily rates
             const cmRate = (quote?.complete_month_rate && quote.complete_month_rate > 0)
@@ -291,6 +294,13 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
     error?: string;
 }> {
     try {
+        // 0. Ensure client exists in clients table with matching UUID before creating service
+        await supabase.from('clients').upsert({
+            id: input.clientId,
+            client_name: input.clientName,
+            created_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+
         // 1. Create new service record in services table
         const service = await createService({
             client_id: input.clientId,
