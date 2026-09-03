@@ -443,7 +443,9 @@ export default function HR() {
     const generateWhatsappDraft = (worker: any, lang: string) => {
         if (!worker) return '';
         const baseUrl = window.location.origin;
-        const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}`;
+        const matchedLead = pipelineLeads.find((l: any) => l.name === worker.assigned_client);
+        const clientParam = matchedLead?.id ? `?client_id=${matchedLead.id}` : '';
+        const confirmLink = `${baseUrl}/client/confirm-staff/${worker.id}${clientParam}`;
 
         if (lang === 'Hinglish') return `Hello ${worker.assigned_client} team! Humne aapke liye ek excellent ${worker.role} allocate kiya hai: ${worker.name}. Please profile check karke confirm karein. ✅👇\n${confirmLink}`;
         if (lang === 'Hindi') return `Namaste ${worker.assigned_client}, aapki suvidha ke liye humne ek naye ${worker.role} (${worker.name}) ko allocate kiya hai. Kripya profile ki pushti karein:\n${confirmLink}`;

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Loader2, CheckCircle2, User, Phone, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ClientConfirmation() {
     const { id } = useParams<{ id: string }>();
+    const [searchParams] = useSearchParams();
+    const urlClientId = searchParams.get('client_id') || searchParams.get('clientId');
     const [worker, setWorker] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [confirming, setConfirming] = useState(false);
@@ -52,12 +54,35 @@ export default function ClientConfirmation() {
 
             if (error) throw error;
 
-            // 2. Advance the CRM lead to 'Active Client' now that client has confirmed
-            if (worker.assigned_client) {
+            // 2. Identify exact client UUID to eliminate name collisions
+            let targetClientId = urlClientId;
+            if (!targetClientId) {
+                // Lookup active assignment for this employee to get exact client UUID
+                const { data: asgn } = await supabase
+                    .from('worker_assignments')
+                    .select('client_id')
+                    .eq('employee_id', worker.id)
+                    .eq('assignment_status', 'active')
+                    .order('assigned_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (asgn?.client_id) {
+                    targetClientId = asgn.client_id;
+                }
+            }
+
+            // 3. Advance the CRM lead safely by UUID, with fallback to name only if no UUID found
+            if (targetClientId) {
+                await supabase.from('crm_leads')
+                    .update({ pipeline_stage: 'Active Client' })
+                    .eq('id', targetClientId)
+                    .eq('pipeline_stage', 'Staff Assigned');
+            } else if (worker.assigned_client) {
                 await supabase.from('crm_leads')
                     .update({ pipeline_stage: 'Active Client' })
                     .eq('name', worker.assigned_client)
-                    .eq('pipeline_stage', 'Staff Assigned'); // Only advance from Staff Assigned
+                    .eq('pipeline_stage', 'Staff Assigned');
             }
 
             setIsConfirmed(true);
