@@ -662,8 +662,14 @@ export default function Clients() {
 
                 if (activeService) {
                     depositAmount = Number(activeService.deposit_amount) || (activeAssignment ? Number(activeAssignment.deposit_amount) : 5000);
-                    const isAsgnPending = activeAssignment && Number(activeAssignment.deposit_paid) < depositAmount;
-                    depositStatus = (activeService.deposit_status === 'pending' || isAsgnPending) ? 'pending' : 'collected';
+                    if (activeService.deposit_status === 'collected') {
+                        depositStatus = 'collected';
+                    } else if (activeService.deposit_status === 'pending') {
+                        const isAsgnPaid = activeAssignment && Number(activeAssignment.deposit_paid) >= depositAmount && depositAmount > 0;
+                        depositStatus = isAsgnPaid ? 'collected' : 'pending';
+                    } else {
+                        depositStatus = activeService.deposit_status || 'settled';
+                    }
                 } else if (activeAssignment) {
                     depositAmount = Number(activeAssignment.deposit_amount) || 0;
                     depositStatus = (Number(activeAssignment.deposit_paid) >= depositAmount && depositAmount > 0) ? 'collected' : 'pending';

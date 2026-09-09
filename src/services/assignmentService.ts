@@ -131,6 +131,7 @@ export async function assignWorkerToClient(
     serviceType: 'one_day' | 'date_range';
     hoursPerDay?: number;
     totalBillAmount: number;
+    depositAmount?: number;
   }
 ): Promise<AssignmentResult> {
 
@@ -152,6 +153,23 @@ export async function assignWorkerToClient(
   // ── Step 0.5: Enforce Single Staff Rule ──────────────────
   // Removed: We now support multiple active workers per client using the new services model.
 
+  // ── Step 0.8: Inherit deposit from active service if already collected ──
+  let resolvedDepositPaid = depositPaid;
+  let resolvedDepositAmount = billingData?.depositAmount ?? 0;
+  if (resolvedDepositPaid <= 0) {
+    const { data: activeSvc } = await supabase
+      .from('services')
+      .select('deposit_status, deposit_amount')
+      .eq('client_id', clientUuid)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (activeSvc && activeSvc.deposit_status === 'collected') {
+      resolvedDepositPaid = Number(activeSvc.deposit_amount) || 5000;
+      resolvedDepositAmount = Number(activeSvc.deposit_amount) || 5000;
+    }
+  }
+
   // ── Step 1: Create assignment record ──────────────────
   const { data: assignment, error: assignError } = await supabase
     .from('worker_assignments')
@@ -160,7 +178,8 @@ export async function assignWorkerToClient(
       client_id:         clientUuid,
       assignment_status: 'active',
       notes:             notes?.trim() ?? null,
-      deposit_paid:      depositPaid,
+      deposit_paid:      resolvedDepositPaid,
+      deposit_amount:    resolvedDepositAmount,
       start_date:        billingData?.startDate || new Date().toISOString(),
       end_date:          billingData?.endDate ? billingData.endDate : null,
       service_type:      billingData?.serviceType || 'date_range',

@@ -1686,12 +1686,20 @@ export default function CRM() {
 
         if (activeService) {
             const depositAmount = Number(activeService.deposit_amount) || (activeAssignment ? Number(activeAssignment.deposit_amount) : 5000);
-            const isAsgnPending = activeAssignment && Number(activeAssignment.deposit_paid || 0) < depositAmount;
-            if (activeService.deposit_status === 'pending' || isAsgnPending) {
-                isDepositPending = true;
-                hasPaidDeposit = false;
-            } else if (activeService.deposit_status === 'collected' || (activeAssignment && Number(activeAssignment.deposit_paid || 0) >= depositAmount && depositAmount > 0)) {
+            if (activeService.deposit_status === 'collected') {
                 hasPaidDeposit = true;
+                isDepositPending = false;
+            } else if (activeService.deposit_status === 'pending') {
+                const isAsgnPaid = activeAssignment && Number(activeAssignment.deposit_paid || 0) >= depositAmount && depositAmount > 0;
+                if (isAsgnPaid) {
+                    hasPaidDeposit = true;
+                    isDepositPending = false;
+                } else {
+                    hasPaidDeposit = false;
+                    isDepositPending = true;
+                }
+            } else {
+                hasPaidDeposit = false;
                 isDepositPending = false;
             }
         } else if (activeAssignment) {
