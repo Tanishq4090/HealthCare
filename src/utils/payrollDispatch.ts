@@ -128,7 +128,7 @@ export async function toggleWorkerPaidStatus(
     return { newStatus, paidAmount: newPaidAmount, remainingDue: newNetBalance };
 }
 
-/** Persist WhatsApp payslip dispatch — upserts DB row so list badge leaves "Pending". */
+/** Persist WhatsApp payslip dispatch — automatically marks status as Paid and records payment. */
 export async function markPayslipDispatched(
     item: Record<string, any>,
     totals: {
@@ -138,9 +138,13 @@ export async function markPayslipDispatched(
         workerPhone?: string;
     },
 ): Promise<string | null> {
+    const advance = Number(item.advance_amount || 0);
+    const paidAmount = Math.max(0, totals.totalEarning - advance);
     const payload = {
-        status: PAYSLIP_SENT_STATUS,
-        net_balance: totals.netBalance,
+        status: 'Paid',
+        paid_amount: paidAmount,
+        net_balance: 0,
+        paid_through_date: new Date().toISOString().split('T')[0],
         total_amount: totals.totalEarning,
         daily_rate: totals.dailyRate ?? item.daily_rate ?? 0,
         worker_phone: totals.workerPhone ?? item.worker_phone ?? null,

@@ -342,11 +342,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       advance_paid: advanceDeduction,
     }).eq('id', assignment.id);
 
-    const status = opts?.whatsappSent
-      ? PAYSLIP_SENT_STATUS
-      : netPayable > 0
-        ? 'Pending Payment'
-        : 'Settled';
+    const isPaid = opts?.whatsappSent || netPayable <= 0;
+    const status = isPaid ? 'Paid' : 'Pending Payment';
 
     const { data: existing } = await supabase
       .from('payroll')
@@ -359,7 +356,9 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       daily_rate: dailyRate,
       total_amount: totalEarning,
       advance_amount: advanceDeduction,
-      net_balance: netPayable,
+      paid_amount: isPaid ? netPayable : 0,
+      net_balance: isPaid ? 0 : netPayable,
+      paid_through_date: isPaid ? new Date().toISOString().split('T')[0] : null,
       status,
       worker_phone: emp?.phone || '',
       updated_at: new Date().toISOString(),

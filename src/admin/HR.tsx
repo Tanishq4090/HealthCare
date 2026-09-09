@@ -1202,6 +1202,8 @@ export default function HR() {
                     workerPhone: options.phone,
                 });
 
+                const advance = Number(item.advance_amount || 0);
+                const paidAmount = Math.max(0, totalEarning - advance);
                 setPayrollItems(prev =>
                     prev.map(p => {
                         const sameRow =
@@ -1212,15 +1214,17 @@ export default function HR() {
                         return {
                             ...p,
                             id: savedId || p.id,
-                            status: PAYSLIP_SENT_STATUS,
-                            net_balance: netBalance,
+                            status: 'Paid',
+                            paid_amount: paidAmount,
+                            net_balance: 0,
+                            paid_through_date: new Date().toISOString().split('T')[0],
                             total_amount: totalEarning,
                             daily_rate: pay.dailyRateForDisplay,
                             _isSynthetic: false,
                         };
                     }),
                 );
-                toast.success("Payslip successfully dispatched via WhatsApp!", { id: toastId });
+                toast.success("Payslip sent via WhatsApp & marked as Paid! ✅", { id: toastId });
                 fetchData();
                 return;
             }
@@ -2270,42 +2274,14 @@ export default function HR() {
                                                                                         toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
                                                                                     }
                                                                                 }}
-                                                                                className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
-                                                                            >
-                                                                                <Send className="w-3 h-3" /> WhatsApp
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={async () => {
-                                                                                    try {
-                                                                                        const res = await toggleWorkerPaidStatus(item, item.status);
-                                                                                        setPayrollItems(prev => prev.map(p => {
-                                                                                            if (p.id === item.id || (item.assignment_id && p.assignment_id === item.assignment_id)) {
-                                                                                                return { ...p, status: res.newStatus, paid_amount: res.paidAmount, net_balance: res.remainingDue };
-                                                                                            }
-                                                                                            return p;
-                                                                                        }));
-                                                                                        toast.success(res.newStatus === 'Paid' ? `Marked salary for ${item.worker} as Paid!` : `Marked salary for ${item.worker} as Pending.`);
-                                                                                        fetchData();
-                                                                                    } catch (err: any) {
-                                                                                        toast.error(`Failed to update payment status: ${err.message}`);
-                                                                                    }
-                                                                                }}
-                                                                                className={`px-2 py-1 text-[10px] font-bold rounded transition-all flex items-center gap-1 ${
+                                                                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 ${
                                                                                     balance.isFullyPaid
-                                                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
-                                                                                        : balance.isPartiallyPaid
-                                                                                            ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                                                                                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
+                                                                                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                                                                                        : 'bg-green-50 text-green-600 hover:bg-green-500 hover:text-white'
                                                                                 }`}
-                                                                                title={balance.isFullyPaid ? 'Click to mark as Pending' : (balance.isPartiallyPaid ? `Click to pay remaining ₹${balance.remainingDue.toFixed(0)}` : 'Click to mark as Paid')}
+                                                                                title={balance.isFullyPaid ? "Payslip sent & marked as Paid. Click to resend via WhatsApp." : "Send payslip via WhatsApp (automatically marks as Paid)"}
                                                                             >
-                                                                                <CheckCircle2 className="w-3 h-3" />
-                                                                                {balance.isFullyPaid 
-                                                                                    ? 'Paid ✓' 
-                                                                                    : balance.isPartiallyPaid 
-                                                                                        ? `Pay Due (₹${balance.remainingDue.toFixed(0)})` 
-                                                                                        : 'Mark Paid'
-                                                                                }
+                                                                                <Send className="w-3 h-3" /> {balance.isFullyPaid ? 'WhatsApp (Resend)' : 'WhatsApp'}
                                                                             </button>
                                                                             <button
                                                                                 onClick={async () => {
@@ -2378,26 +2354,6 @@ export default function HR() {
                                                                                 title="Open Live Generator"
                                                                             >
                                                                                 <FileText className="w-3 h-3" /> Generator
-                                                                            </button>
-                                                                            <button 
-                                                                                onClick={async () => {
-                                                                                    if (!confirm('Are you sure you want to delete this payslip?')) return;
-                                                                                    try {
-                                                                                        const { error } = await supabase
-                                                                                            .from('payroll')
-                                                                                            .delete()
-                                                                                            .eq('id', item.id);
-                                                                                        if (error) throw error;
-                                                                                        toast.success("Payslip deleted successfully");
-                                                                                        fetchData();
-                                                                                    } catch (err: any) {
-                                                                                        toast.error(err.message || "Failed to delete payslip");
-                                                                                    }
-                                                                                }}
-                                                                                className="p-1 rounded-md bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-xs active:scale-95 ml-1"
-                                                                                title="Delete Payslip"
-                                                                            >
-                                                                                <Trash2 className="w-3.5 h-3.5" />
                                                                             </button>
                                                                         </div>
                                                                     </div>
