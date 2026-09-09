@@ -1678,31 +1678,23 @@ export default function CRM() {
         const activeService = clientServices.find((s: any) => s.status === 'active');
         const activeAssignment = clientAssignments.find((a: any) => a.assignment_status === 'active');
 
-        const latestService = [...clientServices].sort((a: any, b: any) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime())[0];
-        const latestAssignment = [...clientAssignments].sort((a: any, b: any) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime())[0];
-
         let hasPaidDeposit = false;
         let isDepositPending = false;
 
         if (activeService) {
-            const depositAmount = Number(activeService.deposit_amount) || (activeAssignment ? Number(activeAssignment.deposit_amount) : 5000);
+            // Sole source of truth is services table
             if (activeService.deposit_status === 'collected') {
                 hasPaidDeposit = true;
                 isDepositPending = false;
             } else if (activeService.deposit_status === 'pending') {
-                const isAsgnPaid = activeAssignment && Number(activeAssignment.deposit_paid || 0) >= depositAmount && depositAmount > 0;
-                if (isAsgnPaid) {
-                    hasPaidDeposit = true;
-                    isDepositPending = false;
-                } else {
-                    hasPaidDeposit = false;
-                    isDepositPending = true;
-                }
+                hasPaidDeposit = false;
+                isDepositPending = true;
             } else {
                 hasPaidDeposit = false;
                 isDepositPending = false;
             }
         } else if (activeAssignment) {
+            // Fallback for legacy records without services table entry
             const depositAmount = Number(activeAssignment.deposit_amount) || 0;
             if (depositAmount > 0 && Number(activeAssignment.deposit_paid || 0) >= depositAmount) {
                 hasPaidDeposit = true;
@@ -1710,19 +1702,6 @@ export default function CRM() {
             } else if (depositAmount > 0 && Number(activeAssignment.deposit_paid || 0) < depositAmount) {
                 isDepositPending = true;
                 hasPaidDeposit = false;
-            }
-        } else if (latestService) {
-            if (latestService.deposit_status === 'collected') {
-                hasPaidDeposit = true;
-            } else if (latestService.deposit_status === 'pending') {
-                isDepositPending = true;
-            }
-        } else if (latestAssignment) {
-            const depositAmount = Number(latestAssignment.deposit_amount) || 0;
-            if (depositAmount > 0 && Number(latestAssignment.deposit_paid || 0) >= depositAmount) {
-                hasPaidDeposit = true;
-            } else if (depositAmount > 0 && Number(latestAssignment.deposit_paid || 0) < depositAmount) {
-                isDepositPending = true;
             }
         }
 

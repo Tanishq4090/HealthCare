@@ -758,6 +758,50 @@ export async function endService(
         console.error('Failed to sync worker payroll dates on service end:', paySyncErr);
     }
 
+    // 7. Ensure legacy worker_assignments are marked completed
+    try {
+        await supabase
+            .from('worker_assignments')
+            .update({
+                assignment_status: 'completed',
+                end_date: effectiveEndDate
+            })
+            .eq('client_id', service.client_id)
+            .eq('assignment_status', 'active');
+    } catch (legacyAsgnErr) {
+        console.warn('Failed to complete legacy worker_assignments on service end:', legacyAsgnErr);
+    }
+
+    // 8. Move client lead in crm_leads to 'Closed Won'
+    try {
+        const leadId = (service as any).lead_id || service.client_id;
+        if (leadId) {
+            await supabase
+                .from('crm_leads')
+                .update({
+                    pipeline_stage: 'Closed Won',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', leadId);
+
+            await supabase.from('crm_lead_activity').insert([{
+                lead_id: leadId,
+                event_type: 'stage_changed',
+                description: `Service ended & deposit settled — moved to "Closed Won"`,
+                metadata: {
+                    to: 'Closed Won',
+                    from: 'Active Client',
+                    service_id: serviceId,
+                    settlement_amount: settlement,
+                    deposit_settled: depositAmount,
+                    total_days: verifiedDays
+                }
+            }]);
+        }
+    } catch (crmSyncErr) {
+        console.warn('Failed to update lead stage to Closed Won on service end:', crmSyncErr);
+    }
+
     return {
         success: true,
         service_id: serviceId,

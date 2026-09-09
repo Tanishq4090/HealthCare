@@ -661,27 +661,17 @@ export default function Clients() {
                 let depositStatus: 'collected' | 'pending' | 'settled' = 'collected';
 
                 if (activeService) {
-                    depositAmount = Number(activeService.deposit_amount) || (activeAssignment ? Number(activeAssignment.deposit_amount) : 5000);
-                    if (activeService.deposit_status === 'collected') {
-                        depositStatus = 'collected';
-                    } else if (activeService.deposit_status === 'pending') {
-                        const isAsgnPaid = activeAssignment && Number(activeAssignment.deposit_paid) >= depositAmount && depositAmount > 0;
-                        depositStatus = isAsgnPaid ? 'collected' : 'pending';
-                    } else {
-                        depositStatus = activeService.deposit_status || 'settled';
-                    }
+                    depositAmount = Number(activeService.deposit_amount) || 5000;
+                    depositStatus = (activeService.deposit_status as 'collected' | 'pending' | 'settled') || 'pending';
+                } else if (latestService) {
+                    depositAmount = Number(latestService.deposit_amount) || 0;
+                    depositStatus = (latestService.deposit_status as 'collected' | 'pending' | 'settled') || 'settled';
                 } else if (activeAssignment) {
                     depositAmount = Number(activeAssignment.deposit_amount) || 0;
                     depositStatus = (Number(activeAssignment.deposit_paid) >= depositAmount && depositAmount > 0) ? 'collected' : 'pending';
-                } else if (latestService) {
-                    depositAmount = Number(latestService.deposit_amount) || 0;
-                    depositStatus = latestService.deposit_status || 'settled';
-                } else if (latestAssignment) {
-                    depositAmount = Number(latestAssignment.deposit_amount) || 0;
-                    depositStatus = (Number(latestAssignment.deposit_paid) >= depositAmount && depositAmount > 0) ? 'collected' : 'pending';
                 } else {
                     depositAmount = paidDepositByClientName[normalizeClientName(c.client_name)] || 0;
-                    depositStatus = 'collected';
+                    depositStatus = 'settled';
                 }
 
                 // Build unified service cycles history with deposit tracking
@@ -2128,6 +2118,7 @@ export default function Clients() {
                 <ClientDetailsModal 
                     client={inspectingClient} 
                     onClose={() => setInspectingClient(null)} 
+                    onServiceUpdated={() => fetchClients()}
                 />
             )}
         </div>
