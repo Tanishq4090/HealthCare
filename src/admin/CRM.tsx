@@ -1671,23 +1671,72 @@ export default function CRM() {
 
     // Bulk greeting removed — greetings are now sent only from individual call cards or the pipeline inspector.
 
+    const computeLeadDepositStatus = (l: any, allAssignments: any[]) => {
+        const clientServices = (l.services || []) as any[];
+        const clientAssignments = (allAssignments || []).filter((a: any) => a.client_id === l.id);
+
+        const activeService = clientServices.find((s: any) => s.status === 'active');
+        const activeAssignment = clientAssignments.find((a: any) => a.assignment_status === 'active');
+
+        const latestService = [...clientServices].sort((a: any, b: any) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime())[0];
+        const latestAssignment = [...clientAssignments].sort((a: any, b: any) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime())[0];
+
+        let hasPaidDeposit = false;
+        let isDepositPending = false;
+
+        if (activeService) {
+            const depositAmount = Number(activeService.deposit_amount) || (activeAssignment ? Number(activeAssignment.deposit_amount) : 5000);
+            const isAsgnPending = activeAssignment && Number(activeAssignment.deposit_paid || 0) < depositAmount;
+            if (activeService.deposit_status === 'pending' || isAsgnPending) {
+                isDepositPending = true;
+                hasPaidDeposit = false;
+            } else if (activeService.deposit_status === 'collected' || (activeAssignment && Number(activeAssignment.deposit_paid || 0) >= depositAmount && depositAmount > 0)) {
+                hasPaidDeposit = true;
+                isDepositPending = false;
+            }
+        } else if (activeAssignment) {
+            const depositAmount = Number(activeAssignment.deposit_amount) || 0;
+            if (depositAmount > 0 && Number(activeAssignment.deposit_paid || 0) >= depositAmount) {
+                hasPaidDeposit = true;
+                isDepositPending = false;
+            } else if (depositAmount > 0 && Number(activeAssignment.deposit_paid || 0) < depositAmount) {
+                isDepositPending = true;
+                hasPaidDeposit = false;
+            }
+        } else if (latestService) {
+            if (latestService.deposit_status === 'collected') {
+                hasPaidDeposit = true;
+            } else if (latestService.deposit_status === 'pending') {
+                isDepositPending = true;
+            }
+        } else if (latestAssignment) {
+            const depositAmount = Number(latestAssignment.deposit_amount) || 0;
+            if (depositAmount > 0 && Number(latestAssignment.deposit_paid || 0) >= depositAmount) {
+                hasPaidDeposit = true;
+            } else if (depositAmount > 0 && Number(latestAssignment.deposit_paid || 0) < depositAmount) {
+                isDepositPending = true;
+            }
+        }
+
+        return { hasPaidDeposit, isDepositPending };
+    };
+
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const [leadsResult, paidAssignmentsResult] = await Promise.all([
+            const [leadsResult, assignmentsResult] = await Promise.all([
                 supabase
                     .from('crm_leads')
-                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, deposit_amount, deposit_status, start_date, created_at, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                     .is('deleted_at', null)
                     .not('pipeline_stage', 'eq', 'Archived')
                     .order('created_at', { ascending: false }),
                 supabase
                     .from('worker_assignments')
-                    .select('client_id, deposit_paid')
-                    .gt('deposit_paid', 0)
+                    .select('id, client_id, assignment_status, deposit_amount, deposit_paid, start_date, assigned_at')
             ]);
 
-            const paidClientIds = new Set((paidAssignmentsResult.data || []).map(a => a.client_id));
+            const allAssignments = assignmentsResult.data || [];
             const data = leadsResult.data;
             const error = leadsResult.error;
 
@@ -1696,7 +1745,7 @@ export default function CRM() {
                 if (error.message?.includes('deleted_at') || error.code === '42703') {
                     const { data: fallback, error: fallbackError } = await supabase
                         .from('crm_leads')
-                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                        .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, deposit_amount, deposit_status, start_date, created_at, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                         .not('pipeline_stage', 'eq', 'Archived')
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
@@ -1727,11 +1776,15 @@ export default function CRM() {
                             .in('id', legacyIds);
                     }
                     setLeads(
-                        finalFallbackRows.map((l) => ({
-                            ...l,
-                            pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
-                            has_paid_deposit: paidClientIds.has(l.id)
-                        }))
+                        finalFallbackRows.map((l) => {
+                            const { hasPaidDeposit, isDepositPending } = computeLeadDepositStatus(l, allAssignments);
+                            return {
+                                ...l,
+                                pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
+                                has_paid_deposit: hasPaidDeposit,
+                                is_deposit_pending: isDepositPending
+                            };
+                        })
                     );
                     setSelectedInspectorLead((prev: any) => {
                         if (!prev?.id) return prev;
@@ -1771,18 +1824,17 @@ export default function CRM() {
                     });
             }
             setLeads(
-                rows.map((l) => ({
-                    ...l,
-                    pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
-                    has_paid_deposit: paidClientIds.has(l.id)
-                }))
+                rows.map((l) => {
+                    const { hasPaidDeposit, isDepositPending } = computeLeadDepositStatus(l, allAssignments);
+                    return {
+                        ...l,
+                        pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
+                        has_paid_deposit: hasPaidDeposit,
+                        is_deposit_pending: isDepositPending
+                    };
+                })
             );
             
-            setSelectedInspectorLead((prev: any) => {
-                if (!prev?.id) return prev;
-                const latest = rows.find((l) => l.id === prev.id);
-                return latest ? { ...prev, ...latest } : prev;
-            });
             setSelectedInspectorLead((prev: any) => {
                 if (!prev?.id) return prev;
                 const latest = rows.find((l) => l.id === prev.id);
@@ -3259,6 +3311,21 @@ export default function CRM() {
 
             if (updateAssignmentError) throw updateAssignmentError;
 
+            // Also synchronize active service deposit status in services table
+            try {
+                await supabase
+                    .from('services')
+                    .update({
+                        deposit_status: 'collected',
+                        deposit_amount: amount,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('client_id', lead.id)
+                    .eq('status', 'active');
+            } catch (svcSyncErr) {
+                console.warn('Could not sync active service deposit_status:', svcSyncErr);
+            }
+
             const { error: updateLeadError } = await supabase
                 .from('crm_leads')
                 .update({ pipeline_stage: 'Active Client' })
@@ -4547,18 +4614,29 @@ export default function CRM() {
                                                                                                 {serviceName}
                                                                                             </span>
                                                                                         )}
-                                                                                        {item.has_paid_deposit && (
+                                                                                        {item.has_paid_deposit ? (
                                                                                             <button
                                                                                                 onClick={(e) => {
                                                                                                     e.stopPropagation();
                                                                                                     navigate('/admin/billing?tab=history');
                                                                                                 }}
                                                                                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase tracking-wider cursor-pointer hover:bg-green-200 transition-colors"
-                                                                                                title="View in Finance > Collection History"
+                                                                                                title="Deposit Paid — View in Finance > Collection History"
                                                                                             >
                                                                                                 <CheckCircle2 className="w-2.5 h-2.5" /> Deposit Paid
                                                                                             </button>
-                                                                                        )}
+                                                                                        ) : item.is_deposit_pending ? (
+                                                                                            <button
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    navigate('/admin/clients');
+                                                                                                }}
+                                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider cursor-pointer hover:bg-amber-200 transition-colors"
+                                                                                                title="Deposit Pending for current service — Click to manage in Clients"
+                                                                                            >
+                                                                                                <Clock className="w-2.5 h-2.5" /> Deposit Pending
+                                                                                            </button>
+                                                                                        ) : null}
                                                                                         {activeWorkers.length > 0 && (
                                                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
                                                                                                 <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
