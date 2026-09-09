@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download, Loader2, Bot } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download, Loader2, Bot, ShieldCheck } from 'lucide-react';
 
 const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
@@ -191,6 +191,8 @@ export default function Billing() {
     const [isLoading, setIsLoading] = useState(false);
 
     const [deposits, setDeposits] = useState<any[]>([]);
+    const [depositFilter, setDepositFilter] = useState<'all' | 'held' | 'pending' | 'settled'>('all');
+    const [depositSearch, setDepositSearch] = useState('');
     const [monthlyBills, setMonthlyBills] = useState<any[]>([]);
 
     // Deposit Collect Modal State
@@ -384,23 +386,26 @@ export default function Billing() {
                     const activeSvc = clientSvcs.find(s => s.status === 'active');
                     const endedSvcs = clientSvcs.filter(s => s.status !== 'active');
 
-                    // Build previous deposits list for this client
-                    const previousDeposits = endedSvcs.map(s => {
-                        const matchingAsgn = clientAsgns.find(a => 
-                            (s.start_date && a.start_date?.startsWith(s.start_date)) || a.id === s.legacy_assignment_id
-                        ) || clientAsgns.find(a => a.invoice_pdf_url && a.assignment_status === 'completed');
+                    // Build previous deposits list for this client - only including cycles that had an actual deposit
+                    const previousDeposits = endedSvcs
+                        .filter(s => (s.deposit_amount && s.deposit_amount > 0) || s.deposit_status === 'collected' || s.deposit_status === 'settled')
+                        .map(s => {
+                            const matchingAsgn = clientAsgns.find(a => 
+                                (s.start_date && a.start_date?.startsWith(s.start_date)) || a.id === s.legacy_assignment_id
+                            ) || clientAsgns.find(a => a.invoice_pdf_url && a.assignment_status === 'completed');
 
-                        const leadMeta = leadsMetaMap[cId];
-                        const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
-                        const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || 0;
-                        return {
-                            service_name: serviceName,
-                            amount: `₹${depositAmt}`,
-                            date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                            status: s.deposit_status === 'settled' ? 'Settled on Final Bill' : 'Paid',
-                            invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null
-                        };
-                    });
+                            const leadMeta = leadsMetaMap[cId];
+                            const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
+                            const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || 0;
+                            return {
+                                service_name: serviceName,
+                                amount: `₹${depositAmt}`,
+                                numeric_amount: Number(depositAmt) || 0,
+                                date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                status: s.deposit_status === 'settled' ? 'Settled on Final Bill' : 'Paid',
+                                invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null
+                            };
+                        });
 
                     if (activeSvc) {
                         const matchingAsgn = clientAsgns.find(a => a.assignment_status === 'active' && a.invoice_pdf_url)
@@ -408,26 +413,31 @@ export default function Billing() {
                             || clientAsgns[0];
                         const depositAmt = activeSvc.deposit_amount || matchingAsgn?.deposit_amount || quotesMap[cId]?.deposit || 0;
                         const isPaid = activeSvc.deposit_status === 'collected';
-                        const depStatus = isPaid ? 'Paid' : (matchingAsgn?.deposit_invoice_sent ? 'Invoice Sent' : 'Pending Invoice');
+                        const hasInvoiceSent = !!matchingAsgn?.deposit_invoice_sent;
+                        const depStatus = isPaid ? 'Paid' : (hasInvoiceSent ? 'Invoice Sent' : 'Pending Invoice');
                         const leadMeta = leadsMetaMap[cId];
                         const serviceName = formatServiceName(activeSvc.service_type, activeSvc.notes || leadMeta?.notes, leadMeta?.role);
 
-                        mappedDeposits.push({
-                            id: matchingAsgn?.id || activeSvc.id,
-                            assignment_id: matchingAsgn?.id,
-                            service_id: activeSvc.id,
-                            client_id: cId,
-                            client: (activeSvc as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
-                            service_name: serviceName,
-                            client_phone: (activeSvc as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
-                            amount: `₹${depositAmt}`,
-                            status: depStatus,
-                            is_active_cycle: true,
-                            date: new Date(activeSvc.start_date || activeSvc.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                            invoice_no: "",
-                            invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null,
-                            previous_deposits: previousDeposits
-                        });
+                        // Only include real deposits (deposit amount > 0, paid, invoice sent, or previous deposits exist)
+                        if (Number(depositAmt) > 0 || isPaid || hasInvoiceSent || previousDeposits.length > 0) {
+                            mappedDeposits.push({
+                                id: matchingAsgn?.id || activeSvc.id,
+                                assignment_id: matchingAsgn?.id,
+                                service_id: activeSvc.id,
+                                client_id: cId,
+                                client: (activeSvc as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
+                                service_name: serviceName,
+                                client_phone: (activeSvc as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
+                                amount: `₹${depositAmt}`,
+                                numeric_amount: Number(depositAmt) || 0,
+                                status: depStatus,
+                                is_active_cycle: true,
+                                date: new Date(activeSvc.start_date || activeSvc.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                invoice_no: "",
+                                invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null,
+                                previous_deposits: previousDeposits
+                            });
+                        }
                     } else {
                         // Client has ended services only
                         for (const s of endedSvcs) {
@@ -435,22 +445,25 @@ export default function Billing() {
                             const leadMeta = leadsMetaMap[cId];
                             const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
                             const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || 0;
-                            mappedDeposits.push({
-                                id: matchingAsgn?.id || s.id,
-                                assignment_id: matchingAsgn?.id,
-                                service_id: s.id,
-                                client_id: cId,
-                                client: (s as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
-                                service_name: serviceName,
-                                client_phone: (s as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
-                                amount: `₹${depositAmt}`,
-                                status: s.deposit_status === 'settled' ? 'Settled' : 'Paid',
-                                is_active_cycle: false,
-                                date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                                invoice_no: "",
-                                invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null,
-                                previous_deposits: []
-                            });
+                            if (Number(depositAmt) > 0 || s.deposit_status === 'collected' || s.deposit_status === 'settled') {
+                                mappedDeposits.push({
+                                    id: matchingAsgn?.id || s.id,
+                                    assignment_id: matchingAsgn?.id,
+                                    service_id: s.id,
+                                    client_id: cId,
+                                    client: (s as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
+                                    service_name: serviceName,
+                                    client_phone: (s as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
+                                    amount: `₹${depositAmt}`,
+                                    numeric_amount: Number(depositAmt) || 0,
+                                    status: s.deposit_status === 'settled' ? 'Settled' : 'Paid',
+                                    is_active_cycle: false,
+                                    date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                    invoice_no: "",
+                                    invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null,
+                                    previous_deposits: []
+                                });
+                            }
                         }
                     }
                 }
@@ -463,26 +476,31 @@ export default function Billing() {
 
                     const depositAmt = asgn.deposit_amount || quotesMap[cId]?.deposit || 0;
                     const isPaid = asgn.deposit_paid && asgn.deposit_paid > 0;
-                    const depStatus = isPaid ? 'Paid' : (asgn.deposit_invoice_sent ? 'Invoice Sent' : 'Pending Invoice');
+                    const hasInvoiceSent = !!asgn.deposit_invoice_sent;
+                    const depStatus = isPaid ? 'Paid' : (hasInvoiceSent ? 'Invoice Sent' : 'Pending Invoice');
                     const leadMeta = leadsMetaMap[cId];
                     const serviceName = formatServiceName(asgn.notes, leadMeta?.notes, leadMeta?.role);
 
-                    mappedDeposits.push({
-                        id: asgn.id,
-                        assignment_id: asgn.id,
-                        service_id: null,
-                        client_id: cId,
-                        client: (asgn as any).clients?.client_name || 'Unknown',
-                        service_name: serviceName,
-                        client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
-                        amount: `₹${depositAmt}`,
-                        status: depStatus,
-                        is_active_cycle: asgn.assignment_status === 'active',
-                        date: new Date(asgn.assigned_at || asgn.start_date || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                        invoice_no: "",
-                        invoice_pdf_url: asgn.invoice_pdf_url || null,
-                        previous_deposits: []
-                    });
+                    // Only include if depositAmt > 0 or isPaid or hasInvoiceSent
+                    if (Number(depositAmt) > 0 || isPaid || hasInvoiceSent) {
+                        mappedDeposits.push({
+                            id: asgn.id,
+                            assignment_id: asgn.id,
+                            service_id: null,
+                            client_id: cId,
+                            client: (asgn as any).clients?.client_name || 'Unknown',
+                            service_name: serviceName,
+                            client_phone: (asgn as any).clients?.phone_number || '+91 9016116564',
+                            amount: `₹${depositAmt}`,
+                            numeric_amount: Number(depositAmt) || 0,
+                            status: depStatus,
+                            is_active_cycle: asgn.assignment_status === 'active',
+                            date: new Date(asgn.assigned_at || asgn.start_date || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            invoice_no: "",
+                            invoice_pdf_url: asgn.invoice_pdf_url || null,
+                            previous_deposits: []
+                        });
+                    }
                 }
 
                 // Sort: active cycles first, then by date descending
@@ -1577,6 +1595,34 @@ export default function Billing() {
         }
     };
 
+    const heldDeposits = deposits.filter(d => d.status === 'Paid' && d.is_active_cycle);
+    const totalHeldAmount = heldDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
+
+    const pendingDeposits = deposits.filter(d => d.status === 'Pending Invoice' || d.status === 'Invoice Sent');
+    const totalPendingAmount = pendingDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
+
+    const settledDeposits = deposits.filter(d => d.status === 'Settled' || !d.is_active_cycle);
+
+    const filteredDeposits = deposits.filter(dep => {
+        const q = depositSearch.trim().toLowerCase();
+        if (q) {
+            const clientMatch = dep.client?.toLowerCase().includes(q);
+            const serviceMatch = dep.service_name?.toLowerCase().includes(q);
+            const amountMatch = dep.amount?.toLowerCase().includes(q);
+            if (!clientMatch && !serviceMatch && !amountMatch) return false;
+        }
+        if (depositFilter === 'held') {
+            return dep.status === 'Paid' && dep.is_active_cycle;
+        }
+        if (depositFilter === 'pending') {
+            return dep.status === 'Pending Invoice' || dep.status === 'Invoice Sent';
+        }
+        if (depositFilter === 'settled') {
+            return dep.status === 'Settled' || !dep.is_active_cycle;
+        }
+        return true;
+    });
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1608,123 +1654,262 @@ export default function Billing() {
             </div>
 
             {activeTab === 'deposits' ? (
-                /* Deposit Entry View */
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                        <h2 className="font-semibold text-slate-900">Security Deposit Management</h2>
-                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-semibold px-2">Auto-Receipt Logs Active</span>
-                    </div>
-                    <div className="flex-1 overflow-auto p-4 space-y-4">
-                        {deposits.map(dep => (
-                            <div key={`${dep.service_id || dep.id}-${dep.date}`} className="p-4 rounded-xl border border-slate-200 flex flex-col gap-3 hover:shadow-sm transition-shadow">
-                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
-                                            dep.is_active_cycle ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                            <RupeeIcon className="w-6 h-6 text-xl" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
-                                                {dep.client}
-                                                {dep.service_name && (
-                                                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                                                        {dep.service_name}
-                                                    </span>
-                                                )}
-                                                {dep.is_active_cycle ? (
-                                                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
-                                                        Current Service
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">
-                                                        Ended Service
-                                                    </span>
-                                                )}
-                                            </h3>
-                                            <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-                                                <span className="font-semibold text-slate-700">{dep.amount}</span>
-                                                <span>•</span>
-                                                <span>{dep.date}</span>
-                                            </div>
-                                        </div>
+                    /* Deposit Entry View */
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                        {/* Header + Stats */}
+                        <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col gap-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                        <ShieldCheck className="w-5 h-5 text-indigo-600" /> Security Deposit Management
+                                    </h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Track client security deposits in reserve, dispatch deposit bills, and view settlement history.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-semibold border border-emerald-200">
+                                        Auto-Receipt Logs Active
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Summary Metrics Bar */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between">
+                                    <div>
+                                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">In Reserve (Held)</div>
+                                        <div className="text-lg font-black text-indigo-700">₹{totalHeldAmount.toLocaleString('en-IN')}</div>
                                     </div>
-
-                                    <div className="flex items-center gap-3 flex-wrap">
-                                        <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                                            dep.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' :
-                                            dep.status === 'Invoice Sent' ? 'bg-amber-100 text-amber-700' :
-                                            dep.status === 'Settled' ? 'bg-teal-100 text-teal-700 border border-teal-200' :
-                                            'bg-slate-100 text-slate-700'
-                                        }`}>
-                                            {dep.status === 'Settled' ? 'Settled on Final Bill' : dep.status}
-                                        </span>
-
-                                        {dep.status === 'Pending Invoice' && (
-                                            <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
-                                                <FileText className="w-4 h-4" /> Prepare Invoice
-                                            </button>
-                                        )}
-
-                                        {(dep.status === 'Invoice Sent' || dep.status === 'Paid' || dep.status === 'Settled') && (
-                                            <>
-                                                {dep.invoice_pdf_url && (
-                                                    <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer">
-                                                        <FileText className="w-4 h-4 text-primary" /> View PDF
-                                                    </button>
-                                                )}
-                                                {dep.status === 'Invoice Sent' && (
-                                                    <>
-                                                        <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-3 py-2 border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5 cursor-pointer">
-                                                            <Send className="w-4 h-4" /> Resend Invoice
-                                                        </button>
-                                                        <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5 cursor-pointer">
-                                                            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </>
-                                        )}
+                                    <div className="text-xs font-semibold text-slate-500 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100">
+                                        {heldDeposits.length} clients
                                     </div>
                                 </div>
 
-                                {dep.previous_deposits && dep.previous_deposits.length > 0 && (
-                                    <div className="pt-2.5 border-t border-slate-100 flex flex-col gap-2">
-                                        <div className="text-[11px] font-bold tracking-wider uppercase text-slate-500 flex items-center gap-1.5">
-                                            <History className="w-3.5 h-3.5 text-slate-400" />
-                                            <span>Previous Service Deposit History</span>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            {dep.previous_deposits.map((prev: any, idx: number) => (
-                                                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 border border-slate-200/80 rounded-lg px-3 py-2 text-xs">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="font-semibold text-slate-800">{prev.service_name}</span>
-                                                        <span className="text-slate-400">•</span>
-                                                        <span className="font-bold text-slate-700">{prev.amount}</span>
-                                                        <span className="text-slate-400">•</span>
-                                                        <span className="text-slate-500">{prev.date}</span>
-                                                        <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-semibold text-[10px] border border-teal-200">
-                                                            {prev.status}
-                                                        </span>
-                                                    </div>
-                                                    {prev.invoice_pdf_url && (
-                                                        <button
-                                                            onClick={() => window.open(prev.invoice_pdf_url, '_blank')}
-                                                            className="text-primary hover:text-primary/80 font-medium flex items-center gap-1 text-xs cursor-pointer"
-                                                        >
-                                                            <FileText className="w-3.5 h-3.5 text-primary" /> View Final Bill / Receipt
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
+                                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between">
+                                    <div>
+                                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Pending Collection</div>
+                                        <div className="text-lg font-black text-amber-600">₹{totalPendingAmount.toLocaleString('en-IN')}</div>
                                     </div>
-                                )}
+                                    <div className="text-xs font-semibold text-slate-500 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">
+                                        {pendingDeposits.length} pending
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between">
+                                    <div>
+                                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Settled / Historical</div>
+                                        <div className="text-lg font-black text-teal-700">{settledDeposits.length} records</div>
+                                    </div>
+                                    <div className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-100">
+                                        Settled on bill
+                                    </div>
+                                </div>
                             </div>
-                        ))}
+
+                            {/* Search & Filter Toolbar */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/70">
+                                {/* Filter Pills */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                                    <button
+                                        onClick={() => setDepositFilter('all')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                                            depositFilter === 'all'
+                                                ? 'bg-slate-900 text-white shadow-xs'
+                                                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        All Deposits ({deposits.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setDepositFilter('held')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                                            depositFilter === 'held'
+                                                ? 'bg-indigo-600 text-white shadow-xs'
+                                                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        In Reserve ({heldDeposits.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setDepositFilter('pending')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                                            depositFilter === 'pending'
+                                                ? 'bg-amber-600 text-white shadow-xs'
+                                                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        Pending Action ({pendingDeposits.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setDepositFilter('settled')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                                            depositFilter === 'settled'
+                                                ? 'bg-teal-600 text-white shadow-xs'
+                                                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        Settled / History ({settledDeposits.length})
+                                    </button>
+                                </div>
+
+                                {/* Search Bar */}
+                                <div className="relative min-w-[220px]">
+                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search client or service..."
+                                        value={depositSearch}
+                                        onChange={(e) => setDepositSearch(e.target.value)}
+                                        className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                                    />
+                                    {depositSearch && (
+                                        <button
+                                            onClick={() => setDepositSearch('')}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Cards Container */}
+                        <div className="flex-1 overflow-auto p-4 space-y-3">
+                            {filteredDeposits.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+                                        <ShieldCheck className="w-7 h-7 text-slate-400" />
+                                    </div>
+                                    <h3 className="text-base font-bold text-slate-900 mb-1">No Security Deposits Found</h3>
+                                    <p className="text-xs text-slate-500 max-w-sm">
+                                        {depositSearch ? `No deposit records matching "${depositSearch}".` : 'No security deposits found in this category.'}
+                                    </p>
+                                    {depositSearch && (
+                                        <button
+                                            onClick={() => setDepositSearch('')}
+                                            className="mt-3 px-3 py-1.5 text-xs text-primary font-semibold hover:underline"
+                                        >
+                                            Clear search filter
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                filteredDeposits.map(dep => (
+                                    <div key={`${dep.service_id || dep.id}-${dep.date}`} className="p-4 rounded-xl border border-slate-200 flex flex-col gap-3 hover:shadow-xs transition-shadow bg-white">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                                                    dep.is_active_cycle ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                    <RupeeIcon className="w-6 h-6 text-xl" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                                                        {dep.client}
+                                                        {dep.service_name && (
+                                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                                                {dep.service_name}
+                                                            </span>
+                                                        )}
+                                                        {dep.is_active_cycle ? (
+                                                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
+                                                                Current Service
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">
+                                                                Ended Service
+                                                            </span>
+                                                        )}
+                                                    </h3>
+                                                    <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+                                                        <span className="font-bold text-slate-900 text-base">{dep.amount}</span>
+                                                        <span>•</span>
+                                                        <span>{dep.date}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-3 flex-wrap">
+                                                <span className={`px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1 ${
+                                                    dep.status === 'Paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                                                    dep.status === 'Invoice Sent' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                                                    dep.status === 'Settled' ? 'bg-teal-100 text-teal-800 border border-teal-200' :
+                                                    'bg-amber-100 text-amber-800 border border-amber-200'
+                                                }`}>
+                                                    {dep.status === 'Paid' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                                                    {dep.status === 'Paid' ? 'In Reserve (Collected)' :
+                                                     dep.status === 'Invoice Sent' ? 'Invoice Dispatched' :
+                                                     dep.status === 'Settled' ? 'Settled on Final Bill' : 'Deposit Unbilled'}
+                                                </span>
+
+                                                {dep.status === 'Pending Invoice' && (
+                                                    <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
+                                                        <FileText className="w-4 h-4" /> Prepare Invoice
+                                                    </button>
+                                                )}
+
+                                                {(dep.status === 'Invoice Sent' || dep.status === 'Paid' || dep.status === 'Settled') && (
+                                                    <>
+                                                        {dep.invoice_pdf_url && (
+                                                            <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer">
+                                                                <FileText className="w-4 h-4 text-primary" /> View PDF
+                                                            </button>
+                                                        )}
+                                                        {dep.status === 'Invoice Sent' && (
+                                                            <>
+                                                                <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1.5 cursor-pointer">
+                                                                    <Send className="w-4 h-4" /> Resend Invoice
+                                                                </button>
+                                                                <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5 cursor-pointer">
+                                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {dep.previous_deposits && dep.previous_deposits.length > 0 && (
+                                            <div className="pt-2.5 border-t border-slate-100 flex flex-col gap-2">
+                                                <div className="text-[11px] font-bold tracking-wider uppercase text-slate-500 flex items-center gap-1.5">
+                                                    <History className="w-3.5 h-3.5 text-slate-400" />
+                                                    <span>Previous Service Deposit History</span>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    {dep.previous_deposits.map((prev: any, idx: number) => (
+                                                        <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 border border-slate-200/80 rounded-lg px-3 py-2 text-xs">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="font-semibold text-slate-800">{prev.service_name}</span>
+                                                                <span className="text-slate-400">•</span>
+                                                                <span className="font-bold text-slate-700">{prev.amount}</span>
+                                                                <span className="text-slate-400">•</span>
+                                                                <span className="text-slate-500">{prev.date}</span>
+                                                                <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-semibold text-[10px] border border-teal-200">
+                                                                    {prev.status}
+                                                                </span>
+                                                            </div>
+                                                            {prev.invoice_pdf_url && (
+                                                                <button
+                                                                    onClick={() => window.open(prev.invoice_pdf_url, '_blank')}
+                                                                    className="text-primary hover:text-primary/80 font-medium flex items-center gap-1 text-xs cursor-pointer"
+                                                                >
+                                                                    <FileText className="w-3.5 h-3.5 text-primary" /> View Final Bill / Receipt
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
-                </div>
-            ) : activeTab === 'monthly' ? (
+                ) : activeTab === 'monthly' ? (
                 /* Unified Services & Monthly Billing Lifecycle View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
                     <ServicesPanel
