@@ -29,8 +29,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'healthfirst_pure_token';
-const STAFF_SESSION_KEY = 'healthfirst_staff_user';
+const SESSION_USER_KEY = '99care_os_session_user';
 const TANISHQ_USERNAME = 'tanishq4090';
 const TANISHQ_ACCESS: AccessModule[] = ['hr', 'finance'];
 
@@ -60,7 +59,15 @@ const normalizeStaffAccess = (staffUser: User): User => {
 };
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<User | null>(() => {
+        if (typeof window === 'undefined') return null;
+        try {
+            const raw = sessionStorage.getItem(SESSION_USER_KEY);
+            return raw ? normalizeStaffAccess(JSON.parse(raw)) : null;
+        } catch {
+            return null;
+        }
+    });
     const [allUsers, setAllUsers] = useState<User[]>([]); 
     const [loading, setLoading] = useState(true);
 
@@ -80,39 +87,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     useEffect(() => {
         const checkUser = async () => {
-            localStorage.removeItem(STAFF_SESSION_KEY);
-            if (localStorage.getItem(LOCAL_STORAGE_KEY) === 'admin-token') {
-                localStorage.removeItem(LOCAL_STORAGE_KEY);
+            try {
+                const raw = sessionStorage.getItem(SESSION_USER_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    setUser(normalizeStaffAccess(parsed));
+                } else {
+                    setUser(null);
+                }
+            } catch {
+                sessionStorage.removeItem(SESSION_USER_KEY);
+                setUser(null);
             }
-            setUser(null);
 
             await refreshUsers();
             setLoading(false);
         };
         checkUser();
-    }, []);
+    }, [refreshUsers]);
 
     const login = async (role?: string, staffUser?: User) => {
         if (staffUser) {
-            localStorage.removeItem(LOCAL_STORAGE_KEY);
-            localStorage.removeItem(STAFF_SESSION_KEY);
-            setUser(normalizeStaffAccess(staffUser));
+            const normalized = normalizeStaffAccess(staffUser);
+            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(normalized));
+            setUser(normalized);
             await refreshUsers();
             return;
         }
 
         if (role === 'admin') {
-            localStorage.removeItem(LOCAL_STORAGE_KEY);
-            localStorage.removeItem(STAFF_SESSION_KEY);
+            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(adminUser));
             setUser(adminUser);
             await refreshUsers();
         }
     };
 
     const logout = async () => {
-        await supabase.auth.signOut();
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
-        localStorage.removeItem(STAFF_SESSION_KEY);
+        try {
+            await supabase.auth.signOut();
+        } catch (err) {
+            console.warn('Sign out warning:', err);
+        }
+        sessionStorage.removeItem(SESSION_USER_KEY);
         setUser(null);
     };
 
@@ -161,6 +177,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (user?.id === updatedUser.id) {
             const nextUser = normalizeStaffAccess({ ...user, ...(data?.user || updatedUser) });
+            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(nextUser));
             setUser(nextUser);
         }
 
