@@ -1372,11 +1372,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
 function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => void }) {
   const [assignments, setAssignments] = useState<ActiveAssignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [completing, setCompleting] = useState<string | null>(null);
   const [resending, setResending] = useState<string | null>(null);
-  const [releasing, setReleasing] = useState<string | null>(null);
-  const [releasingConfirm, setReleasingConfirm] = useState<string | null>(null);
-  const [generatingPayslipFor, setGeneratingPayslipFor] = useState<ActiveAssignment | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1393,9 +1389,25 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
 
       if (error) throw error;
 
-      // Fetch id_card_links for each assignment
+      // Fetch id_card_links for each assignment and resolve client info
       const enriched = await Promise.all(
         (data ?? []).map(async (a: any) => {
+          let clientData = a.client;
+          if ((!clientData || !clientData.phone_number) && a.client_id) {
+            const { data: lead } = await supabase
+              .from('crm_leads')
+              .select('id, full_name, phone_number')
+              .eq('id', a.client_id)
+              .maybeSingle();
+            if (lead) {
+              clientData = {
+                id: lead.id,
+                client_name: lead.full_name || clientData?.client_name || 'Client',
+                phone_number: lead.phone_number || clientData?.phone_number || null,
+              };
+            }
+          }
+
           const { data: link } = await supabase
             .from('id_card_links')
             .select('token, is_active')
@@ -1407,8 +1419,8 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
           const shareableUrl = token ? buildShareableUrl(token) : null;
           return {
             ...a,
-            employee: a.employee, // supabase alias handles this
-            client: a.client,
+            employee: a.employee,
+            client: clientData,
             shareableUrl,
             token
           };
@@ -1425,47 +1437,67 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
 
   useEffect(() => { load(); }, [load]);
 
-  const handleComplete = async (a: ActiveAssignment) => {
-    setCompleting(a.id);
-    try {
-      await deactivateIDCardLink(a.id, 'completed');
-      toast.success(`Assignment for ${a.employee.full_name} completed.`);
-      setAssignments(prev => prev.filter(x => x.id !== a.id));
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally { setCompleting(null); }
-  };
-
   const handleResend = async (a: ActiveAssignment) => {
-    if (!a.shareableUrl) { toast.error('No shareable link available.'); return; }
-    if (!a.client?.phone_number) { toast.error('Client has no phone number on file.'); return; }
     setResending(a.id);
     try {
-      const err = await sendIDCardLinkToClient(
-        a.client.phone_number, a.employee.full_name, a.employee.job_title, a.shareableUrl
-      );
-      if (err) toast.error(`WhatsApp failed: ${err}`);
-      else toast.success('ID card link resent via WhatsApp! 📱');
-    } finally { setResending(null); }
-  };
+      let shareableUrl = a.shareableUrl;
+      let token = a.token;
 
-  const handleRelease = async (a: ActiveAssignment) => {
-    setReleasing(a.id);
-    try {
-      // Deactivate ID card link, cancel assignment, revert employee status
-      await deactivateIDCardLink(a.id, 'cancelled');
-      // Also revert CRM lead back to 'Form Submitted' if still in staff/deposit stages
-      await supabase
-        .from('crm_leads')
-        .update({ pipeline_stage: 'Form Submitted' })
-        .eq('id', a.client_id)
-        .in('pipeline_stage', ['Staff Assigned', 'Deposit Pending']);
-      toast.success(`${a.employee.full_name} released — they are now available for new assignments.`);
-      setAssignments(prev => prev.filter(x => x.id !== a.id));
-      setReleasingConfirm(null);
+      // 1. If no active link exists yet, auto-create one on the fly!
+      if (!shareableUrl || !token) {
+        token = crypto.randomUUID().replace(/-/g, '');
+        const d = new Date();
+        d.setDate(d.getDate() + 60); // valid for 60 days
+        const { error: linkErr } = await supabase
+          .from('id_card_links')
+          .insert({
+            employee_id: a.employee.id,
+            assignment_id: a.id,
+            token,
+            is_active: true,
+            expires_at: d.toISOString(),
+          });
+
+        if (linkErr) throw new Error(`Could not create ID link: ${linkErr.message}`);
+        shareableUrl = buildShareableUrl(token);
+
+        // Update local state so auth link shows immediately in table
+        setAssignments(prev => prev.map(item => item.id === a.id ? { ...item, token, shareableUrl } : item));
+      }
+
+      // 2. Resolve client phone number reliably
+      let phone = a.client?.phone_number;
+      if (!phone && a.client_id) {
+        const [crmRes, clientRes] = await Promise.all([
+          supabase.from('crm_leads').select('phone_number').eq('id', a.client_id).maybeSingle(),
+          supabase.from('clients').select('phone_number').eq('id', a.client_id).maybeSingle(),
+        ]);
+        phone = crmRes.data?.phone_number || clientRes.data?.phone_number;
+      }
+
+      if (!phone) {
+        toast.error('No phone number found for this client to send WhatsApp.');
+        return;
+      }
+
+      // 3. Send WhatsApp
+      const err = await sendIDCardLinkToClient(
+        phone,
+        a.employee.full_name,
+        a.employee.job_title || 'Care Attendant',
+        shareableUrl
+      );
+      if (err) {
+        toast.error(`WhatsApp dispatch failed: ${err}`);
+      } else {
+        toast.success(`ID Card link sent to ${a.client?.client_name || 'client'} on WhatsApp! 📱`);
+      }
     } catch (err: any) {
-      toast.error(err.message);
-    } finally { setReleasing(null); }
+      console.error('Error resending ID card link:', err);
+      toast.error(err.message || 'Failed to send ID card link.');
+    } finally {
+      setResending(null);
+    }
   };
 
   return (
@@ -1556,49 +1588,18 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                         ) : <span className="text-slate-300 text-xs">—</span>}
                       </td>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold gap-1.5 rounded-xl border border-emerald-100"
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold gap-1.5 rounded-xl border border-emerald-100 cursor-pointer"
                             onClick={() => onPreview(a.employee)}>
                             <Shield className="w-3 h-3" /> ID Card
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold gap-1.5 rounded-xl border border-blue-100"
-                            onClick={() => setGeneratingPayslipFor(a)}>
-                            <FileText className="w-3 h-3" /> Billing
-                          </Button>
-                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-primary/5 text-primary hover:bg-primary/10 font-bold gap-1.5 rounded-xl border border-primary/10"
+                          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs bg-primary/5 text-primary hover:bg-primary/10 font-bold gap-1.5 rounded-xl border border-primary/10 cursor-pointer"
                             onClick={() => handleResend(a)} disabled={resending === a.id}>
                             {resending === a.id
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <MessageCircle className="w-3 h-3" />}
                             Resend Link
                           </Button>
-
-                          {releasingConfirm === a.id ? (
-                            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
-                              <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap">Release this worker?</span>
-                              <button
-                                onClick={() => handleRelease(a)}
-                                disabled={releasing === a.id}
-                                className="text-[10px] font-black text-red-600 hover:text-red-700 ml-1 disabled:opacity-50"
-                              >
-                                {releasing === a.id ? '...' : 'Yes, Release'}
-                              </button>
-                              <button
-                                onClick={() => setReleasingConfirm(null)}
-                                className="text-[10px] font-bold text-slate-400 hover:text-slate-600 ml-1"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <Button size="sm" variant="ghost"
-                              className="h-8 px-3 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50 font-bold rounded-xl border border-amber-100 gap-1.5"
-                              onClick={() => setReleasingConfirm(a.id)}>
-                              <RotateCcw className="w-3 h-3" /> Release
-                            </Button>
-                          )}
-
-
                         </div>
                       </td>
                     </tr>
@@ -1607,14 +1608,6 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
           </table>
         </div>
       </div>
-
-      {generatingPayslipFor && (
-        <PayslipGenerator
-          assignment={generatingPayslipFor as any}
-          onClose={() => setGeneratingPayslipFor(null)}
-          onGenerated={() => { setGeneratingPayslipFor(null); load(); }}
-        />
-      )}
     </div>
   );
 }
