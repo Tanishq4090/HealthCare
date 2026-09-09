@@ -524,11 +524,11 @@ export default function AdminLayout() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex">
+        <div className="h-screen w-full bg-slate-50 flex overflow-hidden">
             {/* Sidebar */}
-            <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden lg:flex">
+            <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden lg:flex h-screen shrink-0 select-none">
                 {/* Logo */}
-                <div className="h-20 flex items-center px-6 border-b border-slate-100">
+                <div className="h-20 flex items-center px-6 border-b border-slate-100 shrink-0">
                     <Link to="/admin" className="flex items-center gap-3" title="Dashboard">
                         <img 
                             src="/99care-logo.png"
@@ -543,7 +543,7 @@ export default function AdminLayout() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 p-4 space-y-1">
+                <nav className="flex-1 p-4 space-y-1 overflow-y-auto min-h-0">
                     {filteredNavigation.map((item) => {
                         const isActive = location.pathname === item.href;
                         return (
@@ -569,7 +569,7 @@ export default function AdminLayout() {
 
                 {/* Settings Link for Admins */}
                 {user?.role === 'admin' && (
-                    <div className="px-4 pb-2">
+                    <div className="px-4 pb-2 shrink-0">
                         <Link
                             to="/admin/settings"
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${location.pathname === '/admin/settings'
@@ -584,7 +584,7 @@ export default function AdminLayout() {
                 )}
 
                 {/* User Info & Logout */}
-                <div className="p-4 border-t border-slate-100">
+                <div className="p-4 border-t border-slate-100 shrink-0 mt-auto bg-white">
                     <div className="flex items-center gap-3 px-3 py-2 mb-2">
                         <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
                             <span className="font-semibold text-slate-600 text-sm">{user?.avatar || 'U'}</span>
@@ -602,9 +602,9 @@ export default function AdminLayout() {
             </aside>
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
                 {/* Top Header */}
-                <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+                <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 z-20">
                     {/* Mobile menu button */}
                     <div className="lg:hidden flex items-center gap-3">
                         <button 
@@ -930,7 +930,7 @@ export default function AdminLayout() {
                 </header>
 
                 {/* Dynamic Page Content */}
-                <div className="flex-1 overflow-auto pb-16 lg:pb-0">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-16 lg:pb-8">
                     <Outlet />
                 </div>
 
