@@ -171,9 +171,17 @@ const manualInvoiceInitialForm = (): ManualInvoiceForm => ({
 
 
 export default function Billing() {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const currentMonthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
+
+    // Sync active tab with URL query parameter (?tab=monthly, deposits, history)
+    useEffect(() => {
+        const tabParam = searchParams.get('tab') as any;
+        if (tabParam && ['deposits', 'monthly', 'history'].includes(tabParam) && tabParam !== activeTab) {
+            setActiveTab(tabParam);
+        }
+    }, [searchParams]);
     const [historySubTab, setHistorySubTab] = useState<'deposit' | 'service'>('deposit');
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
         const now = new Date();

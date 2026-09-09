@@ -3,7 +3,7 @@ import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe,
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { MOCK_PAYROLL } from '../data/mockWorkers';
 import { format } from 'date-fns';
@@ -20,7 +20,11 @@ import {
 import { markPayslipDispatched, toggleWorkerPaidStatus, computePayrollBalance, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
 
 export default function HR() {
-    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const urlTab = searchParams.get('tab');
+    const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>(
+        urlTab === 'payroll' || urlTab === 'attendance' ? urlTab : 'allocation'
+    );
     const [isGenerating, setIsGenerating] = useState(false);
     const [workers, setWorkers] = useState<any[]>([]);
     const [payrollItems, setPayrollItems] = useState<any[]>([]);
@@ -577,6 +581,14 @@ export default function HR() {
             setActiveTab('allocation');
         }
     }, [location.state?.searchWorker]);
+
+    // Sync active tab with URL query parameter (?tab=payroll, etc.)
+    useEffect(() => {
+        const tabParam = searchParams.get('tab') as any;
+        if (tabParam && ['allocation', 'attendance', 'payroll'].includes(tabParam)) {
+            setActiveTab(tabParam);
+        }
+    }, [searchParams]);
 
 
 
@@ -1802,19 +1814,19 @@ export default function HR() {
                 {/* Module Tabs */}
                 <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0 overflow-x-auto hide-scrollbar">
                     <button
-                        onClick={() => { setActiveTab('allocation'); fetchData(); }}
+                        onClick={() => { setActiveTab('allocation'); setSearchParams({ tab: 'allocation' }); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'allocation' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Allocation
                     </button>
                     <button
-                        onClick={() => { setActiveTab('attendance'); fetchData(); }}
+                        onClick={() => { setActiveTab('attendance'); setSearchParams({ tab: 'attendance' }); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'attendance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Attendance
                     </button>
                     <button
-                        onClick={() => { setActiveTab('payroll'); fetchData(); }}
+                        onClick={() => { setActiveTab('payroll'); setSearchParams({ tab: 'payroll' }); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'payroll' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Payroll
