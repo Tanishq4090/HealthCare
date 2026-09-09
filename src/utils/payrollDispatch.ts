@@ -10,23 +10,79 @@ export function isPayslipDispatchedStatus(status?: string | null): boolean {
     return status === PAYSLIP_SENT_STATUS || status === 'Paid' || status === 'Settled';
 }
 
-/** Toggle worker payment status between Paid and Pending Payment */
+export interface PayrollBalanceBreakdown {
+    totalGross: number;
+    paidAmount: number;
+    advanceAmount: number;
+    totalPaid: number;
+    remainingDue: number;
+    isFullyPaid: boolean;
+    isPartiallyPaid: boolean;
+    displayStatus: 'Paid' | 'Partially Paid' | 'Pending Payment' | 'Sent';
+}
+
+export function computePayrollBalance(item: any): PayrollBalanceBreakdown {
+    const totalGross = Number(item.total_amount != null ? item.total_amount : ((item.days_worked || 0) * (item.daily_rate || 0)));
+    const advanceAmount = Number(item.advance_amount || 0);
+    
+    // If status is marked 'Paid' or 'Settled' and paid_amount wasn't explicitly recorded, assume totalGross was paid
+    let paidAmount = Number(item.paid_amount || 0);
+    if ((item.status === 'Paid' || item.status === 'Settled') && paidAmount === 0 && totalGross > 0) {
+        paidAmount = Math.max(0, totalGross - advanceAmount);
+    }
+    
+    const totalPaid = paidAmount + advanceAmount;
+    const remainingDue = Math.max(0, totalGross - totalPaid);
+    const isFullyPaid = remainingDue <= 0 && (totalPaid > 0 || item.status === 'Paid' || item.status === 'Settled');
+    const isPartiallyPaid = !isFullyPaid && paidAmount > 0 && remainingDue > 0;
+
+    let displayStatus: 'Paid' | 'Partially Paid' | 'Pending Payment' | 'Sent' = 'Pending Payment';
+    if (isFullyPaid) {
+        displayStatus = 'Paid';
+    } else if (isPartiallyPaid) {
+        displayStatus = 'Partially Paid';
+    } else if (item.status === 'Sent') {
+        displayStatus = 'Sent';
+    }
+
+    return {
+        totalGross,
+        paidAmount,
+        advanceAmount,
+        totalPaid,
+        remainingDue,
+        isFullyPaid,
+        isPartiallyPaid,
+        displayStatus,
+    };
+}
+
+/** Toggle worker payment status between Paid, Partially Paid, and Pending Payment */
 export async function toggleWorkerPaidStatus(
     item: any,
     currentStatus?: string
-): Promise<string> {
-    const isCurrentlyPaid = currentStatus === 'Paid' || currentStatus === 'Settled';
+): Promise<{ newStatus: string; paidAmount: number; remainingDue: number }> {
+    const balance = computePayrollBalance(item);
+    const isCurrentlyPaid = balance.isFullyPaid;
+    
+    // If currently fully paid, toggle back to pending (0 paid)
+    // If currently pending or partially paid, pay off the remaining balance!
+    const newPaidAmount = isCurrentlyPaid ? 0 : Math.max(0, balance.totalGross - balance.advanceAmount);
+    const newNetBalance = isCurrentlyPaid ? Math.max(0, balance.totalGross - balance.advanceAmount) : 0;
     const newStatus = isCurrentlyPaid ? 'Pending Payment' : 'Paid';
 
-    const payload = {
+    const payload: any = {
         status: newStatus,
+        paid_amount: newPaidAmount,
+        net_balance: newNetBalance,
+        paid_through_date: isCurrentlyPaid ? null : new Date().toISOString().split('T')[0],
         updated_at: new Date().toISOString(),
     };
 
     if (!isSyntheticPayrollItem(item) && item.id) {
         const { error } = await supabase.from('payroll').update(payload).eq('id', item.id);
         if (error) throw error;
-        return newStatus;
+        return { newStatus, paidAmount: newPaidAmount, remainingDue: newNetBalance };
     }
 
     if (item.assignment_id) {
@@ -39,7 +95,7 @@ export async function toggleWorkerPaidStatus(
         if (existing?.id) {
             const { error } = await supabase.from('payroll').update(payload).eq('id', existing.id);
             if (error) throw error;
-            return newStatus;
+            return { newStatus, paidAmount: newPaidAmount, remainingDue: newNetBalance };
         }
 
         const { error } = await supabase
@@ -56,18 +112,20 @@ export async function toggleWorkerPaidStatus(
                 period_end: item.end_date || item.period_end || null,
                 service_month: item.month || item.service_month || null,
                 daily_rate: item.daily_rate ?? 0,
-                total_amount: item.total_amount ?? 0,
-                net_balance: item.total_amount ?? 0,
+                total_amount: item.total_amount ?? balance.totalGross,
+                net_balance: newNetBalance,
+                paid_amount: newPaidAmount,
+                paid_through_date: isCurrentlyPaid ? null : new Date().toISOString().split('T')[0],
                 payslip_type: 'worker',
                 payroll_type: 'payslip',
                 status: newStatus,
             });
 
         if (error) throw error;
-        return newStatus;
+        return { newStatus, paidAmount: newPaidAmount, remainingDue: newNetBalance };
     }
 
-    return newStatus;
+    return { newStatus, paidAmount: newPaidAmount, remainingDue: newNetBalance };
 }
 
 /** Persist WhatsApp payslip dispatch — upserts DB row so list badge leaves "Pending". */

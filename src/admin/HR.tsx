@@ -17,7 +17,7 @@ import {
     periodDaysInclusive,
     daysInCalendarMonth,
 } from '../utils/workerPayroll';
-import { markPayslipDispatched, toggleWorkerPaidStatus, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
+import { markPayslipDispatched, toggleWorkerPaidStatus, computePayrollBalance, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
 
 export default function HR() {
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>('allocation');
@@ -385,13 +385,20 @@ export default function HR() {
 
                             if (verifiedDays !== p.days_worked || datesChanged) {
                                 const newTotal = verifiedDays * (p.daily_rate || 800);
-                                const newNet = Math.max(0, newTotal - (p.advance_amount || 0));
+                                const existingPaid = Number(p.paid_amount || (p.status === 'Paid' ? (p.total_amount || newTotal) : 0));
+                                const advance = Number(p.advance_amount || 0);
+                                const newNet = Math.max(0, newTotal - existingPaid - advance);
+                                const newStatus = newNet === 0 && (existingPaid > 0 || p.status === 'Paid')
+                                    ? 'Paid'
+                                    : (existingPaid > 0 ? 'Partially Paid' : (p.status === 'Sent' ? 'Sent' : 'Pending Payment'));
 
                                 supabase.from('payroll').update({
                                     days_worked: verifiedDays,
                                     days_counted: verifiedDays,
                                     total_amount: newTotal,
                                     net_balance: newNet,
+                                    paid_amount: existingPaid,
+                                    status: newStatus,
                                     period_start: updatedStart,
                                     period_end: updatedEnd,
                                     ...(asgnEnd ? { type: 'final' } : {})
@@ -403,6 +410,8 @@ export default function HR() {
                                     days_counted: verifiedDays,
                                     total_amount: newTotal,
                                     net_balance: newNet,
+                                    paid_amount: existingPaid,
+                                    status: newStatus,
                                     period_start: updatedStart,
                                     period_end: updatedEnd,
                                     ...(asgnEnd ? { type: 'final' } : {})
@@ -1967,7 +1976,7 @@ export default function HR() {
                         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Total Payables</p>
-                                <p className="text-2xl font-black text-slate-900">Rs. {payrollItems.reduce((sum, item) => sum + netFromPayrollItem(item), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-slate-900">Rs. {payrollItems.reduce((sum, item) => sum + computePayrollBalance(item).totalGross, 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center">
                                 <Users className="w-5 h-5" />
@@ -1976,7 +1985,7 @@ export default function HR() {
                         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-rose-500 font-bold uppercase tracking-wider mb-1">Unpaid Dues</p>
-                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.filter(i => i.status !== 'Paid' && i.status !== 'Settled').reduce((sum, item) => sum + netFromPayrollItem(item), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-rose-600">Rs. {payrollItems.reduce((sum, item) => sum + computePayrollBalance(item).remainingDue, 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center">
                                 <AlertTriangle className="w-5 h-5" />
@@ -1985,7 +1994,7 @@ export default function HR() {
                         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-4 shadow-md flex items-center justify-between text-white">
                             <div>
                                 <p className="text-xs text-slate-300 font-bold uppercase tracking-wider mb-1">Paid Amount</p>
-                                <p className="text-2xl font-black text-white">Rs. {payrollItems.filter(i => i.status === 'Paid' || i.status === 'Settled').reduce((sum, item) => sum + netFromPayrollItem(item), 0).toFixed(2)}</p>
+                                <p className="text-2xl font-black text-white">Rs. {payrollItems.reduce((sum, item) => sum + computePayrollBalance(item).totalPaid, 0).toFixed(2)}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
                                 <CheckCircle2 className="w-5 h-5 text-green-400" />
@@ -2053,8 +2062,9 @@ export default function HR() {
 
                                 const grp = clientGroupsMap.get(clientKey)!;
                                 grp.items.push(item);
-                                grp.totalPayables += grossFromPayrollItem(item);
-                                if (item.status === 'Paid' || item.status === 'Settled') {
+                                const bal = computePayrollBalance(item);
+                                grp.totalPayables += bal.totalGross;
+                                if (bal.isFullyPaid) {
                                     grp.paidCount++;
                                 } else {
                                     grp.pendingCount++;
@@ -2113,201 +2123,291 @@ export default function HR() {
                                             </div>
 
                                             {/* Worker Payslips for this Client */}
-                                            <div className="divide-y divide-slate-100 bg-slate-50/20">
-                                                {group.items.map(item => {
-                                                    const days = getDays(item);
-                                                    const amount = grossFromPayrollItem(item);
-                                                    return (
-                                                        <div key={`worker-${item.id}`} className="p-4 hover:bg-slate-50/80 transition-colors group">
-                                                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="w-9 h-9 rounded-xl bg-[#EAFBFB] text-[#1AA6A8] flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
-                                                                        {item.worker.charAt(0)}
+                                            <div>
+                                                {(() => {
+                                                    const isItemActive = (item: any) => {
+                                                        const asgnStatus = item.worker_assignments?.assignment_status;
+                                                        if (asgnStatus === 'completed' || asgnStatus === 'cancelled') return false;
+                                                        if (item.type === 'final') return false;
+                                                        if (item.end_date && new Date(item.end_date).getTime() < new Date().setHours(0, 0, 0, 0)) return false;
+                                                        return true;
+                                                    };
+
+                                                    const activeItems = group.items.filter(isItemActive);
+                                                    const releasedItems = group.items.filter(i => !isItemActive(i));
+
+                                                    const renderWorkerRow = (item: any, isCurrentlyActive: boolean) => {
+                                                        const days = getDays(item);
+                                                        const balance = computePayrollBalance(item);
+                                                        return (
+                                                            <div key={`worker-${item.id}`} className={`p-4 transition-colors group ${isCurrentlyActive ? 'hover:bg-sky-50/40 bg-white' : 'hover:bg-slate-50/80 bg-slate-50/20'}`}>
+                                                                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shadow-xs shrink-0 ${
+                                                                            isCurrentlyActive ? 'bg-sky-100 text-sky-700 ring-2 ring-sky-200' : 'bg-[#EAFBFB] text-[#1AA6A8]'
+                                                                        }`}>
+                                                                            {item.worker.charAt(0)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                <p className="font-bold text-slate-900 text-sm">{item.worker}</p>
+                                                                                {isCurrentlyActive ? (
+                                                                                    <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full uppercase tracking-tighter flex items-center gap-1 shadow-2xs">
+                                                                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" /> Active Deployment
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                                                                                        Released / Past
+                                                                                    </span>
+                                                                                )}
+
+                                                                                {balance.isFullyPaid ? (
+                                                                                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>
+                                                                                ) : balance.isPartiallyPaid ? (
+                                                                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">
+                                                                                        Partial (₹{balance.remainingDue.toFixed(0)} Due)
+                                                                                    </span>
+                                                                                ) : item.status === PAYSLIP_SENT_STATUS ? (
+                                                                                    <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Sent</span>
+                                                                                ) : (
+                                                                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                                                                {isCurrentlyActive ? (
+                                                                                    <span>{days} day{days !== 1 ? 's' : ''} accrued @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'Ongoing'} • Accrues Daily</span>
+                                                                                ) : (
+                                                                                    <span>{days} day{days !== 1 ? 's' : ''} locked @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'August 2026'} • Final Payout</span>
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
                                                                     </div>
-                                                                    <div>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <p className="font-bold text-slate-900 text-sm">{item.worker}</p>
-                                                                            {(item.status === 'Paid' || item.status === 'Settled') ? (
-                                                                                <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">✓ Paid</span>
-                                                                            ) : item.status === PAYSLIP_SENT_STATUS ? (
-                                                                                <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Sent</span>
-                                                                            ) : (
-                                                                                <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">Pending</span>
+
+                                                                    <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                                                                        <div className="text-right">
+                                                                            <p className="text-sm font-bold text-[#1AA6A8]">₹{balance.totalGross.toFixed(2)}</p>
+                                                                            {balance.paidAmount > 0 && (
+                                                                                <p className="text-[10px] text-emerald-600 font-semibold">₹{balance.paidAmount.toFixed(0)} paid</p>
+                                                                            )}
+                                                                            {balance.remainingDue > 0 && balance.paidAmount > 0 && (
+                                                                                <p className="text-[10px] text-amber-600 font-bold">₹{balance.remainingDue.toFixed(0)} due</p>
                                                                             )}
                                                                         </div>
-                                                                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                                                                            {days} day{days !== 1 ? 's' : ''} @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'August 2026'}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
 
-                                                                <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-                                                                    <p className="text-sm font-bold text-[#1AA6A8]">₹{amount.toFixed(2)}</p>
+                                                                        <div className="flex flex-wrap gap-1.5 items-center justify-end">
+                                                                            <button 
+                                                                                onClick={() => setPreviewPayslip(item)} 
+                                                                                className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
+                                                                            >
+                                                                                <Eye className="w-3 h-3" /> Preview
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={() => handleGenerateSinglePayslip(item)} 
+                                                                                className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
+                                                                            >
+                                                                                <Download className="w-3 h-3" /> Download
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={async () => {
+                                                                                    const workerRecord = workers.find(w => w.name === item.worker);
+                                                                                    let phone = item.worker_phone || '';
+                                                                                    if (!phone && workerRecord && workerRecord.phone) {
+                                                                                        phone = workerRecord.phone;
+                                                                                    }
+                                                                                    if (phone) {
+                                                                                        phone = phone.replace(/\D/g, '');
+                                                                                        if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
+                                                                                    }
+                                                                                    if (!phone) {
+                                                                                        toast.error("No phone number found for this worker.");
+                                                                                        return;
+                                                                                    }
+                                                                                    
+                                                                                    const toastId = toast.loading("Generating payslip and dispatching...");
+                                                                                    try {
+                                                                                        await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
+                                                                                    } catch (err: any) {
+                                                                                        toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
+                                                                                    }
+                                                                                }}
+                                                                                className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
+                                                                            >
+                                                                                <Send className="w-3 h-3" /> WhatsApp
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={async () => {
+                                                                                    try {
+                                                                                        const res = await toggleWorkerPaidStatus(item, item.status);
+                                                                                        setPayrollItems(prev => prev.map(p => {
+                                                                                            if (p.id === item.id || (item.assignment_id && p.assignment_id === item.assignment_id)) {
+                                                                                                return { ...p, status: res.newStatus, paid_amount: res.paidAmount, net_balance: res.remainingDue };
+                                                                                            }
+                                                                                            return p;
+                                                                                        }));
+                                                                                        toast.success(res.newStatus === 'Paid' ? `Marked salary for ${item.worker} as Paid!` : `Marked salary for ${item.worker} as Pending.`);
+                                                                                        fetchData();
+                                                                                    } catch (err: any) {
+                                                                                        toast.error(`Failed to update payment status: ${err.message}`);
+                                                                                    }
+                                                                                }}
+                                                                                className={`px-2 py-1 text-[10px] font-bold rounded transition-all flex items-center gap-1 ${
+                                                                                    balance.isFullyPaid
+                                                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
+                                                                                        : balance.isPartiallyPaid
+                                                                                            ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                                                                                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
+                                                                                }`}
+                                                                                title={balance.isFullyPaid ? 'Click to mark as Pending' : (balance.isPartiallyPaid ? `Click to pay remaining ₹${balance.remainingDue.toFixed(0)}` : 'Click to mark as Paid')}
+                                                                            >
+                                                                                <CheckCircle2 className="w-3 h-3" />
+                                                                                {balance.isFullyPaid 
+                                                                                    ? 'Paid ✓' 
+                                                                                    : balance.isPartiallyPaid 
+                                                                                        ? `Pay Due (₹${balance.remainingDue.toFixed(0)})` 
+                                                                                        : 'Mark Paid'
+                                                                                }
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={async () => {
+                                                                                    let targetEmployeeId = item.worker_id;
+                                                                                    if (!targetEmployeeId) {
+                                                                                        const worker = workers.find(w => w.name === item.worker);
+                                                                                        if (worker) targetEmployeeId = worker.id;
+                                                                                    }
 
-                                                                    <div className="flex flex-wrap gap-1.5 items-center justify-end">
-                                                                        <button 
-                                                                            onClick={() => setPreviewPayslip(item)} 
-                                                                            className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded transition-colors flex items-center gap-1"
-                                                                        >
-                                                                            <Eye className="w-3 h-3" /> Preview
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={() => handleGenerateSinglePayslip(item)} 
-                                                                            className="px-2 py-1 bg-[#EAFBFB] text-[10px] font-bold text-[#1AA6A8] hover:bg-[#1AA6A8] hover:text-white rounded transition-colors flex items-center gap-1"
-                                                                        >
-                                                                            <Download className="w-3 h-3" /> Download
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={async () => {
-                                                                                const workerRecord = workers.find(w => w.name === item.worker);
-                                                                                let phone = item.worker_phone || '';
-                                                                                if (!phone && workerRecord && workerRecord.phone) {
-                                                                                    phone = workerRecord.phone;
-                                                                                }
-                                                                                if (phone) {
-                                                                                    phone = phone.replace(/\D/g, '');
-                                                                                    if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
-                                                                                }
-                                                                                if (!phone) {
-                                                                                    toast.error("No phone number found for this worker.");
-                                                                                    return;
-                                                                                }
-                                                                                
-                                                                                const toastId = toast.loading("Generating payslip and dispatching...");
-                                                                                try {
-                                                                                    await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
-                                                                                } catch (err: any) {
-                                                                                    toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
-                                                                                }
-                                                                            }}
-                                                                            className="px-2 py-1 bg-green-50 text-[10px] font-bold text-green-600 hover:bg-green-500 hover:text-white rounded transition-colors flex items-center gap-1"
-                                                                        >
-                                                                            <Send className="w-3 h-3" /> WhatsApp
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={async () => {
-                                                                                try {
-                                                                                    const newStatus = await toggleWorkerPaidStatus(item, item.status);
-                                                                                    setPayrollItems(prev => prev.map(p => {
-                                                                                        if (p.id === item.id || (item.assignment_id && p.assignment_id === item.assignment_id)) {
-                                                                                            return { ...p, status: newStatus };
-                                                                                        }
-                                                                                        return p;
-                                                                                    }));
-                                                                                    toast.success(newStatus === 'Paid' ? `Marked salary for ${item.worker} as Paid!` : `Marked salary for ${item.worker} as Pending.`);
-                                                                                    fetchData();
-                                                                                } catch (err: any) {
-                                                                                    toast.error(`Failed to update payment status: ${err.message}`);
-                                                                                }
-                                                                            }}
-                                                                            className={`px-2 py-1 text-[10px] font-bold rounded transition-all flex items-center gap-1 ${
-                                                                                item.status === 'Paid' || item.status === 'Settled'
-                                                                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
-                                                                                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
-                                                                            }`}
-                                                                            title={item.status === 'Paid' || item.status === 'Settled' ? 'Click to mark as Pending' : 'Click to mark as Paid'}
-                                                                        >
-                                                                            <CheckCircle2 className="w-3 h-3" />
-                                                                            {item.status === 'Paid' || item.status === 'Settled' ? 'Paid ✓' : 'Mark Paid'}
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={async () => {
-                                                                                let targetEmployeeId = item.worker_id;
-                                                                                if (!targetEmployeeId) {
-                                                                                    const worker = workers.find(w => w.name === item.worker);
-                                                                                    if (worker) targetEmployeeId = worker.id;
-                                                                                }
+                                                                                    let assignment = null;
+                                                                                    if (item.assignment_id) {
+                                                                                        const { data: directAsgn } = await supabase
+                                                                                            .from('worker_assignments')
+                                                                                            .select('*, employees(*), clients(*)')
+                                                                                            .eq('id', item.assignment_id)
+                                                                                            .maybeSingle();
+                                                                                        if (directAsgn) assignment = directAsgn;
+                                                                                    }
 
-                                                                                let assignment = null;
-                                                                                if (item.assignment_id) {
-                                                                                    const { data: directAsgn } = await supabase
-                                                                                        .from('worker_assignments')
-                                                                                        .select('*, employees(*), clients(*)')
-                                                                                        .eq('id', item.assignment_id)
-                                                                                        .maybeSingle();
-                                                                                    if (directAsgn) assignment = directAsgn;
-                                                                                }
+                                                                                    if (!assignment && targetEmployeeId) {
+                                                                                        const { data } = await supabase
+                                                                                            .from('worker_assignments')
+                                                                                            .select('*, employees(*), clients(*)')
+                                                                                            .eq('employee_id', targetEmployeeId)
+                                                                                            .order('assigned_at', { ascending: false })
+                                                                                            .limit(1)
+                                                                                            .maybeSingle();
+                                                                                        if (data) assignment = data;
+                                                                                    }
 
-                                                                                if (!assignment && targetEmployeeId) {
-                                                                                    const { data } = await supabase
-                                                                                        .from('worker_assignments')
-                                                                                        .select('*, employees(*), clients(*)')
-                                                                                        .eq('employee_id', targetEmployeeId)
-                                                                                        .order('assigned_at', { ascending: false })
-                                                                                        .limit(1)
-                                                                                        .maybeSingle();
-                                                                                    if (data) assignment = data;
-                                                                                }
+                                                                                    if (assignment) {
+                                                                                        const effectiveStart = assignment.start_date
+                                                                                            ? assignment.start_date.split('T')[0]
+                                                                                            : (item.period_start || item.start_date);
+                                                                                        const effectiveEnd = assignment.end_date
+                                                                                            ? assignment.end_date.split('T')[0]
+                                                                                            : (item.period_end || item.end_date);
 
-                                                                                if (assignment) {
-                                                                                    const effectiveStart = assignment.start_date
-                                                                                        ? assignment.start_date.split('T')[0]
-                                                                                        : (item.period_start || item.start_date);
-                                                                                    const effectiveEnd = assignment.end_date
-                                                                                        ? assignment.end_date.split('T')[0]
-                                                                                        : (item.period_end || item.end_date);
-
-                                                                                    const generatorAssignment = {
-                                                                                        ...assignment,
-                                                                                        start_date: effectiveStart,
-                                                                                        end_date: effectiveEnd,
-                                                                                    };
-                                                                                    setAutoCloseAssignmentOnGenerate(false);
-                                                                                    setBillingAssignment(generatorAssignment);
-                                                                                } else if (targetEmployeeId) {
-                                                                                    const empRecord = workers.find(w => w.id === targetEmployeeId || w.name === item.worker);
-                                                                                    setAutoCloseAssignmentOnGenerate(false);
-                                                                                    setBillingAssignment({
-                                                                                        id: item.assignment_id || `temp-${item.id}`,
-                                                                                        employee_id: targetEmployeeId,
-                                                                                        start_date: item.period_start || item.start_date,
-                                                                                        end_date: item.period_end || item.end_date || new Date().toISOString().split('T')[0],
-                                                                                        hours_per_day: item.hours_per_day || 24,
-                                                                                        employees: empRecord ? {
-                                                                                            id: empRecord.id,
-                                                                                            full_name: empRecord.name,
-                                                                                            job_title: empRecord.role,
-                                                                                            phone: empRecord.phone,
-                                                                                            rate_10hr: empRecord.rate_10hr || item.daily_rate,
-                                                                                            rate_24hr: empRecord.rate_24hr || item.daily_rate,
-                                                                                        } : null,
-                                                                                        clients: { client_name: item.client_name || item.client || 'Client' }
-                                                                                    });
-                                                                                } else {
-                                                                                    toast.error('Could not identify worker details for generator.');
-                                                                                }
-                                                                            }}
-                                                                            className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
-                                                                            title="Open Live Generator"
-                                                                        >
-                                                                            <FileText className="w-3 h-3" /> Generator
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={async () => {
-                                                                                if (!confirm('Are you sure you want to delete this payslip?')) return;
-                                                                                try {
-                                                                                    const { error } = await supabase
-                                                                                        .from('payroll')
-                                                                                        .delete()
-                                                                                        .eq('id', item.id);
-                                                                                    if (error) throw error;
-                                                                                    toast.success("Payslip deleted successfully");
-                                                                                    fetchData();
-                                                                                } catch (err: any) {
-                                                                                    toast.error(err.message || "Failed to delete payslip");
-                                                                                }
-                                                                            }}
-                                                                            className="p-1 rounded-md bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-xs active:scale-95 ml-1"
-                                                                            title="Delete Payslip"
-                                                                        >
-                                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                                        </button>
+                                                                                        const generatorAssignment = {
+                                                                                            ...assignment,
+                                                                                            start_date: effectiveStart,
+                                                                                            end_date: effectiveEnd,
+                                                                                        };
+                                                                                        setAutoCloseAssignmentOnGenerate(false);
+                                                                                        setBillingAssignment(generatorAssignment);
+                                                                                    } else if (targetEmployeeId) {
+                                                                                        const empRecord = workers.find(w => w.id === targetEmployeeId || w.name === item.worker);
+                                                                                        setAutoCloseAssignmentOnGenerate(false);
+                                                                                        setBillingAssignment({
+                                                                                            id: item.assignment_id || `temp-${item.id}`,
+                                                                                            employee_id: targetEmployeeId,
+                                                                                            start_date: item.period_start || item.start_date,
+                                                                                            end_date: item.period_end || item.end_date || new Date().toISOString().split('T')[0],
+                                                                                            hours_per_day: item.hours_per_day || 24,
+                                                                                            employees: empRecord ? {
+                                                                                                id: empRecord.id,
+                                                                                                full_name: empRecord.name,
+                                                                                                job_title: empRecord.role,
+                                                                                                phone: empRecord.phone,
+                                                                                                rate_10hr: empRecord.rate_10hr || item.daily_rate,
+                                                                                                rate_24hr: empRecord.rate_24hr || item.daily_rate,
+                                                                                            } : null,
+                                                                                            clients: { client_name: item.client_name || item.client || 'Client' }
+                                                                                        });
+                                                                                    } else {
+                                                                                        toast.error('Could not identify worker details for generator.');
+                                                                                    }
+                                                                                }}
+                                                                                className="px-2 py-1 bg-slate-800 text-[10px] font-bold text-white hover:bg-slate-700 rounded transition-colors flex items-center gap-1"
+                                                                                title="Open Live Generator"
+                                                                            >
+                                                                                <FileText className="w-3 h-3" /> Generator
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={async () => {
+                                                                                    if (!confirm('Are you sure you want to delete this payslip?')) return;
+                                                                                    try {
+                                                                                        const { error } = await supabase
+                                                                                            .from('payroll')
+                                                                                            .delete()
+                                                                                            .eq('id', item.id);
+                                                                                        if (error) throw error;
+                                                                                        toast.success("Payslip deleted successfully");
+                                                                                        fetchData();
+                                                                                    } catch (err: any) {
+                                                                                        toast.error(err.message || "Failed to delete payslip");
+                                                                                    }
+                                                                                }}
+                                                                                className="p-1 rounded-md bg-red-50 text-red-500 hover:bg-red-100 transition-all shadow-xs active:scale-95 ml-1"
+                                                                                title="Delete Payslip"
+                                                                            >
+                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
+                                                        );
+                                                    };
+
+                                                    return (
+                                                        <div>
+                                                            {activeItems.length > 0 && (
+                                                                <div>
+                                                                    <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 flex items-center justify-between">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                                                                            <span className="text-[11px] font-bold text-sky-900 uppercase tracking-wide">
+                                                                                Currently Deployed Staff ({activeItems.length})
+                                                                            </span>
+                                                                        </div>
+                                                                        <span className="text-[10px] text-sky-600 font-medium">
+                                                                            Accrues daily • Locks upon release
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="divide-y divide-slate-100">
+                                                                        {activeItems.map(item => renderWorkerRow(item, true))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {releasedItems.length > 0 && (
+                                                                <div>
+                                                                    <div className="px-5 py-2 bg-slate-50 border-y border-slate-200/80 flex items-center justify-between">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+                                                                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                                                                                Completed &amp; Relieved Staff ({releasedItems.length})
+                                                                            </span>
+                                                                        </div>
+                                                                        <span className="text-[10px] text-slate-500 font-medium">
+                                                                            Duties ended • Ready for final payout
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="divide-y divide-slate-100 bg-slate-50/30">
+                                                                        {releasedItems.map(item => renderWorkerRow(item, false))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     );
-                                                })}
+                                                })()}
                                             </div>
                                         </div>
                                     ))}
