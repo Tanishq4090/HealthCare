@@ -284,9 +284,10 @@ export default function HR() {
                         month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'August 2026',
                         payroll_type: 'payslip',
                         start_date: a.start_date,
-                        end_date: a.end_date || new Date().toISOString().split('T')[0],
+                        end_date: a.end_date || null,
                         hours_per_day: a.hours_per_day,
                         preferred_payment_type: emp?.preferred_payment_type,
+                        assignment_status: a.assignment_status,
                         worker_assignments: { assignment_status: a.assignment_status },
                         _isSynthetic: true
                     };
@@ -315,25 +316,39 @@ export default function HR() {
             }
 
             const validDbPayroll = dedupedDbRows.map((p: any) => {
-                if (p.status === 'Pending Payment' || p.status === 'Pending') {
-                    const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
-                    if (empId) {
-                        // Find the SPECIFIC assignment that corresponds to this payroll entry
-                        let matchedAsgn = (assignmentsData || []).find((a: any) => a.id === p.assignment_id);
-                        if (!matchedAsgn && p.assignment_id && servicesData) {
-                            for (const s of servicesData) {
-                                const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
-                                if (swa && swa.employee_id === empId) {
-                                    const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
-                                    matchedAsgn = (assignmentsData || []).find((a: any) => 
-                                        a.employee_id === empId && 
-                                        a.start_date?.split('T')[0] === swaStart
-                                    );
-                                    if (matchedAsgn) break;
-                                }
-                            }
+                const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
+                // Find the SPECIFIC assignment that corresponds to this payroll entry
+                let matchedAsgn = (assignmentsData || []).find((a: any) => a.id === p.assignment_id);
+                if (!matchedAsgn && p.assignment_id && servicesData) {
+                    for (const s of servicesData) {
+                        const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
+                        if (swa && swa.employee_id === empId) {
+                            const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
+                            matchedAsgn = (assignmentsData || []).find((a: any) => 
+                                a.employee_id === empId && 
+                                a.start_date?.split('T')[0] === swaStart
+                            );
+                            if (matchedAsgn) break;
                         }
+                    }
+                }
+                if (!matchedAsgn && empId) {
+                    matchedAsgn = (assignmentsData || []).find((a: any) => 
+                        a.employee_id === empId && 
+                        (a.clients?.client_name || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase()
+                    );
+                }
 
+                const asgnStatus = matchedAsgn ? matchedAsgn.assignment_status : (p.type === 'final' ? 'completed' : 'active');
+                const enrichedBase = {
+                    ...p,
+                    assignment_status: asgnStatus,
+                    worker_assignments: { assignment_status: asgnStatus },
+                    end_date: matchedAsgn ? matchedAsgn.end_date : (p.type === 'final' ? (p.period_end || p.end_date) : null),
+                };
+
+                if (p.status === 'Pending Payment' || p.status === 'Pending') {
+                    if (empId) {
                         const targetAsgnIds = new Set<string>();
                         if (p.assignment_id) targetAsgnIds.add(p.assignment_id);
                         if (matchedAsgn) targetAsgnIds.add(matchedAsgn.id);
@@ -405,7 +420,7 @@ export default function HR() {
                                 }).eq('id', p.id).then();
 
                                 return {
-                                    ...p,
+                                    ...enrichedBase,
                                     days_worked: verifiedDays,
                                     days_counted: verifiedDays,
                                     total_amount: newTotal,
@@ -420,7 +435,7 @@ export default function HR() {
                         }
                     }
                 }
-                return p;
+                return enrichedBase;
             });
 
             // DB entries and synthetic items are combined. 
@@ -2032,6 +2047,28 @@ export default function HR() {
                                 );
                             }
 
+                            const isPayrollItemActive = (item: any) => {
+                                const asgnStatus = item.worker_assignments?.assignment_status || item.assignment_status;
+                                if (asgnStatus === 'completed' || asgnStatus === 'cancelled') return false;
+                                if (item.type === 'final') return false;
+                                if (asgnStatus === 'active') {
+                                    if (item.end_date) {
+                                        const endMs = new Date(item.end_date).getTime();
+                                        if (endMs < Date.now()) return false;
+                                    }
+                                    return true;
+                                }
+                                const hasActiveAsgn = activeAssignments.some((a: any) => {
+                                    if (item.assignment_id && a.id === item.assignment_id) return true;
+                                    const sameWorker = (a.employees?.full_name || '').trim().toLowerCase() === (item.worker || '').trim().toLowerCase();
+                                    const sameClient = (a.clients?.client_name || '').trim().toLowerCase() === (item.client_name || item.client || '').trim().toLowerCase();
+                                    return sameWorker && sameClient;
+                                });
+                                if (hasActiveAsgn) return true;
+                                if (item.end_date && new Date(item.end_date).getTime() < Date.now()) return false;
+                                return false;
+                            };
+
                             // Group payslips by client service
                             const clientGroupsMap = new Map<string, {
                                 clientId: string;
@@ -2040,6 +2077,7 @@ export default function HR() {
                                 totalPayables: number;
                                 paidCount: number;
                                 pendingCount: number;
+                                activeCount: number;
                             }>();
 
                             filtered.forEach(item => {
@@ -2057,6 +2095,7 @@ export default function HR() {
                                         totalPayables: 0,
                                         paidCount: 0,
                                         pendingCount: 0,
+                                        activeCount: 0,
                                     });
                                 }
 
@@ -2068,6 +2107,9 @@ export default function HR() {
                                     grp.paidCount++;
                                 } else {
                                     grp.pendingCount++;
+                                }
+                                if (isPayrollItemActive(item)) {
+                                    grp.activeCount++;
                                 }
                             });
 
@@ -2100,6 +2142,12 @@ export default function HR() {
                                                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
                                                                 {group.items.length} Payslip{group.items.length !== 1 ? 's' : ''}
                                                             </span>
+                                                            {group.activeCount > 0 && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-700 flex items-center gap-1">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                                                                    {group.activeCount} Active
+                                                                </span>
+                                                            )}
                                                             {group.paidCount > 0 && (
                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
                                                                     {group.paidCount} Paid
@@ -2125,16 +2173,8 @@ export default function HR() {
                                             {/* Worker Payslips for this Client */}
                                             <div>
                                                 {(() => {
-                                                    const isItemActive = (item: any) => {
-                                                        const asgnStatus = item.worker_assignments?.assignment_status;
-                                                        if (asgnStatus === 'completed' || asgnStatus === 'cancelled') return false;
-                                                        if (item.type === 'final') return false;
-                                                        if (item.end_date && new Date(item.end_date).getTime() < new Date().setHours(0, 0, 0, 0)) return false;
-                                                        return true;
-                                                    };
-
-                                                    const activeItems = group.items.filter(isItemActive);
-                                                    const releasedItems = group.items.filter(i => !isItemActive(i));
+                                                    const activeItems = group.items.filter(isPayrollItemActive);
+                                                    const releasedItems = group.items.filter(i => !isPayrollItemActive(i));
 
                                                     const renderWorkerRow = (item: any, isCurrentlyActive: boolean) => {
                                                         const days = getDays(item);
