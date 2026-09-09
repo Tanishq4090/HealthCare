@@ -211,10 +211,17 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
       const { error } = await supabase.from('attendance').insert(inserts);
       if (error) throw error;
 
-      toast.success(`Marked ${inserts.length} days as Present`, { id: 'bulk-assign' });
+      toast.success(
+        isOpenEnded
+          ? `Marked ${inserts.length} past days as Present. Attendance is up to date!`
+          : `Marked ${inserts.length} days as Present.`,
+        { id: 'bulk-assign' }
+      );
       await fetchAttendance();
       const prevMarked = days.filter(d => d.status !== null).length;
-      if (prevMarked + unmarkedPast.length >= allDays.length) setShowCompletionPopup(true);
+      if (!isOpenEnded && prevMarked + unmarkedPast.length >= allDays.length) {
+        setShowCompletionPopup(true);
+      }
     } catch (err: any) {
       toast.error('Bulk mark failed: ' + err.message, { id: 'bulk-assign' });
     } finally {
@@ -359,7 +366,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
               </span>
             )}
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
-              {days.filter(d => d.status !== null).length}/{allDays.length} marked
+              {days.filter(d => d.status !== null).length}/{allDays.length} {isOpenEnded ? 'days logged' : 'marked'}
             </span>
           </div>
           {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -452,19 +459,36 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             <div className="border-l border-slate-100 pl-4">
               <span className="text-slate-500 text-xs">Service Duration</span>
               <p className="font-bold text-slate-900">
-                {isOpenEnded ? 'Open-ended' : `${allDays.length} days`}
+                {isOpenEnded ? 'Active (Open-ended)' : `${allDays.length} days`}
               </p>
               {isOpenEnded && (
-                <p className="text-[10px] text-slate-400 mt-0.5">{allDays.length} days elapsed since start</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{allDays.length} days elapsed to date</p>
               )}
             </div>
-            <div className="border-l border-slate-100 pl-4"><span className="text-slate-500 text-xs">Completion</span><p className="font-bold text-slate-900">{Math.round((days.filter(d => d.status !== null).length / Math.max(allDays.length, 1)) * 100)}%</p></div>
+            <div className="border-l border-slate-100 pl-4">
+              <span className="text-slate-500 text-xs">{isOpenEnded ? 'Attendance Status' : 'Completion'}</span>
+              <p className="font-bold text-slate-900">
+                {isOpenEnded ? (
+                  days.filter(d => d.status !== null).length >= allDays.length ? (
+                    <span className="text-emerald-600 flex items-center gap-1 font-bold">
+                      <CheckCircle2 className="w-4 h-4" /> Up to Date
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-bold">
+                      {allDays.length - days.filter(d => d.status !== null).length} days unlogged
+                    </span>
+                  )
+                ) : (
+                  `${Math.round((days.filter(d => d.status !== null).length / Math.max(allDays.length, 1)) * 100)}%`
+                )}
+              </p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Completion Popup */}
-      {showCompletionPopup && (
+      {/* Completion Popup - strictly for bounded assignments with a scheduled end date */}
+      {showCompletionPopup && !isOpenEnded && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-emerald-100">
             <div className="p-6 text-center">
