@@ -6,7 +6,8 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import {
     Users, UserCheck, Wallet, IndianRupee,
     FileText, CheckCircle2, MessageSquare,
-    RefreshCw, Clock, Bot, ArrowRight
+    RefreshCw, Clock, Bot, ArrowRight, Globe,
+    Calendar, MapPin, Phone, MessageCircle
 } from 'lucide-react';
 
 type ActivityItem = {
@@ -38,6 +39,18 @@ type UrgentClientBill = {
     period_end: string;
 };
 
+type WebsiteBooking = {
+    id: string;
+    name: string;
+    phone: string;
+    service: string;
+    location?: string;
+    patientNotes?: string;
+    appointment_datetime?: string;
+    pipeline_stage: string;
+    created_at: string;
+};
+
 export default function Dashboard() {
     const navigate = useNavigate();
 
@@ -53,11 +66,13 @@ export default function Dashboard() {
         staffPendingCount: 0,
         depositsHeld: 0,
         activeLeadsCount: 0,
+        websiteBookingsCount: 0,
     });
 
     const [monthlyCollectionsTrend, setMonthlyCollectionsTrend] = useState<any[]>([]);
     const [urgentStaffPayouts, setUrgentStaffPayouts] = useState<UrgentStaffPayout[]>([]);
     const [urgentClientBills, setUrgentClientBills] = useState<UrgentClientBill[]>([]);
+    const [websiteBookings, setWebsiteBookings] = useState<WebsiteBooking[]>([]);
     const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -152,13 +167,19 @@ export default function Dashboard() {
                 { data: payments },
                 { data: bills },
                 { data: payrolls },
+                { data: webBookingsData },
             ] = await Promise.all([
                 supabase.from('crm_leads').select('id, name, pipeline_stage').is('deleted_at', null),
                 supabase.from('employees').select('id, full_name, status'),
                 supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle(),
                 supabase.from('payments').select('id, amount, payment_type, payment_date'),
                 supabase.from('service_bills').select('id, amount, notes, period_start, period_end, services(clients(client_name))'),
-                supabase.from('payroll').select('id, worker, client_name, days_worked, net_balance, status, period_start, period_end, type')
+                supabase.from('payroll').select('id, worker, client_name, days_worked, net_balance, status, period_start, period_end, type'),
+                supabase.from('crm_leads').select('id, name, phone, notes, appointment_datetime, pipeline_stage, created_at, source')
+                    .or('source.ilike.%website%,source.ilike.%appointment%,appointment_datetime.not.is.null')
+                    .is('deleted_at', null)
+                    .order('created_at', { ascending: false })
+                    .limit(6)
             ]);
 
             // 1. Leads
@@ -274,6 +295,36 @@ export default function Dashboard() {
             });
             setUrgentStaffPayouts(pendingPayrollsList);
 
+            // 7. Recent Website Bookings Parsing
+            const parsedBookings: WebsiteBooking[] = (webBookingsData || []).map(l => {
+                const lines = (l.notes || '').split('\n');
+                let service = '';
+                let location = '';
+                let patientNotes = '';
+                lines.forEach((line: string) => {
+                    const idx = line.indexOf(':');
+                    if (idx !== -1) {
+                        const k = line.slice(0, idx).trim().toLowerCase();
+                        const v = line.slice(idx + 1).trim();
+                        if (k === 'service') service = v;
+                        if (k === 'location') location = v;
+                        if (k.includes('patient note')) patientNotes = v;
+                    }
+                });
+                return {
+                    id: l.id,
+                    name: l.name || 'Website Visitor',
+                    phone: l.phone || '',
+                    service: service || 'Home Healthcare',
+                    location: location || undefined,
+                    patientNotes: patientNotes && patientNotes.toLowerCase() !== 'no' ? patientNotes : undefined,
+                    appointment_datetime: l.appointment_datetime,
+                    pipeline_stage: l.pipeline_stage || 'New Inquiry',
+                    created_at: l.created_at
+                };
+            });
+            setWebsiteBookings(parsedBookings);
+
             setStats({
                 activeStaff: activeEmployees.length,
                 availableStaff: availableEmployees.length,
@@ -285,7 +336,8 @@ export default function Dashboard() {
                 staffPayables: staffPayablesSum,
                 staffPendingCount: pendingPayrollsList.length,
                 depositsHeld,
-                activeLeadsCount: activeLeads.length
+                activeLeadsCount: activeLeads.length,
+                websiteBookingsCount: parsedBookings.length,
             });
 
             await fetchRecentActivity();
@@ -302,6 +354,7 @@ export default function Dashboard() {
         const sub = supabase.channel('dashboard_realtime')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => fetchDashboardData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll' }, () => fetchDashboardData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_leads' }, () => fetchDashboardData())
             .subscribe();
 
         return () => {
@@ -318,6 +371,22 @@ export default function Dashboard() {
         const diffHours = Math.floor(diffMinutes / 60);
         if (diffHours < 24) return `${diffHours}h ago`;
         return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    };
+
+    const formatApptDateTime = (dateStr?: string) => {
+        if (!dateStr) return null;
+        try {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch {
+            return dateStr;
+        }
     };
 
     const getActivityIcon = (eventType: string) => {
@@ -345,7 +414,7 @@ export default function Dashboard() {
                         Business Dashboard
                     </h1>
                     <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                        Real-time cash collections, staff duties, and outstanding balances.
+                        Real-time cash collections, website bookings, staff duties, and outstanding balances.
                     </p>
                 </div>
                 <button
@@ -401,8 +470,8 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* ── 2. Core Numbers: 5 Dedicated Cards (Opens Exact Tabs!) ─────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+            {/* ── 2. Core Numbers: 6 Dedicated Cards (Opens Exact Tabs!) ─────────── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
                 {/* 1. Staff on Duty */}
                 <div
                     onClick={() => navigate('/admin/clients')}
@@ -417,7 +486,7 @@ export default function Dashboard() {
                     <div>
                         <h3 className="text-2xl font-black text-slate-900">{stats.activeStaff}</h3>
                         <p className="text-[11px] font-semibold text-slate-400 mt-1 flex items-center justify-between">
-                            <span>Deployed at patients</span>
+                            <span>Deployed</span>
                             <ArrowRight className="w-3 h-3 text-teal-600 group-hover:translate-x-1 transition-transform" />
                         </p>
                     </div>
@@ -457,7 +526,7 @@ export default function Dashboard() {
                     <div>
                         <h3 className="text-2xl font-black text-rose-900">₹{stats.staffPayables.toLocaleString('en-IN')}</h3>
                         <p className="text-[11px] font-bold text-rose-700 mt-1 flex items-center justify-between">
-                            <span>{stats.staffPendingCount} pending payouts</span>
+                            <span>{stats.staffPendingCount} pending</span>
                             <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
                                 Pay in HR →
                             </span>
@@ -471,7 +540,7 @@ export default function Dashboard() {
                     className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/90 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-extrabold text-amber-800 uppercase tracking-wider">Client Invoices Due</span>
+                        <span className="text-xs font-extrabold text-amber-800 uppercase tracking-wider">Invoices Due</span>
                         <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700">
                             <FileText className="w-4 h-4" />
                         </div>
@@ -479,7 +548,7 @@ export default function Dashboard() {
                     <div>
                         <h3 className="text-2xl font-black text-amber-900">₹{stats.clientReceivables.toLocaleString('en-IN')}</h3>
                         <p className="text-[11px] font-bold text-amber-700 mt-1 flex items-center justify-between">
-                            <span>{stats.clientUnpaidCount} unpaid bills</span>
+                            <span>{stats.clientUnpaidCount} unpaid</span>
                             <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
                                 Invoices →
                             </span>
@@ -508,9 +577,151 @@ export default function Dashboard() {
                         </p>
                     </div>
                 </div>
+
+                {/* 6. Website Bookings */}
+                <div
+                    onClick={() => navigate('/admin/crm')}
+                    className="bg-teal-50/40 p-4 rounded-xl border border-teal-200/90 hover:border-teal-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-extrabold text-teal-800 uppercase tracking-wider">Web Bookings</span>
+                        <div className="p-1.5 rounded-lg bg-teal-100 text-teal-700">
+                            <Globe className="w-4 h-4" />
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="text-2xl font-black text-teal-900">{stats.websiteBookingsCount}</h3>
+                        <p className="text-[11px] font-bold text-teal-700 mt-1 flex items-center justify-between">
+                            <span>Online requests</span>
+                            <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                View CRM →
+                            </span>
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            {/* ── 3. Immediate Action Items (Two Clean Side-by-Side Lists) ───────── */}
+            {/* ── 3. Recent Website Bookings (Prominent Section) ─────────────────── */}
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+                    <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-teal-50 text-teal-600">
+                            <Globe className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                                Recent Website Bookings
+                                <span className="text-xs font-black bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">
+                                    {websiteBookings.length} Requests
+                                </span>
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                Real-time home care appointment bookings submitted directly from 99care.org
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => navigate('/admin/crm')}
+                        className="text-xs font-bold text-teal-600 hover:text-teal-700 flex items-center gap-1"
+                    >
+                        View All in CRM →
+                    </button>
+                </div>
+
+                {websiteBookings.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {websiteBookings.map((booking) => (
+                            <div
+                                key={booking.id}
+                                className="p-4 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:bg-white hover:border-teal-300 hover:shadow-md transition-all flex flex-col justify-between gap-3"
+                            >
+                                <div>
+                                    {/* Name and stage */}
+                                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                                        <h3 className="text-sm font-bold text-slate-900 truncate">
+                                            {booking.name}
+                                        </h3>
+                                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/70 shrink-0">
+                                            {booking.pipeline_stage}
+                                        </span>
+                                    </div>
+
+                                    {/* Service badge */}
+                                    <div className="inline-flex items-center gap-1 text-xs font-semibold text-slate-800 bg-white border border-slate-200/80 px-2.5 py-1 rounded-md mb-2 shadow-2xs">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                        <span className="truncate">{booking.service}</span>
+                                    </div>
+
+                                    {/* Appointment time */}
+                                    {booking.appointment_datetime && (
+                                        <p className="text-xs text-slate-600 flex items-center gap-1.5 mb-1">
+                                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            <span className="font-medium text-slate-800">
+                                                {formatApptDateTime(booking.appointment_datetime)}
+                                            </span>
+                                        </p>
+                                    )}
+
+                                    {/* Location */}
+                                    {booking.location && (
+                                        <p className="text-xs text-slate-500 flex items-start gap-1.5 mb-1.5">
+                                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                            <span className="line-clamp-1">{booking.location}</span>
+                                        </p>
+                                    )}
+
+                                    {/* Patient Notes */}
+                                    {booking.patientNotes && (
+                                        <div className="p-2 rounded-lg bg-amber-50/70 border border-amber-200/60 text-[11px] text-amber-900 italic line-clamp-2 mt-1.5">
+                                            "{booking.patientNotes}"
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Bottom action buttons */}
+                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                                    <button
+                                        onClick={() => navigate('/admin/crm', { state: { openLeadId: booking.id } })}
+                                        className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1"
+                                    >
+                                        Open in CRM →
+                                    </button>
+
+                                    <div className="flex items-center gap-1.5">
+                                        {booking.phone && (
+                                            <>
+                                                <a
+                                                    href={`tel:${booking.phone}`}
+                                                    title={`Call ${booking.phone}`}
+                                                    className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-teal-600 hover:border-teal-300 transition-colors shadow-2xs"
+                                                >
+                                                    <Phone className="w-3.5 h-3.5" />
+                                                </a>
+                                                <a
+                                                    href={`https://wa.me/91${booking.phone.replace(/\D/g, '').slice(-10)}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    title="Message on WhatsApp"
+                                                    className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition-colors shadow-2xs"
+                                                >
+                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                </a>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-8 text-slate-400 text-xs">
+                        <Globe className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        No website bookings received yet.
+                    </div>
+                )}
+            </div>
+
+            {/* ── 4. Immediate Action Items (Two Clean Side-by-Side Lists) ───────── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Column 1: Relieved Staff Awaiting Payout */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
@@ -630,7 +841,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* ── 4. Compact Recent Activity Stream ─────────────────────────────── */}
+            {/* ── 5. Compact Recent Activity Stream ─────────────────────────────── */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
                     <h3 className="font-bold text-slate-900 text-sm">Recent Activity</h3>
