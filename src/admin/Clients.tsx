@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -21,10 +21,6 @@ export default function Clients() {
         reviewCollection: true,
     });
 
-    // Edit Modal State
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingClient, setEditingClient] = useState<any>(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [inspectingClient, setInspectingClient] = useState<any>(null);
 
@@ -478,10 +474,6 @@ export default function Clients() {
         }
     };
 
-    const openEditModal = (client: any) => {
-        setEditingClient({ ...client });
-        setIsEditModalOpen(true);
-    };
 
     const handleRequestReview = async (client: any) => {
         if (!client.phone) {
@@ -518,52 +510,6 @@ export default function Clients() {
         }
     };
 
-    const handleSaveClient = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        try {
-            // 1. Update Client (including phone and email)
-            const { error: clientError } = await supabase
-                .from('clients')
-                .update({ 
-                    client_name: editingClient.name,
-                    phone_number: editingClient.phone,
-                    email: editingClient.email
-                })
-                .eq('id', editingClient.id);
-
-            if (clientError) throw clientError;
-
-            // 1b. Keep crm_leads synchronized with same name, phone, and email
-            await supabase
-                .from('crm_leads')
-                .update({
-                    name: editingClient.name,
-                    phone: editingClient.phone,
-                    whatsapp_number: editingClient.phone,
-                    email: editingClient.email
-                })
-                .eq('id', editingClient.id);
-
-            // 2. Sync with Employees (As requested: Employee gets rating from Client's company service review)
-            const { error: workerError } = await supabase
-                .from('employees')
-                .update({ rating: editingClient.service_rating })
-                .eq('assigned_client', editingClient.name);
-
-            if (workerError) throw workerError;
-
-            setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
-            setIsEditModalOpen(false);
-            toast.success(`${editingClient.name} updated. Worker ratings synchronized!`);
-            fetchClients();
-        } catch (err: any) {
-            console.error('Error syncing ratings:', err);
-            toast.error(`Failed to save: ${err.message}`);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
 
     const fetchClients = async () => {
         try {
@@ -1103,13 +1049,6 @@ export default function Clients() {
                                                     }
                                                 </button>
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
-                                                    className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all border border-transparent hover:border-primary/20"
-                                                    title="Edit Profile"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button
                                                     onClick={(e) => { e.stopPropagation(); setDeleteConfirmClient(client); }}
                                                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
                                                     title="Delete permanently"
@@ -1247,102 +1186,6 @@ export default function Clients() {
                 </div>
             </div>
 
-            {/* Edit Client Modal */}
-            {isEditModalOpen && editingClient && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
-                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-100 bg-white/50 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                    <Building className="w-5 h-5 text-primary" />
-                                </div>
-                                <h2 className="text-lg font-bold text-slate-900">Edit Client Details</h2>
-                            </div>
-                            <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleSaveClient} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Company Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={editingClient.name}
-                                    onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1">Primary Contact Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={editingClient.contact}
-                                    onChange={(e) => setEditingClient({ ...editingClient, contact: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
-                                    <input
-                                        type="email"
-                                        required
-                                        value={editingClient.email}
-                                        onChange={(e) => setEditingClient({ ...editingClient, email: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Status</label>
-                                    <select
-                                        value={editingClient.status}
-                                        onChange={(e) => setEditingClient({ ...editingClient, status: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
-                                    >
-                                        <option value="Active">Active</option>
-                                        <option value="Inactive">Inactive</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2 flex justify-between">
-                                    <span>Service Quality Rating</span>
-                                    <span className="text-primary font-bold">{editingClient.service_rating || 0} Stars</span>
-                                </label>
-                                <div className="flex gap-2">
-                                    {[1, 2, 3, 4, 5].map(star => (
-                                        <button
-                                            key={star}
-                                            type="button"
-                                            onClick={() => setEditingClient({ ...editingClient, service_rating: star })}
-                                            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                                                (editingClient.service_rating || 0) >= star 
-                                                ? 'bg-amber-100 text-amber-500 border-amber-200' 
-                                                : 'bg-slate-50 text-slate-300 border-slate-100'
-                                            } border hover:scale-110`}
-                                        >
-                                            <Star className={`w-5 h-5 ${(editingClient.service_rating || 0) >= star ? 'fill-current' : ''}`} />
-                                        </button>
-                                    ))}
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-2 italic">Note: This rating will automatically apply to all workers currently assigned to this client.</p>
-                            </div>
-
-                            <div className="pt-2 flex gap-3">
-                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
-                                    Cancel
-                                </button>
-                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2.5 px-4 rounded-lg font-semibold text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
-                                    {isSubmitting && <Star className="w-4 h-4 animate-spin" />}
-                                    Save & Sync Ratings
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
             {/* Comprehensive Restart Service Modal */}
             {restartModal && (
