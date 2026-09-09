@@ -9,6 +9,7 @@ import {
     RefreshCw, Clock, Bot, ArrowRight, Globe,
     Calendar, MapPin, Phone, MessageCircle
 } from 'lucide-react';
+import { computePayrollBalance } from '../utils/payrollDispatch';
 
 type ActivityItem = {
     id: string;
@@ -64,6 +65,8 @@ export default function Dashboard() {
         clientUnpaidCount: 0,
         staffPayables: 0,
         staffPendingCount: 0,
+        relievedStaffDues: 0,
+        relievedStaffCount: 0,
         depositsHeld: 0,
         activeLeadsCount: 0,
         websiteBookingsCount: 0,
@@ -168,18 +171,22 @@ export default function Dashboard() {
                 { data: bills },
                 { data: payrolls },
                 { data: webBookingsData },
+                { data: assignmentsData },
+                { data: attendanceData },
             ] = await Promise.all([
                 supabase.from('crm_leads').select('id, name, pipeline_stage').is('deleted_at', null),
-                supabase.from('employees').select('id, full_name, status'),
+                supabase.from('employees').select('id, full_name, status, rate_10hr, rate_24hr'),
                 supabase.from('automation_settings').select('pipeline_stages').eq('id', 'global').maybeSingle(),
                 supabase.from('payments').select('id, amount, payment_type, payment_date'),
                 supabase.from('service_bills').select('id, amount, notes, period_start, period_end, services(clients(client_name))'),
-                supabase.from('payroll').select('id, worker, client_name, days_worked, net_balance, status, period_start, period_end, type'),
+                supabase.from('payroll').select('*'),
                 supabase.from('crm_leads').select('id, name, phone, notes, appointment_datetime, pipeline_stage, created_at, source')
                     .or('source.ilike.%website%,source.ilike.%appointment%,appointment_datetime.not.is.null')
                     .is('deleted_at', null)
                     .order('created_at', { ascending: false })
-                    .limit(6)
+                    .limit(6),
+                supabase.from('worker_assignments').select('id, client_id, employee_id, assignment_status, start_date, end_date, hours_per_day, daily_rate_worker, clients(client_name)').neq('assignment_status', 'cancelled'),
+                supabase.from('attendance').select('worker_id, status, hours_worked, is_half_day, duty_date, assignment_id')
             ]);
 
             // 1. Leads
@@ -266,26 +273,70 @@ export default function Dashboard() {
             });
             setUrgentClientBills(unpaidBillsList);
 
-            // 6. Staff Payables (Wages Due)
-            const pendingPayrollsList: UrgentStaffPayout[] = [];
-            let staffPayablesSum = 0;
-
-            (payrolls || []).forEach(p => {
-                if (p.status === 'Pending Payment') {
-                    const bal = Number(p.net_balance) || 0;
-                    staffPayablesSum += bal;
-                    pendingPayrollsList.push({
-                        id: p.id,
-                        worker: p.worker || 'Staff',
-                        client_name: p.client_name || 'Client',
-                        days_worked: Number(p.days_worked) || 0,
-                        net_balance: bal,
-                        period_start: p.period_start,
-                        period_end: p.period_end,
-                        type: p.type
-                    });
-                }
+            // 6. Staff Payables (Wages Due) — Matching HR Payroll's Reconciled Engine
+            const rawValid = (payrolls || []).filter((p: any) => !!p.worker);
+            const sortedDb = [...rawValid].sort((a: any, b: any) => {
+                if (a.type === 'final' && b.type !== 'final') return -1;
+                if (b.type === 'final' && a.type !== 'final') return 1;
+                return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
             });
+
+            const seenAsgnKeys = new Set<string>();
+            const dedupedDbRows: any[] = [];
+            for (const p of sortedDb) {
+                const key = p.assignment_id ? `asgn_${p.assignment_id}` : `wc_${(p.worker || '').trim().toLowerCase()}_${(p.client_name || '').trim().toLowerCase()}_${p.period_start || ''}`;
+                if (seenAsgnKeys.has(key)) continue;
+                seenAsgnKeys.add(key);
+                dedupedDbRows.push(p);
+            }
+
+            const existingAssignmentIds = new Set(dedupedDbRows.map(p => p.assignment_id).filter(Boolean));
+            const syntheticItems = (assignmentsData || [])
+                .filter((a: any) => a.assignment_status === 'active' && !existingAssignmentIds.has(a.id))
+                .map((a: any) => {
+                    const emp = (employees || []).find((e: any) => e.id === a.employee_id);
+                    const workerAttendance = (attendanceData || []).filter((s: any) => s.assignment_id === a.id);
+                    const presentCount = workerAttendance.filter((s: any) => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
+                    const halfCount = workerAttendance.filter((s: any) => s.is_half_day || s.status === 'Half Day').length;
+                    const verifiedDays = presentCount + (halfCount * 0.5);
+                    const dailyRate = a.daily_rate_worker || (a.hours_per_day === 24 ? (emp?.rate_24hr || 1000) : (emp?.rate_10hr || 500));
+                    const totalGross = verifiedDays * dailyRate;
+
+                    const clientObj: any = Array.isArray(a.clients) ? a.clients[0] : a.clients;
+                    return {
+                        id: `synth-${a.id}`,
+                        worker: emp?.full_name || 'Staff',
+                        client_name: clientObj?.client_name || 'Client',
+                        days_worked: verifiedDays,
+                        daily_rate: dailyRate,
+                        total_amount: totalGross,
+                        advance_amount: 0,
+                        net_balance: totalGross,
+                        status: 'Pending Payment',
+                        type: 'recurring',
+                        _isSynthetic: true
+                    };
+                });
+
+            const allPayrollItems = [...dedupedDbRows, ...syntheticItems];
+            const totalStaffPayables = allPayrollItems.reduce((sum, item) => sum + computePayrollBalance(item).remainingDue, 0);
+
+            // Relieved staff with remaining dues (duties completed)
+            const relievedItems = allPayrollItems.filter(i => i.type === 'final' && computePayrollBalance(i).remainingDue > 0);
+            const relievedStaffDues = relievedItems.reduce((sum, item) => sum + computePayrollBalance(item).remainingDue, 0);
+
+            const pendingPayrollsList: UrgentStaffPayout[] = allPayrollItems
+                .filter(p => computePayrollBalance(p).remainingDue > 0)
+                .map(p => ({
+                    id: p.id,
+                    worker: p.worker || 'Staff',
+                    client_name: p.client_name || 'Client',
+                    days_worked: Number(p.days_worked) || 0,
+                    net_balance: computePayrollBalance(p).remainingDue,
+                    period_start: p.period_start,
+                    period_end: p.period_end,
+                    type: p.type
+                }));
 
             // Prioritize relieved staff first
             pendingPayrollsList.sort((a, b) => {
@@ -333,8 +384,10 @@ export default function Dashboard() {
                 monthCollections,
                 clientReceivables: clientReceivablesSum,
                 clientUnpaidCount: unpaidBillsList.length,
-                staffPayables: staffPayablesSum,
+                staffPayables: totalStaffPayables,
                 staffPendingCount: pendingPayrollsList.length,
+                relievedStaffDues: relievedStaffDues,
+                relievedStaffCount: relievedItems.length,
                 depositsHeld,
                 activeLeadsCount: activeLeads.length,
                 websiteBookingsCount: parsedBookings.length,
@@ -526,7 +579,7 @@ export default function Dashboard() {
                     <div>
                         <h3 className="text-2xl font-black text-rose-900">₹{stats.staffPayables.toLocaleString('en-IN')}</h3>
                         <p className="text-[11px] font-bold text-rose-700 mt-1 flex items-center justify-between">
-                            <span>{stats.staffPendingCount} pending</span>
+                            <span>₹{stats.relievedStaffDues.toLocaleString('en-IN')} ready for {stats.relievedStaffCount} relieved</span>
                             <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
                                 Pay in HR →
                             </span>
@@ -730,8 +783,13 @@ export default function Dashboard() {
                             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-rose-500" />
                                 Staff Awaiting Wage Payment
+                                {stats.relievedStaffDues > 0 && (
+                                    <span className="text-[11px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
+                                        ₹{stats.relievedStaffDues.toLocaleString('en-IN')} Ready
+                                    </span>
+                                )}
                             </h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Workers who completed duty and need payslip & settlement</p>
+                            <p className="text-xs text-slate-500 mt-0.5">Relieved staff whose duty finished and are ready for settlement</p>
                         </div>
                         <button
                             onClick={() => navigate('/admin/hr?tab=payroll')}
