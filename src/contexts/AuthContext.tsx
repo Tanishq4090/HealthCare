@@ -29,6 +29,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_USER_KEY = '99care_os_auth_user';
 const SESSION_USER_KEY = '99care_os_session_user';
 const TANISHQ_USERNAME = 'tanishq4090';
 const TANISHQ_ACCESS: AccessModule[] = ['hr', 'finance'];
@@ -42,7 +43,6 @@ const adminUser: User = {
     avatar: 'SA'
 };
 
-// Removal of HARDCODED_USERS as we are moving to database-backed authentication.
 const normalizeStaffAccess = (staffUser: User): User => {
     const isTanishqAccount =
         staffUser.username?.toLowerCase() === TANISHQ_USERNAME ||
@@ -58,18 +58,41 @@ const normalizeStaffAccess = (staffUser: User): User => {
     };
 };
 
+const readPersistedUser = (): User | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(AUTH_USER_KEY) || sessionStorage.getItem(SESSION_USER_KEY);
+        if (!raw) return null;
+        return normalizeStaffAccess(JSON.parse(raw));
+    } catch {
+        return null;
+    }
+};
+
+const savePersistedUser = (user: User) => {
+    try {
+        const data = JSON.stringify(user);
+        localStorage.setItem(AUTH_USER_KEY, data);
+        sessionStorage.setItem(SESSION_USER_KEY, data);
+    } catch (err) {
+        console.warn('Failed to persist user session:', err);
+    }
+};
+
+const clearPersistedUser = () => {
+    try {
+        localStorage.removeItem(AUTH_USER_KEY);
+        sessionStorage.removeItem(SESSION_USER_KEY);
+    } catch (err) {
+        console.warn('Failed to clear persisted user session:', err);
+    }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<User | null>(() => {
-        if (typeof window === 'undefined') return null;
-        try {
-            const raw = sessionStorage.getItem(SESSION_USER_KEY);
-            return raw ? normalizeStaffAccess(JSON.parse(raw)) : null;
-        } catch {
-            return null;
-        }
-    });
+    const initialUser = readPersistedUser();
+    const [user, setUser] = useState<User | null>(initialUser);
     const [allUsers, setAllUsers] = useState<User[]>([]); 
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState<boolean>(!initialUser);
 
     const refreshUsers = useCallback(async () => {
         try {
@@ -87,21 +110,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     useEffect(() => {
         const checkUser = async () => {
-            try {
-                const raw = sessionStorage.getItem(SESSION_USER_KEY);
-                if (raw) {
-                    const parsed = JSON.parse(raw);
-                    setUser(normalizeStaffAccess(parsed));
-                } else {
-                    setUser(null);
-                }
-            } catch {
-                sessionStorage.removeItem(SESSION_USER_KEY);
+            const persisted = readPersistedUser();
+            if (persisted) {
+                setUser(persisted);
+            } else {
                 setUser(null);
             }
-
-            await refreshUsers();
             setLoading(false);
+            await refreshUsers();
         };
         checkUser();
     }, [refreshUsers]);
@@ -109,15 +125,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const login = async (role?: string, staffUser?: User) => {
         if (staffUser) {
             const normalized = normalizeStaffAccess(staffUser);
-            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(normalized));
+            savePersistedUser(normalized);
             setUser(normalized);
+            setLoading(false);
             await refreshUsers();
             return;
         }
 
         if (role === 'admin') {
-            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(adminUser));
+            savePersistedUser(adminUser);
             setUser(adminUser);
+            setLoading(false);
             await refreshUsers();
         }
     };
@@ -128,7 +146,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } catch (err) {
             console.warn('Sign out warning:', err);
         }
-        sessionStorage.removeItem(SESSION_USER_KEY);
+        clearPersistedUser();
         setUser(null);
     };
 
@@ -177,7 +195,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (user?.id === updatedUser.id) {
             const nextUser = normalizeStaffAccess({ ...user, ...(data?.user || updatedUser) });
-            sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(nextUser));
+            savePersistedUser(nextUser);
             setUser(nextUser);
         }
 
