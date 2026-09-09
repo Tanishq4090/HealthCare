@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Star, Edit2, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ClientDetailsModal from './components/ClientDetailsModal';
 import { restartClientService } from '../services/serviceLifecycle';
@@ -13,6 +13,8 @@ const GOOGLE_MAPS_URL = `https://www.google.com/maps/place/?q=place_id:${GOOGLE_
 
 export default function Clients() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const restartClientId = searchParams.get('restart');
     const [clients, setClients] = useState<any[]>([]);
 
     const [workflows, setWorkflows] = useState({
@@ -774,6 +776,15 @@ export default function Clients() {
         fetchClients();
         fetchGoogleReviews();
     }, []);
+
+    useEffect(() => {
+        if (restartClientId && clients.length > 0) {
+            const target = clients.find(c => c.id === restartClientId);
+            if (target) {
+                openRestartModal(target);
+            }
+        }
+    }, [restartClientId, clients]);
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col space-y-6">
@@ -2119,6 +2130,10 @@ export default function Clients() {
                     client={inspectingClient} 
                     onClose={() => setInspectingClient(null)} 
                     onServiceUpdated={() => fetchClients()}
+                    onStartNewService={(c) => {
+                        setInspectingClient(null);
+                        openRestartModal(c);
+                    }}
                 />
             )}
         </div>

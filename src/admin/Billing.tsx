@@ -399,7 +399,7 @@ export default function Billing() {
                             || clientAsgns.find(a => a.assignment_status === 'active')
                             || clientAsgns[0];
                         const depositAmt = activeSvc.deposit_amount || matchingAsgn?.deposit_amount || quotesMap[cId]?.deposit || 0;
-                        const isPaid = activeSvc.deposit_status === 'collected' || (matchingAsgn?.deposit_paid && matchingAsgn.deposit_paid >= depositAmt && depositAmt > 0);
+                        const isPaid = activeSvc.deposit_status === 'collected';
                         const depStatus = isPaid ? 'Paid' : (matchingAsgn?.deposit_invoice_sent ? 'Invoice Sent' : 'Pending Invoice');
                         const leadMeta = leadsMetaMap[cId];
                         const serviceName = formatServiceName(activeSvc.service_type, activeSvc.notes || leadMeta?.notes, leadMeta?.role);

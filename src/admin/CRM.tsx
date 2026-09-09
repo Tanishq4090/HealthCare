@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useConversation } from '@elevenlabs/react';
@@ -10,7 +10,8 @@ import { assignWorkerToClient, releaseWorkerByClientId } from '../services/assig
 import { SendQuotationModal } from './components/SendQuotationModal';
 import { CARE_SERVICES } from '../constants/services';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
-import { recordServiceInvoice } from '../services/serviceLifecycle';
+import { recordServiceInvoice, endService } from '../services/serviceLifecycle';
+import ClientDetailsModal from './components/ClientDetailsModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
@@ -865,6 +866,33 @@ export default function CRM() {
     const [selectedInspectorLead, setSelectedInspectorLead] = useState<any | null>(null);
     const [releasedAssignment, setReleasedAssignment] = useState<any | null>(null);
     const [showWorkFormModal, setShowWorkFormModal] = useState<any | null>(null);
+    const [detailsModalClient, setDetailsModalClient] = useState<any | null>(null);
+    const [isEndingLeadService, setIsEndingLeadService] = useState(false);
+
+    const handleEndLeadService = async (lead: any) => {
+        const clientServices = (lead.services || []) as any[];
+        const activeService = clientServices.find((s: any) => s.status === 'active');
+        if (!activeService?.id) {
+            toast.error('No active service found for this client.');
+            return;
+        }
+        if (!window.confirm(`End service and settle deposit for "${lead.name}"?\n\nThis will calculate verified attendance days, settle the deposit on the final invoice, release assigned caregivers, and move the client to "Closed Won".`)) return;
+
+        setIsEndingLeadService(true);
+        const toastId = toast.loading('Ending service & settling deposit...');
+        try {
+            const res = await endService(activeService.id);
+            if (!res.success) throw new Error(res.error || 'Failed to end service');
+            toast.success(`Service ended & deposit settled for ${lead.name}! Moved to Closed Won.`, { id: toastId });
+            setSelectedInspectorLead(null);
+            await fetchLeads();
+        } catch (err: any) {
+            console.error('Failed to end service:', err);
+            toast.error(`Failed to end service: ${err.message || 'Unknown error'}`, { id: toastId });
+        } finally {
+            setIsEndingLeadService(false);
+        }
+    };
 
     const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
         pateint_bath: 'Patient Bath',
@@ -2058,7 +2086,7 @@ export default function CRM() {
                             end_date: serviceEndDate ? serviceEndDate : null,
                             status: 'active',
                             deposit_amount: depositAmt,
-                            deposit_status: depositAmt > 0 ? 'collected' : 'pending',
+                            deposit_status: 'pending',
                             complete_month_daily_rate: cmRate,
                             incomplete_month_daily_rate: icmRate,
                             legacy_assignment_id: result.assignment?.id || null,
@@ -4704,6 +4732,20 @@ export default function CRM() {
                                                                             <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
                                                                             <div className="flex-1"></div>
                                                                         </div>
+                                                                        {col.title === 'Closed Won' && (
+                                                                            <div className="px-3 pb-2 pt-0">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setDetailsModalClient(item);
+                                                                                    }}
+                                                                                    className="w-full py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                                >
+                                                                                    <RotateCcw className="w-3 h-3 text-emerald-600" /> Start New Service
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
                                                                         {/* View Details */}
                                                                         <button
                                                                             onClick={async (e) => {
@@ -6653,15 +6695,36 @@ export default function CRM() {
                                 })()}
 
                                 {selectedInspectorLead.pipeline_stage === 'Monthly Billing' && (
+                                    <div className="space-y-2">
+                                        <button
+                                            onClick={() => {
+                                                setDetailsModalClient(selectedInspectorLead);
+                                            }}
+                                            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                                        >
+                                            <Users className="w-4 h-4 text-emerald-400" />
+                                            View Full Client Profile
+                                        </button>
+                                        <button
+                                            onClick={() => handleEndLeadService(selectedInspectorLead)}
+                                            disabled={isEndingLeadService}
+                                            className="w-full bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                        >
+                                            {isEndingLeadService ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                                            End Service &amp; Settle Deposit
+                                        </button>
+                                    </div>
+                                )}
+
+                                {selectedInspectorLead.pipeline_stage === 'Closed Won' && (
                                     <button
                                         onClick={() => {
-                                            convertToClient(selectedInspectorLead.id, selectedInspectorLead.name);
-                                            setSelectedInspectorLead(null);
+                                            setDetailsModalClient(selectedInspectorLead);
                                         }}
-                                        className="w-full bg-gradient-to-r from-primary to-[#0E7C7E] text-white font-bold py-2.5 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                                        className="w-full bg-gradient-to-r from-primary to-[#0E7C7E] text-white font-bold py-2.5 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 group cursor-pointer"
                                     >
-                                        <Users className="w-4 h-4" />
-                                        Convert to Client Master
+                                        <RotateCcw className="w-4 h-4 group-hover:-rotate-45 transition-transform" />
+                                        Start New Service
                                     </button>
                                 )}
                             </div>
@@ -7714,6 +7777,19 @@ export default function CRM() {
                     autoCloseAssignmentOnGenerate={false}
                     onClose={() => setReleasedAssignment(null)}
                     onGenerated={() => { setReleasedAssignment(null); fetchLeads(); }}
+                />
+            )}
+
+            {/* Client Details Modal */}
+            {detailsModalClient && (
+                <ClientDetailsModal
+                    client={detailsModalClient}
+                    onClose={() => setDetailsModalClient(null)}
+                    onServiceUpdated={() => fetchLeads()}
+                    onStartNewService={(c) => {
+                        setDetailsModalClient(null);
+                        navigate(`/admin/clients?restart=${c?.id || detailsModalClient.id}`);
+                    }}
                 />
             )}
         </div>

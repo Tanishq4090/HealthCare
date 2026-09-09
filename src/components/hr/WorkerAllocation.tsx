@@ -687,7 +687,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               end_date: endDate || null,
               status: 'active',
               deposit_amount: depAmount,
-              deposit_status: depAmount > 0 ? 'collected' : 'pending',
+              deposit_status: 'pending',
               complete_month_daily_rate: cmRate,
               incomplete_month_daily_rate: imRate,
             })

@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { endService } from '../../services/serviceLifecycle';
+import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { toast } from 'sonner';
 
 interface ClientDetailsModalProps {
     client: any;
     onClose: () => void;
     onServiceUpdated?: () => void;
+    onStartNewService?: (client: any) => void;
 }
 
-export default function ClientDetailsModal({ client, onClose, onServiceUpdated }: ClientDetailsModalProps) {
+export default function ClientDetailsModal({ client, onClose, onServiceUpdated, onStartNewService }: ClientDetailsModalProps) {
     const clientId = client?.id;
     const [lead, setLead] = useState<any>(null);
     const [activities, setActivities] = useState<any[]>([]);
@@ -22,6 +23,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
     const [expandedPastCycles, setExpandedPastCycles] = useState<Record<string, boolean>>({});
     const [isEndingService, setIsEndingService] = useState(false);
     const [showEndConfirm, setShowEndConfirm] = useState(false);
+    const [releasingWorkerId, setReleasingWorkerId] = useState<string | null>(null);
 
     const fetchDetails = useCallback(async () => {
         setIsLoading(true);
@@ -80,6 +82,23 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
         }
     };
 
+    const handleReleaseWorker = async (assignmentId: string, workerName: string) => {
+        if (!window.confirm(`Release ${workerName} from this service?\n\nThis will complete their assignment as of today and set their status back to "Available" for other clients.`)) return;
+        setReleasingWorkerId(assignmentId);
+        try {
+            const res = await releaseWorker(assignmentId);
+            if (!res.success) throw new Error(res.error || 'Failed to release worker');
+            toast.success(`${workerName} has been released and is now Available.`);
+            onServiceUpdated?.();
+            await fetchDetails();
+        } catch (err: any) {
+            console.error('Failed to release worker:', err);
+            toast.error(err.message || 'Failed to release worker');
+        } finally {
+            setReleasingWorkerId(null);
+        }
+    };
+
     if (!lead && !isLoading) return null;
 
     // Parse Notes for Form Details
@@ -131,9 +150,12 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
     const getStaffForService = (svc: any) => {
         if (svc.service_worker_assignments && svc.service_worker_assignments.length > 0) {
             return svc.service_worker_assignments.map((swa: any) => ({
+                id: swa.id,
+                employeeId: swa.employee_id,
                 name: swa.employees?.full_name || 'Staff Member',
                 role: swa.employees?.job_title || 'Care Specialist',
-                status: svc.status === 'active' ? 'Active' : 'Completed',
+                status: swa.end_date ? 'Completed' : (svc.status === 'active' ? 'Active' : 'Completed'),
+                isActive: !swa.end_date && svc.status === 'active',
                 startDate: swa.start_date || svc.start_date,
                 endDate: swa.end_date || svc.end_date,
             }));
@@ -142,9 +164,12 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
             const activeAsgns = assignments.filter((a: any) => a.assignment_status === 'active');
             if (activeAsgns.length > 0) {
                 return activeAsgns.map((a: any) => ({
+                    id: a.id,
+                    employeeId: a.employee_id,
                     name: a.employees?.full_name || 'Staff Member',
                     role: a.employees?.job_title || 'Care Specialist',
                     status: 'Active',
+                    isActive: true,
                     startDate: a.start_date || svc.start_date,
                     endDate: a.end_date,
                 }));
@@ -270,14 +295,27 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
                                                 return (
                                                     <div className="space-y-2">
                                                         {staffList.map((st: any, i: number) => (
-                                                            <div key={i} className="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-100">
-                                                                <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold">
-                                                                    {st.name.charAt(0)}
+                                                            <div key={i} className="flex items-center justify-between gap-2 p-2 bg-white rounded-lg border border-slate-100 shadow-2xs">
+                                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                                    <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                                        {st.name.charAt(0)}
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="text-xs font-bold text-slate-800 truncate">{st.name}</p>
+                                                                        <p className="text-[10px] text-slate-400">{st.role} • {st.status}</p>
+                                                                    </div>
                                                                 </div>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="text-xs font-bold text-slate-800 truncate">{st.name}</p>
-                                                                    <p className="text-[10px] text-slate-400">{st.role} • Active</p>
-                                                                </div>
+                                                                {st.isActive && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleReleaseWorker(st.id, st.name)}
+                                                                        disabled={releasingWorkerId === st.id}
+                                                                        className="px-2 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                                                                        title="Release this caregiver back to Available without ending the client's service"
+                                                                    >
+                                                                        {releasingWorkerId === st.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'Release'}
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
@@ -319,7 +357,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
                                                     <span className="font-bold text-slate-800">₹{Number(activeService.complete_month_daily_rate || 800).toLocaleString('en-IN')}/day</span>
                                                 </div>
                                                 <div className="flex justify-between">
-                                                    <span className="text-slate-500">Partial / Incomplete:</span>
+                                                    <span className="text-slate-500">Incomplete Month:</span>
                                                     <span className="font-bold text-slate-800">₹{Number(activeService.incomplete_month_daily_rate || 1500).toLocaleString('en-IN')}/day</span>
                                                 </div>
                                                 <div className="flex justify-between">
@@ -392,8 +430,23 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated }
                                 </div>
                             </div>
                         ) : (
-                            <div className="p-4 bg-slate-100/80 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
-                                No active service currently. Click "Restart Service" on the client card to launch a new service cycle.
+                            <div className="p-5 bg-gradient-to-r from-amber-50/80 to-orange-50/60 rounded-2xl border border-amber-200/80 text-center space-y-3">
+                                <div className="flex items-center justify-center gap-2 text-amber-900 font-bold text-xs">
+                                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                                    <span>No Active Service Currently Running</span>
+                                </div>
+                                <p className="text-xs text-slate-600 max-w-md mx-auto">
+                                    All previous care services have concluded and deposits have been settled. You can start a fresh service cycle with new dates, rates, and caregiver allocation.
+                                </p>
+                                {onStartNewService && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onStartNewService(lead || client)}
+                                        className="px-4 py-2 text-xs font-bold bg-primary text-white hover:bg-primary/90 rounded-xl transition-all shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5" /> Start New Service
+                                    </button>
+                                )}
                             </div>
                         )}
 
