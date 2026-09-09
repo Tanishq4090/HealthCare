@@ -4314,9 +4314,9 @@ export default function CRM() {
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
                         <Bot className="w-7 h-7 text-primary" />
                     </div>
                     <div>
@@ -4325,9 +4325,9 @@ export default function CRM() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
                     {/* Notification Bell */}
-                    <div className="relative z-50">
+                    <div className="relative z-50 shrink-0">
                         <button
                             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                             className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all relative group shadow-sm"
@@ -4376,7 +4376,7 @@ export default function CRM() {
                     </div>
 
                     {/* Module Tabs */}
-                    <div className="flex items-center p-1 sm:p-1.5 bg-slate-200/50 rounded-xl sm:rounded-2xl shrink-0 border border-slate-200 shadow-inner overflow-x-auto hide-scrollbar">
+                    <div className="flex items-center p-1 sm:p-1.5 bg-slate-200/50 rounded-xl sm:rounded-2xl shrink-0 border border-slate-200 shadow-inner overflow-x-auto hide-scrollbar max-w-full">
                         <button
                             onClick={() => setActiveTab('pipeline')}
                             className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
@@ -5202,7 +5202,7 @@ export default function CRM() {
             )}
             {activeTab === 'automations' && (
                 /* AI Automations View */
-                <div className="flex-1 flex flex-col gap-6 pb-4 overflow-y-auto">
+                <div className="flex-1 flex flex-col gap-6 pb-8">
                     <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
                         <div className="p-5 border-b border-amber-100 bg-amber-50/60 flex items-center justify-between">
                             <div>
@@ -5230,7 +5230,7 @@ export default function CRM() {
                             ))}
                         </div>
                     </div>
-                    <div className="grid lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                         {/* Active Workflows */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
                             <div className="p-5 border-b border-slate-100">
@@ -5265,7 +5265,7 @@ export default function CRM() {
                                 <h2 className="text-lg font-bold text-slate-900">Recent Workflow Executions</h2>
                                 <p className="text-sm text-slate-500 mt-1">Live log of actions taken by the AI agent.</p>
                             </div>
-                            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+                            <div className="p-5 flex-1 max-h-[460px] overflow-y-auto space-y-4">
                                 {automationLogs.length === 0 ? (
                                     <div className="text-center py-10">
                                         <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
