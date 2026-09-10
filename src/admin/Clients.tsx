@@ -733,7 +733,7 @@ export default function Clients() {
     }, [restartClientId, clients]);
 
     return (
-        <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col space-y-6">
+        <div className="p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">Client Master Database</h1>

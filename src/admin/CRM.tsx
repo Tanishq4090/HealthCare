@@ -4313,7 +4313,7 @@ export default function CRM() {
     };
 
     return (
-        <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
+        <div className="p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">

@@ -1804,7 +1804,7 @@ export default function HR() {
     };
 
     return (
-        <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
+        <div className="p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">AI HR & Billing</h1>
@@ -1836,12 +1836,12 @@ export default function HR() {
 
             {activeTab === 'allocation' ? (
                 /* Enhanced Worker Allocation Module */
-                <div className="flex-1 min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
                     <WorkerAllocation isEmbedded />
                 </div>
             ) : activeTab === 'attendance' ? (
                 /* Command Center Roster View */
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
                     <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 relative">
                         <div>
                             <h2 className="font-semibold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
@@ -1879,7 +1879,7 @@ export default function HR() {
                             <span className="text-slate-500 font-medium">Fetching roster data...</span>
                         </div>
                     ) : (
-                        <div className="flex flex-col flex-1 relative bg-white">
+                        <div className="flex flex-col relative bg-white">
                             {activeAssignments.length === 0 && (
                                 <div className="m-6 bg-slate-50 border border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center">
                                     <div className="w-12 h-12 bg-white text-slate-400 rounded-full flex items-center justify-center shadow-sm border border-slate-100 mb-3">
@@ -1889,7 +1889,7 @@ export default function HR() {
                                     <p className="text-sm text-slate-500 mt-1 max-w-sm">There are no active workers in your directory to track attendance for.</p>
                                 </div>
                             )}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50/50">
+                            <div className="p-4 space-y-6 bg-slate-50/50">
                                 {(() => {
                                     const map = new Map<string, { clientId: string; clientName: string; assignments: any[]; latestAssignedAt: number }>();
                                     activeAssignments.forEach((asgn) => {
@@ -1965,7 +1965,7 @@ export default function HR() {
                 </div>
             ) : (
                 /* Payroll & Invoicing View */
-                <div className="flex flex-col gap-6 flex-1 overflow-hidden">
+                <div className="flex flex-col gap-6">
                     <div className="flex items-center justify-between">
                         <div>
                             <h2 className="text-xl font-bold text-slate-900">Financial Execution Center</h2>
@@ -2033,7 +2033,7 @@ export default function HR() {
                         </div>
                     </div>
 
-                    <div className="max-w-4xl w-full mx-auto flex-1 overflow-hidden flex flex-col mb-6 space-y-4">
+                    <div className="max-w-4xl w-full mx-auto flex flex-col mb-6 space-y-4">
                         {isLoading ? (
                             <div className="bg-white rounded-xl border border-slate-200 p-10 flex flex-col items-center justify-center">
                                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -2140,7 +2140,7 @@ export default function HR() {
                             });
 
                             return (
-                                <div className="space-y-5 overflow-y-auto flex-1 pr-1">
+                                <div className="space-y-5">
                                     {groups.map(group => (
                                         <div
                                             key={group.clientId}
