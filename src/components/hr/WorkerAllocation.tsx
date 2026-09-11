@@ -2131,20 +2131,26 @@ export default function WorkerAllocation({ isEmbedded = false }: WorkerAllocatio
       {/* Tabs */}
       <Tabs defaultValue="available" className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <TabsList className="bg-slate-100/80 backdrop-blur-md border border-slate-200/50 p-1.5 rounded-2xl shadow-sm">
-            <TabsTrigger value="available" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
-              <Users className="w-3.5 h-3.5" /> Available Workers
-            </TabsTrigger>
-            <TabsTrigger value="assignments" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
-              <Briefcase className="w-3.5 h-3.5" /> Deployments
-            </TabsTrigger>
-            <TabsTrigger value="all" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
-              <Shield className="w-3.5 h-3.5" /> Directory
-            </TabsTrigger>
-            <TabsTrigger value="deleted" className="gap-2.5 data-[state=active]:bg-white data-[state=active]:text-red-500 data-[state=active]:shadow-sm rounded-xl px-5 py-2 text-[11px] font-black uppercase tracking-wider transition-all duration-300">
-              <Trash2 className="w-3.5 h-3.5" /> Trash
-            </TabsTrigger>
-          </TabsList>
+          <div className="w-full sm:w-auto overflow-x-auto hide-scrollbar">
+            <TabsList className="w-full sm:w-fit min-w-full sm:min-w-0 bg-slate-100/80 backdrop-blur-md border border-slate-200/50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl shadow-sm flex items-center justify-between sm:justify-start gap-1 sm:gap-0">
+              <TabsTrigger value="available" className="flex-1 sm:flex-initial gap-1.5 sm:gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg sm:rounded-xl px-2 sm:px-5 py-1.5 sm:py-2 text-[10px] sm:text-[11px] font-bold sm:font-black uppercase tracking-tight sm:tracking-wider transition-all duration-300 whitespace-nowrap shrink-0">
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span>Available<span className="hidden sm:inline"> Workers</span></span>
+              </TabsTrigger>
+              <TabsTrigger value="assignments" className="flex-1 sm:flex-initial gap-1.5 sm:gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg sm:rounded-xl px-2 sm:px-5 py-1.5 sm:py-2 text-[10px] sm:text-[11px] font-bold sm:font-black uppercase tracking-tight sm:tracking-wider transition-all duration-300 whitespace-nowrap shrink-0">
+                <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                <span>Deployments</span>
+              </TabsTrigger>
+              <TabsTrigger value="all" className="flex-1 sm:flex-initial gap-1.5 sm:gap-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg sm:rounded-xl px-2 sm:px-5 py-1.5 sm:py-2 text-[10px] sm:text-[11px] font-bold sm:font-black uppercase tracking-tight sm:tracking-wider transition-all duration-300 whitespace-nowrap shrink-0">
+                <Shield className="w-3.5 h-3.5 shrink-0" />
+                <span>Directory</span>
+              </TabsTrigger>
+              <TabsTrigger value="deleted" className="flex-1 sm:flex-initial gap-1.5 sm:gap-2.5 data-[state=active]:bg-white data-[state=active]:text-red-500 data-[state=active]:shadow-sm rounded-lg sm:rounded-xl px-2 sm:px-5 py-1.5 sm:py-2 text-[10px] sm:text-[11px] font-bold sm:font-black uppercase tracking-tight sm:tracking-wider transition-all duration-300 whitespace-nowrap shrink-0">
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Trash</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {isEmbedded && (
             <Button
