@@ -351,7 +351,10 @@ export default function HR() {
                     end_date: matchedAsgn ? matchedAsgn.end_date : (p.type === 'final' ? (p.period_end || p.end_date) : null),
                 };
 
-                if (p.status === 'Pending Payment' || p.status === 'Pending') {
+                const isOngoingActive = asgnStatus === 'active' || p.type !== 'final';
+                const isUnsettled = p.status === 'Pending Payment' || p.status === 'Pending' || p.status === 'Partially Paid';
+
+                if (isOngoingActive || isUnsettled) {
                     if (empId) {
                         const targetAsgnIds = new Set<string>();
                         if (p.assignment_id) targetAsgnIds.add(p.assignment_id);
@@ -393,18 +396,27 @@ export default function HR() {
                             let updatedEnd = p.period_end;
                             let datesChanged = false;
 
-                            if (asgnStart && p.period_start && p.period_start > asgnStart) {
+                            if (asgnStart && (!updatedStart || updatedStart > asgnStart)) {
                                 updatedStart = asgnStart;
                                 datesChanged = true;
                             }
-                            if (asgnEnd && p.period_end && p.period_end > asgnEnd) {
+                            if (asgnEnd && (!updatedEnd || updatedEnd !== asgnEnd)) {
                                 updatedEnd = asgnEnd;
                                 datesChanged = true;
+                            } else if (!asgnEnd && workerAttendance.length > 0) {
+                                const maxDutyDate = workerAttendance.reduce((max, s) => (s.duty_date && s.duty_date > max ? s.duty_date : max), '');
+                                if (maxDutyDate && (!updatedEnd || maxDutyDate > updatedEnd)) {
+                                    updatedEnd = maxDutyDate;
+                                    datesChanged = true;
+                                }
                             }
 
                             if (verifiedDays !== p.days_worked || datesChanged) {
                                 const newTotal = verifiedDays * (p.daily_rate || 800);
-                                const existingPaid = Number(p.paid_amount || (p.status === 'Paid' ? (p.total_amount || newTotal) : 0));
+                                const existingPaid = Number(
+                                    p.paid_amount || 
+                                    (p.status === 'Paid' ? (p.total_amount || (Number(p.days_worked || 0) * (p.daily_rate || 800))) : 0)
+                                );
                                 const advance = Number(p.advance_amount || 0);
                                 const newNet = Math.max(0, newTotal - existingPaid - advance);
                                 const newStatus = newNet === 0 && (existingPaid > 0 || p.status === 'Paid')

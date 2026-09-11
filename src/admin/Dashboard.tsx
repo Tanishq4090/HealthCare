@@ -291,6 +291,49 @@ export default function Dashboard() {
             }
 
             const existingAssignmentIds = new Set(dedupedDbRows.map(p => p.assignment_id).filter(Boolean));
+            const enrichedDbRows = dedupedDbRows.map((p: any) => {
+                const empId = p.worker_id || (employees || []).find((e: any) => e.full_name === p.worker)?.id;
+                const matchedAsgn = (assignmentsData || []).find((a: any) => a.id === p.assignment_id || (empId && a.employee_id === empId));
+                const asgnStatus = matchedAsgn ? matchedAsgn.assignment_status : (p.type === 'final' ? 'completed' : 'active');
+                const isOngoingActive = asgnStatus === 'active' || p.type !== 'final';
+                const isUnsettled = p.status === 'Pending Payment' || p.status === 'Pending' || p.status === 'Partially Paid';
+
+                if ((isOngoingActive || isUnsettled) && empId) {
+                    const workerAttendance = (attendanceData || []).filter((s: any) => {
+                        if (s.worker_id !== empId) return false;
+                        if (s.assignment_id && p.assignment_id) return s.assignment_id === p.assignment_id;
+                        if (matchedAsgn && s.assignment_id) return s.assignment_id === matchedAsgn.id;
+                        return true;
+                    });
+                    if (workerAttendance.length > 0) {
+                        const presentCount = workerAttendance.filter((s: any) => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
+                        const halfCount = workerAttendance.filter((s: any) => s.is_half_day || s.status === 'Half Day').length;
+                        const verifiedDays = presentCount + (halfCount * 0.5);
+                        if (verifiedDays !== p.days_worked) {
+                            const newTotal = verifiedDays * (p.daily_rate || 800);
+                            const existingPaid = Number(
+                                p.paid_amount || 
+                                (p.status === 'Paid' ? (p.total_amount || (Number(p.days_worked || 0) * (p.daily_rate || 800))) : 0)
+                            );
+                            const advance = Number(p.advance_amount || 0);
+                            const newNet = Math.max(0, newTotal - existingPaid - advance);
+                            const newStatus = newNet === 0 && (existingPaid > 0 || p.status === 'Paid')
+                                ? 'Paid'
+                                : (existingPaid > 0 ? 'Partially Paid' : (p.status === 'Sent' ? 'Sent' : 'Pending Payment'));
+                            return {
+                                ...p,
+                                days_worked: verifiedDays,
+                                total_amount: newTotal,
+                                net_balance: newNet,
+                                paid_amount: existingPaid,
+                                status: newStatus,
+                            };
+                        }
+                    }
+                }
+                return p;
+            });
+
             const syntheticItems = (assignmentsData || [])
                 .filter((a: any) => a.assignment_status === 'active' && !existingAssignmentIds.has(a.id))
                 .map((a: any) => {
@@ -318,7 +361,7 @@ export default function Dashboard() {
                     };
                 });
 
-            const allPayrollItems = [...dedupedDbRows, ...syntheticItems];
+            const allPayrollItems = [...enrichedDbRows, ...syntheticItems];
             const totalStaffPayables = allPayrollItems.reduce((sum, item) => sum + computePayrollBalance(item).remainingDue, 0);
 
             // Relieved staff with remaining dues (duties completed)
