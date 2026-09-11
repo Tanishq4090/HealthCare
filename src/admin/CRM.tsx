@@ -4515,7 +4515,7 @@ export default function CRM() {
 
                                                     <div className="flex items-center gap-2">
                                                         {/* Header Dropdown Menu (Hover based) */}
-                                                        <div className={`absolute opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden ${isExpanded ? 'bottom-4 left-4' : 'right-4 top-1/2 -translate-y-1/2'}`} onClick={e => e.stopPropagation()}>
+                                                        <div className={`absolute opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden z-20 ${isExpanded ? 'right-4 top-1/2 -translate-y-1/2 sm:right-auto sm:top-auto sm:translate-y-0 sm:bottom-4 sm:left-4' : 'right-4 top-1/2 -translate-y-1/2'}`} onClick={e => e.stopPropagation()}>
                                                             <button
                                                                 disabled={idx === 0}
                                                                 onClick={(e) => { e.stopPropagation(); handleSlideStage(idx, 'left'); }}
