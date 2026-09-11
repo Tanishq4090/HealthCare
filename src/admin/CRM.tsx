@@ -4545,11 +4545,11 @@ export default function CRM() {
                                             </div>
 
                                             {isExpanded && (
-                                                <div className="p-5 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
+                                                <div className="p-2.5 sm:p-5 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
                                                     {col.items.length === 0 ? (
                                                         <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                                     ) : (
-                                                        <div className="flex flex-wrap gap-4 min-w-min">
+                                                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 min-w-0 sm:min-w-min">
                                                             {displayedItems.map((item) => {
                                                                 const priorityMeta = item.priority === 'hot'
                                                                     ? { label: 'Hot', cls: 'bg-red-100 text-red-700 border-red-200' }
@@ -4606,150 +4606,14 @@ export default function CRM() {
                                                                     activeWorkers = [item.assigned_worker_name];
                                                                 }
                                                                 return (
-                                                                    <div key={item.id} className={`relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
+                                                                    <div key={item.id} className={`relative w-full sm:w-[280px] shrink-0 bg-white rounded-xl sm:rounded-2xl shadow-2xs sm:shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                                         {item.needs_attention && (
-                                                                            <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
+                                                                            <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
                                                                         )}
-                                                                        <div className="p-4 flex flex-col gap-3 flex-1">
-                                                                            {/* Row 1: Avatar + Name + Priority */}
-                                                                            <div className="flex items-start gap-3">
-                                                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(item.name)}`}>
-                                                                                    {getInitials(item.name)}
-                                                                                </div>
-                                                                                <div className="flex-1 min-w-0">
-                                                                                    <p className="text-sm font-bold text-slate-900 truncate leading-tight">
-                                                                                        {item.name}
-                                                                                    </p>
-                                                                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
-                                                                                            {priorityMeta.label}
-                                                                                        </span>
-                                                                                        {serviceName && (
-                                                                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-                                                                                                {serviceName}
-                                                                                            </span>
-                                                                                        )}
-                                                                                        {item.has_paid_deposit ? (
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    navigate('/admin/billing?tab=history');
-                                                                                                }}
-                                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase tracking-wider cursor-pointer hover:bg-green-200 transition-colors"
-                                                                                                title="Deposit Paid — View in Finance > Collection History"
-                                                                                            >
-                                                                                                <CheckCircle2 className="w-2.5 h-2.5" /> Deposit Paid
-                                                                                            </button>
-                                                                                        ) : item.is_deposit_pending ? (
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    navigate('/admin/clients');
-                                                                                                }}
-                                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider cursor-pointer hover:bg-amber-200 transition-colors"
-                                                                                                title="Deposit Pending for current service — Click to manage in Clients"
-                                                                                            >
-                                                                                                <Clock className="w-2.5 h-2.5" /> Deposit Pending
-                                                                                            </button>
-                                                                                        ) : null}
-                                                                                        {activeWorkers.length > 0 && (
-                                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
-                                                                                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                                                                </svg>
-                                                                                                {activeWorkers[0]}
-                                                                                                {activeWorkers.length > 1 && (
-                                                                                                    <span className="ml-0.5 text-[9px] font-bold text-purple-600 bg-purple-200/60 px-1 rounded-sm">
-                                                                                                        +{activeWorkers.length - 1}
-                                                                                                    </span>
-                                                                                                )}
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                            {/* Service Details Breakdown */}
-                                                                            <div className="flex flex-col gap-1.5">
-                                                                                {shiftBubble && (
-                                                                                    <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
-                                                                                        <Clock className="w-3 h-3 text-primary shrink-0" />
-                                                                                        <span className="text-[10px] font-medium text-slate-600 truncate">
-                                                                                            {shiftBubble}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                )}
-                                                                                {serviceLocation && (
-                                                                                    <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
-                                                                                        <Globe className="w-3 h-3 text-primary shrink-0" />
-                                                                                        <span className="text-[10px] font-medium text-slate-600 truncate">
-                                                                                            {serviceLocation}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                )}
-                                                                                {(item.plannedStart || item.plannedDuration) && (
-                                                                                    <div className="flex items-center gap-2 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100 mt-0.5">
-                                                                                        <svg className="w-3 h-3 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                                                        </svg>
-                                                                                        <span className="text-[10px] font-bold text-indigo-700 truncate tracking-wide">
-                                                                                            {item.plannedStart ? new Date(item.plannedStart).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'TBD'}
-                                                                                            {item.plannedDuration ? ` • ${item.plannedDuration}` : ''}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                            {/* Phone row */}
-                                                                            <div className="flex items-center gap-2">
-                                                                                <span className="text-xs text-slate-600 truncate flex items-center gap-1">
-                                                                                    <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                                                                                    {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
-                                                                                </span>
-                                                                                {deliveryLog && (
-                                                                                    <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${deliveryLog.status === 'failed' || deliveryLog.status === 'error'
-                                                                                            ? 'bg-red-100 text-red-700'
-                                                                                            : deliveryLog.status === 'delivered'
-                                                                                                ? 'bg-green-100 text-green-700'
-                                                                                                : deliveryLog.status === 'read'
-                                                                                                    ? 'bg-blue-100 text-blue-700'
-                                                                                                    : 'bg-slate-100 text-slate-500'
-                                                                                        }`} title={deliveryLog.error_message || undefined}>
-                                                                                        {deliveryLog.status === 'accepted_by_meta' ? 'sent' : deliveryLog.status}
-                                                                                    </span>
-                                                                                )}
-                                                                                <button
-                                                                                    type="button"
-                                                                                    title="View WhatsApp Chat History"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        fetchWhatsappChat(item);
-                                                                                    }}
-                                                                                    className="ml-auto p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors"
-                                                                                >
-                                                                                    <MessageCircle className="w-3.5 h-3.5" />
-                                                                                </button>
-                                                                            </div>
-                                                                            {/* Time */}
-                                                                            <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
-                                                                            <div className="flex-1"></div>
-                                                                        </div>
-                                                                        {col.title === 'Closed Won' && (
-                                                                            <div className="px-3 pb-2 pt-0">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        setDetailsModalClient(item);
-                                                                                    }}
-                                                                                    className="w-full py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                                                                                >
-                                                                                    <RotateCcw className="w-3 h-3 text-emerald-600" /> Start New Service
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
-                                                                        {/* View Details */}
-                                                                        <button
-                                                                            onClick={async (e) => {
-                                                                                e.stopPropagation();
+
+                                                                        {/* ── PHONE VIEW COMPACT CARD (< sm) ── */}
+                                                                        <div
+                                                                            onClick={async () => {
                                                                                 setSelectedInspectorLead(item);
                                                                                 fetchLeadActivity(item.id, item.duplicate_of_lead_id);
                                                                                 if (item.needs_attention) {
@@ -4757,22 +4621,229 @@ export default function CRM() {
                                                                                     await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
                                                                                 }
                                                                             }}
-                                                                            className="w-full py-2 border-t border-slate-100 text-slate-500 hover:text-primary hover:bg-slate-50 text-[12px] font-semibold rounded-b-2xl transition-all flex items-center justify-center gap-1.5 group"
+                                                                            className="sm:hidden px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer active:bg-slate-50 transition-colors"
                                                                         >
-                                                                            View Details <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                                        </button>
+                                                                            {/* Row 1: Name + Badges + Arrow */}
+                                                                            <div className="flex items-center justify-between gap-1.5 min-w-0">
+                                                                                <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
+                                                                                    <span className="font-bold text-slate-900 text-xs truncate max-w-[140px]">
+                                                                                        {item.name}
+                                                                                    </span>
+                                                                                    <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold border uppercase tracking-wider shrink-0 ${priorityMeta.cls}`}>
+                                                                                        {priorityMeta.label}
+                                                                                    </span>
+                                                                                    {serviceName && (
+                                                                                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider truncate shrink-0 max-w-[130px]">
+                                                                                            {serviceName}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {item.has_paid_deposit ? (
+                                                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase shrink-0">
+                                                                                            <CheckCircle2 className="w-2.5 h-2.5" /> Deposit
+                                                                                        </span>
+                                                                                    ) : item.is_deposit_pending ? (
+                                                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase shrink-0">
+                                                                                            <Clock className="w-2.5 h-2.5" /> Pending
+                                                                                        </span>
+                                                                                    ) : null}
+                                                                                    {activeWorkers.length > 0 && (
+                                                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase shrink-0">
+                                                                                            <User className="w-2.5 h-2.5" /> {activeWorkers[0]}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                                            </div>
+
+                                                                            {/* Row 2: Phone Number + Time */}
+                                                                            <div className="flex items-center justify-between text-[11px] text-slate-500 min-w-0">
+                                                                                <span className="flex items-center gap-1 font-medium text-slate-600 truncate">
+                                                                                    <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                                    {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
+                                                                                </span>
+                                                                                <span className="text-[10px] text-slate-400 shrink-0 ml-2">{getRelativeTime(item.created_at)}</span>
+                                                                            </div>
+
+                                                                            {col.title === 'Closed Won' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setDetailsModalClient(item);
+                                                                                    }}
+                                                                                    className="w-full py-1 px-2 mt-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                                                                                >
+                                                                                    <RotateCcw className="w-3 h-3 text-emerald-600" /> Start New Service
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* ── DESKTOP FULL CARD (sm+) ── */}
+                                                                        <div className="hidden sm:flex flex-col flex-1">
+                                                                            <div className="p-4 flex flex-col gap-3 flex-1">
+                                                                                {/* Row 1: Avatar + Name + Priority */}
+                                                                                <div className="flex items-start gap-3">
+                                                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(item.name)}`}>
+                                                                                        {getInitials(item.name)}
+                                                                                    </div>
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <p className="text-sm font-bold text-slate-900 truncate leading-tight">
+                                                                                            {item.name}
+                                                                                        </p>
+                                                                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
+                                                                                                {priorityMeta.label}
+                                                                                            </span>
+                                                                                            {serviceName && (
+                                                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                                                                                                    {serviceName}
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {item.has_paid_deposit ? (
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        navigate('/admin/billing?tab=history');
+                                                                                                    }}
+                                                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase tracking-wider cursor-pointer hover:bg-green-200 transition-colors"
+                                                                                                    title="Deposit Paid — View in Finance > Collection History"
+                                                                                                >
+                                                                                                    <CheckCircle2 className="w-2.5 h-2.5" /> Deposit Paid
+                                                                                                </button>
+                                                                                            ) : item.is_deposit_pending ? (
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        navigate('/admin/clients');
+                                                                                                    }}
+                                                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider cursor-pointer hover:bg-amber-200 transition-colors"
+                                                                                                    title="Deposit Pending for current service — Click to manage in Clients"
+                                                                                                >
+                                                                                                    <Clock className="w-2.5 h-2.5" /> Deposit Pending
+                                                                                                </button>
+                                                                                            ) : null}
+                                                                                            {activeWorkers.length > 0 && (
+                                                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
+                                                                                                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                                                                    </svg>
+                                                                                                    {activeWorkers[0]}
+                                                                                                    {activeWorkers.length > 1 && (
+                                                                                                        <span className="ml-0.5 text-[9px] font-bold text-purple-600 bg-purple-200/60 px-1 rounded-sm">
+                                                                                                            +{activeWorkers.length - 1}
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                                {/* Service Details Breakdown */}
+                                                                                <div className="flex flex-col gap-1.5">
+                                                                                    {shiftBubble && (
+                                                                                        <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                                                                            <Clock className="w-3 h-3 text-primary shrink-0" />
+                                                                                            <span className="text-[10px] font-medium text-slate-600 truncate">
+                                                                                                {shiftBubble}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {serviceLocation && (
+                                                                                        <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                                                                            <Globe className="w-3 h-3 text-primary shrink-0" />
+                                                                                            <span className="text-[10px] font-medium text-slate-600 truncate">
+                                                                                                {serviceLocation}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {(item.plannedStart || item.plannedDuration) && (
+                                                                                        <div className="flex items-center gap-2 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100 mt-0.5">
+                                                                                            <svg className="w-3 h-3 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                                                            </svg>
+                                                                                            <span className="text-[10px] font-bold text-indigo-700 truncate tracking-wide">
+                                                                                                {item.plannedStart ? new Date(item.plannedStart).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'TBD'}
+                                                                                                {item.plannedDuration ? ` • ${item.plannedDuration}` : ''}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                {/* Phone row */}
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span className="text-xs text-slate-600 truncate flex items-center gap-1">
+                                                                                        <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                                        {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
+                                                                                    </span>
+                                                                                    {deliveryLog && (
+                                                                                        <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${deliveryLog.status === 'failed' || deliveryLog.status === 'error'
+                                                                                                ? 'bg-red-100 text-red-700'
+                                                                                                : deliveryLog.status === 'delivered'
+                                                                                                    ? 'bg-green-100 text-green-700'
+                                                                                                    : deliveryLog.status === 'read'
+                                                                                                        ? 'bg-blue-100 text-blue-700'
+                                                                                                        : 'bg-slate-100 text-slate-500'
+                                                                                            }`} title={deliveryLog.error_message || undefined}>
+                                                                                            {deliveryLog.status === 'accepted_by_meta' ? 'sent' : deliveryLog.status}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        title="View WhatsApp Chat History"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            fetchWhatsappChat(item);
+                                                                                        }}
+                                                                                        className="ml-auto p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors"
+                                                                                    >
+                                                                                        <MessageCircle className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                </div>
+                                                                                {/* Time */}
+                                                                                <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
+                                                                                <div className="flex-1"></div>
+                                                                            </div>
+                                                                            {col.title === 'Closed Won' && (
+                                                                                <div className="px-3 pb-2 pt-0">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            setDetailsModalClient(item);
+                                                                                        }}
+                                                                                        className="w-full py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                                    >
+                                                                                        <RotateCcw className="w-3 h-3 text-emerald-600" /> Start New Service
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
+                                                                            {/* View Details */}
+                                                                            <button
+                                                                                onClick={async (e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setSelectedInspectorLead(item);
+                                                                                    fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                                    if (item.needs_attention) {
+                                                                                        setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                        await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                                    }
+                                                                                }}
+                                                                                className="w-full py-2 border-t border-slate-100 text-slate-500 hover:text-primary hover:bg-slate-50 text-[12px] font-semibold rounded-b-2xl transition-all flex items-center justify-center gap-1.5 group"
+                                                                            >
+                                                                                View Details <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
                                                                 );
                                                             })}
                                                             {hasMore && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
-                                                                    className="w-[300px] shrink-0 flex flex-col items-center justify-center gap-3 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[150px]"
+                                                                    className="w-full sm:w-[300px] shrink-0 flex items-center sm:flex-col justify-center gap-2 sm:gap-3 py-2 px-3 sm:p-0 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[40px] sm:min-h-[150px]"
                                                                 >
-                                                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
-                                                                        <Plus className="w-5 h-5 text-primary" />
+                                                                    <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+                                                                        <Plus className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-primary" />
                                                                     </div>
-                                                                    <span className="font-semibold text-sm">Load More ({col.items.length - limit} left)</span>
+                                                                    <span className="font-semibold text-xs sm:text-sm">Load More ({col.items.length - limit} left)</span>
                                                                 </button>
                                                             )}
                                                         </div>
