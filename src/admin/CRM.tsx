@@ -203,8 +203,6 @@ export default function CRM() {
         localStorage.setItem('crmActiveTab', activeTab);
     }, [activeTab]);
     const [leads, setLeads] = useState<any[]>([]);
-    const [crmSearchQuery, setCrmSearchQuery] = useState('');
-    const [mobileSelectedStage, setMobileSelectedStage] = useState<string>('all');
     const [trashedLeads, setTrashedLeads] = useState<any[]>([]);
     const [isLoadingTrash, setIsLoadingTrash] = useState(false);
     // Delete choice modal state
@@ -3618,64 +3616,40 @@ export default function CRM() {
         return acc;
     }, {} as Record<string, number>);
 
-    // Real-time search filter for leads
-    const filteredLeads = useMemo(() => {
-        if (!crmSearchQuery.trim()) return leads;
-        const q = crmSearchQuery.toLowerCase().trim();
-        return leads.filter(l => {
-            const name = (l.name || '').toLowerCase();
-            const rawPhone = (l.whatsapp_number || l.phone || '').replace(/\D/g, '');
-            const phone = (l.whatsapp_number || l.phone || '').toLowerCase();
-            const service = (l.service_interest || l.notes || '').toLowerCase();
-            const loc = (l.notes || '').toLowerCase();
-            const worker = (l.assigned_worker_name || '').toLowerCase();
-            return name.includes(q) || phone.includes(q) || rawPhone.includes(q) || service.includes(q) || loc.includes(q) || worker.includes(q);
-        });
-    }, [leads, crmSearchQuery]);
+    // Organize leads into columns based on active tab
+    const columns = activeStages.map(stage => ({
+        title: stage,
+        count: leads.filter(l => l.pipeline_stage === stage).length,
+        items: leads.filter(l => l.pipeline_stage === stage).map(l => {
+            const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
 
-    // Organize leads into columns based on active tab and filtered results
-    const columns = useMemo(() => {
-        return activeStages.map(stage => ({
-            title: stage,
-            count: filteredLeads.filter(l => l.pipeline_stage === stage).length,
-            items: filteredLeads.filter(l => l.pipeline_stage === stage).map(l => {
-                const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
+            // Extract latest quote dates
+            let plannedStart = null;
+            let plannedDuration = null;
+            if (l.crm_quotations && l.crm_quotations.length > 0) {
+                const latestQuote = [...l.crm_quotations].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                plannedStart = latestQuote.start_date;
+                plannedDuration = latestQuote.duration;
+            }
 
-                // Extract latest quote dates
-                let plannedStart = null;
-                let plannedDuration = null;
-                if (l.crm_quotations && l.crm_quotations.length > 0) {
-                    const latestQuote = [...l.crm_quotations].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                    plannedStart = latestQuote.start_date;
-                    plannedDuration = latestQuote.duration;
-                }
+            const serviceDays = getLeadServiceDays(l);
+            const isShortTermQuote = isShortTermService(serviceDays);
+            const valueAmount = l.estimated_value_monthly || 0;
 
-                const serviceDays = getLeadServiceDays(l);
-                const isShortTermQuote = isShortTermService(serviceDays);
-                const valueAmount = l.estimated_value_monthly || 0;
-
-                return {
-                    ...l,
-                    time: new Date(l.created_at).toLocaleDateString(),
-                    valueAmount,
-                    serviceDays,
-                    isShortTermQuote,
-                    value: formatLeadValueDisplay(valueAmount, serviceDays),
-                    priority: l.priority || 'medium',
-                    isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false,
-                    plannedStart,
-                    plannedDuration
-                };
-            })
-        }));
-    }, [activeStages, filteredLeads, phoneCounts]);
-
-    const totalFilteredLeadsCount = useMemo(() => filteredLeads.length, [filteredLeads]);
-
-    const visibleColumns = useMemo(() => {
-        if (mobileSelectedStage === 'all') return columns;
-        return columns.filter(c => c.title === mobileSelectedStage);
-    }, [columns, mobileSelectedStage]);
+            return {
+                ...l,
+                time: new Date(l.created_at).toLocaleDateString(),
+                valueAmount,
+                serviceDays,
+                isShortTermQuote,
+                value: formatLeadValueDisplay(valueAmount, serviceDays),
+                priority: l.priority || 'medium',
+                isDuplicate: p && p.length === 10 ? phoneCounts[p] > 1 : false,
+                plannedStart,
+                plannedDuration
+            };
+        })
+    }));
 
     const handleUpdateLeadValue = async (leadId: string) => {
         const newValue = parseInt(editingLeadValueAmount.replace(/\D/g, ''), 10);
@@ -4339,238 +4313,171 @@ export default function CRM() {
     };
 
     return (
-        <div className="p-3 sm:p-6 lg:p-8 flex flex-col space-y-4 sm:space-y-6">
-            {/* Top Bar: Title & Notification / Attention Bell */}
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 sm:gap-4">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary/10 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0">
-                        <Bot className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
+        <div className="p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                        <Bot className="w-7 h-7 text-primary" />
                     </div>
                     <div>
-                        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] tracking-tight">AI CRM Center</h1>
-                        <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-500 font-semibold">
-                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse"></span>
-                            <span>Live Sync Active</span>
-                        </div>
+                        <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] tracking-tight">AI CRM Center</h1>
+                        <p className="text-sm text-slate-500 font-medium font-bold">AI-Powered Management</p>
                     </div>
                 </div>
 
-                {/* Attention Notifications & Global Logs */}
-                <div className="relative z-50 shrink-0">
-                    <button
-                        onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                        className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all relative group shadow-2xs"
-                        title="CRM Live Alerts & Attention"
-                    >
-                        <Bot className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform text-primary" />
-                        {attentionNotifications.length > 0 && (
-                            <span className="absolute top-1.5 right-1.5 sm:top-2.5 sm:right-2.5 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-red-500 border-2 border-white rounded-full animate-pulse shadow-xs"></span>
-                        )}
-                    </button>
+                <div className="flex items-center gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
+                    {/* Notification Bell */}
+                    <div className="relative z-50 shrink-0">
+                        <button
+                            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                            className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all relative group shadow-sm"
+                        >
+                            <Bot className="w-6 h-6 group-hover:scale-110 transition-transform text-primary" />
+                            {attentionNotifications.length > 0 && (
+                                <span className="absolute top-2.5 right-2.5 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
+                            )}
+                        </button>
 
-                    {isNotificationsOpen && (
-                        <div className="absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-80 bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                            <div className="p-4 sm:p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
-                                <h3 className="font-bold text-slate-900 text-sm">Needs Attention</h3>
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{attentionNotifications.length} LIVE</span>
-                            </div>
-                            <div className="max-h-96 overflow-y-auto">
-                                {attentionNotifications.length === 0 ? (
-                                    <div className="p-6 text-center">
-                                        <p className="text-sm font-semibold text-slate-500">No active attention alerts.</p>
-                                        <p className="text-xs text-slate-400 mt-1">Routine automation logs stay in the full activity view.</p>
-                                    </div>
-                                ) : attentionNotifications.map(log => (
-                                    <div key={log.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer group">
-                                        <div className="flex gap-3">
-                                            <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-white transition-colors border ${log.status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
-                                                <log.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${log.status === 'error' ? 'text-red-600' : 'text-amber-600'}`} />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <p className="text-xs font-bold text-slate-900 leading-tight">{log.title}</p>
-                                                <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{log.desc}</p>
-                                                <p className="text-[9px] text-slate-400 mt-2 uppercase font-bold tracking-tighter flex items-center gap-1.5">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-[#1AA6A8] shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
-                                                    {log.time}
-                                                </p>
+                        {isNotificationsOpen && (
+                            <div className="absolute right-0 sm:right-0 -right-4 mt-3 w-[calc(100vw-2rem)] sm:w-80 max-w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                                    <h3 className="font-bold text-slate-900 text-sm">Needs Attention</h3>
+                                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{attentionNotifications.length} LIVE</span>
+                                </div>
+                                <div className="max-h-96 overflow-y-auto">
+                                    {attentionNotifications.length === 0 ? (
+                                        <div className="p-6 text-center">
+                                            <p className="text-sm font-semibold text-slate-500">No active attention alerts.</p>
+                                            <p className="text-xs text-slate-400 mt-1">Routine automation logs stay in the full activity view.</p>
+                                        </div>
+                                    ) : attentionNotifications.map(log => (
+                                        <div key={log.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer group">
+                                            <div className="flex gap-4">
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-white transition-colors border ${log.status === 'error' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+                                                    <log.icon className={`w-5 h-5 ${log.status === 'error' ? 'text-red-600' : 'text-amber-600'}`} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-900 leading-tight">{log.title}</p>
+                                                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{log.desc}</p>
+                                                    <p className="text-[9px] text-slate-400 mt-2 uppercase font-bold tracking-tighter flex items-center gap-1.5">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-[#1AA6A8] shadow-[0_0_5px_rgba(16,185,129,0.5)]"></span>
+                                                        {log.time}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
+                                <div className="p-4 text-center bg-slate-50/30 border-t border-slate-50">
+                                    <button onClick={() => { setActiveTab('automations'); setIsNotificationsOpen(false); }} className="text-xs font-bold text-primary hover:underline transition-transform inline-block">View Full Intelligence Logs</button>
+                                </div>
                             </div>
-                            <div className="p-3 sm:p-4 text-center bg-slate-50/30 border-t border-slate-50">
-                                <button onClick={() => { setActiveTab('automations'); setIsNotificationsOpen(false); }} className="text-xs font-bold text-primary hover:underline transition-transform inline-block">View Full Intelligence Logs</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                        )}
+                    </div>
 
-            {/* Module Sub-tabs - Full Width Horizontal Scrolling */}
-            <div className="w-full overflow-x-auto hide-scrollbar p-1 sm:p-1.5 bg-slate-200/60 rounded-xl sm:rounded-2xl border border-slate-200 flex items-center gap-1">
-                <button
-                    onClick={() => setActiveTab('pipeline')}
-                    className={`flex-1 sm:flex-none px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 whitespace-nowrap text-center ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-sm scale-100' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                    Pipeline
-                </button>
-                <button
-                    onClick={() => setActiveTab('clients')}
-                    className={`flex-1 sm:flex-none px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 whitespace-nowrap text-center ${activeTab === 'clients' ? 'bg-white text-primary shadow-sm scale-100' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                    Clients
-                </button>
-                <button
-                    onClick={() => setActiveTab('automations')}
-                    className={`flex-1 sm:flex-none px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 whitespace-nowrap text-center ${activeTab === 'automations' ? 'bg-white text-primary shadow-sm scale-100' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                    AI Auto
-                </button>
-                <button
-                    onClick={() => setActiveTab('voice')}
-                    className={`flex-1 sm:flex-none px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 whitespace-nowrap text-center ${activeTab === 'voice' ? 'bg-white text-primary shadow-sm scale-100' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                    Voice AI
-                </button>
-                <button
-                    onClick={() => setActiveTab('trash')}
-                    className={`flex-1 sm:flex-none px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 whitespace-nowrap text-center flex items-center justify-center gap-1.5 ${activeTab === 'trash' ? 'bg-white text-red-500 shadow-sm scale-100' : 'text-slate-600 hover:text-slate-900'}`}
-                >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Trash</span>
-                    {trashedLeads.length > 0 && (
-                        <span className="bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.2 rounded-full">{trashedLeads.length}</span>
-                    )}
-                </button>
+                    {/* Module Tabs */}
+                    <div className="flex items-center p-1 sm:p-1.5 bg-slate-200/50 rounded-xl sm:rounded-2xl shrink-0 border border-slate-200 shadow-inner overflow-x-auto hide-scrollbar max-w-full">
+                        <button
+                            onClick={() => setActiveTab('pipeline')}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Pipeline
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('clients')}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Clients
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('automations')}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'automations' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            AI Auto
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('voice')}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'voice' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            Voice AI
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('trash')}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'trash' ? 'bg-white text-red-500 shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Trash
+                            {trashedLeads.length > 0 && (
+                                <span className="bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{trashedLeads.length}</span>
+                            )}
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {(activeTab === 'pipeline' || activeTab === 'clients') && (
-                <div className="flex flex-col flex-1 h-full min-h-0 space-y-3 sm:space-y-4">
-                    {/* Search & Actions Bar */}
-                    <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            <input
-                                type="text"
-                                value={crmSearchQuery}
-                                onChange={(e) => setCrmSearchQuery(e.target.value)}
-                                placeholder="Search leads by name, phone, service..."
-                                className="w-full pl-9 pr-8 py-2 bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 rounded-xl border border-slate-200 shadow-2xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                            />
-                            {crmSearchQuery && (
+                <div className="flex flex-col flex-1 h-full min-h-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8]"></span>
+                            Live Sync Active
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            {activeTab === 'clients' ? (
                                 <button
-                                    onClick={() => setCrmSearchQuery('')}
-                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
-                                    title="Clear search"
+                                    onClick={() => {
+                                        resetAddClientForm();
+                                        setIsAddClientModalOpen(true);
+                                    }}
+                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm"
                                 >
-                                    <X className="w-3.5 h-3.5" />
+                                    <UserPlus className="w-4 h-4" /> Add Client
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        setIsAddLeadModalOpen(true);
+                                        setAddLeadName('');
+                                        setAddLeadPhone('');
+                                        setAddLeadDuplicateWarning(null);
+                                        setAddLeadConfirmDuplicate(false);
+                                    }}
+                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm"
+                                >
+                                    <Plus className="w-4 h-4" /> Add Lead
                                 </button>
                             )}
+                            <button onClick={handleExportLeadsToCSV} className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex">
+                                Export CSV
+                            </button>
                         </div>
-
-                        {activeTab === 'clients' ? (
-                            <button
-                                onClick={() => {
-                                    resetAddClientForm();
-                                    setIsAddClientModalOpen(true);
-                                }}
-                                className="px-3.5 sm:px-4 py-2 bg-[#1AA6A8] hover:bg-[#158789] text-white text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
-                            >
-                                <UserPlus className="w-4 h-4" /> <span className="hidden xs:inline">Add Client</span><span className="xs:hidden">Add</span>
-                            </button>
-                        ) : (
-                            <button
-                                onClick={() => {
-                                    setIsAddLeadModalOpen(true);
-                                    setAddLeadName('');
-                                    setAddLeadPhone('');
-                                    setAddLeadDuplicateWarning(null);
-                                    setAddLeadConfirmDuplicate(false);
-                                }}
-                                className="px-3.5 sm:px-4 py-2 bg-[#1AA6A8] hover:bg-[#158789] text-white text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
-                            >
-                                <Plus className="w-4 h-4" /> <span className="hidden xs:inline">Add Lead</span><span className="xs:hidden">Add</span>
-                            </button>
-                        )}
-
-                        <button
-                            onClick={handleExportLeadsToCSV}
-                            className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors hidden sm:flex items-center gap-1.5 shadow-2xs shrink-0"
-                        >
-                            Export CSV
-                        </button>
                     </div>
 
-                    {/* Stage Switcher Pills */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar py-1">
-                        <button
-                            onClick={() => setMobileSelectedStage('all')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 shadow-2xs ${
-                                mobileSelectedStage === 'all'
-                                    ? 'bg-slate-900 text-white ring-2 ring-slate-900/20'
-                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                            }`}
-                        >
-                            <span>All Stages</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${mobileSelectedStage === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                                {totalFilteredLeadsCount}
-                            </span>
-                        </button>
-                        {columns.map((col) => {
-                            const isSelected = mobileSelectedStage === col.title;
-                            return (
-                                <button
-                                    key={col.title}
-                                    onClick={() => setMobileSelectedStage(isSelected ? 'all' : col.title)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 shadow-2xs ${
-                                        isSelected
-                                            ? 'bg-[#1AA6A8] text-white ring-2 ring-[#1AA6A8]/30'
-                                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                                    }`}
-                                >
-                                    <span>{col.title}</span>
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                                        {col.count}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Search active indicator */}
-                    {crmSearchQuery && (
-                        <div className="flex items-center justify-between text-xs text-slate-600 bg-teal-50/80 border border-teal-200/60 px-3 py-1.5 rounded-lg">
-                            <span>Found <strong>{totalFilteredLeadsCount}</strong> matching leads</span>
-                            <button onClick={() => setCrmSearchQuery('')} className="text-teal-700 font-bold hover:underline">Clear Search</button>
-                        </div>
-                    )}
-
-                    {/* Columns & Cards Container */}
-                    <div className="flex-1 flex flex-col gap-3 sm:gap-4 overflow-y-auto pb-4 pr-1 sm:pr-2 custom-scrollbar">
+                    <div className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4 pr-2 custom-scrollbar">
                         {isLoading ? (
-                            <div className="flex-1 flex items-center justify-center py-16">
+                            <div className="flex-1 flex items-center justify-center">
                                 <Loader2 className="w-8 h-8 text-primary animate-spin" />
                                 <span className="ml-3 text-slate-500 font-medium">Loading live pipeline...</span>
                             </div>
                         ) : (
                             <>
-                                {visibleColumns.map((col, idx) => {
-                                    const isExpanded = mobileSelectedStage !== 'all' || expandedStages[col.title] === true;
+                                {columns.map((col, idx) => {
+                                    const isExpanded = expandedStages[col.title] === true;
                                     const limit = stageLimits[col.title] || 4;
                                     const displayedItems = col.items.slice(0, limit);
                                     const hasMore = col.items.length > limit;
 
                                     return (
-                                        <div key={col.title} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-2xs transition-all duration-300 ${isExpanded ? 'flex-col sm:flex-row sm:items-stretch' : 'flex-col'}`}>
+                                        <div key={idx} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-300 ${isExpanded ? 'flex-col sm:flex-row sm:items-stretch' : 'flex-col'}`}>
                                             <div
-                                                className={`p-3 sm:p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[260px] lg:w-[300px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
+                                                className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[280px] lg:w-[320px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
                                                 onClick={() => toggleStage(col.title)}
                                             >
                                                 {/* Stage Header w/ Edit toggle */}
                                                 <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <div className={`transition-transform duration-200 ${isExpanded ? '-rotate-90 sm:-rotate-90' : 'rotate-0'}`}>
-                                                            <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`transition-transform duration-200 ${isExpanded ? '-rotate-90' : 'rotate-0'}`}>
+                                                            <ChevronDown className="w-5 h-5 text-slate-400" />
                                                         </div>
                                                         {editingStageIdx === idx ? (
                                                             <input
@@ -4583,11 +4490,11 @@ export default function CRM() {
                                                                 }}
                                                                 onBlur={() => handleRenameStage(col.title, idx)}
                                                                 autoFocus
-                                                                className="font-semibold text-slate-900 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded outline-none ring-2 ring-primary/20 w-[150px] sm:w-[180px] text-sm"
+                                                                className="font-semibold text-slate-900 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded outline-none ring-2 ring-primary/20 w-[180px] text-sm"
                                                             />
                                                         ) : (
                                                             <h3
-                                                                className="font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate pr-1 text-sm sm:text-base max-w-[160px] sm:max-w-[180px]"
+                                                                className="font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate pr-2 w-[150px]"
                                                                 onDoubleClick={() => {
                                                                     if (!PROTECTED_STAGES.includes(col.title)) {
                                                                         setEditingStageIdx(idx);
@@ -4601,14 +4508,14 @@ export default function CRM() {
                                                                 {col.title}
                                                             </h3>
                                                         )}
-                                                        <span className={`min-w-[1.75rem] h-7 px-1.5 rounded-full flex items-center justify-center text-xs sm:text-sm font-extrabold transition-all shadow-xs ${col.count > 0 ? 'bg-gradient-to-br from-[#1AA6A8] to-[#0E7C7E] text-white ring-2 ring-[#1AA6A8]/30 scale-105' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                                                        <span className={`min-w-[2rem] h-8 px-2 rounded-full flex items-center justify-center text-sm font-extrabold transition-all shadow-sm ${col.count > 0 ? 'bg-gradient-to-br from-[#1AA6A8] to-[#0E7C7E] text-white ring-2 ring-[#1AA6A8]/30 scale-105' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
                                                             {col.count}
                                                         </span>
                                                     </div>
 
-                                                    <div className="flex items-center gap-1.5">
+                                                    <div className="flex items-center gap-2">
                                                         {/* Header Dropdown Menu (Hover based) */}
-                                                        <div className={`absolute opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden ${isExpanded ? 'bottom-3 left-3 sm:bottom-4 sm:left-4' : 'right-3 sm:right-4 top-1/2 -translate-y-1/2'}`} onClick={e => e.stopPropagation()}>
+                                                        <div className={`absolute opacity-0 group-hover/header:opacity-100 transition-opacity bg-white shadow-sm border border-slate-200 rounded-md flex overflow-hidden ${isExpanded ? 'bottom-4 left-4' : 'right-4 top-1/2 -translate-y-1/2'}`} onClick={e => e.stopPropagation()}>
                                                             <button
                                                                 disabled={idx === 0}
                                                                 onClick={(e) => { e.stopPropagation(); handleSlideStage(idx, 'left'); }}
@@ -4638,23 +4545,24 @@ export default function CRM() {
                                             </div>
 
                                             {isExpanded && (
-                                                <div className="p-2.5 sm:p-4 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
+                                                <div className="p-5 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
                                                     {col.items.length === 0 ? (
-                                                        <div className="text-center text-slate-400 text-xs sm:text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
+                                                        <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                                     ) : (
-                                                        <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2.5 sm:gap-4">
+                                                        <div className="flex flex-wrap gap-4 min-w-min">
                                                             {displayedItems.map((item) => {
                                                                 const priorityMeta = item.priority === 'hot'
                                                                     ? { label: 'Hot', cls: 'bg-red-100 text-red-700 border-red-200' }
                                                                     : item.priority === 'cold'
                                                                         ? { label: 'Low', cls: 'bg-blue-100 text-blue-700 border-blue-200' }
                                                                         : { label: 'Medium', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
-
+                                                                // Extract service name: prefer service_interest column, then parse from notes
                                                                 let serviceName: string | null = item.service_interest || null;
                                                                 let shiftBubble: string | null = null;
                                                                 let serviceLocation: string | null = null;
 
                                                                 if (item.notes) {
+                                                                    // Parse structured notes: "Service: X\nShift: Y\nLocation: Z"
                                                                     const serviceMatch = item.notes.match(/^Service:\s*(.+)$/im);
                                                                     const shiftMatch = item.notes.match(/^Shift:\s*(.+)$/im);
                                                                     const locMatch = item.notes.match(/^Location:\s*(.+)$/im);
@@ -4669,57 +4577,55 @@ export default function CRM() {
                                                                     }
                                                                 }
 
+                                                                // Fallback: use intent if still nothing
                                                                 if (!serviceName) serviceName = item.intent || null;
+
+                                                                // Sanitize: drop placeholder / empty values
                                                                 if (serviceName === 'Unknown' || serviceName === '') serviceName = null;
                                                                 if (shiftBubble === '' || shiftBubble === 'Unknown') shiftBubble = null;
                                                                 if (serviceLocation === ', , , ' || serviceLocation === '') serviceLocation = null;
-
                                                                 const deliveryLog = deliveryLogs
                                                                     .filter((l) => l.payload?.lead_id === item.id)
                                                                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                                                                     
+                                                                // Extract active workers from services
                                                                 let activeWorkers: string[] = [];
                                                                 if (item.services && Array.isArray(item.services)) {
                                                                     const activeAssignments = item.services
                                                                         .filter((s: any) => s.status === 'active' || s.status === 'pending')
                                                                         .flatMap((s: any) => s.service_worker_assignments || [])
-                                                                        .filter((wa: any) => wa.employees?.full_name && !wa.end_date);
+                                                                        .filter((wa: any) => wa.employees?.full_name && !wa.end_date); // Ignore ended assignments
                                                                     
                                                                     const names = new Set<string>();
                                                                     activeAssignments.forEach((wa: any) => names.add(wa.employees.full_name));
                                                                     activeWorkers = Array.from(names);
                                                                 }
                                                                 
+                                                                // Fallback to assigned_worker_name column if nothing found in services
                                                                 if (activeWorkers.length === 0 && item.assigned_worker_name) {
                                                                     activeWorkers = [item.assigned_worker_name];
                                                                 }
-
-                                                                const rawPhone = item.whatsapp_number || item.phone || '';
-                                                                const digits = rawPhone.replace(/\D/g, '');
-                                                                const cleanPhone = digits.length === 10 ? `+91${digits}` : (digits.startsWith('91') ? `+${digits}` : `+91${digits.slice(-10)}`);
-                                                                const displayPhone = formatPhoneNumber(rawPhone) || 'No phone';
-
                                                                 return (
-                                                                    <div key={item.id} className={`relative w-full sm:w-[280px] shrink-0 bg-white rounded-xl sm:rounded-2xl shadow-xs border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
+                                                                    <div key={item.id} className={`relative w-[280px] shrink-0 bg-white rounded-2xl shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                                         {item.needs_attention && (
-                                                                            <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white shadow-xs z-10 animate-pulse"></div>
+                                                                            <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
                                                                         )}
-                                                                        <div className="p-3.5 sm:p-4 flex flex-col gap-2.5 flex-1">
-                                                                            {/* Row 1: Avatar + Name + Badges */}
-                                                                            <div className="flex items-start gap-2.5">
-                                                                                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shrink-0 text-white text-xs sm:text-sm font-bold ${getAvatarColor(item.name)}`}>
+                                                                        <div className="p-4 flex flex-col gap-3 flex-1">
+                                                                            {/* Row 1: Avatar + Name + Priority */}
+                                                                            <div className="flex items-start gap-3">
+                                                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(item.name)}`}>
                                                                                     {getInitials(item.name)}
                                                                                 </div>
                                                                                 <div className="flex-1 min-w-0">
-                                                                                    <p className="text-sm sm:text-base font-bold text-slate-900 truncate leading-tight">
+                                                                                    <p className="text-sm font-bold text-slate-900 truncate leading-tight">
                                                                                         {item.name}
                                                                                     </p>
-                                                                                    <div className="flex flex-wrap gap-1 mt-1">
-                                                                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
+                                                                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
                                                                                             {priorityMeta.label}
                                                                                         </span>
                                                                                         {serviceName && (
-                                                                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider truncate max-w-[140px]">
+                                                                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
                                                                                                 {serviceName}
                                                                                             </span>
                                                                                         )}
@@ -4729,8 +4635,8 @@ export default function CRM() {
                                                                                                     e.stopPropagation();
                                                                                                     navigate('/admin/billing?tab=history');
                                                                                                 }}
-                                                                                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase tracking-wider cursor-pointer hover:bg-green-200 transition-colors"
-                                                                                                title="Deposit Paid — View in Finance"
+                                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 uppercase tracking-wider cursor-pointer hover:bg-green-200 transition-colors"
+                                                                                                title="Deposit Paid — View in Finance > Collection History"
                                                                                             >
                                                                                                 <CheckCircle2 className="w-2.5 h-2.5" /> Deposit Paid
                                                                                             </button>
@@ -4740,18 +4646,20 @@ export default function CRM() {
                                                                                                     e.stopPropagation();
                                                                                                     navigate('/admin/clients');
                                                                                                 }}
-                                                                                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider cursor-pointer hover:bg-amber-200 transition-colors"
-                                                                                                title="Deposit Pending — Click to manage"
+                                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider cursor-pointer hover:bg-amber-200 transition-colors"
+                                                                                                title="Deposit Pending for current service — Click to manage in Clients"
                                                                                             >
                                                                                                 <Clock className="w-2.5 h-2.5" /> Deposit Pending
                                                                                             </button>
                                                                                         ) : null}
                                                                                         {activeWorkers.length > 0 && (
-                                                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
-                                                                                                <User className="w-2.5 h-2.5" />
+                                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wider">
+                                                                                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                                                                </svg>
                                                                                                 {activeWorkers[0]}
                                                                                                 {activeWorkers.length > 1 && (
-                                                                                                    <span className="text-[8px] font-extrabold text-purple-700 bg-purple-200 px-1 rounded">
+                                                                                                    <span className="ml-0.5 text-[9px] font-bold text-purple-600 bg-purple-200/60 px-1 rounded-sm">
                                                                                                         +{activeWorkers.length - 1}
                                                                                                     </span>
                                                                                                 )}
@@ -4760,11 +4668,10 @@ export default function CRM() {
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
-
-                                                                            {/* Details Breakdown */}
+                                                                            {/* Service Details Breakdown */}
                                                                             <div className="flex flex-col gap-1.5">
                                                                                 {shiftBubble && (
-                                                                                    <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
+                                                                                    <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
                                                                                         <Clock className="w-3 h-3 text-primary shrink-0" />
                                                                                         <span className="text-[10px] font-medium text-slate-600 truncate">
                                                                                             {shiftBubble}
@@ -4772,7 +4679,7 @@ export default function CRM() {
                                                                                     </div>
                                                                                 )}
                                                                                 {serviceLocation && (
-                                                                                    <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
+                                                                                    <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
                                                                                         <Globe className="w-3 h-3 text-primary shrink-0" />
                                                                                         <span className="text-[10px] font-medium text-slate-600 truncate">
                                                                                             {serviceLocation}
@@ -4780,8 +4687,10 @@ export default function CRM() {
                                                                                     </div>
                                                                                 )}
                                                                                 {(item.plannedStart || item.plannedDuration) && (
-                                                                                    <div className="flex items-center gap-1.5 bg-indigo-50/80 px-2 py-1 rounded-md border border-indigo-100">
-                                                                                        <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                                                    <div className="flex items-center gap-2 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100 mt-0.5">
+                                                                                        <svg className="w-3 h-3 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                                                        </svg>
                                                                                         <span className="text-[10px] font-bold text-indigo-700 truncate tracking-wide">
                                                                                             {item.plannedStart ? new Date(item.plannedStart).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'TBD'}
                                                                                             {item.plannedDuration ? ` • ${item.plannedDuration}` : ''}
@@ -4789,80 +4698,40 @@ export default function CRM() {
                                                                                     </div>
                                                                                 )}
                                                                             </div>
-
-                                                                            {/* Phone Row & Time */}
-                                                                            <div className="flex items-center justify-between gap-1 text-xs text-slate-600 pt-0.5">
-                                                                                <span className="truncate flex items-center gap-1 font-medium">
+                                                                            {/* Phone row */}
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-xs text-slate-600 truncate flex items-center gap-1">
                                                                                     <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                                                                                    {displayPhone}
+                                                                                    {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
                                                                                 </span>
-                                                                                <div className="flex items-center gap-1 shrink-0">
-                                                                                    {deliveryLog && (
-                                                                                        <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-full ${deliveryLog.status === 'failed' || deliveryLog.status === 'error'
-                                                                                                ? 'bg-red-100 text-red-700'
-                                                                                                : deliveryLog.status === 'delivered'
-                                                                                                    ? 'bg-green-100 text-green-700'
-                                                                                                    : deliveryLog.status === 'read'
-                                                                                                        ? 'bg-blue-100 text-blue-700'
-                                                                                                        : 'bg-slate-100 text-slate-500'
-                                                                                            }`} title={deliveryLog.error_message || undefined}>
-                                                                                            {deliveryLog.status === 'accepted_by_meta' ? 'sent' : deliveryLog.status}
-                                                                                        </span>
-                                                                                    )}
-                                                                                    <span className="text-[10px] text-slate-400">{getRelativeTime(item.created_at)}</span>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            {/* 1-Tap Direct Call & WhatsApp Actions (Crucial on Phone) */}
-                                                                            <div className="flex items-center gap-1.5 pt-1">
-                                                                                <a
-                                                                                    href={rawPhone ? `tel:${cleanPhone}` : undefined}
+                                                                                {deliveryLog && (
+                                                                                    <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${deliveryLog.status === 'failed' || deliveryLog.status === 'error'
+                                                                                            ? 'bg-red-100 text-red-700'
+                                                                                            : deliveryLog.status === 'delivered'
+                                                                                                ? 'bg-green-100 text-green-700'
+                                                                                                : deliveryLog.status === 'read'
+                                                                                                    ? 'bg-blue-100 text-blue-700'
+                                                                                                    : 'bg-slate-100 text-slate-500'
+                                                                                        }`} title={deliveryLog.error_message || undefined}>
+                                                                                        {deliveryLog.status === 'accepted_by_meta' ? 'sent' : deliveryLog.status}
+                                                                                    </span>
+                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    title="View WhatsApp Chat History"
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
-                                                                                        if (!rawPhone) toast.error('No phone number available');
+                                                                                        fetchWhatsappChat(item);
                                                                                     }}
-                                                                                    className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border border-emerald-200/80 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                                                                                    title={`Call ${displayPhone}`}
+                                                                                    className="ml-auto p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors"
                                                                                 >
-                                                                                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                                                                                    <span>Call</span>
-                                                                                </a>
-                                                                                <a
-                                                                                    href={digits ? `https://wa.me/${cleanPhone.replace('+', '')}` : undefined}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        if (!digits) toast.error('No WhatsApp number available');
-                                                                                    }}
-                                                                                    className="flex-1 py-1.5 px-2 bg-teal-50 hover:bg-teal-100 active:bg-teal-200 text-teal-700 border border-teal-200/80 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                                                                                    title="Open WhatsApp chat"
-                                                                                >
-                                                                                    <MessageCircle className="w-3.5 h-3.5 text-teal-600" />
-                                                                                    <span>WhatsApp</span>
-                                                                                </a>
+                                                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                                                </button>
                                                                             </div>
-
-                                                                            {/* Direct Stage Mover Select */}
-                                                                            <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
-                                                                                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider shrink-0">Stage:</span>
-                                                                                <select
-                                                                                    value={item.pipeline_stage || col.title}
-                                                                                    onChange={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        handleMoveLead(item.id, e.target.value);
-                                                                                    }}
-                                                                                    className="flex-1 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md px-2 py-1 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-colors"
-                                                                                >
-                                                                                    {activeStages.map(stageName => (
-                                                                                        <option key={stageName} value={stageName}>
-                                                                                            {stageName}
-                                                                                        </option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            </div>
+                                                                            {/* Time */}
+                                                                            <p className="text-[11px] text-slate-400">{getRelativeTime(item.created_at)}</p>
+                                                                            <div className="flex-1"></div>
                                                                         </div>
-
                                                                         {col.title === 'Closed Won' && (
                                                                             <div className="px-3 pb-2 pt-0">
                                                                                 <button
@@ -4877,8 +4746,7 @@ export default function CRM() {
                                                                                 </button>
                                                                             </div>
                                                                         )}
-
-                                                                        {/* View Full Details Button */}
+                                                                        {/* View Details */}
                                                                         <button
                                                                             onClick={async (e) => {
                                                                                 e.stopPropagation();
@@ -4889,23 +4757,22 @@ export default function CRM() {
                                                                                     await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
                                                                                 }
                                                                             }}
-                                                                            className="w-full py-2 border-t border-slate-100 text-slate-600 hover:text-primary hover:bg-slate-50 text-xs font-bold rounded-b-xl sm:rounded-b-2xl transition-all flex items-center justify-center gap-1.5 group"
+                                                                            className="w-full py-2 border-t border-slate-100 text-slate-500 hover:text-primary hover:bg-slate-50 text-[12px] font-semibold rounded-b-2xl transition-all flex items-center justify-center gap-1.5 group"
                                                                         >
-                                                                            View Details <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform text-slate-400 group-hover:text-primary" />
+                                                                            View Details <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                                                                         </button>
                                                                     </div>
                                                                 );
                                                             })}
-
                                                             {hasMore && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
-                                                                    className="w-full sm:w-[280px] shrink-0 flex flex-col items-center justify-center gap-2 p-4 bg-slate-100/80 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:text-primary hover:border-primary/50 transition-colors min-h-[100px] sm:min-h-[140px]"
+                                                                    className="w-[300px] shrink-0 flex flex-col items-center justify-center gap-3 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[150px]"
                                                                 >
-                                                                    <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-xs">
-                                                                        <Plus className="w-4 h-4 text-primary" />
+                                                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+                                                                        <Plus className="w-5 h-5 text-primary" />
                                                                     </div>
-                                                                    <span className="font-semibold text-xs sm:text-sm">Load More ({col.items.length - limit} left)</span>
+                                                                    <span className="font-semibold text-sm">Load More ({col.items.length - limit} left)</span>
                                                                 </button>
                                                             )}
                                                         </div>
@@ -4915,41 +4782,38 @@ export default function CRM() {
                                         </div>
                                     );
                                 })}
-
                                 {/* Add Column Button */}
-                                {mobileSelectedStage === 'all' && (
-                                    <div className="w-full sm:w-[300px] shrink-0 flex flex-col bg-transparent rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 transition-colors">
-                                        {isAddingStage ? (
-                                            <div className="p-4 flex flex-col gap-3">
-                                                <input
-                                                    type="text"
-                                                    value={newStageName}
-                                                    onChange={(e) => setNewStageName(e.target.value)}
-                                                    placeholder="Enter column name..."
-                                                    className="w-full text-sm py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                                                    autoFocus
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') handleAddStage();
-                                                        if (e.key === 'Escape') { setIsAddingStage(false); setNewStageName(''); }
-                                                    }}
-                                                />
-                                                <div className="flex justify-end gap-2">
-                                                    <button onClick={() => { setIsAddingStage(false); setNewStageName(''); }} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-md">Cancel</button>
-                                                    <button onClick={handleAddStage} className="px-3 py-1.5 text-xs bg-primary text-white hover:bg-primary/90 rounded-md" disabled={!newStageName.trim()}>Add</button>
-                                                </div>
+                                <div className="w-[320px] shrink-0 flex flex-col bg-transparent rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 transition-colors">
+                                    {isAddingStage ? (
+                                        <div className="p-4 flex flex-col gap-3">
+                                            <input
+                                                type="text"
+                                                value={newStageName}
+                                                onChange={(e) => setNewStageName(e.target.value)}
+                                                placeholder="Enter column name..."
+                                                className="w-full text-sm py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') handleAddStage();
+                                                    if (e.key === 'Escape') { setIsAddingStage(false); setNewStageName(''); }
+                                                }}
+                                            />
+                                            <div className="flex justify-end gap-2">
+                                                <button onClick={() => { setIsAddingStage(false); setNewStageName(''); }} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-md">Cancel</button>
+                                                <button onClick={handleAddStage} className="px-3 py-1.5 text-xs bg-primary text-white hover:bg-primary/90 rounded-md" disabled={!newStageName.trim()}>Add</button>
                                             </div>
-                                        ) : (
-                                            <button onClick={() => setIsAddingStage(true)} className="flex items-center justify-center p-4 text-slate-500 hover:text-slate-800 transition-colors group flex-1">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-slate-200 flex items-center justify-center transition-colors">
-                                                        <Plus className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
-                                                    </div>
-                                                    <span className="font-medium text-xs sm:text-sm">+ Add New Column</span>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => setIsAddingStage(true)} className="flex items-center justify-center p-4 text-slate-500 hover:text-slate-800 transition-colors group flex-1">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-slate-200 flex items-center justify-center transition-colors">
+                                                    <Plus className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
                                                 </div>
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
+                                                <span className="font-medium">+ Create a new one</span>
+                                            </div>
+                                        </button>
+                                    )}
+                                </div>
                             </>
                         )}
                     </div>
@@ -6130,7 +5994,7 @@ export default function CRM() {
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col gap-4 sm:gap-5 custom-scrollbar pb-28 sm:pb-8">
+                    <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 custom-scrollbar">
 
                         {/* Assigned Staff Info */}
                         {/* Assigned Staff Info */}
