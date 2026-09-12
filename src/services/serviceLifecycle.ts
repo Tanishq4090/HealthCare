@@ -243,6 +243,51 @@ export async function assignWorkerToService(
     employeeId: string,
     startDate: string
 ): Promise<ServiceWorkerAssignment> {
+    // ── Guard: Ensure worker is not already active with another client ──
+    const { data: targetSvc } = await supabase
+        .from('services')
+        .select('id, client_id, lead_id')
+        .eq('id', serviceId)
+        .maybeSingle();
+
+    const targetClientId = targetSvc?.client_id || targetSvc?.lead_id;
+
+    const { data: existingSwa } = await supabase
+        .from('service_worker_assignments')
+        .select('id, service_id, services(id, status, client_id, lead_id, crm_leads(name))')
+        .eq('employee_id', employeeId)
+        .is('end_date', null);
+
+    const conflictingSwa = (existingSwa || []).find((a: any) =>
+        a.services &&
+        (a.services.status === 'active' || a.services.status === 'pending') &&
+        a.service_id !== serviceId &&
+        a.services.client_id !== targetClientId &&
+        a.services.lead_id !== targetClientId
+    );
+
+    if (conflictingSwa) {
+        const clientName = (conflictingSwa as any).services?.crm_leads?.name || 'another client';
+        const { data: emp } = await supabase.from('employees').select('full_name').eq('id', employeeId).maybeSingle();
+        const workerName = emp?.full_name || 'Worker';
+        throw new Error(`${workerName} is currently deployed to ${clientName}. Please release or end their active deployment first.`);
+    }
+
+    const { data: legacyActive } = await supabase
+        .from('worker_assignments')
+        .select('id, client_id, clients(client_name)')
+        .eq('employee_id', employeeId)
+        .eq('assignment_status', 'active')
+        .is('end_date', null);
+
+    const conflictingLegacy = (legacyActive || []).find((a: any) => a.client_id !== targetClientId);
+    if (conflictingLegacy) {
+        const clientName = (conflictingLegacy as any).clients?.client_name || 'another client';
+        const { data: emp } = await supabase.from('employees').select('full_name').eq('id', employeeId).maybeSingle();
+        const workerName = emp?.full_name || 'Worker';
+        throw new Error(`${workerName} is currently deployed to ${clientName}. Please release or end their active deployment first.`);
+    }
+
     const { data, error } = await supabase
         .from('service_worker_assignments')
         .insert({
@@ -294,6 +339,53 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
     error?: string;
 }> {
     try {
+        // Pre-validate workers are not already assigned to another client
+        const workersToCheck: RestartWorkerAssignment[] = input.workers && input.workers.length > 0
+            ? input.workers
+            : (input.workerId ? [{ workerId: input.workerId, workerPayoutRate: input.workerPayoutRate }] : []);
+
+        for (const w of workersToCheck) {
+            const { data: existingSwa } = await supabase
+                .from('service_worker_assignments')
+                .select('id, service_id, services(id, status, client_id, lead_id, crm_leads(name))')
+                .eq('employee_id', w.workerId)
+                .is('end_date', null);
+
+            const conflicting = (existingSwa || []).find((a: any) =>
+                a.services &&
+                (a.services.status === 'active' || a.services.status === 'pending') &&
+                a.services.client_id !== input.clientId &&
+                a.services.lead_id !== input.clientId
+            );
+
+            if (conflicting) {
+                const clientName = (conflicting as any).services?.crm_leads?.name || 'another client';
+                const { data: emp } = await supabase.from('employees').select('full_name').eq('id', w.workerId).maybeSingle();
+                const workerName = emp?.full_name || 'Selected worker';
+                return {
+                    success: false,
+                    error: `${workerName} is currently deployed to ${clientName}. Please release them before reassigning.`
+                };
+            }
+
+            const { data: legacyActive } = await supabase
+                .from('worker_assignments')
+                .select('id, client_id, clients(client_name)')
+                .eq('employee_id', w.workerId)
+                .eq('assignment_status', 'active')
+                .is('end_date', null);
+
+            const conflictingLegacy = (legacyActive || []).find((a: any) => a.client_id !== input.clientId);
+            if (conflictingLegacy) {
+                const clientName = (conflictingLegacy as any).clients?.client_name || 'another client';
+                const { data: emp } = await supabase.from('employees').select('full_name').eq('id', w.workerId).maybeSingle();
+                const workerName = emp?.full_name || 'Selected worker';
+                return {
+                    success: false,
+                    error: `${workerName} is currently deployed to ${clientName}. Please release them before reassigning.`
+                };
+            }
+        }
         // 0. Ensure client exists in clients table with matching UUID before creating service
         await supabase.from('clients').upsert({
             id: input.clientId,

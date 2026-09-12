@@ -150,6 +150,45 @@ export async function assignWorkerToClient(
     }
   }
 
+  // ── Step 0.4: Enforce Single-Client-Per-Worker Rule ─────
+  // Prevent assigning a worker who is already active on another service / client
+  const { data: existingSwa } = await supabase
+    .from('service_worker_assignments')
+    .select('id, service_id, services(id, status, client_id, lead_id, crm_leads(id, name))')
+    .eq('employee_id', employeeUuid)
+    .is('end_date', null);
+
+  const conflictingSwa = (existingSwa || []).find((a: any) =>
+    a.services &&
+    (a.services.status === 'active' || a.services.status === 'pending') &&
+    a.services.client_id !== clientUuid &&
+    a.services.lead_id !== clientUuid &&
+    a.services.crm_leads?.id !== clientUuid
+  );
+
+  if (conflictingSwa) {
+    const conflictingClientName = (conflictingSwa as any).services?.crm_leads?.name || 'another client';
+    const { data: emp } = await supabase.from('employees').select('full_name').eq('id', employeeUuid).maybeSingle();
+    const workerName = emp?.full_name || 'Worker';
+    throw new Error(`${workerName} is currently deployed to ${conflictingClientName}. Please release or end their active deployment before reassigning.`);
+  }
+
+  // Also check legacy worker_assignments table
+  const { data: legacyActive } = await supabase
+    .from('worker_assignments')
+    .select('id, client_id, clients(client_name)')
+    .eq('employee_id', employeeUuid)
+    .eq('assignment_status', 'active')
+    .is('end_date', null);
+
+  const conflictingLegacy = (legacyActive || []).find((a: any) => a.client_id !== clientUuid);
+  if (conflictingLegacy) {
+    const conflictingClientName = (conflictingLegacy as any).clients?.client_name || 'another client';
+    const { data: emp } = await supabase.from('employees').select('full_name').eq('id', employeeUuid).maybeSingle();
+    const workerName = emp?.full_name || 'Worker';
+    throw new Error(`${workerName} is currently deployed to ${conflictingClientName}. Please release or end their active deployment before reassigning.`);
+  }
+
   // ── Step 0.5: Enforce Single Staff Rule ──────────────────
   // Removed: We now support multiple active workers per client using the new services model.
 

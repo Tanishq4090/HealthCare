@@ -56,6 +56,13 @@ export default function Clients() {
         setRestartSelectedWorkers(prev => {
             const exists = prev.some(item => item.id === w.id);
             if (exists) return prev.filter(item => item.id !== w.id);
+
+            // Guard: Prevent selecting worker who is already deployed to another client
+            if (w.status && w.status.toLowerCase() === 'assigned') {
+                toast.error(`${w.full_name || 'Worker'} is currently deployed to ${w.assigned_client || 'another client'}. Please release them before reassigning.`);
+                return prev;
+            }
+
             return [...prev, w];
         });
     };
@@ -423,7 +430,7 @@ export default function Clients() {
         // Fetch workers with their stored 10hr and 24hr daily payout rates
         const { data } = await supabase
             .from('employees')
-            .select('id, full_name, job_title, status, photo_url, rate_10hr, rate_24hr')
+            .select('id, full_name, job_title, status, photo_url, rate_10hr, rate_24hr, assigned_client')
             .order('full_name');
         setRestartWorkers(data || []);
     };
@@ -1496,6 +1503,7 @@ export default function Clients() {
                                         .map(w => {
                                             const isSelected = restartSelectedWorkers.some(sw => sw.id === w.id);
                                             const isAvail = w.status === 'available';
+                                            const isAssignedElsewhere = !isAvail && !isSelected;
                                             return (
                                                 <button
                                                     key={w.id}
@@ -1504,11 +1512,13 @@ export default function Clients() {
                                                     className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
                                                         isSelected
                                                             ? 'border-purple-600 bg-purple-50/70 ring-2 ring-purple-600/20 shadow-xs'
-                                                            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70'
+                                                            : isAssignedElsewhere
+                                                                ? 'border-slate-200 bg-slate-50/60 opacity-60 hover:border-amber-300 hover:bg-amber-50/30'
+                                                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70'
                                                     }`}
                                                 >
                                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                                                        isSelected ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700'
+                                                        isSelected ? 'bg-purple-600 text-white' : isAssignedElsewhere ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
                                                     }`}>
                                                         {w.full_name?.charAt(0) || 'W'}
                                                     </div>
@@ -1516,7 +1526,9 @@ export default function Clients() {
                                                         <div className="flex items-center justify-between">
                                                             <p className="font-bold text-xs text-slate-900 truncate">{w.full_name}</p>
                                                             {isSelected ? (
-                                                                <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                                                                 <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                                                            ) : isAssignedElsewhere ? (
+                                                                <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">Deployed</span>
                                                             ) : (
                                                                 <div className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" />
                                                             )}
@@ -1524,9 +1536,9 @@ export default function Clients() {
                                                         <div className="flex items-center gap-1.5 mt-0.5">
                                                             <span className="text-[10px] text-slate-500 truncate">{w.job_title || 'Caregiver'}</span>
                                                             <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
-                                                                isAvail ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                                                isAvail ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
                                                             }`}>
-                                                                {w.status || 'Active'}
+                                                                {isAvail ? 'Available' : w.assigned_client ? `Deployed (${w.assigned_client})` : (w.status || 'Assigned')}
                                                             </span>
                                                         </div>
                                                         <div className="text-[10px] text-slate-400 font-medium mt-0.5">
