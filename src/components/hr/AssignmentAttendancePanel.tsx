@@ -177,6 +177,50 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
       }
 
       await fetchAttendance();
+
+      // Automatically keep payroll record in sync if one already exists for this assignment/worker
+      try {
+        const { data: existingPayroll } = await supabase
+          .from('payroll')
+          .select('*')
+          .or(`assignment_id.eq.${assignment.id},worker_id.eq.${assignment.employee_id}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingPayroll) {
+          const pStart = existingPayroll.period_start || format(startDate, 'yyyy-MM-dd');
+          const pEnd = existingPayroll.period_end ? (dateStr > existingPayroll.period_end ? dateStr : existingPayroll.period_end) : format(endDate, 'yyyy-MM-dd');
+
+          const { data: periodAtt } = await supabase
+            .from('attendance')
+            .select('status, is_half_day, is_absent')
+            .eq('worker_id', assignment.employee_id)
+            .gte('duty_date', pStart)
+            .lte('duty_date', pEnd);
+
+          if (periodAtt) {
+            const pres = periodAtt.filter(r => !r.is_half_day && r.status !== 'Half Day' && (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty')).length;
+            const half = periodAtt.filter(r => r.is_half_day || r.status === 'Half Day').length;
+            const totalDays = pres + half * 0.5;
+            const rate = existingPayroll.daily_rate || 600;
+            const totalAmt = totalDays * rate;
+            const paid = Number(existingPayroll.paid_amount || 0);
+            const adv = Number(existingPayroll.advance_amount || 0);
+
+            await supabase.from('payroll').update({
+              days_worked: totalDays,
+              days_counted: totalDays,
+              total_amount: totalAmt,
+              net_balance: Math.max(0, totalAmt - paid - adv),
+              period_end: pEnd
+            }).eq('id', existingPayroll.id);
+          }
+        }
+      } catch (e) {
+        console.warn('Silent payroll sync skipped:', e);
+      }
+
       const prevMarked = days.filter(d => d.status !== null).length;
       if (status !== null && !isOpenEnded && prevMarked + 1 >= allDays.length) setShowCompletionPopup(true);
     } catch (err: any) {
@@ -236,6 +280,11 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
     setIsReleasing(true);
     const toastId = toast.loading('Releasing worker...');
     try {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      // If there are attendance records logged for today or later, ensure the release date encompasses them
+      const latestAttendanceDate = days.filter(d => d.status !== null).reduce((max, d) => d.date > max ? d.date : max, todayStr);
+      const effectiveReleaseDate = latestAttendanceDate > todayStr ? latestAttendanceDate : todayStr;
+
       // 1. Try to find the new service_worker_assignment mapped to this legacy assignment
       const clientId = assignment.client_id || (assignment.clients as any)?.id;
       let newAssignmentId = null;
@@ -261,26 +310,29 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
       }
 
       if (newAssignmentId) {
-        // Use the new service lifecycle release
-        const { error } = await supabase.rpc('release_worker', { p_assignment_id: newAssignmentId });
+        // Use the new service lifecycle release with explicit effectiveReleaseDate
+        const { error } = await supabase.rpc('release_worker', { 
+          p_assignment_id: newAssignmentId,
+          p_release_date: effectiveReleaseDate
+        });
         if (error) throw error;
 
         // Also sync legacy worker_assignments record to completed if it exists
         await supabase.from('worker_assignments').update({
           assignment_status: 'completed',
-          end_date: new Date().toISOString().split('T')[0]
+          end_date: effectiveReleaseDate
         }).eq('id', assignment.id);
         await supabase.from('id_card_links').update({ is_active: false }).eq('assignment_id', assignment.id);
 
         toast.success(`${assignment.employees?.full_name} released and payslip generated!`, { id: toastId });
         
         await fetchAttendance();
-        onAssignmentCompleted?.(assignment);
+        onAssignmentCompleted?.({ ...assignment, end_date: effectiveReleaseDate, assignment_status: 'completed' });
       } else {
         // Fallback to legacy logic if no service was migrated
         await supabase.from('worker_assignments').update({
           assignment_status: 'completed',
-          end_date: new Date().toISOString().split('T')[0]
+          end_date: effectiveReleaseDate
         }).eq('id', assignment.id);
         await supabase.from('id_card_links').update({ is_active: false }).eq('assignment_id', assignment.id);
         await supabase.from('employees').update({ status: 'available', assigned_client: null, updated_at: new Date().toISOString() }).eq('id', assignment.employee_id);
@@ -296,7 +348,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         toast.success(`${assignment.employees?.full_name} released!`, { id: toastId });
         
         await fetchAttendance();
-        onAssignmentCompleted?.(assignment);
+        onAssignmentCompleted?.({ ...assignment, end_date: effectiveReleaseDate, assignment_status: 'completed' });
       }
     } catch (err: any) {
       toast.error('Failed to release worker: ' + err.message, { id: toastId });

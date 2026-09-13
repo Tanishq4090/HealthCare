@@ -94,8 +94,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         .from('attendance')
         .select('status, is_half_day, duty_date, is_absent')
         .eq('worker_id', assignment.employee_id)
-        .gte('duty_date', safeStartDate.toISOString().split('T')[0])
-        .lte('duty_date', endDate.toISOString().split('T')[0]);
+        .gte('duty_date', format(safeStartDate, 'yyyy-MM-dd'))
+        .lte('duty_date', format(endDate, 'yyyy-MM-dd'));
       if (fetchErr) { toast.error('Failed to fetch attendance'); return; }
       const present = (data || []).filter(r => !r.is_half_day && r.status !== 'Half Day' && (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty')).length;
       const half = (data || []).filter(r => r.is_half_day || r.status === 'Half Day').length;
@@ -358,7 +358,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       advance_amount: advanceDeduction,
       paid_amount: isPaid ? netPayable : 0,
       net_balance: isPaid ? 0 : netPayable,
-      paid_through_date: isPaid ? new Date().toISOString().split('T')[0] : null,
+      paid_through_date: isPaid ? format(new Date(), 'yyyy-MM-dd') : null,
       status,
       worker_phone: emp?.phone || '',
       updated_at: new Date().toISOString(),

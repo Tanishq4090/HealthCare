@@ -6171,11 +6171,45 @@ export default function CRM() {
                                                         onClick={async () => {
                                                             if (!confirm('Are you sure you want to release this worker? A payslip will be generated for their days worked.')) return;
                                                             try {
-                                                                const { error } = await supabase.rpc('release_worker', { p_assignment_id: swa.id });
+                                                                const todayStr = format(new Date(), 'yyyy-MM-dd');
+                                                                let effectiveReleaseDate = todayStr;
+                                                                // Check if the worker has any attendance logged for today or later
+                                                                try {
+                                                                    const { data: latestAtt } = await supabase
+                                                                        .from('attendance')
+                                                                        .select('duty_date')
+                                                                        .eq('worker_id', swa.employee_id)
+                                                                        .order('duty_date', { ascending: false })
+                                                                        .limit(1)
+                                                                        .maybeSingle();
+                                                                    if (latestAtt?.duty_date && latestAtt.duty_date > effectiveReleaseDate) {
+                                                                        effectiveReleaseDate = latestAtt.duty_date;
+                                                                    }
+                                                                } catch (e) {
+                                                                    console.warn('Error checking latest attendance in CRM release:', e);
+                                                                }
+
+                                                                const { error } = await supabase.rpc('release_worker', { 
+                                                                    p_assignment_id: swa.id,
+                                                                    p_release_date: effectiveReleaseDate 
+                                                                });
                                                                 if (error) throw error;
+
+                                                                // Also complete legacy worker_assignment if present for this worker & client
+                                                                if (selectedInspectorLead?.id) {
+                                                                    await supabase.from('worker_assignments').update({
+                                                                        assignment_status: 'completed',
+                                                                        end_date: effectiveReleaseDate
+                                                                    }).eq('employee_id', swa.employee_id).eq('assignment_status', 'active');
+                                                                }
+
                                                                 toast.success('Worker released! Adjust their final payslip below.', { duration: 5000 });
                                                                 fetchLeads();
-                                                                setReleasedAssignment(swa);
+                                                                setReleasedAssignment({
+                                                                    ...swa,
+                                                                    end_date: effectiveReleaseDate,
+                                                                    assignment_status: 'completed'
+                                                                });
                                                             } catch (err: any) {
                                                                 toast.error(err.message || 'Failed to release worker');
                                                             }

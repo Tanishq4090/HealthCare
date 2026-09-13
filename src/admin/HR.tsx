@@ -387,6 +387,10 @@ export default function HR() {
                         const sStr = matchedAsgn?.start_date ? matchedAsgn.start_date.split('T')[0] : (p.period_start ? p.period_start.split('T')[0] : '');
                         const eStr = matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : (p.period_end ? p.period_end.split('T')[0] : '');
 
+                        // If attendance exists on or after eStr (e.g. today when released), ensure effective end date includes it
+                        const maxAttForWorker = (monthStats || []).filter(s => s.worker_id === empId).reduce((max, s) => (s.duty_date && s.duty_date > max ? s.duty_date : max), '');
+                        const effectiveEStr = (maxAttForWorker && eStr && maxAttForWorker > eStr) ? maxAttForWorker : eStr;
+
                         const workerAttendance = (monthStats || []).filter(s => {
                             if (s.worker_id !== empId) return false;
                             if (s.assignment_id && targetAsgnIds.size > 0 && !targetAsgnIds.has(s.assignment_id)) {
@@ -394,7 +398,7 @@ export default function HR() {
                             }
                             const d = s.duty_date;
                             if (sStr && d < sStr) return false;
-                            if (eStr && d > eStr) return false;
+                            if (effectiveEStr && d > effectiveEStr) return false;
                             return true;
                         });
 
@@ -405,7 +409,7 @@ export default function HR() {
 
                             // Sync period boundaries with actual assignment if present
                             const asgnStart = matchedAsgn?.start_date ? matchedAsgn.start_date.split('T')[0] : '';
-                            const asgnEnd = matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : '';
+                            const asgnEnd = effectiveEStr || (matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : '');
                             let updatedStart = p.period_start;
                             let updatedEnd = p.period_end;
                             let datesChanged = false;
@@ -664,12 +668,16 @@ export default function HR() {
             const checkOutTime = status === 'Present' || status === 'Completed' || status === 'On Duty' 
                 ? new Date(`${selectedAttendanceDate}T17:00:00`).toISOString() 
                 : null;
-            const hoursWorked = status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0);
+            const isHalfDay = status === 'Half Day';
+            const isAbsent = status === 'Absent';
+            const hoursWorked = status === 'Present' ? 8 : (isHalfDay ? 4 : 0);
 
-            const payload = {
+            const payload: any = {
                 worker_id: workerId,
                 status: status,
                 duty_date: selectedAttendanceDate,
+                is_half_day: isHalfDay,
+                is_absent: isAbsent,
                 check_in_time: checkInTime,
                 check_out_time: existing?.check_out_time || checkOutTime,
                 hours_worked: existing?.hours_worked || hoursWorked
@@ -715,6 +723,8 @@ export default function HR() {
                 worker_id: w.id,
                 status: 'Present',
                 duty_date: selectedAttendanceDate,
+                is_half_day: false,
+                is_absent: false,
                 check_in_time: checkInTime,
                 check_out_time: checkOutTime,
                 hours_worked: 8

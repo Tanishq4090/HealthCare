@@ -8,6 +8,7 @@
 import { supabase } from '../lib/supabase';
 import { calculateClientServiceDaysFromAttendance } from '../utils/billingRate';
 import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
+import { format } from 'date-fns';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -453,7 +454,7 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             }).eq('id', w.workerId);
 
             // Auto-initialize attendance row if service start date is today or in past
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = format(new Date(), 'yyyy-MM-dd');
             if (input.startDate <= todayStr && newAsgn && newAsgn[0]) {
                 await supabase.from('attendance').insert([{
                     worker_id: w.workerId,
@@ -522,9 +523,46 @@ export async function releaseWorker(
     assignmentId: string,
     releaseDate?: string
 ): Promise<ReleaseWorkerResult> {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    let effectiveReleaseDate = releaseDate || todayStr;
+
+    // Check if there is any attendance logged for this worker on or after effectiveReleaseDate
+    try {
+        const { data: asgn } = await supabase
+            .from('service_worker_assignments')
+            .select('employee_id, service_id, services(client_id)')
+            .eq('id', assignmentId)
+            .maybeSingle();
+
+        if (asgn?.employee_id) {
+            const { data: att } = await supabase
+                .from('attendance')
+                .select('duty_date')
+                .eq('worker_id', asgn.employee_id)
+                .order('duty_date', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (att?.duty_date && att.duty_date > effectiveReleaseDate) {
+                effectiveReleaseDate = att.duty_date;
+            }
+
+            // Sync legacy worker_assignments record if present
+            const clientId = (asgn.services as any)?.client_id;
+            if (clientId) {
+                await supabase.from('worker_assignments').update({
+                    assignment_status: 'completed',
+                    end_date: effectiveReleaseDate
+                }).eq('employee_id', asgn.employee_id).eq('assignment_status', 'active');
+            }
+        }
+    } catch (err) {
+        console.warn('Error checking latest attendance for worker release:', err);
+    }
+
     const { data, error } = await supabase.rpc('release_worker', {
         p_assignment_id: assignmentId,
-        p_release_date: releaseDate || new Date().toISOString().split('T')[0],
+        p_release_date: effectiveReleaseDate,
     });
 
     if (error) throw new Error(`Failed to release worker: ${error.message}`);
@@ -559,7 +597,7 @@ export async function endService(
     serviceId: string,
     endDate?: string
 ): Promise<EndServiceResult> {
-    const effectiveEndDate = endDate || new Date().toISOString().split('T')[0];
+    const effectiveEndDate = endDate || format(new Date(), 'yyyy-MM-dd');
 
     // 1. Fetch service details with worker assignments and client info
     const { data: service, error: svcError } = await supabase
