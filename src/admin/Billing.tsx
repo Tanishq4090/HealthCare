@@ -198,11 +198,13 @@ export default function Billing() {
                 workerIds.push(bill.rawAssignment.employee_id);
             }
 
-            if (clientId) {
+            // Only fallback to worker_assignments if no workers are found on the service, and only active ones
+            if (workerIds.length === 0 && clientId) {
                 const { data: wAssignments } = await supabase
                     .from('worker_assignments')
                     .select('employee_id')
-                    .eq('client_id', clientId);
+                    .eq('client_id', clientId)
+                    .eq('assignment_status', 'active');
                 if (wAssignments) {
                     wAssignments.forEach((a: any) => {
                         if (a.employee_id) workerIds.push(a.employee_id);
@@ -224,6 +226,9 @@ export default function Billing() {
                     halfDays: 0,
                     absentDays: 0,
                     effectiveDays: calDays,
+                    halfDayDates: [],
+                    absentDates: [],
+                    fullDayDates: [],
                 });
                 setCiDays(calDays);
                 setCiAttendanceVerified(false);
@@ -256,6 +261,9 @@ export default function Billing() {
                 halfDays: 0,
                 absentDays: 0,
                 effectiveDays: calDays,
+                halfDayDates: [],
+                absentDates: [],
+                fullDayDates: [],
             });
         } finally {
             setIsCiLoadingAttendance(false);
@@ -3230,26 +3238,54 @@ export default function Billing() {
                                     {isCiLoadingAttendance ? (
                                         <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
                                     ) : ciAttendanceSummary ? (
-                                        <div className="grid grid-cols-4 gap-2 text-center">
-                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
-                                                <p className="text-xl sm:text-2xl font-black text-emerald-600">{ciAttendanceSummary.fullDays}</p>
-                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Full Days Present</p>
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-4 gap-2 text-center">
+                                                <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                    <p className="text-xl sm:text-2xl font-black text-emerald-600">{ciAttendanceSummary.fullDays}</p>
+                                                    <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Full Days Present</p>
+                                                </div>
+                                                <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                    <p className="text-xl sm:text-2xl font-black text-amber-600">{ciAttendanceSummary.halfDays}</p>
+                                                    <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Half Days (0.5d)</p>
+                                                </div>
+                                                <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                    <p className="text-xl sm:text-2xl font-black text-red-500">{ciAttendanceSummary.absentDays}</p>
+                                                    <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Days Absent</p>
+                                                </div>
+                                                <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                    <p className="text-xl sm:text-2xl font-black text-primary">{ciAttendanceSummary.effectiveDays}</p>
+                                                    <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Effective Days</p>
+                                                </div>
                                             </div>
-                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
-                                                <p className="text-xl sm:text-2xl font-black text-amber-600">{ciAttendanceSummary.halfDays}</p>
-                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Half Days (0.5d)</p>
-                                            </div>
-                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
-                                                <p className="text-xl sm:text-2xl font-black text-red-500">{ciAttendanceSummary.absentDays}</p>
-                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Days Absent</p>
-                                            </div>
-                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
-                                                <p className="text-xl sm:text-2xl font-black text-primary">{ciAttendanceSummary.effectiveDays}</p>
-                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Effective Days</p>
-                                            </div>
+
+                                            {/* Date Details for Half Days & Absent Days */}
+                                            {((ciAttendanceSummary.halfDayDates && ciAttendanceSummary.halfDayDates.length > 0) || (ciAttendanceSummary.absentDates && ciAttendanceSummary.absentDates.length > 0)) && (
+                                                <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 text-xs space-y-1.5">
+                                                    {ciAttendanceSummary.halfDayDates && ciAttendanceSummary.halfDayDates.length > 0 && (
+                                                        <div className="flex items-center gap-1.5 flex-wrap text-slate-600">
+                                                            <span className="font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11px]">
+                                                                Half Days ({ciAttendanceSummary.halfDayDates.length}):
+                                                            </span>
+                                                            <span className="font-medium text-slate-700">
+                                                                {ciAttendanceSummary.halfDayDates.map(d => format(new Date(`${d}T00:00:00`), 'dd MMM')).join(', ')}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    {ciAttendanceSummary.absentDates && ciAttendanceSummary.absentDates.length > 0 && (
+                                                        <div className="flex items-center gap-1.5 flex-wrap text-slate-600">
+                                                            <span className="font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded text-[11px]">
+                                                                Absent Days ({ciAttendanceSummary.absentDates.length}):
+                                                            </span>
+                                                            <span className="font-medium text-slate-700">
+                                                                {ciAttendanceSummary.absentDates.map(d => format(new Date(`${d}T00:00:00`), 'dd MMM')).join(', ')}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
-                                        <p className="text-sm text-slate-400 text-center py-3">Loading attendance data...</p>
+                                        <p className="text-sm text-slate-400 text-center py-3">No attendance data found</p>
                                     )}
                                 </div>
 

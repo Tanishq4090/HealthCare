@@ -94,6 +94,9 @@ export interface ClientAttendanceSummary {
     halfDays: number;
     absentDays: number;
     effectiveDays: number;
+    halfDayDates: string[];
+    absentDates: string[];
+    fullDayDates: string[];
 }
 
 /**
@@ -109,12 +112,12 @@ export function calculateClientAttendanceSummary(
     attendanceRecords: Array<{ worker_id?: string; employee_id?: string; duty_date?: string; date?: string; status?: string; is_half_day?: boolean; is_absent?: boolean }>
 ): ClientAttendanceSummary {
     if (!startDateStr || !endDateStr) {
-        return { totalCalendarDays: 0, fullDays: 0, halfDays: 0, absentDays: 0, effectiveDays: 0 };
+        return { totalCalendarDays: 0, fullDays: 0, halfDays: 0, absentDays: 0, effectiveDays: 0, halfDayDates: [], absentDates: [], fullDayDates: [] };
     }
     const start = new Date(`${startDateStr}T00:00:00`);
     const end = new Date(`${endDateStr}T00:00:00`);
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
-        return { totalCalendarDays: 0, fullDays: 0, halfDays: 0, absentDays: 0, effectiveDays: 0 };
+        return { totalCalendarDays: 0, fullDays: 0, halfDays: 0, absentDays: 0, effectiveDays: 0, halfDayDates: [], absentDates: [], fullDayDates: [] };
     }
 
     const recordsByDate = new Map<string, Array<any>>();
@@ -129,6 +132,9 @@ export function calculateClientAttendanceSummary(
     let fullDays = 0;
     let halfDays = 0;
     let absentDays = 0;
+    const halfDayDates: string[] = [];
+    const absentDates: string[] = [];
+    const fullDayDates: string[] = [];
 
     const cur = new Date(start);
     while (cur <= end) {
@@ -143,8 +149,10 @@ export function calculateClientAttendanceSummary(
             // If attendance records were supplied for this service, days with no attendance logs mean no worker attended
             if (attendanceRecords.length > 0) {
                 absentDays++;
+                absentDates.push(dateKey);
             } else {
                 fullDays++;
+                fullDayDates.push(dateKey);
             }
         } else {
             const hasFullPresent = dayRecords.some(r => 
@@ -159,6 +167,7 @@ export function calculateClientAttendanceSummary(
 
             if (hasFullPresent) {
                 fullDays++;
+                fullDayDates.push(dateKey);
             } else {
                 const hasHalfDay = dayRecords.some(r => 
                     (r.is_half_day || r.status === 'Half Day' || r.status === 'half_day') &&
@@ -169,8 +178,10 @@ export function calculateClientAttendanceSummary(
 
                 if (hasHalfDay) {
                     halfDays++;
+                    halfDayDates.push(dateKey);
                 } else {
                     absentDays++;
+                    absentDates.push(dateKey);
                 }
             }
         }
@@ -186,6 +197,9 @@ export function calculateClientAttendanceSummary(
         halfDays,
         absentDays,
         effectiveDays,
+        halfDayDates,
+        absentDates,
+        fullDayDates,
     };
 }
 
