@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, X, Loader2, Download, Send } from 'lucide-react';
+import { FileText, X, Loader2, Download, Send, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
@@ -39,6 +39,9 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const [isGenerating, setIsGenerating] = useState(false);
   const [attendanceSummary, setAttendanceSummary] = useState<any>(null);
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(false);
+  const [showDailyPreview, setShowDailyPreview] = useState(false);
+  const [dailyRecords, setDailyRecords] = useState<any[]>([]);
+  const [dailyFilter, setDailyFilter] = useState<'all' | 'present' | 'half' | 'absent'>('all');
 
   const emp = assignment.employees || (assignment as any).employee;
   const client = assignment.clients || (assignment as any).client;
@@ -70,47 +73,115 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const fetchAttendance = async () => {
     setIsLoadingAttendance(true);
     try {
-      const { data, error } = await supabase.rpc('get_assignment_attendance_summary', {
-        p_assignment_id: assignment.id
-      });
-      if (error) throw error;
-      const res = data?.[0];
-      if (res) {
-        const full = Math.max(0, parseFloat(res.days_present || 0) - (parseInt(res.days_half || 0, 10) * 0.5));
-        setAttendanceSummary({
-          ...res,
-          days_full: full,
-          days_present: parseFloat(res.days_present || 0),
-          days_half: parseInt(res.days_half || 0, 10),
-          days_absent: parseInt(res.days_absent || 0, 10),
-          total_days: parseInt(res.total_days || totalPeriodDays, 10)
-        });
-      } else {
-        throw new Error('No RPC summary data');
-      }
-    } catch (err: any) {
-      // Fallback: manual count
-      const { data, error: fetchErr } = await supabase
+      // 1. Fetch granular daily attendance records for this worker and period
+      const { data: rawLogs, error: logErr } = await supabase
         .from('attendance')
-        .select('status, is_half_day, duty_date, is_absent')
+        .select('id, status, is_half_day, duty_date, is_absent, hours_worked, check_in_time, check_out_time, notes')
         .eq('worker_id', assignment.employee_id)
         .gte('duty_date', format(safeStartDate, 'yyyy-MM-dd'))
-        .lte('duty_date', format(endDate, 'yyyy-MM-dd'));
-      if (fetchErr) { toast.error('Failed to fetch attendance'); return; }
-      const present = (data || []).filter(r => !r.is_half_day && r.status !== 'Half Day' && (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty')).length;
-      const half = (data || []).filter(r => r.is_half_day || r.status === 'Half Day').length;
-      const absent = (data || []).filter(r => r.is_absent || r.status === 'Absent' || r.status === 'absent').length;
-      setAttendanceSummary({
-        days_full: present,
-        days_present: present + half * 0.5,
-        days_absent: absent,
-        days_half: half,
-        total_days: totalPeriodDays
+        .lte('duty_date', format(endDate, 'yyyy-MM-dd'))
+        .order('duty_date', { ascending: true });
+
+      if (logErr) throw logErr;
+
+      const logMap = new Map<string, any>();
+      (rawLogs || []).forEach(r => {
+        if (r.duty_date) {
+          logMap.set(r.duty_date.split('T')[0], r);
+        }
       });
+
+      const allDates = eachDayOfInterval({ start: safeStartDate, end: endDate });
+      const mapped = allDates.map(d => {
+        const dateKey = format(d, 'yyyy-MM-dd');
+        const r = logMap.get(dateKey);
+        const isHalf = Boolean(r?.is_half_day || r?.status === 'Half Day' || r?.status === 'half_day');
+        const isAbs = Boolean(r?.is_absent || r?.status === 'Absent' || r?.status === 'absent');
+        const isPres = Boolean(!isHalf && !isAbs && (r?.status === 'Present' || r?.status === 'present' || r?.status === 'On Duty' || r?.status === 'Completed'));
+
+        let status: 'Present' | 'Half Day' | 'Absent' | 'No Duty' = 'No Duty';
+        let credit = 0;
+        if (isPres) {
+          status = 'Present';
+          credit = 1.0;
+        } else if (isHalf) {
+          status = 'Half Day';
+          credit = 0.5;
+        } else if (isAbs) {
+          status = 'Absent';
+          credit = 0;
+        } else if (r) {
+          status = 'Present';
+          credit = 1.0;
+        }
+
+        return {
+          id: r?.id || `virtual-${dateKey}`,
+          date: dateKey,
+          displayDate: format(d, 'dd MMM yyyy'),
+          dayName: format(d, 'EEE'),
+          status,
+          isHalfDay: isHalf,
+          isAbsent: isAbs,
+          hoursWorked: r?.hours_worked ?? (isPres ? 8 : (isHalf ? 4 : 0)),
+          checkIn: r?.check_in_time ? format(parseISO(r.check_in_time), 'hh:mm a') : null,
+          checkOut: r?.check_out_time ? format(parseISO(r.check_out_time), 'hh:mm a') : null,
+          notes: r?.notes || null,
+          credit,
+        };
+      });
+
+      setDailyRecords(mapped);
+
+      const full = mapped.filter(d => d.status === 'Present').length;
+      const half = mapped.filter(d => d.status === 'Half Day').length;
+      const absent = mapped.filter(d => d.status === 'Absent' || d.status === 'No Duty').length;
+      const effectiveDays = full + half * 0.5;
+
+      setAttendanceSummary({
+        days_full: full,
+        days_present: effectiveDays,
+        days_half: half,
+        days_absent: absent,
+        total_days: totalPeriodDays,
+      });
+
+      // Also try RPC in background to check if server-side calculation matches
+      try {
+        const { data: rpcData } = await supabase.rpc('get_assignment_attendance_summary', {
+          p_assignment_id: assignment.id
+        });
+        const res = rpcData?.[0];
+        if (res && res.days_present !== undefined && res.days_present !== null) {
+          const rpcPres = parseFloat(res.days_present || 0);
+          if (rpcPres > effectiveDays) {
+            setAttendanceSummary({
+              ...res,
+              days_full: Math.max(0, rpcPres - (parseInt(res.days_half || 0, 10) * 0.5)),
+              days_present: rpcPres,
+              days_half: parseInt(res.days_half || 0, 10),
+              days_absent: parseInt(res.days_absent || 0, 10),
+              total_days: parseInt(res.total_days || totalPeriodDays, 10)
+            });
+          }
+        }
+      } catch {
+        // Fallback already accurately set from mapped
+      }
+    } catch (err: any) {
+      toast.error('Failed to fetch attendance: ' + err.message);
     } finally {
       setIsLoadingAttendance(false);
     }
   };
+
+  const filteredDailyRecords = dailyRecords.filter(d => {
+    if (dailyFilter === 'all') return true;
+    if (dailyFilter === 'present') return d.status === 'Present';
+    if (dailyFilter === 'half') return d.status === 'Half Day';
+    if (dailyFilter === 'absent') return d.status === 'Absent' || d.status === 'No Duty';
+    return true;
+  });
 
   // Auto-fetch on mount
   useEffect(() => { fetchAttendance(); }, [assignment.id]);
@@ -507,13 +578,38 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
           {/* Attendance Summary */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-slate-900 text-sm">Attendance Summary</h3>
-              <button onClick={fetchAttendance} disabled={isLoadingAttendance}
-                className="text-xs text-primary font-semibold hover:underline flex items-center gap-1">
-                {isLoadingAttendance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                Refresh
-              </button>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-slate-900 text-sm">Attendance Summary</h3>
+                {dailyRecords.length > 0 && (
+                  <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
+                    {dailyRecords.length} days
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDailyPreview(!showDailyPreview)}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1.5 shadow-xs ${
+                    showDailyPreview
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 hover:border-slate-300'
+                  }`}
+                  title="Preview mini attendance record for each date"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  <span>{showDailyPreview ? 'Hide Dates' : 'Preview Dates'}</span>
+                  {showDailyPreview ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+
+                <button onClick={fetchAttendance} disabled={isLoadingAttendance}
+                  className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 px-1 py-1">
+                  {isLoadingAttendance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  Refresh
+                </button>
+              </div>
             </div>
+
             {isLoadingAttendance ? (
               <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
             ) : attendanceSummary ? (
@@ -524,7 +620,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
                   { label: 'Days Absent', value: attendanceSummary.days_absent, color: 'text-red-500' },
                   { label: 'Effective Days', value: daysWorked, color: 'text-primary font-bold' },
                 ].map(({ label, value, color }) => (
-                  <div key={label} className="text-center">
+                  <div key={label} className="text-center bg-white/70 rounded-lg py-2 border border-slate-200/60">
                     <p className={`text-2xl font-black ${color}`}>{value}</p>
                     <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
                   </div>
@@ -532,6 +628,115 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
               </div>
             ) : (
               <p className="text-sm text-slate-400 text-center py-3">Loading attendance data...</p>
+            )}
+
+            {/* Mini Attendance Record with Dates Preview */}
+            {showDailyPreview && (
+              <div className="mt-4 pt-3.5 border-t border-slate-200/80 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-500 mr-1">Filter:</span>
+                    <button
+                      type="button"
+                      onClick={() => setDailyFilter('all')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        dailyFilter === 'all'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-200/70 border border-slate-200'
+                      }`}
+                    >
+                      All ({dailyRecords.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDailyFilter('present')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        dailyFilter === 'present'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+                      }`}
+                    >
+                      Present ({dailyRecords.filter(d => d.status === 'Present').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDailyFilter('half')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        dailyFilter === 'half'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/60'
+                      }`}
+                    >
+                      Half Day ({dailyRecords.filter(d => d.status === 'Half Day').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDailyFilter('absent')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        dailyFilter === 'absent'
+                          ? 'bg-red-600 text-white shadow-xs'
+                          : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60'
+                      }`}
+                    >
+                      Absent / No Duty ({dailyRecords.filter(d => d.status === 'Absent' || d.status === 'No Duty').length})
+                    </button>
+                  </div>
+
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Credited: <strong className="text-slate-900">{daysWorked} days</strong>
+                  </span>
+                </div>
+
+                {/* Date-wise Attendance Mini List */}
+                <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white custom-scrollbar divide-y divide-slate-100 shadow-xs">
+                  {filteredDailyRecords.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      No attendance records found for this filter.
+                    </div>
+                  ) : (
+                    filteredDailyRecords.map((d) => (
+                      <div
+                        key={d.date}
+                        className={`flex items-center justify-between px-3 py-2 text-xs transition-colors hover:bg-slate-50 ${
+                          d.status === 'Half Day'
+                            ? 'bg-amber-50/40'
+                            : (d.status === 'Absent' || d.status === 'No Duty')
+                            ? 'bg-red-50/30'
+                            : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-slate-400 font-semibold w-7">{d.dayName}</span>
+                          <span className="font-bold text-slate-800">{d.displayDate}</span>
+                          {d.checkIn && d.checkOut && (
+                            <span className="text-[10px] text-slate-400 hidden sm:inline font-mono">
+                              ({d.checkIn} – {d.checkOut})
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {d.status === 'Present' && (
+                            <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-100/90 border border-emerald-200/80 px-2 py-0.5 rounded-md text-[10px]">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Full Day (+1.0d)
+                            </span>
+                          )}
+                          {d.status === 'Half Day' && (
+                            <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-100/90 border border-amber-200/80 px-2 py-0.5 rounded-md text-[10px]">
+                              <Clock className="w-3 h-3 text-amber-600" /> Half Day (+0.5d)
+                            </span>
+                          )}
+                          {(d.status === 'Absent' || d.status === 'No Duty') && (
+                            <span className="inline-flex items-center gap-1 font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md text-[10px]">
+                              <XCircle className="w-3 h-3 text-slate-400" /> {d.status === 'Absent' ? 'Absent (0d)' : 'No Duty (0d)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
