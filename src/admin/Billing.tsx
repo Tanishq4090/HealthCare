@@ -199,12 +199,12 @@ export default function Billing() {
             }
 
             if (clientId) {
-                const { data: cAssignments } = await supabase
-                    .from('client_worker_assignments')
+                const { data: wAssignments } = await supabase
+                    .from('worker_assignments')
                     .select('employee_id')
                     .eq('client_id', clientId);
-                if (cAssignments) {
-                    cAssignments.forEach((a: any) => {
+                if (wAssignments) {
+                    wAssignments.forEach((a: any) => {
                         if (a.employee_id) workerIds.push(a.employee_id);
                     });
                 }
@@ -232,7 +232,7 @@ export default function Billing() {
 
             const { data, error } = await supabase
                 .from('attendance')
-                .select('worker_id, employee_id, duty_date, status, is_half_day, is_absent')
+                .select('worker_id, duty_date, status, is_half_day, is_absent')
                 .in('worker_id', workerIds)
                 .gte('duty_date', startStr)
                 .lte('duty_date', endStr);
@@ -245,6 +245,18 @@ export default function Billing() {
             setCiAttendanceVerified(Boolean(data && data.length > 0));
         } catch (err) {
             console.error('Error fetching client invoice attendance:', err);
+            const d1 = new Date(startStr);
+            const d2 = new Date(endStr);
+            const calDays = (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1)
+                ? Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                : 1;
+            setCiAttendanceSummary({
+                totalCalendarDays: calDays,
+                fullDays: calDays,
+                halfDays: 0,
+                absentDays: 0,
+                effectiveDays: calDays,
+            });
         } finally {
             setIsCiLoadingAttendance(false);
         }
