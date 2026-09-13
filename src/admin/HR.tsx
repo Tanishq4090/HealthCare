@@ -240,20 +240,14 @@ export default function HR() {
                     const end = a.end_date ? new Date(a.end_date) : new Date();
 
                     // Calculate real verified attendance days strictly for THIS assignment
+                    const startDateStr = a.start_date?.split('T')[0];
+                    const endDateStr = a.end_date?.split('T')[0];
                     const workerAttendance = (monthStats || []).filter(s => {
                         if (s.worker_id !== a.employee_id) return false;
-                        if (s.assignment_id) {
-                            return s.assignment_id === a.id;
-                        }
-                        if (a.start_date) {
-                            const dutyDate = s.duty_date;
-                            const startDateStr = a.start_date.split('T')[0];
-                            if (dutyDate < startDateStr) return false;
-                            if (a.end_date) {
-                                const endDateStr = a.end_date.split('T')[0];
-                                if (dutyDate > endDateStr) return false;
-                            }
-                        }
+                        if (s.assignment_id && s.assignment_id !== a.id) return false;
+                        const dutyDate = s.duty_date;
+                        if (startDateStr && dutyDate < startDateStr) return false;
+                        if (endDateStr && dutyDate > endDateStr) return false;
                         return true;
                     });
                     const presentCount = workerAttendance.filter(s => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
@@ -310,12 +304,42 @@ export default function HR() {
             const seenAsgnKeys = new Set<string>();
             const dedupedDbRows: any[] = [];
             for (const p of sortedDb) {
-                const key = p.assignment_id ? `asgn_${p.assignment_id}` : `wc_${(p.worker || '').trim().toLowerCase()}_${(p.client_name || '').trim().toLowerCase()}_${p.period_start || ''}`;
-                if (seenAsgnKeys.has(key)) {
+                const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
+                const clientKey = (p.client_name || p.client || '').trim().toLowerCase();
+                const pStart = p.period_start ? p.period_start.split('T')[0] : '';
+                
+                const asgnKey = p.assignment_id ? `asgn_${p.assignment_id}` : null;
+                const wcpKey = pStart ? `wcp_${empId || p.worker}_${clientKey}_${pStart}` : null;
+                
+                let counterpartAsgnKey: string | null = null;
+                if (p.assignment_id && servicesData) {
+                    for (const s of servicesData) {
+                        const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
+                        if (swa) {
+                            const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
+                            const matchedLegacy = (assignmentsData || []).find((a: any) => 
+                                a.employee_id === (empId || swa.employee_id) && 
+                                a.start_date?.split('T')[0] === swaStart
+                            );
+                            if (matchedLegacy) {
+                                counterpartAsgnKey = `asgn_${matchedLegacy.id}`;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                const isDup = (asgnKey && seenAsgnKeys.has(asgnKey)) ||
+                              (counterpartAsgnKey && seenAsgnKeys.has(counterpartAsgnKey)) ||
+                              (wcpKey && seenAsgnKeys.has(wcpKey));
+
+                if (isDup) {
                     if (p.id) supabase.from('payroll').delete().eq('id', p.id).then();
                     continue;
                 }
-                seenAsgnKeys.add(key);
+                if (asgnKey) seenAsgnKeys.add(asgnKey);
+                if (counterpartAsgnKey) seenAsgnKeys.add(counterpartAsgnKey);
+                if (wcpKey) seenAsgnKeys.add(wcpKey);
                 dedupedDbRows.push(p);
             }
 
@@ -360,28 +384,18 @@ export default function HR() {
                         if (p.assignment_id) targetAsgnIds.add(p.assignment_id);
                         if (matchedAsgn) targetAsgnIds.add(matchedAsgn.id);
 
+                        const sStr = matchedAsgn?.start_date ? matchedAsgn.start_date.split('T')[0] : (p.period_start ? p.period_start.split('T')[0] : '');
+                        const eStr = matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : (p.period_end ? p.period_end.split('T')[0] : '');
+
                         const workerAttendance = (monthStats || []).filter(s => {
                             if (s.worker_id !== empId) return false;
-                            if (s.assignment_id) {
-                                return targetAsgnIds.has(s.assignment_id);
+                            if (s.assignment_id && targetAsgnIds.size > 0 && !targetAsgnIds.has(s.assignment_id)) {
+                                return false;
                             }
-                            if (matchedAsgn?.start_date) {
-                                const d = s.duty_date;
-                                const sStr = matchedAsgn.start_date.split('T')[0];
-                                const eStr = matchedAsgn.end_date?.split('T')[0];
-                                if (d < sStr) return false;
-                                if (eStr && d > eStr) return false;
-                                return true;
-                            }
-                            if (p.period_start) {
-                                const d = s.duty_date;
-                                const sStr = p.period_start.split('T')[0];
-                                const eStr = p.period_end?.split('T')[0];
-                                if (d < sStr) return false;
-                                if (eStr && d > eStr) return false;
-                                return true;
-                            }
-                            return false;
+                            const d = s.duty_date;
+                            if (sStr && d < sStr) return false;
+                            if (eStr && d > eStr) return false;
+                            return true;
                         });
 
                         if (workerAttendance.length > 0) {
@@ -403,7 +417,7 @@ export default function HR() {
                             if (asgnEnd && (!updatedEnd || updatedEnd !== asgnEnd)) {
                                 updatedEnd = asgnEnd;
                                 datesChanged = true;
-                            } else if (!asgnEnd && workerAttendance.length > 0) {
+                            } else if (!asgnEnd && isOngoingActive && workerAttendance.length > 0) {
                                 const maxDutyDate = workerAttendance.reduce((max, s) => (s.duty_date && s.duty_date > max ? s.duty_date : max), '');
                                 if (maxDutyDate && (!updatedEnd || maxDutyDate > updatedEnd)) {
                                     updatedEnd = maxDutyDate;
@@ -422,6 +436,7 @@ export default function HR() {
                                 const newStatus = newNet === 0 && (existingPaid > 0 || p.status === 'Paid')
                                     ? 'Paid'
                                     : (existingPaid > 0 ? 'Partially Paid' : (p.status === 'Sent' ? 'Sent' : 'Pending Payment'));
+                                const derivedMonth = updatedStart ? format(new Date(updatedStart), 'MMMM yyyy') : (p.service_month || p.month || 'September 2026');
 
                                 supabase.from('payroll').update({
                                     days_worked: verifiedDays,
@@ -432,6 +447,7 @@ export default function HR() {
                                     status: newStatus,
                                     period_start: updatedStart,
                                     period_end: updatedEnd,
+                                    service_month: derivedMonth,
                                     ...(asgnEnd ? { type: 'final' } : {})
                                 }).eq('id', p.id).then();
 
@@ -445,6 +461,7 @@ export default function HR() {
                                     status: newStatus,
                                     period_start: updatedStart,
                                     period_end: updatedEnd,
+                                    service_month: derivedMonth,
                                     ...(asgnEnd ? { type: 'final' } : {})
                                 };
                             }
@@ -2243,9 +2260,9 @@ export default function HR() {
                                                                             </div>
                                                                             <p className="text-[11px] text-slate-500 font-medium mt-0.5">
                                                                                 {isCurrentlyActive ? (
-                                                                                    <span>{days} day{days !== 1 ? 's' : ''} accrued @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'Ongoing'} • Accrues Daily</span>
+                                                                                    <span>{days} day{days !== 1 ? 's' : ''} accrued @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || (item.period_start ? format(new Date(item.period_start), 'MMMM yyyy') : 'Ongoing')} • Accrues Daily</span>
                                                                                 ) : (
-                                                                                    <span>{days} day{days !== 1 ? 's' : ''} locked @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || 'August 2026'} • Final Payout</span>
+                                                                                    <span>{days} day{days !== 1 ? 's' : ''} locked @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || (item.period_start ? format(new Date(item.period_start), 'MMMM yyyy') : (item.start_date ? format(new Date(item.start_date), 'MMMM yyyy') : 'Final Payout'))} • Final Payout</span>
                                                                                 )}
                                                                             </p>
                                                                         </div>

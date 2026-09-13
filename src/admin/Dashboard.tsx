@@ -299,10 +299,16 @@ export default function Dashboard() {
                 const isUnsettled = p.status === 'Pending Payment' || p.status === 'Pending' || p.status === 'Partially Paid';
 
                 if ((isOngoingActive || isUnsettled) && empId) {
+                    const sStr = matchedAsgn?.start_date ? matchedAsgn.start_date.split('T')[0] : (p.period_start ? p.period_start.split('T')[0] : '');
+                    const eStr = matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : (p.period_end ? p.period_end.split('T')[0] : '');
                     const workerAttendance = (attendanceData || []).filter((s: any) => {
                         if (s.worker_id !== empId) return false;
-                        if (s.assignment_id && p.assignment_id) return s.assignment_id === p.assignment_id;
-                        if (matchedAsgn && s.assignment_id) return s.assignment_id === matchedAsgn.id;
+                        if (s.assignment_id && p.assignment_id && s.assignment_id !== p.assignment_id && (!matchedAsgn || s.assignment_id !== matchedAsgn.id)) {
+                            return false;
+                        }
+                        const d = s.duty_date;
+                        if (sStr && d < sStr) return false;
+                        if (eStr && d > eStr) return false;
                         return true;
                     });
                     if (workerAttendance.length > 0) {
@@ -338,7 +344,15 @@ export default function Dashboard() {
                 .filter((a: any) => a.assignment_status === 'active' && !existingAssignmentIds.has(a.id))
                 .map((a: any) => {
                     const emp = (employees || []).find((e: any) => e.id === a.employee_id);
-                    const workerAttendance = (attendanceData || []).filter((s: any) => s.assignment_id === a.id);
+                    const sStr = a.start_date?.split('T')[0];
+                    const eStr = a.end_date?.split('T')[0];
+                    const workerAttendance = (attendanceData || []).filter((s: any) => {
+                        if (s.assignment_id !== a.id) return false;
+                        const d = s.duty_date;
+                        if (sStr && d < sStr) return false;
+                        if (eStr && d > eStr) return false;
+                        return true;
+                    });
                     const presentCount = workerAttendance.filter((s: any) => !s.is_half_day && s.status !== 'Half Day' && (s.status === 'Present' || s.status === 'present' || s.status === 'On Duty')).length;
                     const halfCount = workerAttendance.filter((s: any) => s.is_half_day || s.status === 'Half Day').length;
                     const verifiedDays = presentCount + (halfCount * 0.5);
