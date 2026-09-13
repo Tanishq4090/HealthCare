@@ -30,6 +30,7 @@ import {
     getLeadValueLabel,
     isShortTermService,
 } from '../utils/quotationEstimate';
+import { calculateClientAttendanceSummary, calculateClientServiceDaysFromAttendance, type ClientAttendanceSummary } from '../utils/billingRate';
 
 const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 
@@ -540,6 +541,8 @@ export default function CRM() {
     const [ciStartDate, setCiStartDate] = useState('');
     const [ciEndDate, setCiEndDate] = useState('');
     const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
+    const [ciAttendanceSummary, setCiAttendanceSummary] = useState<ClientAttendanceSummary | null>(null);
+    const [isCiLoadingAttendance, setIsCiLoadingAttendance] = useState(false);
     const [ciLeadId, setCiLeadId] = useState('');
     const [addLeadConfirmDuplicate, setAddLeadConfirmDuplicate] = useState(false);
     const [showFullTimeline, setShowFullTimeline] = useState(false);
@@ -2139,8 +2142,83 @@ export default function CRM() {
         }
     };
 
+    const fetchClientInvoiceAttendanceCRM = async (startStr: string, endStr: string, targetLead?: any, targetSvc?: any, targetAsgn?: any) => {
+        const lead = targetLead || clientInvoiceLead;
+        if (!lead || !startStr || !endStr) return;
+
+        setIsCiLoadingAttendance(true);
+        try {
+            const svc = targetSvc || lead._svc;
+            const asgn = targetAsgn || lead._asgn;
+            const clientId = lead.client_id || lead.id || svc?.client_id;
+            let workerIds: string[] = [];
+
+            if (lead.assigned_worker_id) workerIds.push(lead.assigned_worker_id);
+            if (asgn?.employee_id) workerIds.push(asgn.employee_id);
+            if (svc) {
+                (svc.service_worker_assignments || []).forEach((a: any) => {
+                    if (a.employee_id || a.worker_id) workerIds.push(a.employee_id || a.worker_id);
+                });
+            }
+
+            if (clientId) {
+                const [cAssignmentsRes, sAssignmentsRes] = await Promise.all([
+                    supabase.from('client_worker_assignments').select('employee_id').eq('client_id', clientId),
+                    supabase.from('service_worker_assignments').select('employee_id').eq('client_id', clientId),
+                ]);
+                if (cAssignmentsRes.data) {
+                    cAssignmentsRes.data.forEach((a: any) => {
+                        if (a.employee_id) workerIds.push(a.employee_id);
+                    });
+                }
+                if (sAssignmentsRes.data) {
+                    sAssignmentsRes.data.forEach((a: any) => {
+                        if (a.employee_id) workerIds.push(a.employee_id);
+                    });
+                }
+            }
+
+            workerIds = Array.from(new Set(workerIds)).filter(Boolean);
+
+            if (workerIds.length === 0) {
+                const d1 = new Date(startStr);
+                const d2 = new Date(endStr);
+                const calDays = (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1)
+                    ? Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                    : 1;
+                setCiAttendanceSummary({
+                    totalCalendarDays: calDays,
+                    fullDays: calDays,
+                    halfDays: 0,
+                    absentDays: 0,
+                    effectiveDays: calDays
+                });
+                setCiDays(calDays);
+                setCiAttendanceVerified(false);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('attendance')
+                .select('worker_id, employee_id, duty_date, status, is_half_day, is_absent')
+                .in('worker_id', workerIds)
+                .gte('duty_date', startStr)
+                .lte('duty_date', endStr);
+
+            if (error) throw error;
+
+            const summary = calculateClientAttendanceSummary(startStr, endStr, data || []);
+            setCiAttendanceSummary(summary);
+            setCiDays(summary.effectiveDays);
+            setCiAttendanceVerified(Boolean(data && data.length > 0));
+        } catch (err) {
+            console.error('Error fetching CRM client invoice attendance:', err);
+        } finally {
+            setIsCiLoadingAttendance(false);
+        }
+    };
+
     const openClientInvoiceGenerator = async (lead: any) => {
-        setClientInvoiceLead(lead);
         setCiLeadId(lead.id || '');
 
         const [asgnRes, svcRes, quoteRes, billsRes] = await Promise.all([
@@ -2153,6 +2231,9 @@ export default function CRM() {
         const asgn = asgnRes.data;
         const svc = svcRes.data;
         const quote = quoteRes.data;
+
+        const fullLead = { ...lead, _svc: svc, _asgn: asgn };
+        setClientInvoiceLead(fullLead);
 
         // 1. Resolve agreed daily rate & deposit
         const resolvedRate = svc?.complete_month_daily_rate || quote?.complete_month_rate || lead.complete_month_daily_rate || asgn?.client_billing_rate || parseInt(lead.quoted_monthly_rate?.replace(/[^0-9]/g, '') || '0') || 500;
@@ -2194,30 +2275,9 @@ export default function CRM() {
             }
         }
         setCiDays(calculatedDays);
-        setCiAttendanceVerified(true);
         setIsClientInvoiceOpen(true);
 
-        const activeEmpId = (svc?.service_worker_assignments || []).find((a: any) => !a.end_date)?.employee_id || asgn?.employee_id;
-
-        if (activeEmpId && defaultStart) {
-            supabase.from('attendance')
-                .select('status, is_half_day')
-                .eq('worker_id', activeEmpId)
-                .gte('duty_date', defaultStart)
-                .lte('duty_date', defaultEnd)
-                .then(({ data, error }) => {
-                    if (error) console.error("Error fetching attendance:", error);
-                    if (data && data.length > 0) {
-                        const p = data.filter((a: any) => !a.is_half_day && a.status !== 'Half Day' && (a.status === 'Present' || a.status === 'present' || a.status === 'On Duty')).length;
-                        const h = data.filter((a: any) => a.is_half_day || a.status === 'Half Day').length;
-                        const attDays = p + h * 0.5;
-                        if (attDays > 0) {
-                            setCiDays(attDays);
-                            setCiAttendanceVerified(true);
-                        }
-                    }
-                });
-        }
+        fetchClientInvoiceAttendanceCRM(defaultStart, defaultEnd, fullLead, svc, asgn);
     };
 
     const openAgentModal = async (lead: any, action: 'inquiry' | 'quotation' | 'consent' | 'staff' | 'deposit' | 'billing' | 'custom') => {
@@ -7648,8 +7708,8 @@ export default function CRM() {
                 const net = Math.max(0, total - ciDeposit);
                 return (
                     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-                        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
-                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center">
+                        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                                         <FileText className="w-5 h-5 text-white" />
@@ -7663,7 +7723,7 @@ export default function CRM() {
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
-                            <div className="p-5 space-y-4">
+                            <div className="p-5 space-y-4 overflow-y-auto flex-1">
                                 {!ciAttendanceVerified && (
                                     <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 rounded-lg text-xs font-medium flex items-start gap-2">
                                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
@@ -7680,11 +7740,7 @@ export default function CRM() {
                                                 const val = e.target.value;
                                                 setCiStartDate(val);
                                                 if (val && ciEndDate) {
-                                                    const d1 = new Date(val);
-                                                    const d2 = new Date(ciEndDate);
-                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
-                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
-                                                    }
+                                                    fetchClientInvoiceAttendanceCRM(val, ciEndDate);
                                                 }
                                             }}
                                             className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800"
@@ -7699,17 +7755,54 @@ export default function CRM() {
                                                 const val = e.target.value;
                                                 setCiEndDate(val);
                                                 if (ciStartDate && val) {
-                                                    const d1 = new Date(ciStartDate);
-                                                    const d2 = new Date(val);
-                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
-                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
-                                                    }
+                                                    fetchClientInvoiceAttendanceCRM(ciStartDate, val);
                                                 }
                                             }}
                                             className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm font-semibold outline-none focus:ring-2 focus:ring-[#1AA6A8] text-slate-800"
                                         />
                                     </div>
                                 </div>
+
+                                {/* Attendance Summary */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-semibold text-slate-900 text-sm">Attendance Summary</h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => fetchClientInvoiceAttendanceCRM(ciStartDate, ciEndDate)}
+                                            disabled={isCiLoadingAttendance}
+                                            className="text-xs text-[#1AA6A8] font-semibold hover:underline flex items-center gap-1 disabled:opacity-50"
+                                        >
+                                            {isCiLoadingAttendance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                            Refresh
+                                        </button>
+                                    </div>
+                                    {isCiLoadingAttendance ? (
+                                        <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-[#1AA6A8]" /></div>
+                                    ) : ciAttendanceSummary ? (
+                                        <div className="grid grid-cols-4 gap-2 text-center">
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-emerald-600">{ciAttendanceSummary.fullDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Full Days Present</p>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-amber-600">{ciAttendanceSummary.halfDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Half Days (0.5d)</p>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-red-500">{ciAttendanceSummary.absentDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Days Absent</p>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-[#1AA6A8]">{ciAttendanceSummary.effectiveDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Effective Days</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-slate-400 text-center py-3">Loading attendance data...</p>
+                                    )}
+                                </div>
+
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>

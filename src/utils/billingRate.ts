@@ -88,23 +88,34 @@ export function numberToWordsINR(num: number): string {
     return word.trim();
 }
 
+export interface ClientAttendanceSummary {
+    totalCalendarDays: number;
+    fullDays: number;
+    halfDays: number;
+    absentDays: number;
+    effectiveDays: number;
+}
+
 /**
- * Calculates client billable days based on verified attendance of assigned workers.
+ * Calculates client attendance summary breakdown based on verified attendance of assigned workers.
  * Multi-Worker Service Delivery Rule:
- * - On any date, if ANY assigned worker is Present / On Duty -> 1.0 day billed to client.
- * - Else if ALL workers were not full present, but AT LEAST ONE worked a Half Day -> 0.5 day billed to client.
- * - Else if ALL workers were Absent on that date -> 0.0 days billed to client.
- * - If no logs exist for that date in active period -> 1.0 day default.
+ * - On any date, if ANY assigned worker is Present / On Duty -> 1.0 day billed to client (Full Day Present).
+ * - Else if ALL workers were not full present, but AT LEAST ONE worked a Half Day -> 0.5 day billed to client (Half Day).
+ * - Else if ALL workers were Absent on that date (or no attendance logged) -> 0.0 days billed to client (Day Absent).
  */
-export function calculateClientServiceDaysFromAttendance(
+export function calculateClientAttendanceSummary(
     startDateStr: string,
     endDateStr: string,
     attendanceRecords: Array<{ worker_id?: string; employee_id?: string; duty_date?: string; date?: string; status?: string; is_half_day?: boolean; is_absent?: boolean }>
-): number {
-    if (!startDateStr || !endDateStr) return 0;
+): ClientAttendanceSummary {
+    if (!startDateStr || !endDateStr) {
+        return { totalCalendarDays: 0, fullDays: 0, halfDays: 0, absentDays: 0, effectiveDays: 0 };
+    }
     const start = new Date(`${startDateStr}T00:00:00`);
     const end = new Date(`${endDateStr}T00:00:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return 0;
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        return { totalCalendarDays: 0, fullDays: 0, halfDays: 0, absentDays: 0, effectiveDays: 0 };
+    }
 
     const recordsByDate = new Map<string, Array<any>>();
     for (const r of attendanceRecords) {
@@ -114,9 +125,14 @@ export function calculateClientServiceDaysFromAttendance(
         recordsByDate.get(dStr)!.push(r);
     }
 
-    let totalServiceDays = 0;
+    let totalCalendarDays = 0;
+    let fullDays = 0;
+    let halfDays = 0;
+    let absentDays = 0;
+
     const cur = new Date(start);
     while (cur <= end) {
+        totalCalendarDays++;
         const y = cur.getFullYear();
         const m = String(cur.getMonth() + 1).padStart(2, '0');
         const d = String(cur.getDate()).padStart(2, '0');
@@ -125,7 +141,11 @@ export function calculateClientServiceDaysFromAttendance(
         const dayRecords = recordsByDate.get(dateKey) || [];
         if (dayRecords.length === 0) {
             // If attendance records were supplied for this service, days with no attendance logs mean no worker attended
-            totalServiceDays += (attendanceRecords.length > 0 ? 0.0 : 1.0);
+            if (attendanceRecords.length > 0) {
+                absentDays++;
+            } else {
+                fullDays++;
+            }
         } else {
             const hasFullPresent = dayRecords.some(r => 
                 !r.is_half_day && 
@@ -138,7 +158,7 @@ export function calculateClientServiceDaysFromAttendance(
             );
 
             if (hasFullPresent) {
-                totalServiceDays += 1.0;
+                fullDays++;
             } else {
                 const hasHalfDay = dayRecords.some(r => 
                     (r.is_half_day || r.status === 'Half Day' || r.status === 'half_day') &&
@@ -148,18 +168,9 @@ export function calculateClientServiceDaysFromAttendance(
                 );
 
                 if (hasHalfDay) {
-                    totalServiceDays += 0.5;
+                    halfDays++;
                 } else {
-                    const allAbsent = dayRecords.every(r => 
-                        r.is_absent || 
-                        r.status === 'Absent' || 
-                        r.status === 'absent'
-                    );
-                    if (allAbsent) {
-                        totalServiceDays += 0.0;
-                    } else {
-                        totalServiceDays += 0.0;
-                    }
+                    absentDays++;
                 }
             }
         }
@@ -167,5 +178,24 @@ export function calculateClientServiceDaysFromAttendance(
         cur.setDate(cur.getDate() + 1);
     }
 
-    return totalServiceDays;
+    const effectiveDays = fullDays + (halfDays * 0.5);
+
+    return {
+        totalCalendarDays,
+        fullDays,
+        halfDays,
+        absentDays,
+        effectiveDays,
+    };
+}
+
+/**
+ * Calculates client billable days based on verified attendance of assigned workers.
+ */
+export function calculateClientServiceDaysFromAttendance(
+    startDateStr: string,
+    endDateStr: string,
+    attendanceRecords: Array<{ worker_id?: string; employee_id?: string; duty_date?: string; date?: string; status?: string; is_half_day?: boolean; is_absent?: boolean }>
+): number {
+    return calculateClientAttendanceSummary(startDateStr, endDateStr, attendanceRecords).effectiveDays;
 }

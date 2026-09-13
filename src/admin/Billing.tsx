@@ -8,7 +8,7 @@ const RupeeIcon = ({ className }: { className?: string }) => (
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';
-import { resolveClientBillingRatePerDay, numberToWordsINR } from '../utils/billingRate';
+import { resolveClientBillingRatePerDay, numberToWordsINR, calculateClientAttendanceSummary, calculateClientServiceDaysFromAttendance, type ClientAttendanceSummary } from '../utils/billingRate';
 import ServicesPanel from '../components/hr/ServicesPanel';
 import { recordServiceInvoice, markServiceBillPaid } from '../services/serviceLifecycle';
 
@@ -56,77 +56,6 @@ const inclusiveDays = (startDate: string, endDate: string) => {
     return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 };
 
-export function calculateClientServiceDaysFromAttendance(
-    startDateStr: string,
-    endDateStr: string,
-    attendanceRecords: Array<{ worker_id?: string; employee_id?: string; duty_date?: string; date?: string; status?: string; is_half_day?: boolean; is_absent?: boolean }>
-): number {
-    if (!startDateStr || !endDateStr) return 0;
-    const start = new Date(`${startDateStr}T00:00:00`);
-    const end = new Date(`${endDateStr}T00:00:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return 0;
-
-    const recordsByDate = new Map<string, Array<any>>();
-    for (const r of attendanceRecords) {
-        const dStr = (r.duty_date || r.date || '').split('T')[0];
-        if (!dStr) continue;
-        if (!recordsByDate.has(dStr)) recordsByDate.set(dStr, []);
-        recordsByDate.get(dStr)!.push(r);
-    }
-
-    let totalServiceDays = 0;
-    const cur = new Date(start);
-    while (cur <= end) {
-        const y = cur.getFullYear();
-        const m = String(cur.getMonth() + 1).padStart(2, '0');
-        const d = String(cur.getDate()).padStart(2, '0');
-        const dateKey = `${y}-${m}-${d}`;
-
-        const dayRecords = recordsByDate.get(dateKey) || [];
-        if (dayRecords.length === 0) {
-            totalServiceDays += 1.0;
-        } else {
-            const hasFullPresent = dayRecords.some(r => 
-                !r.is_half_day && 
-                r.status !== 'Half Day' && 
-                r.status !== 'half_day' && 
-                !r.is_absent && 
-                r.status !== 'Absent' && 
-                r.status !== 'absent' &&
-                (r.status === 'Present' || r.status === 'present' || r.status === 'On Duty' || r.status === 'Completed')
-            );
-
-            if (hasFullPresent) {
-                totalServiceDays += 1.0;
-            } else {
-                const hasHalfDay = dayRecords.some(r => 
-                    r.is_half_day || 
-                    r.status === 'Half Day' || 
-                    r.status === 'half_day'
-                );
-
-                if (hasHalfDay) {
-                    totalServiceDays += 0.5;
-                } else {
-                    const allAbsent = dayRecords.every(r => 
-                        r.is_absent || 
-                        r.status === 'Absent' || 
-                        r.status === 'absent'
-                    );
-                    if (allAbsent) {
-                        totalServiceDays += 0.0;
-                    } else {
-                        totalServiceDays += 1.0;
-                    }
-                }
-            }
-        }
-
-        cur.setDate(cur.getDate() + 1);
-    }
-
-    return totalServiceDays;
-}
 
 const normalizePhoneDigits = (phone: string) => phone.replace(/\D/g, '');
 const phoneLast10 = (phone: string) => normalizePhoneDigits(phone).slice(-10);
@@ -245,6 +174,81 @@ export default function Billing() {
     const [ciStartDate, setCiStartDate] = useState('');
     const [ciEndDate, setCiEndDate] = useState('');
     const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
+    const [ciAttendanceSummary, setCiAttendanceSummary] = useState<ClientAttendanceSummary | null>(null);
+    const [isCiLoadingAttendance, setIsCiLoadingAttendance] = useState(false);
+
+    const fetchClientInvoiceAttendance = async (startStr: string, endStr: string, targetBill?: any) => {
+        const bill = targetBill || clientInvoiceBill;
+        if (!bill || !startStr || !endStr) return;
+
+        setIsCiLoadingAttendance(true);
+        try {
+            const rawService = bill.rawService || bill.rawAssignment;
+            const clientId = bill.rawAssignment?.client_id || rawService?.client_id;
+
+            let workerIds: string[] = (rawService?.service_worker_assignments || [])
+                .map((a: any) => a.employee_id || a.worker_id)
+                .filter(Boolean);
+
+            if (rawService?.legacy_assignment_id && rawService?.worker_assignments) {
+                const legacy = rawService.worker_assignments.find((w: any) => w.id === rawService.legacy_assignment_id);
+                if (legacy?.employee_id) workerIds.push(legacy.employee_id);
+            }
+            if (bill.rawAssignment?.employee_id) {
+                workerIds.push(bill.rawAssignment.employee_id);
+            }
+
+            if (clientId) {
+                const { data: cAssignments } = await supabase
+                    .from('client_worker_assignments')
+                    .select('employee_id')
+                    .eq('client_id', clientId);
+                if (cAssignments) {
+                    cAssignments.forEach((a: any) => {
+                        if (a.employee_id) workerIds.push(a.employee_id);
+                    });
+                }
+            }
+
+            workerIds = Array.from(new Set(workerIds)).filter(Boolean);
+
+            if (workerIds.length === 0) {
+                const d1 = new Date(startStr);
+                const d2 = new Date(endStr);
+                const calDays = (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1)
+                    ? Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                    : 1;
+                setCiAttendanceSummary({
+                    totalCalendarDays: calDays,
+                    fullDays: calDays,
+                    halfDays: 0,
+                    absentDays: 0,
+                    effectiveDays: calDays,
+                });
+                setCiDays(calDays);
+                setCiAttendanceVerified(false);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('attendance')
+                .select('worker_id, employee_id, duty_date, status, is_half_day, is_absent')
+                .in('worker_id', workerIds)
+                .gte('duty_date', startStr)
+                .lte('duty_date', endStr);
+
+            if (error) throw error;
+
+            const summary = calculateClientAttendanceSummary(startStr, endStr, data || []);
+            setCiAttendanceSummary(summary);
+            setCiDays(summary.effectiveDays);
+            setCiAttendanceVerified(Boolean(data && data.length > 0));
+        } catch (err) {
+            console.error('Error fetching client invoice attendance:', err);
+        } finally {
+            setIsCiLoadingAttendance(false);
+        }
+    };
 
     // Manual Client Invoice State
     const [isManualInvoiceOpen, setIsManualInvoiceOpen] = useState(false);
@@ -1998,7 +2002,8 @@ export default function Billing() {
                                     deposit_amount: service.deposit_amount || 0,
                                     start_date: bill?.period_start ? bill.period_start.split('T')[0] : (service.start_date || ''),
                                     end_date: bill?.period_end ? bill.period_end.split('T')[0] : (service.end_date || ''),
-                                }
+                                },
+                                rawService: service
                             };
 
                             setClientInvoiceBill(billObj);
@@ -2008,7 +2013,6 @@ export default function Billing() {
                             // 1. Determine start date:
                             let startStr = '';
                             if (bill?.period_start) {
-                                // If bill start date is before service start date, prefer the service start date
                                 const bStart = bill.period_start.split('T')[0];
                                 const sStart = service.start_date ? service.start_date.split('T')[0] : '';
                                 startStr = (sStart && sStart > bStart) ? sStart : bStart;
@@ -2029,7 +2033,6 @@ export default function Billing() {
                             setCiStartDate(startStr);
                             setCiEndDate(endStr);
 
-                            // 3. Compute days
                             let calculatedDays = bill?.total_days || 1;
                             if (!bill?.total_days && startStr && endStr) {
                                 const d1 = new Date(startStr);
@@ -2039,28 +2042,10 @@ export default function Billing() {
                                 }
                             }
                             setCiDays(calculatedDays);
-                            setCiAttendanceVerified(true);
                             setIsClientInvoiceOpen(true);
 
-                            const allWorkerIds = (service.service_worker_assignments || [])
-                                .map((a: any) => a.employee_id || a.worker_id)
-                                .filter(Boolean);
-                            if (allWorkerIds.length > 0 && startStr && !bill?.total_days) {
-                                supabase.from('attendance')
-                                    .select('worker_id, duty_date, status, is_half_day, is_absent')
-                                    .in('worker_id', allWorkerIds)
-                                    .gte('duty_date', startStr)
-                                    .lte('duty_date', endStr)
-                                    .then(({ data }) => {
-                                        if (data && data.length > 0) {
-                                            const attDays = calculateClientServiceDaysFromAttendance(startStr, endStr, data);
-                                            if (attDays >= 0) {
-                                                setCiDays(attDays);
-                                                setCiAttendanceVerified(true);
-                                            }
-                                        }
-                                    });
-                            }
+                            // Fetch full attendance breakdown across all assigned workers
+                            fetchClientInvoiceAttendance(startStr, endStr, billObj);
                         }}
                         onRecordCollection={(service: any, bill?: any) => {
                             const clientName = service.clients?.client_name || 'Client';
@@ -3161,8 +3146,8 @@ export default function Billing() {
                 const net = Math.max(0, total - ciDeposit);
                 return (
                     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
-                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center">
+                        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+                            <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                                         <FileText className="w-5 h-5 text-white" />
@@ -3176,7 +3161,7 @@ export default function Billing() {
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
-                            <div className="p-5 space-y-4">
+                            <div className="p-5 space-y-4 overflow-y-auto flex-1">
                                 {!ciAttendanceVerified && (
                                     <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 rounded-lg text-xs font-medium flex items-start gap-2">
                                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
@@ -3193,11 +3178,7 @@ export default function Billing() {
                                                 const val = e.target.value;
                                                 setCiStartDate(val);
                                                 if (val && ciEndDate) {
-                                                    const d1 = new Date(val);
-                                                    const d2 = new Date(ciEndDate);
-                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
-                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
-                                                    }
+                                                    fetchClientInvoiceAttendance(val, ciEndDate);
                                                 }
                                             }}
                                             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
@@ -3212,17 +3193,54 @@ export default function Billing() {
                                                 const val = e.target.value;
                                                 setCiEndDate(val);
                                                 if (ciStartDate && val) {
-                                                    const d1 = new Date(ciStartDate);
-                                                    const d2 = new Date(val);
-                                                    if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
-                                                        setCiDays(Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1));
-                                                    }
+                                                    fetchClientInvoiceAttendance(ciStartDate, val);
                                                 }
                                             }}
                                             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
                                         />
                                     </div>
                                 </div>
+
+                                {/* Attendance Summary */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-semibold text-slate-900 text-sm">Attendance Summary</h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => fetchClientInvoiceAttendance(ciStartDate, ciEndDate)}
+                                            disabled={isCiLoadingAttendance}
+                                            className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 disabled:opacity-50"
+                                        >
+                                            {isCiLoadingAttendance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                            Refresh
+                                        </button>
+                                    </div>
+                                    {isCiLoadingAttendance ? (
+                                        <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+                                    ) : ciAttendanceSummary ? (
+                                        <div className="grid grid-cols-4 gap-2 text-center">
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-emerald-600">{ciAttendanceSummary.fullDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Full Days Present</p>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-amber-600">{ciAttendanceSummary.halfDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Half Days (0.5d)</p>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-red-500">{ciAttendanceSummary.absentDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Days Absent</p>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-2.5 border border-slate-200/70 shadow-xs">
+                                                <p className="text-xl sm:text-2xl font-black text-primary">{ciAttendanceSummary.effectiveDays}</p>
+                                                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 font-medium leading-tight">Effective Days</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-slate-400 text-center py-3">Loading attendance data...</p>
+                                    )}
+                                </div>
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
