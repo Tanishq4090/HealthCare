@@ -139,8 +139,53 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
         return 'Home Care Service';
     };
 
-    const activeService = services.find(s => s.status === 'active');
-    const pastServices = services.filter(s => s.status !== 'active');
+    const activeService = services.find(s => s.status === 'active') || (
+        services.length === 0 && assignments.some((a: any) => a.assignment_status === 'active')
+            ? {
+                id: assignments.find((a: any) => a.assignment_status === 'active')?.id,
+                status: 'active',
+                service_type: assignments.find((a: any) => a.assignment_status === 'active')?.service_type || 'Home Care Service',
+                start_date: assignments.find((a: any) => a.assignment_status === 'active')?.start_date,
+                deposit_amount: assignments.find((a: any) => a.assignment_status === 'active')?.deposit_amount || 5000,
+                deposit_status: 'collected',
+                service_worker_assignments: [],
+                service_bills: []
+            }
+            : null
+    );
+
+    // Collect past services from services table
+    const dbPastServices = services.filter(s => s.status !== 'active');
+    
+    // Check if any completed assignments in worker_assignments aren't covered by dbPastServices
+    const unrepresentedPastAssignments = (assignments || []).filter((a: any) => 
+        a.assignment_status !== 'active' &&
+        !dbPastServices.some(ps => 
+            ps.id === a.id || 
+            (a.start_date && ps.start_date && a.start_date.split('T')[0] === ps.start_date.split('T')[0])
+        )
+    );
+
+    const syntheticPastServices = unrepresentedPastAssignments.map((a: any) => ({
+        id: a.id,
+        status: 'ended',
+        service_type: a.service_type || 'Home Care Service',
+        start_date: a.start_date,
+        end_date: a.end_date,
+        deposit_amount: a.deposit_amount || 5000,
+        deposit_status: 'settled',
+        notes: a.notes,
+        service_worker_assignments: [{
+            id: a.id,
+            employee_id: a.employee_id,
+            start_date: a.start_date,
+            end_date: a.end_date,
+            employees: a.employees
+        }],
+        service_bills: []
+    }));
+
+    const pastServices = [...dbPastServices, ...syntheticPastServices];
 
     const togglePastCycle = (id: string) => {
         setExpandedPastCycles(prev => ({ ...prev, [id]: !prev[id] }));
@@ -148,6 +193,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
 
     // Helper to get staff for a specific service cycle
     const getStaffForService = (svc: any) => {
+        if (!svc) return [];
         if (svc.service_worker_assignments && svc.service_worker_assignments.length > 0) {
             return svc.service_worker_assignments.map((swa: any) => ({
                 id: swa.id,
@@ -160,6 +206,8 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                 endDate: swa.end_date || svc.end_date,
             }));
         }
+        
+        // Fallback: search in worker_assignments (assignments)
         if (svc.status === 'active') {
             const activeAsgns = assignments.filter((a: any) => a.assignment_status === 'active');
             if (activeAsgns.length > 0) {
@@ -172,6 +220,30 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                     isActive: true,
                     startDate: a.start_date || svc.start_date,
                     endDate: a.end_date,
+                }));
+            }
+        } else {
+            // For past services, find overlapping or completed assignments
+            const sStart = svc.start_date ? svc.start_date.split('T')[0] : '';
+            const sEnd = svc.end_date ? svc.end_date.split('T')[0] : '';
+            const matchingAsgns = assignments.filter((a: any) => {
+                if (a.assignment_status === 'active') return false;
+                const aStart = a.start_date ? a.start_date.split('T')[0] : '';
+                if (sStart && aStart && sEnd) {
+                    return aStart >= sStart && aStart <= sEnd;
+                }
+                return true;
+            });
+            if (matchingAsgns.length > 0) {
+                return matchingAsgns.map((a: any) => ({
+                    id: a.id,
+                    employeeId: a.employee_id,
+                    name: a.employees?.full_name || 'Staff Member',
+                    role: a.employees?.job_title || 'Care Specialist',
+                    status: 'Completed',
+                    isActive: false,
+                    startDate: a.start_date || svc.start_date,
+                    endDate: a.end_date || svc.end_date,
                 }));
             }
         }

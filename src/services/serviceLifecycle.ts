@@ -306,6 +306,32 @@ export async function assignWorkerToService(
         .update({ status: 'assigned', updated_at: new Date().toISOString() })
         .eq('id', employeeId);
 
+    // Ensure legacy worker_assignments record exists for complete CRM & billing synchronization
+    if (targetClientId) {
+        try {
+            const { data: existingAsgn } = await supabase
+                .from('worker_assignments')
+                .select('id')
+                .eq('client_id', targetClientId)
+                .eq('employee_id', employeeId)
+                .eq('assignment_status', 'active')
+                .maybeSingle();
+
+            if (!existingAsgn) {
+                await supabase.from('worker_assignments').insert([{
+                    client_id: targetClientId,
+                    employee_id: employeeId,
+                    start_date: startDate,
+                    assignment_status: 'active',
+                    service_type: 'date_range',
+                    hours_per_day: 10,
+                }]);
+            }
+        } catch (asgnSyncErr) {
+            console.warn('Failed to sync to worker_assignments in assignWorkerToService:', asgnSyncErr);
+        }
+    }
+
     return data as ServiceWorkerAssignment;
 }
 
@@ -393,6 +419,28 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             client_name: input.clientName,
             created_at: new Date().toISOString()
         }, { onConflict: 'id' });
+
+        // 0b. Archive any existing active service for this client so previous cycle and settled deposit are preserved
+        try {
+            const { data: activeExistingServices } = await supabase
+                .from('services')
+                .select('id, deposit_amount')
+                .eq('client_id', input.clientId)
+                .eq('status', 'active');
+
+            if (activeExistingServices && activeExistingServices.length > 0) {
+                for (const oldSvc of activeExistingServices) {
+                    await supabase.from('services').update({
+                        status: 'ended',
+                        end_date: input.startDate,
+                        deposit_status: 'settled',
+                        updated_at: new Date().toISOString()
+                    }).eq('id', oldSvc.id);
+                }
+            }
+        } catch (archiveErr) {
+            console.warn('Failed to archive previous active services on restart:', archiveErr);
+        }
 
         // 1. Create new service record in services table
         const service = await createService({
@@ -900,6 +948,21 @@ export async function endService(
             .eq('assignment_status', 'active');
     } catch (legacyAsgnErr) {
         console.warn('Failed to complete legacy worker_assignments on service end:', legacyAsgnErr);
+    }
+
+    // 7b. Explicitly ensure services table marks status: 'ended' and deposit_status: 'settled'
+    try {
+        await supabase
+            .from('services')
+            .update({
+                status: 'ended',
+                end_date: effectiveEndDate,
+                deposit_status: 'settled',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', serviceId);
+    } catch (svcUpdateErr) {
+        console.warn('Failed to update service deposit_status to settled in endService:', svcUpdateErr);
     }
 
     // 8. Move client lead in crm_leads to 'Closed Won'

@@ -236,7 +236,7 @@ export async function assignWorkerToClient(
   }
 
   // ── Step 2: Update employee status and assigned client ──────
-  const { data: lead } = await supabase.from('crm_leads').select('name, pipeline_stage').eq('id', clientUuid).single();
+  const { data: lead } = await supabase.from('crm_leads').select('name, pipeline_stage, assigned_worker_role, complete_month_daily_rate, incomplete_month_daily_rate').eq('id', clientUuid).maybeSingle();
   const leadName = lead?.name || 'Assigned Client';
 
   const { error: statusError } = await supabase
@@ -381,6 +381,69 @@ export async function assignWorkerToClient(
     whatsappError = 'Skipped: CRM dispatch handles WhatsApp delivery';
   }
 
+  // ── Step 7: Dual-Sync with services & service_worker_assignments ────
+  try {
+    const { data: activeSvc } = await supabase
+      .from('services')
+      .select('id, start_date, deposit_amount, deposit_status')
+      .or(`client_id.eq.${clientUuid},lead_id.eq.${clientUuid}`)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    let targetServiceId = activeSvc?.id;
+
+    if (!targetServiceId) {
+      const startDate = billingData?.startDate ? billingData.startDate.split('T')[0] : new Date().toISOString().split('T')[0];
+      const serviceType = billingData?.serviceType || lead?.assigned_worker_role || 'Home Care Service';
+      const depositAmt = resolvedDepositAmount > 0 ? resolvedDepositAmount : 5000;
+      const depStatus = (resolvedDepositPaid >= depositAmt && depositAmt > 0) ? 'collected' : 'pending';
+
+      const { data: newSvc, error: svcInsertErr } = await supabase
+        .from('services')
+        .insert([{
+          client_id: clientUuid,
+          lead_id: clientUuid,
+          service_type: serviceType,
+          hours_per_day: billingData?.hoursPerDay || 10,
+          start_date: startDate,
+          end_date: billingData?.endDate ? billingData.endDate.split('T')[0] : null,
+          status: 'active',
+          deposit_amount: depositAmt,
+          deposit_status: depStatus,
+          complete_month_daily_rate: Number(lead?.complete_month_daily_rate) || 0,
+          incomplete_month_daily_rate: Number(lead?.incomplete_month_daily_rate) || 0,
+        }])
+        .select('id')
+        .maybeSingle();
+
+      if (!svcInsertErr && newSvc?.id) {
+        targetServiceId = newSvc.id;
+      }
+    }
+
+    if (targetServiceId) {
+      const { data: existingSwa } = await supabase
+        .from('service_worker_assignments')
+        .select('id')
+        .eq('service_id', targetServiceId)
+        .eq('employee_id', employeeUuid)
+        .is('end_date', null)
+        .maybeSingle();
+
+      if (!existingSwa) {
+        const asgnStartDate = billingData?.startDate ? billingData.startDate.split('T')[0] : new Date().toISOString().split('T')[0];
+        await supabase.from('service_worker_assignments').insert([{
+          service_id: targetServiceId,
+          employee_id: employeeUuid,
+          start_date: asgnStartDate,
+          end_date: billingData?.endDate ? billingData.endDate.split('T')[0] : null,
+        }]);
+      }
+    }
+  } catch (svcSyncErr) {
+    console.warn('assignmentService: dual-sync with services/service_worker_assignments error:', svcSyncErr);
+  }
+
   return {
     assignment:   assignment as WorkerAssignment,
     idCardLink:   idCardLink as IdCardLink,
@@ -517,12 +580,38 @@ export async function getAssignmentWithIDCard(
 export async function releaseWorkerByClientId(clientId: string): Promise<void> {
   const { data: assignment } = await supabase
     .from('worker_assignments')
-    .select('id')
+    .select('id, employee_id')
     .eq('client_id', clientId)
     .eq('assignment_status', 'active')
     .maybeSingle();
 
+  const todayStr = new Date().toISOString().split('T')[0];
+
   if (assignment) {
     await deactivateIDCardLink(assignment.id, 'cancelled');
+    await supabase.from('worker_assignments').update({
+      assignment_status: 'completed',
+      end_date: todayStr
+    }).eq('id', assignment.id);
+  }
+
+  // Also release in service_worker_assignments if active
+  try {
+    const { data: activeSvc } = await supabase
+      .from('services')
+      .select('id')
+      .or(`client_id.eq.${clientId},lead_id.eq.${clientId}`)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (activeSvc) {
+      await supabase
+        .from('service_worker_assignments')
+        .update({ end_date: todayStr })
+        .eq('service_id', activeSvc.id)
+        .is('end_date', null);
+    }
+  } catch (err) {
+    console.warn('Failed to release in service_worker_assignments:', err);
   }
 }

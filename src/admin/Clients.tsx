@@ -593,7 +593,7 @@ export default function Clients() {
                     .eq('payment_type', 'deposit'),
                 supabase
                     .from('services')
-                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes')
+                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes, service_worker_assignments(id, employee_id, start_date, end_date, employees(status, full_name))')
             ]);
 
             if (paymentsError) throw paymentsError;
@@ -602,19 +602,49 @@ export default function Clients() {
             const depositPayments = depositPaymentsData || [];
             const services = allServicesData || [];
 
-            // Build workerMap keyed by client_id from worker_assignments (reliable source of truth)
-            const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
+            // Build unified workerMap keyed by client_id combining BOTH worker_assignments AND service_worker_assignments
+            const allWorkersByClient: Record<string, Set<string>> = {};
+            const activeWorkersByClient: Record<string, Set<string>> = {};
+
+            const ensureSets = (clientId: string) => {
+                if (!allWorkersByClient[clientId]) allWorkersByClient[clientId] = new Set();
+                if (!activeWorkersByClient[clientId]) activeWorkersByClient[clientId] = new Set();
+            };
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            // 1. Process worker_assignments
             assignments.forEach((a: any) => {
                 if (!a.client_id) return;
-                if (!workerMap[a.client_id]) {
-                    workerMap[a.client_id] = { workerCount: 0, activeWorkerCount: 0 };
-                }
-                workerMap[a.client_id].workerCount++;
-                // Count as active if assignment is active AND employee is still assigned/active
+                ensureSets(a.client_id);
+                if (a.employee_id) allWorkersByClient[a.client_id].add(a.employee_id);
                 const empStatus = a.employees?.status;
-                if (a.assignment_status === 'active' && (empStatus === 'assigned' || empStatus === 'Active' || empStatus === 'available')) {
-                    workerMap[a.client_id].activeWorkerCount++;
+                const isActive = a.assignment_status === 'active' && (!a.end_date || a.end_date >= todayStr) && (empStatus === 'assigned' || empStatus === 'Active' || empStatus === 'available');
+                if (isActive && a.employee_id) {
+                    activeWorkersByClient[a.client_id].add(a.employee_id);
                 }
+            });
+
+            // 2. Process service_worker_assignments from services
+            services.forEach((s: any) => {
+                if (!s.client_id) return;
+                ensureSets(s.client_id);
+                (s.service_worker_assignments || []).forEach((swa: any) => {
+                    if (swa.employee_id) allWorkersByClient[s.client_id].add(swa.employee_id);
+                    const empStatus = swa.employees?.status;
+                    const isActive = s.status === 'active' && (!swa.end_date || swa.end_date >= todayStr) && (empStatus === 'assigned' || empStatus === 'Active' || empStatus === 'available');
+                    if (isActive && swa.employee_id) {
+                        activeWorkersByClient[s.client_id].add(swa.employee_id);
+                    }
+                });
+            });
+
+            const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
+            Object.keys(allWorkersByClient).forEach(cid => {
+                workerMap[cid] = {
+                    workerCount: allWorkersByClient[cid].size,
+                    activeWorkerCount: activeWorkersByClient[cid].size
+                };
             });
 
             const normalizeClientName = (name?: string | null) => (name || '').trim().toLowerCase();
@@ -688,25 +718,40 @@ export default function Clients() {
                             depositStatus: isCurrent ? depositStatus : (s.deposit_status || 'settled'),
                         });
                     });
-                } else if (clientAssignments.length > 0) {
+                }
+                
+                // Also incorporate any historical assignments not already represented in services
+                if (clientAssignments.length > 0) {
                     const sortedAsgns = [...clientAssignments].sort((a, b) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime());
                     sortedAsgns.forEach(a => {
-                        const isCurrent = activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id;
-                        allServiceCycles.push({
-                            id: a.id,
-                            serviceType: formatServiceLabel(a.service_type, a.notes),
-                            startDate: a.start_date,
-                            endDate: a.end_date,
-                            isCurrent: isCurrent,
-                            depositAmount: Number(a.deposit_amount) || 0,
-                            depositStatus: isCurrent ? depositStatus : 'settled',
-                        });
+                        const alreadyRepresented = allServiceCycles.some(cyc => 
+                            (cyc.id === a.id) || 
+                            (a.start_date && cyc.startDate && a.start_date.split('T')[0] === cyc.startDate.split('T')[0])
+                        );
+                        if (!alreadyRepresented) {
+                            const isCurrent = !activeService && (activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id);
+                            allServiceCycles.push({
+                                id: a.id,
+                                serviceType: formatServiceLabel(a.service_type, a.notes),
+                                startDate: a.start_date,
+                                endDate: a.end_date,
+                                isCurrent: isCurrent,
+                                depositAmount: Number(a.deposit_amount) || 0,
+                                depositStatus: isCurrent ? depositStatus : 'settled',
+                            });
+                        }
                     });
                 }
 
-                const pastDepositTotal = allServiceCycles
+                let pastDepositTotal = allServiceCycles
                     .filter(cyc => !cyc.isCurrent)
                     .reduce((sum, cyc) => sum + (Number(cyc.depositAmount) || 0), 0);
+
+                // Fallback: If past cycles didn't explicitly store deposit, but payments ledger has recorded historical deposits
+                const totalPaidDeposits = paidDepositByClientName[normalizeClientName(c.client_name)] || 0;
+                if (pastDepositTotal <= 0 && totalPaidDeposits > depositAmount) {
+                    pastDepositTotal = totalPaidDeposits - depositAmount;
+                }
 
                 return {
                     id: c.id,
