@@ -301,9 +301,6 @@ export default function Clients() {
             }
         }
 
-        // 3. Client currently has active workers assigned
-        if (client.activeWorkerCount > 0) return true;
-
         return false;
     };
 
