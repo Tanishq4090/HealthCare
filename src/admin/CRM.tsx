@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search, XCircle } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -38,6 +38,12 @@ const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID || '';
 const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
 );
+
+export const getLatestByCreatedAt = (items?: any[]) => {
+    if (!items || items.length === 0) return null;
+    return [...items].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+};
+
 // --- CUSTOM AUDIO PLAYER COMPONENT ---
 const VoicePlayer = ({ src }: { src: string }) => {
     const [isPlaying, setIsPlaying] = useState(false);
@@ -953,6 +959,490 @@ export default function CRM() {
     const [editingInspectorPhone, setEditingInspectorPhone] = useState(false);
     const [inspectorNoteDraft, setInspectorNoteDraft] = useState('');
     const [isSavingNote, setIsSavingNote] = useState(false);
+
+    // ── Direct Inline Editing & Database Confirmation States ────────
+    const [pendingDbConfirmation, setPendingDbConfirmation] = useState<{
+        isOpen: boolean;
+        title: string;
+        description?: string;
+        fieldName: string;
+        oldValue: string | number | null;
+        newValue: string | number | null;
+        onConfirm: () => Promise<void>;
+        loading?: boolean;
+    } | null>(null);
+
+    const [quickEditLead, setQuickEditLead] = useState<any | null>(null);
+    const [quickEditForm, setQuickEditForm] = useState<{
+        serviceCategory: string;
+        shiftType: string;
+        completeMonthDailyRate: string;
+        incompleteMonthDailyRate: string;
+        startDate: string;
+        address: string;
+        patientName: string;
+        relativeName: string;
+        patientPhone: string;
+    }>({
+        serviceCategory: '',
+        shiftType: '',
+        completeMonthDailyRate: '',
+        incompleteMonthDailyRate: '',
+        startDate: '',
+        address: '',
+        patientName: '',
+        relativeName: '',
+        patientPhone: '',
+    });
+
+    const [editingInspectorConsentField, setEditingInspectorConsentField] = useState<string | null>(null);
+    const [inspectorConsentDraft, setInspectorConsentDraft] = useState<string>('');
+    const [editingInspectorRateType, setEditingInspectorRateType] = useState<'complete' | 'incomplete' | null>(null);
+    const [inspectorRateDraft, setInspectorRateDraft] = useState<string>('');
+
+    const openQuickEdit = (lead: any) => {
+        const consent = getLatestByCreatedAt(lead?.client_consents);
+        const quote = getLatestByCreatedAt(lead?.crm_quotations);
+        const activeSvc = (lead?.services || []).find((s: any) => s.status === 'active') || lead?.services?.[0];
+
+        const completeRate = lead.complete_month_daily_rate || quote?.complete_month_rate || activeSvc?.complete_month_daily_rate || '';
+        const incompleteRate = lead.incomplete_month_daily_rate || quote?.incomplete_month_rate || activeSvc?.incomplete_month_daily_rate || '';
+        const serviceCat = consent?.service_category || lead.service_interest || quote?.service_category || '';
+        const shift = consent?.offered_time || lead.shift_type || quote?.shift_type || '';
+        const startDate = consent?.service_start_date || lead.plannedStart || quote?.start_date || activeSvc?.start_date || '';
+        const addr = consent?.address || lead.location || '';
+        const pName = consent?.patient_name || lead.name || '';
+        const rName = consent?.relative_name || lead.name || '';
+        const pPhone = consent?.contact_number || lead.whatsapp_number || lead.phone || '';
+
+        setQuickEditForm({
+            serviceCategory: serviceCat,
+            shiftType: shift,
+            completeMonthDailyRate: completeRate ? String(completeRate) : '',
+            incompleteMonthDailyRate: incompleteRate ? String(incompleteRate) : '',
+            startDate: startDate ? String(startDate).slice(0, 10) : '',
+            address: addr,
+            patientName: pName,
+            relativeName: rName,
+            patientPhone: pPhone,
+        });
+        setQuickEditLead(lead);
+    };
+
+    const handleSaveQuickEdit = (targetLead?: any) => {
+        const lead = targetLead || quickEditLead;
+        if (!lead) return;
+        const consent = getLatestByCreatedAt(lead?.client_consents);
+        const quote = getLatestByCreatedAt(lead?.crm_quotations);
+        const activeSvc = (lead?.services || []).find((s: any) => s.status === 'active') || lead?.services?.[0];
+
+        const oldComplete = lead.complete_month_daily_rate || quote?.complete_month_rate || activeSvc?.complete_month_daily_rate || 0;
+        const oldIncomplete = lead.incomplete_month_daily_rate || quote?.incomplete_month_rate || activeSvc?.incomplete_month_daily_rate || 0;
+        const oldService = consent?.service_category || lead.service_interest || 'Not set';
+
+        const newComplete = parseFloat(quickEditForm.completeMonthDailyRate) || 0;
+        const newIncomplete = parseFloat(quickEditForm.incompleteMonthDailyRate) || 0;
+
+        setPendingDbConfirmation({
+            isOpen: true,
+            title: `Save Lead Info: ${lead.name}`,
+            description: 'This will make changes from database as well.',
+            fieldName: 'Lead Rates & Care Details',
+            oldValue: `Full: ₹${oldComplete}/d, Part: ₹${oldIncomplete}/d, Service: ${oldService}`,
+            newValue: `Full: ₹${newComplete}/d, Part: ₹${newIncomplete}/d, Service: ${quickEditForm.serviceCategory || 'Not set'}`,
+            onConfirm: async () => {
+                const leadId = lead.id;
+
+                // 1. Update crm_leads
+                const crmUpdates: any = {};
+                if (newComplete > 0) {
+                    crmUpdates.complete_month_daily_rate = newComplete;
+                    crmUpdates.estimated_value_monthly = newComplete * 30;
+                }
+                if (newIncomplete > 0) {
+                    crmUpdates.incomplete_month_daily_rate = newIncomplete;
+                }
+                if (quickEditForm.serviceCategory) {
+                    crmUpdates.service_interest = quickEditForm.serviceCategory;
+                }
+                if (quickEditForm.shiftType) {
+                    crmUpdates.shift_type = quickEditForm.shiftType;
+                }
+                if (quickEditForm.patientName || quickEditForm.relativeName) {
+                    crmUpdates.name = quickEditForm.patientName || quickEditForm.relativeName;
+                }
+                if (quickEditForm.patientPhone) {
+                    crmUpdates.phone = quickEditForm.patientPhone;
+                    crmUpdates.whatsapp_number = quickEditForm.patientPhone;
+                }
+
+                if (Object.keys(crmUpdates).length > 0) {
+                    const { error: crmErr } = await supabase.from('crm_leads').update(crmUpdates).eq('id', leadId);
+                    if (crmErr) throw crmErr;
+                }
+
+                // 2. Upsert client_consents
+                let updatedConsent: any = null;
+                if (consent?.id) {
+                    const { data: cData, error: cErr } = await supabase
+                        .from('client_consents')
+                        .update({
+                            service_category: quickEditForm.serviceCategory || consent.service_category || null,
+                            offered_time: quickEditForm.shiftType || consent.offered_time || null,
+                            service_start_date: quickEditForm.startDate || consent.service_start_date || null,
+                            address: quickEditForm.address || consent.address || null,
+                            patient_name: quickEditForm.patientName || consent.patient_name || null,
+                            relative_name: quickEditForm.relativeName || consent.relative_name || null,
+                            contact_number: quickEditForm.patientPhone || consent.contact_number || null,
+                        })
+                        .eq('id', consent.id)
+                        .select()
+                        .single();
+                    if (!cErr && cData) updatedConsent = cData;
+                } else {
+                    const { data: cData, error: cErr } = await supabase
+                        .from('client_consents')
+                        .insert([{
+                            lead_id: leadId,
+                            phone: quickEditForm.patientPhone || lead.whatsapp_number || lead.phone || '',
+                            service_category: quickEditForm.serviceCategory || null,
+                            offered_time: quickEditForm.shiftType || null,
+                            service_start_date: quickEditForm.startDate || null,
+                            address: quickEditForm.address || null,
+                            patient_name: quickEditForm.patientName || lead.name || null,
+                            relative_name: quickEditForm.relativeName || lead.name || null,
+                            contact_number: quickEditForm.patientPhone || null,
+                            terms_accepted: true,
+                        }])
+                        .select()
+                        .single();
+                    if (!cErr && cData) updatedConsent = cData;
+                }
+
+                // 3. Update active service in services table if any
+                try {
+                    const svcUpdates: any = {};
+                    if (newComplete > 0) svcUpdates.complete_month_daily_rate = newComplete;
+                    if (newIncomplete > 0) svcUpdates.incomplete_month_daily_rate = newIncomplete;
+                    if (quickEditForm.startDate) svcUpdates.start_date = quickEditForm.startDate;
+
+                    if (Object.keys(svcUpdates).length > 0) {
+                        await supabase
+                            .from('services')
+                            .update(svcUpdates)
+                            .or(`client_id.eq.${leadId},lead_id.eq.${leadId}`)
+                            .eq('status', 'active');
+                    }
+                } catch (svcErr) {
+                    console.warn('Could not sync services table:', svcErr);
+                }
+
+                // 4. Also keep clients table in sync
+                try {
+                    const clientUpdates: any = {};
+                    if (quickEditForm.patientName || quickEditForm.relativeName) {
+                        clientUpdates.client_name = quickEditForm.patientName || quickEditForm.relativeName;
+                    }
+                    if (quickEditForm.patientPhone) {
+                        clientUpdates.phone_number = quickEditForm.patientPhone;
+                    }
+                    if (Object.keys(clientUpdates).length > 0) {
+                        await supabase.from('clients').update(clientUpdates).eq('id', leadId);
+                    }
+                } catch (clErr) {
+                    console.warn('Clients sync:', clErr);
+                }
+
+                // 5. Update local state
+                setLeads(prev => prev.map(l => {
+                    if (l.id !== leadId) return l;
+                    const prevConsents = updatedConsent ? (l.client_consents || []).filter((c: any) => c.id !== updatedConsent.id) : (l.client_consents || []);
+                    return {
+                        ...l,
+                        ...crmUpdates,
+                        client_consents: updatedConsent ? [updatedConsent, ...prevConsents] : l.client_consents,
+                    };
+                }));
+
+                setSelectedInspectorLead((prev: any) => {
+                    if (!prev || prev.id !== leadId) return prev;
+                    const prevConsents = updatedConsent ? (prev.client_consents || []).filter((c: any) => c.id !== updatedConsent.id) : (prev.client_consents || []);
+                    return {
+                        ...prev,
+                        ...crmUpdates,
+                        client_consents: updatedConsent ? [updatedConsent, ...prevConsents] : prev.client_consents,
+                        ...(newComplete > 0 ? {
+                            valueAmount: newComplete * 30,
+                            value: `₹${(newComplete * 30).toLocaleString('en-IN')}/mo`
+                        } : {})
+                    };
+                });
+
+                setQuickEditLead(null);
+                toast.success('Lead details & rates saved to database!');
+            }
+        });
+    };
+
+    const handleSaveLeadRate = (leadId: string, rateType: 'complete' | 'incomplete', newRateStr: string) => {
+        const lead = leads.find(l => l.id === leadId) || selectedInspectorLead;
+        const newRate = parseFloat(newRateStr.replace(/[^0-9.]/g, ''));
+        if (isNaN(newRate) || newRate < 0) {
+            toast.error('Please enter a valid rate amount');
+            return;
+        }
+
+        const isComplete = rateType === 'complete';
+        const fieldName = isComplete ? 'Full Month Rate' : 'Partial Month Rate';
+        const dbField = isComplete ? 'complete_month_daily_rate' : 'incomplete_month_daily_rate';
+        const currentRate = (lead as any)?.[dbField] ?? (isComplete ? lead?.crm_quotations?.[0]?.complete_month_rate : lead?.crm_quotations?.[0]?.incomplete_month_rate) ?? 0;
+
+        setPendingDbConfirmation({
+            isOpen: true,
+            title: `Update ${fieldName}`,
+            description: 'This will make changes from database as well.',
+            fieldName,
+            oldValue: `₹${Number(currentRate).toLocaleString('en-IN')}/day`,
+            newValue: `₹${Number(newRate).toLocaleString('en-IN')}/day`,
+            onConfirm: async () => {
+                const updates: any = { [dbField]: newRate };
+                if (isComplete) {
+                    updates.estimated_value_monthly = newRate * 30;
+                }
+
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .update(updates)
+                    .eq('id', leadId);
+                if (error) throw error;
+
+                // Sync active services if any
+                try {
+                    await supabase
+                        .from('services')
+                        .update({ [dbField]: newRate })
+                        .or(`client_id.eq.${leadId},lead_id.eq.${leadId}`)
+                        .eq('status', 'active');
+                } catch (sErr) {
+                    console.warn(sErr);
+                }
+
+                // Sync state
+                setSelectedInspectorLead((prev: any) => {
+                    if (!prev || prev.id !== leadId) return prev;
+                    return {
+                        ...prev,
+                        [dbField]: newRate,
+                        ...(isComplete ? {
+                            estimated_value_monthly: newRate * 30,
+                            valueAmount: newRate * 30,
+                            value: `₹${(newRate * 30).toLocaleString('en-IN')}/mo`
+                        } : {})
+                    };
+                });
+
+                setLeads(prev => prev.map(l => {
+                    if (l.id !== leadId) return l;
+                    return {
+                        ...l,
+                        [dbField]: newRate,
+                        ...(isComplete ? { estimated_value_monthly: newRate * 30 } : {})
+                    };
+                }));
+
+                setEditingInspectorRateType(null);
+                setInspectorRateDraft('');
+                toast.success(`${fieldName} updated in database!`);
+            }
+        });
+    };
+
+    const handleSaveConsentField = (
+        leadId: string,
+        field: string,
+        newValue: any,
+        fieldLabel: string,
+        currentDisplayVal: string,
+        newDisplayVal: string
+    ) => {
+        setPendingDbConfirmation({
+            isOpen: true,
+            title: `Update ${fieldLabel}`,
+            description: 'This will make changes from database as well.',
+            fieldName: fieldLabel,
+            oldValue: currentDisplayVal || 'None / Not set',
+            newValue: newDisplayVal || 'None / Not set',
+            onConfirm: async () => {
+                const lead = leads.find(l => l.id === leadId) || selectedInspectorLead;
+                const existingConsent = getLatestByCreatedAt(lead?.client_consents);
+
+                let updatedConsent: any = null;
+                if (existingConsent?.id) {
+                    const { data, error } = await supabase
+                        .from('client_consents')
+                        .update({ [field]: newValue })
+                        .eq('id', existingConsent.id)
+                        .select()
+                        .single();
+                    if (error) throw error;
+                    updatedConsent = data;
+                } else {
+                    const { data, error } = await supabase
+                        .from('client_consents')
+                        .insert([{
+                            lead_id: leadId,
+                            phone: lead?.whatsapp_number || lead?.phone || '',
+                            [field]: newValue,
+                            terms_accepted: field === 'terms_accepted' ? newValue : true,
+                        }])
+                        .select()
+                        .single();
+                    if (error) throw error;
+                    updatedConsent = data;
+                }
+
+                // If relative_name or patient_name, sync crm_leads name and clients client_name
+                if (field === 'relative_name' || field === 'patient_name') {
+                    await supabase.from('crm_leads').update({ name: newValue }).eq('id', leadId);
+                    try {
+                        await supabase.from('clients').update({ client_name: newValue }).eq('id', leadId);
+                    } catch (clErr) {
+                        console.warn(clErr);
+                    }
+                }
+
+                // If service_category, sync crm_leads service_interest
+                if (field === 'service_category') {
+                    await supabase.from('crm_leads').update({ service_interest: newValue }).eq('id', leadId);
+                }
+
+                // If offered_time, sync crm_leads shift_type
+                if (field === 'offered_time') {
+                    await supabase.from('crm_leads').update({ shift_type: newValue }).eq('id', leadId);
+                }
+
+                // Sync state
+                setSelectedInspectorLead((prev: any) => {
+                    if (!prev || prev.id !== leadId) return prev;
+                    const prevConsents = (prev.client_consents || []).filter((c: any) => c.id !== updatedConsent?.id);
+                    return {
+                        ...prev,
+                        client_consents: updatedConsent ? [updatedConsent, ...prevConsents] : prev.client_consents,
+                        ...(field === 'relative_name' || field === 'patient_name' ? { name: newValue } : {}),
+                        ...(field === 'service_category' ? { service_interest: newValue } : {}),
+                        ...(field === 'offered_time' ? { shift_type: newValue } : {}),
+                    };
+                });
+
+                setLeads(prev => prev.map(l => {
+                    if (l.id !== leadId) return l;
+                    const prevConsents = (l.client_consents || []).filter((c: any) => c.id !== updatedConsent?.id);
+                    return {
+                        ...l,
+                        client_consents: updatedConsent ? [updatedConsent, ...prevConsents] : l.client_consents,
+                        ...(field === 'relative_name' || field === 'patient_name' ? { name: newValue } : {}),
+                        ...(field === 'service_category' ? { service_interest: newValue } : {}),
+                        ...(field === 'offered_time' ? { shift_type: newValue } : {}),
+                    };
+                }));
+
+                setEditingInspectorConsentField(null);
+                setInspectorConsentDraft('');
+                toast.success(`${fieldLabel} updated in database!`);
+            }
+        });
+    };
+
+    const handleUpdateInspectorPhoneWithConfirm = (leadId: string, newPhone: string, currentPhone: string) => {
+        if (!newPhone.trim()) {
+            setEditingInspectorPhone(false);
+            return;
+        }
+        setPendingDbConfirmation({
+            isOpen: true,
+            title: 'Update Phone Number',
+            description: 'This will make changes from database as well.',
+            fieldName: 'Phone Number',
+            oldValue: currentPhone || 'None',
+            newValue: newPhone.trim(),
+            onConfirm: async () => {
+                await supabase.from('crm_leads').update({
+                    phone: newPhone.trim(),
+                    whatsapp_number: newPhone.trim(),
+                }).eq('id', leadId);
+
+                try {
+                    await supabase.from('clients').update({ phone_number: newPhone.trim() }).eq('id', leadId);
+                } catch (e) {
+                    console.warn(e);
+                }
+
+                setSelectedInspectorLead((prev: any) => prev ? { ...prev, phone: newPhone.trim(), whatsapp_number: newPhone.trim() } : null);
+                setLeads(prev => prev.map(l => l.id === leadId ? { ...l, phone: newPhone.trim(), whatsapp_number: newPhone.trim() } : l));
+                setEditingInspectorPhone(false);
+                toast.success('Phone number updated in database!');
+            }
+        });
+    };
+
+    const handleUpdateInspectorEmailWithConfirm = (leadId: string, newEmail: string, currentEmail: string) => {
+        setPendingDbConfirmation({
+            isOpen: true,
+            title: 'Update Email Address',
+            description: 'This will make changes from database as well.',
+            fieldName: 'Email Address',
+            oldValue: currentEmail || 'None',
+            newValue: newEmail.trim() || 'None',
+            onConfirm: async () => {
+                await supabase.from('crm_leads').update({ email: newEmail.trim() || null }).eq('id', leadId);
+                try {
+                    await supabase.from('clients').update({ email: newEmail.trim() || null }).eq('id', leadId);
+                } catch (e) {
+                    console.warn(e);
+                }
+
+                setSelectedInspectorLead((prev: any) => prev ? { ...prev, email: newEmail.trim() } : null);
+                setLeads(prev => prev.map(l => l.id === leadId ? { ...l, email: newEmail.trim() } : l));
+                setEditingInspectorEmail(false);
+                toast.success('Email updated in database!');
+            }
+        });
+    };
+
+    const handleUpdateLeadValueWithConfirm = (leadId: string, newAmountStr: string, currentAmount: number) => {
+        const newValue = parseInt(newAmountStr.replace(/\D/g, ''), 10);
+        if (isNaN(newValue)) {
+            setEditingLeadValueId(null);
+            return;
+        }
+
+        setPendingDbConfirmation({
+            isOpen: true,
+            title: 'Update Monthly Lead Value',
+            description: 'This will make changes from database as well.',
+            fieldName: 'Monthly Lead Value',
+            oldValue: `₹${Number(currentAmount || 0).toLocaleString('en-IN')}`,
+            newValue: `₹${Number(newValue).toLocaleString('en-IN')}`,
+            onConfirm: async () => {
+                const { error } = await supabase
+                    .from('crm_leads')
+                    .update({ estimated_value_monthly: newValue })
+                    .eq('id', leadId);
+                if (error) throw error;
+
+                setSelectedInspectorLead((prev: any) => prev ? {
+                    ...prev,
+                    estimated_value_monthly: newValue,
+                    valueAmount: newValue,
+                    value: `₹${newValue.toLocaleString('en-IN')}/mo`
+                } : null);
+
+                setLeads(prev => prev.map(l => l.id === leadId ? { ...l, estimated_value_monthly: newValue } : l));
+                setEditingLeadValueId(null);
+                toast.success('Monthly value updated in database!');
+            }
+        });
+    };
 
     // Kanban Accordion State
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
@@ -2510,11 +3000,6 @@ export default function CRM() {
         if (raw.includes('24') || raw.includes('live')) return '24 Hours (Live-in)';
         if (raw.includes('10') || raw.includes('12') || raw.includes('day') || raw.includes('night')) return '10 Hours';
         return raw ? 'Other' : '';
-    };
-
-    const getLatestByCreatedAt = (items?: any[]) => {
-        if (!items || items.length === 0) return null;
-        return [...items].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
     };
 
     const buildConsentFlowPrefill = (lead: any, extra: Record<string, string> = {}) =>
@@ -4783,6 +5268,40 @@ export default function CRM() {
                                                                                 <span className="text-[10px] text-slate-400 shrink-0 ml-2">{getRelativeTime(item.created_at)}</span>
                                                                             </div>
 
+                                                                            {/* Row 3: Rates & Quick Edit */}
+                                                                            {(() => {
+                                                                                const lQuote = item.crm_quotations?.[0];
+                                                                                const cRate = item.complete_month_daily_rate || lQuote?.complete_month_rate || item.services?.[0]?.complete_month_daily_rate;
+                                                                                const incRate = item.incomplete_month_daily_rate || lQuote?.incomplete_month_rate || item.services?.[0]?.incomplete_month_daily_rate;
+
+                                                                                return (
+                                                                                    <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100 text-[10px]">
+                                                                                        <div className="flex items-center gap-1 flex-wrap">
+                                                                                            {cRate ? (
+                                                                                                <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[9px]">
+                                                                                                    Full: ₹{Number(cRate).toLocaleString('en-IN')}/d
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                            {incRate ? (
+                                                                                                <span className="font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[9px]">
+                                                                                                    Part: ₹{Number(incRate).toLocaleString('en-IN')}/d
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                        </div>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                openQuickEdit(item);
+                                                                                            }}
+                                                                                            className="text-primary hover:underline font-bold text-[10px] flex items-center gap-0.5 shrink-0 ml-auto cursor-pointer"
+                                                                                        >
+                                                                                            <Edit3 className="w-2.5 h-2.5" /> Edit Info
+                                                                                        </button>
+                                                                                    </div>
+                                                                                );
+                                                                            })()}
+
                                                                             {col.title === 'Closed Won' && (
                                                                                 <button
                                                                                     type="button"
@@ -4800,15 +5319,28 @@ export default function CRM() {
                                                                         {/* ── DESKTOP FULL CARD (sm+) ── */}
                                                                         <div className="hidden sm:flex flex-col flex-1">
                                                                             <div className="p-4 flex flex-col gap-3 flex-1">
-                                                                                {/* Row 1: Avatar + Name + Priority */}
+                                                                                {/* Row 1: Avatar + Name + Priority + Quick Edit */}
                                                                                 <div className="flex items-start gap-3">
                                                                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(item.name)}`}>
                                                                                         {getInitials(item.name)}
                                                                                     </div>
                                                                                     <div className="flex-1 min-w-0">
-                                                                                        <p className="text-sm font-bold text-slate-900 truncate leading-tight">
-                                                                                            {item.name}
-                                                                                        </p>
+                                                                                        <div className="flex items-center justify-between gap-1">
+                                                                                            <p className="text-sm font-bold text-slate-900 truncate leading-tight">
+                                                                                                {item.name}
+                                                                                            </p>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    openQuickEdit(item);
+                                                                                                }}
+                                                                                                className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                                                                                                title="Quick edit lead info & rates"
+                                                                                            >
+                                                                                                <Edit3 className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                        </div>
                                                                                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                                                                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
                                                                                                 {priorityMeta.label}
@@ -4887,6 +5419,44 @@ export default function CRM() {
                                                                                         </div>
                                                                                     )}
                                                                                 </div>
+                                                                                {/* Rates Row */}
+                                                                                {(() => {
+                                                                                    const lQuote = item.crm_quotations?.[0];
+                                                                                    const cRate = item.complete_month_daily_rate || lQuote?.complete_month_rate || item.services?.[0]?.complete_month_daily_rate;
+                                                                                    const incRate = item.incomplete_month_daily_rate || lQuote?.incomplete_month_rate || item.services?.[0]?.incomplete_month_daily_rate;
+
+                                                                                    return (
+                                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                            {cRate ? (
+                                                                                                <span
+                                                                                                    onClick={(e) => { e.stopPropagation(); openQuickEdit(item); }}
+                                                                                                    title="Click to edit Full Month Rate"
+                                                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                                                                                >
+                                                                                                    <TrendingUp className="w-2.5 h-2.5 text-emerald-600" /> Full: ₹{Number(cRate).toLocaleString('en-IN')}/d
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                            {incRate ? (
+                                                                                                <span
+                                                                                                    onClick={(e) => { e.stopPropagation(); openQuickEdit(item); }}
+                                                                                                    title="Click to edit Partial Month Rate"
+                                                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                                                                                                >
+                                                                                                    <TrendingUp className="w-2.5 h-2.5 text-blue-600" /> Part: ₹{Number(incRate).toLocaleString('en-IN')}/d
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                            {(!cRate && !incRate) && (
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => { e.stopPropagation(); openQuickEdit(item); }}
+                                                                                                    className="w-full py-1 px-2 bg-slate-50 hover:bg-primary/5 text-slate-500 hover:text-primary border border-dashed border-slate-300 hover:border-primary/40 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                                                                                >
+                                                                                                    <Plus className="w-2.5 h-2.5 text-primary" /> Set Rates / Care Info
+                                                                                                </button>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })()}
                                                                                 {/* Phone row */}
                                                                                 <div className="flex items-center gap-2">
                                                                                     <span className="text-xs text-slate-600 truncate flex items-center gap-1">
@@ -6384,15 +6954,17 @@ export default function CRM() {
                                                 value={inspectorPhoneDraft}
                                                 onChange={e => setInspectorPhoneDraft(e.target.value)}
                                                 onKeyDown={e => {
-                                                    if (e.key === 'Enter') { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? { ...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft } : null); }
+                                                    if (e.key === 'Enter') {
+                                                        handleUpdateInspectorPhoneWithConfirm(selectedInspectorLead.id, inspectorPhoneDraft, selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '');
+                                                    }
                                                     if (e.key === 'Escape') setEditingInspectorPhone(false);
                                                 }}
                                                 className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
                                                 placeholder="Phone number"
                                             />
                                             <button
-                                                onClick={() => { handleUpdateLeadDetails(selectedInspectorLead.id, inspectorNameDraft, inspectorPhoneDraft); setEditingInspectorPhone(false); setSelectedInspectorLead((prev: any) => prev ? { ...prev, whatsapp_number: inspectorPhoneDraft, phone: inspectorPhoneDraft } : null); }}
-                                                className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
+                                                onClick={() => handleUpdateInspectorPhoneWithConfirm(selectedInspectorLead.id, inspectorPhoneDraft, selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || '')}
+                                                className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm cursor-pointer"
                                             >
                                                 <Check className="w-3.5 h-3.5" />
                                             </button>
@@ -6407,7 +6979,7 @@ export default function CRM() {
                                             </span>
                                             <button
                                                 onClick={() => { setInspectorNameDraft(selectedInspectorLead.name); setInspectorPhoneDraft(selectedInspectorLead.whatsapp_number || selectedInspectorLead.phone || ''); setEditingInspectorPhone(true); }}
-                                                className="opacity-0 group-hover/inspphone:opacity-100 p-1 text-slate-400 hover:text-primary transition-all"
+                                                className="opacity-0 group-hover/inspphone:opacity-100 p-1 text-slate-400 hover:text-primary transition-all cursor-pointer"
                                             >
                                                 <Edit3 className="w-3 h-3" />
                                             </button>
@@ -6424,13 +6996,18 @@ export default function CRM() {
                                                 type="email"
                                                 value={inspectorEmailDraft}
                                                 onChange={e => setInspectorEmailDraft(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter') { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); } if (e.key === 'Escape') setEditingInspectorEmail(false); }}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        handleUpdateInspectorEmailWithConfirm(selectedInspectorLead.id, inspectorEmailDraft, selectedInspectorLead.email || '');
+                                                    }
+                                                    if (e.key === 'Escape') setEditingInspectorEmail(false);
+                                                }}
                                                 className="text-sm text-right bg-white border border-primary/30 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary w-40"
                                                 placeholder="email@example.com"
                                             />
                                             <button
-                                                onClick={() => { saveInspectorField(selectedInspectorLead.id, 'email', inspectorEmailDraft); setEditingInspectorEmail(false); }}
-                                                className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
+                                                onClick={() => handleUpdateInspectorEmailWithConfirm(selectedInspectorLead.id, inspectorEmailDraft, selectedInspectorLead.email || '')}
+                                                className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm cursor-pointer"
                                             >
                                                 <Check className="w-3.5 h-3.5" />
                                             </button>
@@ -6453,68 +7030,521 @@ export default function CRM() {
                             </div>
                         </div>
 
-                        {/* ── Patient & Consent Details ──────────────────────────── */}
-                        {selectedInspectorLead.client_consents && selectedInspectorLead.client_consents.length > 0 && (() => {
+                        {/* ── Patient & Care Details (Always Visible & Directly Editable) ──────────────────────────── */}
+                        {(() => {
                             const consent = getLatestByCreatedAt(selectedInspectorLead.client_consents);
-                            const startDate = consent?.service_start_date
+                            const startDateFormatted = consent?.service_start_date
                                 ? new Date(consent.service_start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                                 : '—';
+                            const leadId = selectedInspectorLead.id;
 
                             return (
                                 <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Patient & Care Details</p>
+                                    <div className="flex items-center justify-between mb-2 mt-4">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Patient & Care Details</p>
+                                        <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                            Directly Editable
+                                        </span>
+                                    </div>
                                     <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Relative Name</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.relative_name || '—'}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Patient Name</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.patient_name || '—'}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Patient Phone</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.contact_number || '—'}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">
-                                                {consent?.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}` : '—'}
-                                                {consent?.weight ? `, ${consent.weight} kg` : ''}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Alternate Phone</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.alternate_contact_number || '—'}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Service</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.service_category || '—'}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Offered Time</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.offered_time || '—'}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Start Date</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{startDate}</span>
-                                        </div>
-                                        <div className="flex items-start justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium shrink-0">Address</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right max-w-[320px] whitespace-pre-wrap break-words leading-relaxed" title={consent?.address}>
-                                                {consent?.address || '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 px-4 py-3">
-                                            <span className="text-sm text-slate-500 font-medium">Referred By</span>
-                                            <span className="text-sm font-semibold text-slate-800 text-right">{consent?.reference_by || '—'}</span>
-                                        </div>
+                                        
+                                        {/* Relative Name */}
+                                        {editingInspectorConsentField === 'relative_name' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Relative Name</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[220px] justify-end">
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleSaveConsentField(leadId, 'relative_name', inspectorConsentDraft.trim(), 'Relative Name', consent?.relative_name || '—', inspectorConsentDraft.trim());
+                                                            if (e.key === 'Escape') setEditingInspectorConsentField(null);
+                                                        }}
+                                                        className="text-sm bg-white border border-primary/40 rounded-lg px-2.5 py-1 outline-none w-full"
+                                                        placeholder="Relative name"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'relative_name', inspectorConsentDraft.trim(), 'Relative Name', consent?.relative_name || '—', inspectorConsentDraft.trim())}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Relative Name</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.relative_name ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.relative_name || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('relative_name');
+                                                            setInspectorConsentDraft(consent?.relative_name || selectedInspectorLead.name || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Relative Name"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Patient Name */}
+                                        {editingInspectorConsentField === 'patient_name' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Patient Name</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[220px] justify-end">
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleSaveConsentField(leadId, 'patient_name', inspectorConsentDraft.trim(), 'Patient Name', consent?.patient_name || '—', inspectorConsentDraft.trim());
+                                                            if (e.key === 'Escape') setEditingInspectorConsentField(null);
+                                                        }}
+                                                        className="text-sm bg-white border border-primary/40 rounded-lg px-2.5 py-1 outline-none w-full"
+                                                        placeholder="Patient name"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'patient_name', inspectorConsentDraft.trim(), 'Patient Name', consent?.patient_name || '—', inspectorConsentDraft.trim())}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Patient Name</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.patient_name ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.patient_name || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('patient_name');
+                                                            setInspectorConsentDraft(consent?.patient_name || selectedInspectorLead.name || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Patient Name"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Patient Phone */}
+                                        {editingInspectorConsentField === 'contact_number' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Patient Phone</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[220px] justify-end">
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleSaveConsentField(leadId, 'contact_number', inspectorConsentDraft.trim(), 'Patient Phone', consent?.contact_number || '—', inspectorConsentDraft.trim());
+                                                            if (e.key === 'Escape') setEditingInspectorConsentField(null);
+                                                        }}
+                                                        className="text-sm bg-white border border-primary/40 rounded-lg px-2.5 py-1 outline-none w-full"
+                                                        placeholder="Patient phone"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'contact_number', inspectorConsentDraft.trim(), 'Patient Phone', consent?.contact_number || '—', inspectorConsentDraft.trim())}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Patient Phone</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.contact_number ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.contact_number || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('contact_number');
+                                                            setInspectorConsentDraft(consent?.contact_number || selectedInspectorLead.phone || selectedInspectorLead.whatsapp_number || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Patient Phone"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Age & Weight */}
+                                        {editingInspectorConsentField === 'age_weight' ? (
+                                            <div className="flex flex-col gap-2 px-4 py-3 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Age & Weight</span>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        className="text-sm bg-white border border-primary/40 rounded-lg px-2.5 py-1 outline-none flex-1"
+                                                        placeholder="Age (e.g. 1 yrs or 6 months)"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'age', inspectorConsentDraft.trim(), 'Age', consent?.age ? `${consent.age} ${consent.age_unit || 'yrs'}` : '—', inspectorConsentDraft.trim())}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.age || consent?.weight ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}` : '—'}
+                                                        {consent?.weight ? `, ${consent.weight} kg` : ''}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('age_weight');
+                                                            setInspectorConsentDraft(consent?.age ? `${consent.age} ${consent.age_unit || 'yrs'}` : '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Age & Weight"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Alternate Phone */}
+                                        {editingInspectorConsentField === 'alternate_contact_number' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Alternate Phone</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[220px] justify-end">
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleSaveConsentField(leadId, 'alternate_contact_number', inspectorConsentDraft.trim(), 'Alternate Phone', consent?.alternate_contact_number || '—', inspectorConsentDraft.trim());
+                                                            if (e.key === 'Escape') setEditingInspectorConsentField(null);
+                                                        }}
+                                                        className="text-sm bg-white border border-primary/40 rounded-lg px-2.5 py-1 outline-none w-full"
+                                                        placeholder="Alternate phone"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'alternate_contact_number', inspectorConsentDraft.trim(), 'Alternate Phone', consent?.alternate_contact_number || '—', inspectorConsentDraft.trim())}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Alternate Phone</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.alternate_contact_number ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.alternate_contact_number || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('alternate_contact_number');
+                                                            setInspectorConsentDraft(consent?.alternate_contact_number || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Alternate Phone"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Service */}
+                                        {editingInspectorConsentField === 'service_category' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Service</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[240px] justify-end">
+                                                    <select
+                                                        autoFocus
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        className="text-xs font-semibold bg-white border border-primary/40 rounded-lg px-2.5 py-1.5 outline-none w-full"
+                                                    >
+                                                        <option value="">Select Service...</option>
+                                                        <option value="New Born Baby Care">New Born Baby Care</option>
+                                                        <option value="Patient Care">Patient Care</option>
+                                                        <option value="Old Age Care">Old Age Care</option>
+                                                        <option value="Nursing Care">Nursing Care</option>
+                                                        <option value="Maternity Care">Maternity Care</option>
+                                                        <option value="Baby Care">Baby Care</option>
+                                                        <option value="Japa Care (Post-Delivery)">Japa Care (Post-Delivery)</option>
+                                                    </select>
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'service_category', inspectorConsentDraft, 'Service Category', consent?.service_category || '—', inspectorConsentDraft)}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Service</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.service_category || selectedInspectorLead.service_interest ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.service_category || selectedInspectorLead.service_interest || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('service_category');
+                                                            setInspectorConsentDraft(consent?.service_category || selectedInspectorLead.service_interest || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Service Category"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Offered Time */}
+                                        {editingInspectorConsentField === 'offered_time' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Offered Time</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[240px] justify-end">
+                                                    <select
+                                                        autoFocus
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        className="text-xs font-semibold bg-white border border-primary/40 rounded-lg px-2.5 py-1.5 outline-none w-full"
+                                                    >
+                                                        <option value="">Select Shift...</option>
+                                                        <option value="10 Hours">10 Hours</option>
+                                                        <option value="10-Hour Shift">10-Hour Shift</option>
+                                                        <option value="12 Hours">12 Hours</option>
+                                                        <option value="12-Hour Shift">12-Hour Shift</option>
+                                                        <option value="24 Hours (Live-in)">24 Hours (Live-in)</option>
+                                                        <option value="24-Hour Shift">24-Hour Shift</option>
+                                                    </select>
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'offered_time', inspectorConsentDraft, 'Offered Time / Shift', consent?.offered_time || '—', inspectorConsentDraft)}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Offered Time</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.offered_time || selectedInspectorLead.shift_type ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.offered_time || selectedInspectorLead.shift_type || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('offered_time');
+                                                            setInspectorConsentDraft(consent?.offered_time || selectedInspectorLead.shift_type || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Offered Time"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Start Date */}
+                                        {editingInspectorConsentField === 'service_start_date' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Start Date</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[220px] justify-end">
+                                                    <input
+                                                        autoFocus
+                                                        type="date"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        className="text-xs font-semibold bg-white border border-primary/40 rounded-lg px-2 py-1 outline-none w-full"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'service_start_date', inspectorConsentDraft, 'Start Date', startDateFormatted || '—', inspectorConsentDraft)}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Start Date</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.service_start_date ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {startDateFormatted}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('service_start_date');
+                                                            setInspectorConsentDraft(consent?.service_start_date ? String(consent.service_start_date).slice(0, 10) : '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Start Date"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Address */}
+                                        {editingInspectorConsentField === 'address' ? (
+                                            <div className="flex flex-col gap-2 px-4 py-3 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Address</span>
+                                                <textarea
+                                                    autoFocus
+                                                    rows={2}
+                                                    value={inspectorConsentDraft}
+                                                    onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                    className="text-xs bg-white border border-primary/40 rounded-lg p-2 outline-none w-full"
+                                                    placeholder="Enter address"
+                                                />
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'address', inspectorConsentDraft.trim(), 'Address', consent?.address || '—', inspectorConsentDraft.trim())}
+                                                        className="px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-xs font-bold cursor-pointer"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="px-3 py-1 bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-start justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium shrink-0">Address</span>
+                                                <div className="flex items-start gap-2 text-right">
+                                                    <span className={`text-sm font-semibold max-w-[280px] whitespace-pre-wrap break-words leading-relaxed ${consent?.address ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.address || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('address');
+                                                            setInspectorConsentDraft(consent?.address || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100 shrink-0"
+                                                        title="Edit Address"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Referred By */}
+                                        {editingInspectorConsentField === 'reference_by' ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-primary/5">
+                                                <span className="text-sm font-semibold text-slate-700">Referred By</span>
+                                                <div className="flex items-center gap-1.5 flex-1 max-w-[220px] justify-end">
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={inspectorConsentDraft}
+                                                        onChange={e => setInspectorConsentDraft(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleSaveConsentField(leadId, 'reference_by', inspectorConsentDraft.trim(), 'Referred By', consent?.reference_by || '—', inspectorConsentDraft.trim());
+                                                            if (e.key === 'Escape') setEditingInspectorConsentField(null);
+                                                        }}
+                                                        className="text-sm bg-white border border-primary/40 rounded-lg px-2.5 py-1 outline-none w-full"
+                                                        placeholder="Referred by (e.g. Google, Doctor)"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveConsentField(leadId, 'reference_by', inspectorConsentDraft.trim(), 'Referred By', consent?.reference_by || '—', inspectorConsentDraft.trim())}
+                                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => setEditingInspectorConsentField(null)} className="p-1.5 bg-slate-200 text-slate-600 rounded-lg cursor-pointer shrink-0">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
+                                                <span className="text-sm text-slate-500 font-medium">Referred By</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-semibold ${consent?.reference_by ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                        {consent?.reference_by || '—'}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingInspectorConsentField('reference_by');
+                                                            setInspectorConsentDraft(consent?.reference_by || '');
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
+                                                        title="Edit Referred By"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Terms */}
                                         <div className="flex items-center justify-between gap-4 px-4 py-3">
                                             <span className="text-sm text-slate-500 font-medium">Terms</span>
-                                            <span className={`text-sm font-semibold text-right ${consent?.terms_accepted ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                                {consent?.terms_accepted ? 'Accepted' : 'Not accepted'}
-                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const nextVal = !consent?.terms_accepted;
+                                                    handleSaveConsentField(leadId, 'terms_accepted', nextVal, 'Terms Status', consent?.terms_accepted ? 'Accepted' : 'Not accepted', nextVal ? 'Accepted' : 'Not accepted');
+                                                }}
+                                                className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${consent?.terms_accepted ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'}`}
+                                            >
+                                                {consent?.terms_accepted ? 'Accepted ✓' : 'Not accepted ✕'}
+                                            </button>
                                         </div>
+
                                         {consent?.other_details && (
                                             <div className="px-4 py-3">
                                                 <span className="block text-sm text-slate-500 font-medium mb-1">Other Details</span>
@@ -6580,21 +7610,19 @@ export default function CRM() {
                                     <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> {valueLabel}</span>
                                     {editingLeadValueId === selectedInspectorLead.id ? (
                                         <div className="flex items-center gap-1.5">
-                                            <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden">
-                                                <span className="text-primary text-sm font-semibold pl-2">₹</span>
+                                            <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden px-1">
+                                                <span className="text-primary text-sm font-semibold pl-1">₹</span>
                                                 <input
                                                     type="text"
                                                     value={editingLeadValueAmount}
                                                     onChange={e => setEditingLeadValueAmount(e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
-                                                            handleUpdateLeadValue(selectedInspectorLead.id);
-                                                            const amt = parseFloat(editingLeadValueAmount) || 0;
-                                                            setSelectedInspectorLead((prev: any) => prev ? {
-                                                                ...prev,
-                                                                valueAmount: amt,
-                                                                value: formatLeadValueDisplay(amt, inspectorServiceDays),
-                                                            } : null);
+                                                            handleUpdateLeadValueWithConfirm(
+                                                                selectedInspectorLead.id,
+                                                                editingLeadValueAmount,
+                                                                selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0
+                                                            );
                                                         }
                                                         if (e.key === 'Escape') setEditingLeadValueId(null);
                                                     }}
@@ -6604,27 +7632,48 @@ export default function CRM() {
                                             </div>
                                             <button
                                                 onClick={() => {
-                                                    handleUpdateLeadValue(selectedInspectorLead.id);
-                                                    const amt = parseFloat(editingLeadValueAmount) || 0;
-                                                    setSelectedInspectorLead((prev: any) => prev ? {
-                                                        ...prev,
-                                                        valueAmount: amt,
-                                                        value: formatLeadValueDisplay(amt, inspectorServiceDays),
-                                                    } : null);
+                                                    handleUpdateLeadValueWithConfirm(
+                                                        selectedInspectorLead.id,
+                                                        editingLeadValueAmount,
+                                                        selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0
+                                                    );
                                                 }}
                                                 className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 shadow-sm"
+                                                title="Save Monthly Value"
                                             >
                                                 <Check className="w-3.5 h-3.5" />
                                             </button>
+                                            <button
+                                                onClick={() => setEditingLeadValueId(null)}
+                                                className="p-1 bg-slate-200 text-slate-600 rounded-md hover:bg-slate-300"
+                                                title="Cancel"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
                                     ) : (
-                                        <span
-                                            className="text-sm font-bold text-primary cursor-pointer hover:scale-105 transition-transform inline-block"
-                                            title="Double-tap to edit"
-                                            onDoubleClick={() => { setEditingLeadValueId(selectedInspectorLead.id); setEditingLeadValueAmount(selectedInspectorLead.valueAmount?.toString() || '0'); }}
-                                        >
-                                            {selectedInspectorLead.value || formatLeadValueDisplay(0, inspectorServiceDays)}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                className="text-sm font-bold text-primary cursor-pointer hover:underline"
+                                                title="Click to edit value"
+                                                onClick={() => {
+                                                    setEditingLeadValueId(selectedInspectorLead.id);
+                                                    setEditingLeadValueAmount((selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0).toString());
+                                                }}
+                                            >
+                                                {selectedInspectorLead.value || formatLeadValueDisplay(selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0, inspectorServiceDays)}
+                                            </span>
+                                            <button
+                                                onClick={() => {
+                                                    setEditingLeadValueId(selectedInspectorLead.id);
+                                                    setEditingLeadValueAmount((selectedInspectorLead.valueAmount || selectedInspectorLead.estimated_value_monthly || 0).toString());
+                                                }}
+                                                className="p-1 text-slate-400 hover:text-primary hover:bg-primary/10 rounded transition-colors"
+                                                title="Edit Monthly Value"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                                     );
@@ -6632,23 +7681,124 @@ export default function CRM() {
                                 {/* Complete Month Quote & Partial Month Quote */}
                                 {(() => {
                                     const latestQuote = selectedInspectorLead.crm_quotations?.[0];
-                                    const completeRate = selectedInspectorLead.complete_month_daily_rate || latestQuote?.complete_month_rate || selectedInspectorLead.services?.[0]?.complete_month_daily_rate;
-                                    const incompleteRate = selectedInspectorLead.incomplete_month_daily_rate || latestQuote?.incomplete_month_rate || selectedInspectorLead.services?.[0]?.incomplete_month_daily_rate;
+                                    const completeRate = selectedInspectorLead.complete_month_daily_rate || latestQuote?.complete_month_rate || selectedInspectorLead.services?.[0]?.complete_month_daily_rate || 0;
+                                    const incompleteRate = selectedInspectorLead.incomplete_month_daily_rate || latestQuote?.incomplete_month_rate || selectedInspectorLead.services?.[0]?.incomplete_month_daily_rate || 0;
 
                                     return (
                                         <>
-                                            {completeRate ? (
-                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
-                                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Full Month Rate</span>
-                                                    <span className="text-sm font-bold text-slate-800">₹{Number(completeRate).toLocaleString('en-IN')}/day</span>
-                                                </div>
-                                            ) : null}
-                                            {incompleteRate ? (
-                                                <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
-                                                    <span className="flex items-center gap-2 text-sm text-slate-500"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Partial Month Rate</span>
-                                                    <span className="text-sm font-bold text-slate-800">₹{Number(incompleteRate).toLocaleString('en-IN')}/day</span>
-                                                </div>
-                                            ) : null}
+                                            {/* Full Month Rate */}
+                                            <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                                                <span className="flex items-center gap-2 text-sm text-slate-500">
+                                                    <TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Full Month Rate
+                                                </span>
+                                                {editingInspectorRateType === 'complete' ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden px-2 py-0.5">
+                                                            <span className="text-xs text-slate-500 font-semibold mr-1">₹</span>
+                                                            <input
+                                                                type="number"
+                                                                value={inspectorRateDraft}
+                                                                onChange={e => setInspectorRateDraft(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleSaveLeadRate(selectedInspectorLead.id, 'complete', inspectorRateDraft);
+                                                                    if (e.key === 'Escape') setEditingInspectorRateType(null);
+                                                                }}
+                                                                autoFocus
+                                                                placeholder="Rate/day"
+                                                                className="w-20 bg-transparent text-sm font-semibold text-slate-800 outline-none"
+                                                            />
+                                                            <span className="text-[11px] text-slate-400">/day</span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleSaveLeadRate(selectedInspectorLead.id, 'complete', inspectorRateDraft)}
+                                                            className="p-1 bg-emerald-500 text-white rounded hover:bg-emerald-600 shadow-sm"
+                                                            title="Save Full Month Rate"
+                                                        >
+                                                            <Check className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditingInspectorRateType(null)}
+                                                            className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300"
+                                                            title="Cancel"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-sm font-bold ${completeRate ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                            {completeRate ? `₹${Number(completeRate).toLocaleString('en-IN')}/day` : 'Not set'}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditingInspectorRateType('complete');
+                                                                setInspectorRateDraft(completeRate ? String(completeRate) : '');
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-primary hover:bg-primary/10 rounded transition-colors"
+                                                            title="Edit Full Month Rate"
+                                                        >
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Partial Month Rate */}
+                                            <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                                                <span className="flex items-center gap-2 text-sm text-slate-500">
+                                                    <TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Partial Month Rate
+                                                </span>
+                                                {editingInspectorRateType === 'incomplete' ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="flex items-center bg-white rounded border border-primary/30 overflow-hidden px-2 py-0.5">
+                                                            <span className="text-xs text-slate-500 font-semibold mr-1">₹</span>
+                                                            <input
+                                                                type="number"
+                                                                value={inspectorRateDraft}
+                                                                onChange={e => setInspectorRateDraft(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleSaveLeadRate(selectedInspectorLead.id, 'incomplete', inspectorRateDraft);
+                                                                    if (e.key === 'Escape') setEditingInspectorRateType(null);
+                                                                }}
+                                                                autoFocus
+                                                                placeholder="Rate/day"
+                                                                className="w-20 bg-transparent text-sm font-semibold text-slate-800 outline-none"
+                                                            />
+                                                            <span className="text-[11px] text-slate-400">/day</span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleSaveLeadRate(selectedInspectorLead.id, 'incomplete', inspectorRateDraft)}
+                                                            className="p-1 bg-emerald-500 text-white rounded hover:bg-emerald-600 shadow-sm"
+                                                            title="Save Partial Month Rate"
+                                                        >
+                                                            <Check className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditingInspectorRateType(null)}
+                                                            className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300"
+                                                            title="Cancel"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-sm font-bold ${incompleteRate ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                            {incompleteRate ? `₹${Number(incompleteRate).toLocaleString('en-IN')}/day` : 'Not set'}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditingInspectorRateType('incomplete');
+                                                                setInspectorRateDraft(incompleteRate ? String(incompleteRate) : '');
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-primary hover:bg-primary/10 rounded transition-colors"
+                                                            title="Edit Partial Month Rate"
+                                                        >
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </>
                                     );
                                 })()}
@@ -8077,6 +9227,320 @@ export default function CRM() {
                     }}
                 />
             )}
+
+            {/* ── Direct Database Update Confirmation Modal ────────────── */}
+            {pendingDbConfirmation &&
+                createPortal(
+                    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-amber-200 overflow-hidden animate-in zoom-in-95 duration-200">
+                            {/* Warning Header */}
+                            <div className="p-5 border-b border-amber-100 bg-amber-50 flex items-center gap-3">
+                                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0 text-amber-600">
+                                    <AlertTriangle className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                                        Database Update Confirmation
+                                    </h3>
+                                    <p className="text-xs text-amber-800 font-medium mt-0.5">
+                                        ⚠️ This will make changes from database as well.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Body Details */}
+                            <div className="p-5 space-y-4">
+                                <div>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                        Field to Modify
+                                    </p>
+                                    <p className="text-sm font-semibold text-slate-800">
+                                        {pendingDbConfirmation.fieldName || pendingDbConfirmation.title}
+                                    </p>
+                                </div>
+
+                                {/* Comparison Box */}
+                                <div className="grid grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Current (Database)</span>
+                                        <div className="p-2 bg-white rounded-lg border border-slate-200 text-slate-600 font-medium break-words">
+                                            {String(pendingDbConfirmation.oldValue || 'None / Not set')}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">New Value</span>
+                                        <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-800 font-bold break-words">
+                                            {String(pendingDbConfirmation.newValue || 'None / Not set')}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/60 text-xs text-amber-900 leading-relaxed flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                    <span>
+                                        Confirming will permanently update the database records in Supabase (including linked lead, client profile, and active services).
+                                    </span>
+                                </div>
+
+                                {/* Buttons */}
+                                <div className="flex items-center gap-3 pt-2">
+                                    <button
+                                        type="button"
+                                        disabled={pendingDbConfirmation.loading}
+                                        onClick={() => setPendingDbConfirmation(null)}
+                                        className="flex-1 py-2.5 px-4 bg-white border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={pendingDbConfirmation.loading}
+                                        onClick={async () => {
+                                            try {
+                                                setPendingDbConfirmation(prev => prev ? { ...prev, loading: true } : null);
+                                                await pendingDbConfirmation.onConfirm();
+                                                setPendingDbConfirmation(null);
+                                            } catch (err: any) {
+                                                console.error('Confirmation error:', err);
+                                                toast.error(err.message || 'Failed to update database');
+                                                setPendingDbConfirmation(prev => prev ? { ...prev, loading: false } : null);
+                                            }
+                                        }}
+                                        className="flex-1 py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2"
+                                    >
+                                        {pendingDbConfirmation.loading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" /> Updating...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Check className="w-4 h-4" /> Confirm & Save
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+            {/* ── Quick Edit Lead & Rates Modal ───────────────────────── */}
+            {quickEditLead &&
+                createPortal(
+                    <div className="fixed inset-0 z-[350] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden my-auto animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+                            {/* Header */}
+                            <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary shrink-0">
+                                        <Edit3 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-base">
+                                            Quick Edit Lead & Rates
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            {quickEditLead.name} • {quickEditLead.whatsapp_number || quickEditLead.phone || 'No phone'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setQuickEditLead(null)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Body Form */}
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handleSaveQuickEdit();
+                                }}
+                                className="p-5 overflow-y-auto space-y-4 flex-1"
+                            >
+                                {/* Database notice badge */}
+                                <div className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed">
+                                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                    <span>
+                                        <strong>Direct Database Sync:</strong> Changes saved here will be verified with a confirmation prompt before updating Supabase records.
+                                    </span>
+                                </div>
+
+                                {/* Daily Rates Grid */}
+                                <div className="bg-emerald-50/50 border border-emerald-200/80 rounded-xl p-4 space-y-3">
+                                    <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                                        <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> Daily Rates & Lead Value
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                Full Month Rate (₹/day)
+                                            </label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-semibold">₹</span>
+                                                <input
+                                                    type="number"
+                                                    value={quickEditForm.completeMonthDailyRate}
+                                                    onChange={e => setQuickEditForm(prev => ({ ...prev, completeMonthDailyRate: e.target.value }))}
+                                                    placeholder="e.g. 1000"
+                                                    className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-sm font-semibold text-slate-800"
+                                                />
+                                            </div>
+                                            {quickEditForm.completeMonthDailyRate && !isNaN(Number(quickEditForm.completeMonthDailyRate)) && (
+                                                <p className="text-[11px] text-emerald-700 font-medium mt-1">
+                                                    ≈ ₹{(Number(quickEditForm.completeMonthDailyRate) * 30).toLocaleString('en-IN')}/month
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                Partial Month Rate (₹/day)
+                                            </label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-semibold">₹</span>
+                                                <input
+                                                    type="number"
+                                                    value={quickEditForm.incompleteMonthDailyRate}
+                                                    onChange={e => setQuickEditForm(prev => ({ ...prev, incompleteMonthDailyRate: e.target.value }))}
+                                                    placeholder="e.g. 1200"
+                                                    className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white text-sm font-semibold text-slate-800"
+                                                />
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 mt-1">For shorter duration stays</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Service & Shift Selection */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Care Service
+                                        </label>
+                                        <select
+                                            value={quickEditForm.serviceCategory}
+                                            onChange={e => setQuickEditForm(prev => ({ ...prev, serviceCategory: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm font-medium text-slate-800"
+                                        >
+                                            <option value="">Select Service...</option>
+                                            {CARE_SERVICES.map(svc => (
+                                                <option key={svc} value={svc}>{svc}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Shift / Offered Time
+                                        </label>
+                                        <select
+                                            value={quickEditForm.shiftType}
+                                            onChange={e => setQuickEditForm(prev => ({ ...prev, shiftType: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm font-medium text-slate-800"
+                                        >
+                                            <option value="">Select Shift...</option>
+                                            <option value="10 Hours">10 Hours</option>
+                                            <option value="10-Hour Shift">10-Hour Shift</option>
+                                            <option value="12 Hours">12 Hours</option>
+                                            <option value="12-Hour Shift">12-Hour Shift</option>
+                                            <option value="24 Hours (Live-in)">24 Hours (Live-in)</option>
+                                            <option value="24-Hour Shift">24-Hour Shift</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Patient & Relative Names */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Patient Name
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={quickEditForm.patientName}
+                                            onChange={e => setQuickEditForm(prev => ({ ...prev, patientName: e.target.value }))}
+                                            placeholder="Patient full name"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm text-slate-800"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Relative / Contact Person
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={quickEditForm.relativeName}
+                                            onChange={e => setQuickEditForm(prev => ({ ...prev, relativeName: e.target.value }))}
+                                            placeholder="Relative name"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm text-slate-800"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Phone & Planned Start Date */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Patient / Direct Phone
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={quickEditForm.patientPhone}
+                                            onChange={e => setQuickEditForm(prev => ({ ...prev, patientPhone: e.target.value }))}
+                                            placeholder="10-digit phone"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm text-slate-800"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                            Planned Start Date
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={quickEditForm.startDate}
+                                            onChange={e => setQuickEditForm(prev => ({ ...prev, startDate: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm text-slate-800"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Location / Address */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Address / Location
+                                    </label>
+                                    <textarea
+                                        rows={2}
+                                        value={quickEditForm.address}
+                                        onChange={e => setQuickEditForm(prev => ({ ...prev, address: e.target.value }))}
+                                        placeholder="Flat/House no., Area, City..."
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm text-slate-800 resize-none"
+                                    />
+                                </div>
+
+                                {/* Footer Actions */}
+                                <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => setQuickEditLead(null)}
+                                        className="flex-1 py-2.5 px-4 bg-white border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 py-2.5 px-4 bg-[#1AA6A8] hover:bg-[#158587] text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2"
+                                    >
+                                        <Check className="w-4 h-4" /> Save to Database
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>,
+                    document.body
+                )}
         </div>
     );
 }
