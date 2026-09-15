@@ -301,6 +301,9 @@ export default function Clients() {
             }
         }
 
+        // 3. Client currently has active workers assigned
+        if (client.activeWorkerCount > 0) return true;
+
         return false;
     };
 
@@ -523,11 +526,11 @@ export default function Clients() {
             // 1. Fetch leads in client stages WITH their pipeline_stage and service metadata
             // Also include leads with null pipeline_stage (removed from pipeline but still clients)
             const [activeLeadsResult, archivedLeadsResult, trashLeadsResult] = await Promise.all([
-                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role')
+                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role')
                     .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
-                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role')
+                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role')
                     .eq('pipeline_stage', 'Archived'),
-                supabase.from('crm_leads').select('id, pipeline_stage, notes, assigned_worker_role')
+                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role')
                     .eq('pipeline_stage', 'Trash')
             ]);
 
@@ -550,7 +553,33 @@ export default function Clients() {
                 .order('created_at', { ascending: false });
             
             if (clientError) throw clientError;
-            const clientData = allClientsRes || [];
+            const clientData = [...(allClientsRes || [])];
+            const existingClientIds = new Set(clientData.map(c => c.id));
+
+            // Self-heal: If any active lead in CRM is missing from clients table, include and persist it
+            const missingLeads = (activeLeadsResult.data || []).filter(l => !existingClientIds.has(l.id));
+            if (missingLeads.length > 0) {
+                missingLeads.forEach(l => {
+                    const fallbackClient = {
+                        id: l.id,
+                        client_name: l.name,
+                        company_name: null,
+                        phone_number: l.phone || l.whatsapp_number || null,
+                        email: l.email || null,
+                        source: l.source || null,
+                        created_at: l.created_at,
+                    };
+                    clientData.push(fallbackClient);
+                    supabase.from('clients').upsert({
+                        id: l.id,
+                        client_name: l.name,
+                        phone_number: l.phone || l.whatsapp_number || null,
+                        email: l.email || null,
+                        source: l.source || null,
+                        created_at: l.created_at,
+                    }, { onConflict: 'id' }).then();
+                });
+            }
 
             // 3. Fetch worker_assignments with employee status & dates
             const { data: allAssignmentsData, error: assignAllError } = await supabase

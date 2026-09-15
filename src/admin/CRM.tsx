@@ -1703,7 +1703,7 @@ export default function CRM() {
 
     // Bulk greeting removed — greetings are now sent only from individual call cards or the pipeline inspector.
 
-    const computeLeadDepositStatus = (l: any, allAssignments: any[]) => {
+    const computeLeadDepositStatus = (l: any, allAssignments: any[], paidDepositNames?: Set<string>) => {
         const clientServices = (l.services || []) as any[];
         const clientAssignments = (allAssignments || []).filter((a: any) => a.client_id === l.id);
 
@@ -1735,6 +1735,14 @@ export default function CRM() {
                 isDepositPending = true;
                 hasPaidDeposit = false;
             }
+        } else {
+            // If service or assignments are completed/ended, check if deposits were paid or settled, or recorded in payments
+            const anySettledOrCollected = clientServices.some((s: any) => s.deposit_status === 'collected' || s.deposit_status === 'settled');
+            const normName = (l.name || '').trim().toLowerCase();
+            if (anySettledOrCollected || (paidDepositNames && paidDepositNames.has(normName))) {
+                hasPaidDeposit = true;
+                isDepositPending = false;
+            }
         }
 
         return { hasPaidDeposit, isDepositPending };
@@ -1743,7 +1751,7 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const [leadsResult, assignmentsResult] = await Promise.all([
+            const [leadsResult, assignmentsResult, paymentsResult] = await Promise.all([
                 supabase
                     .from('crm_leads')
                     .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, deposit_amount, deposit_status, start_date, created_at, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
@@ -1752,10 +1760,15 @@ export default function CRM() {
                     .order('created_at', { ascending: false }),
                 supabase
                     .from('worker_assignments')
-                    .select('id, client_id, assignment_status, deposit_amount, deposit_paid, start_date, assigned_at')
+                    .select('id, client_id, assignment_status, deposit_amount, deposit_paid, start_date, assigned_at'),
+                supabase
+                    .from('payments')
+                    .select('client_name, amount, payment_type')
+                    .eq('payment_type', 'deposit')
             ]);
 
             const allAssignments = assignmentsResult.data || [];
+            const paidDepositNames = new Set((paymentsResult.data || []).map((p: any) => (p.client_name || '').trim().toLowerCase()));
             const data = leadsResult.data;
             const error = leadsResult.error;
 
@@ -1796,7 +1809,7 @@ export default function CRM() {
                     }
                     setLeads(
                         finalFallbackRows.map((l) => {
-                            const { hasPaidDeposit, isDepositPending } = computeLeadDepositStatus(l, allAssignments);
+                            const { hasPaidDeposit, isDepositPending } = computeLeadDepositStatus(l, allAssignments, paidDepositNames);
                             return {
                                 ...l,
                                 pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
@@ -1844,7 +1857,7 @@ export default function CRM() {
             }
             setLeads(
                 rows.map((l) => {
-                    const { hasPaidDeposit, isDepositPending } = computeLeadDepositStatus(l, allAssignments);
+                    const { hasPaidDeposit, isDepositPending } = computeLeadDepositStatus(l, allAssignments, paidDepositNames);
                     return {
                         ...l,
                         pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
@@ -3404,15 +3417,45 @@ export default function CRM() {
 
             // Also synchronize active service deposit status in services table
             try {
-                await supabase
+                const { data: existingSvc } = await supabase
                     .from('services')
-                    .update({
-                        deposit_status: 'collected',
-                        deposit_amount: amount,
-                        updated_at: new Date().toISOString(),
-                    })
+                    .select('id')
                     .eq('client_id', lead.id)
-                    .eq('status', 'active');
+                    .eq('status', 'active')
+                    .maybeSingle();
+
+                if (existingSvc) {
+                    await supabase
+                        .from('services')
+                        .update({
+                            deposit_status: 'collected',
+                            deposit_amount: amount,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', existingSvc.id);
+                } else {
+                    let serviceType = lead.assigned_worker_role || 'Home Care Service';
+                    let startDate = new Date().toISOString().split('T')[0];
+                    if (lead.notes) {
+                        const sMatch = lead.notes.match(/Service:\s*([^\n\r]+)/i);
+                        if (sMatch && sMatch[1]?.trim()) serviceType = sMatch[1].trim();
+                        const dMatch = lead.notes.match(/Start Date:\s*([^\n\r]+)/i);
+                        if (dMatch && dMatch[1]?.trim()) startDate = dMatch[1].trim();
+                    }
+
+                    await supabase.from('services').insert([{
+                        client_id: lead.id,
+                        lead_id: lead.id,
+                        service_type: serviceType,
+                        hours_per_day: 10,
+                        start_date: startDate,
+                        status: 'active',
+                        deposit_amount: amount,
+                        deposit_status: 'collected',
+                        complete_month_daily_rate: Number(lead.complete_month_daily_rate) || 0,
+                        incomplete_month_daily_rate: Number(lead.incomplete_month_daily_rate) || 0,
+                    }]);
+                }
             } catch (svcSyncErr) {
                 console.warn('Could not sync active service deposit_status:', svcSyncErr);
             }
