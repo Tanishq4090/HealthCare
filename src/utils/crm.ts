@@ -129,7 +129,6 @@ export function isPipelineVisibleLead(
     clientStages: string[] = ['Active Client', 'Monthly Billing', 'Closed Won', 'Archived']
 ): boolean {
     if (lead.deleted_at) return false;
-    if (isManualInvoiceLead(lead)) return false;
     const stage = lead.pipeline_stage || '';
     if (isLegacyPipelineStage(stage)) return false;
     return new Set([...pipelineStages, ...clientStages]).has(stage);

@@ -157,7 +157,7 @@ export async function getActiveServices(): Promise<ServiceWithDetails[]> {
         .order('created_at', { ascending: false });
 
     if (error) throw new Error(`Failed to fetch services: ${error.message}`);
-    const valid = (data || []).filter(s => (s.service_worker_assignments || []).length > 0);
+    const valid = (data || []).filter(s => (s.service_worker_assignments || []).length > 0 || (s.service_bills || []).length > 0);
     return enrichServicesWithPayments(valid);
 }
 

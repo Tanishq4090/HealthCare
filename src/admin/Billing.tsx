@@ -130,6 +130,7 @@ export default function Billing() {
     const [depositMethod, setDepositMethod] = useState('Online');
 
     // Service Bill Collection Modal State
+    const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
     const [isRecordCollectionOpen, setIsRecordCollectionOpen] = useState(false);
     const [collectionTarget, setCollectionTarget] = useState<{
         service: any;
@@ -823,6 +824,7 @@ export default function Billing() {
             toast.success(`Payment of ₹${Number(collectionAmount).toLocaleString('en-IN')} recorded for ${collectionTarget.clientName}!`);
             setIsRecordCollectionOpen(false);
             setCollectionTarget(null);
+            setServicesRefreshKey(k => k + 1);
             fetchBillingData();
         } catch (err: any) {
             console.error('Error recording payment collection:', err);
@@ -1475,26 +1477,75 @@ export default function Billing() {
                 .eq('id', leadId);
             if (invoiceMetaError) throw invoiceMetaError;
 
-            if (depositCollected > 0) {
-                const depositRef = `MANUAL-DEP-${leadId.slice(0, 8).toUpperCase()}`;
-                const { data: existingDeposit, error: existingDepositError } = await supabase
-                    .from('payments')
-                    .select('id')
-                    .eq('transaction_ref', depositRef)
-                    .limit(1);
-                if (existingDepositError) throw existingDepositError;
+            // 1. Ensure service record exists in services table for this client
+            const { data: existingSvc } = await supabase
+                .from('services')
+                .select('id')
+                .eq('client_id', leadId)
+                .maybeSingle();
 
-                if (!existingDeposit || existingDeposit.length === 0) {
-                    const { error: depositPaymentError } = await supabase.from('payments').insert([{
-                        amount: depositCollected,
-                        client_name: manualInvoiceForm.clientName.trim(),
-                        recorded_by: 'admin',
-                        transaction_ref: depositRef,
-                        payment_date: new Date().toISOString(),
-                        payment_type: 'deposit',
-                    }]);
-                    if (depositPaymentError) throw depositPaymentError;
+            let serviceId = existingSvc?.id;
+            if (!serviceId) {
+                const { data: newSvc, error: svcErr } = await supabase
+                    .from('services')
+                    .insert([{
+                        client_id: leadId,
+                        lead_id: leadId,
+                        service_type: manualInvoiceForm.serviceName || 'Old Age Care',
+                        hours_per_day: manualInvoiceForm.serviceHours === '24' ? 24 : 10,
+                        start_date: manualInvoiceForm.startDate || format(new Date(), 'yyyy-MM-dd'),
+                        end_date: manualInvoiceForm.endDate || null,
+                        status: 'active',
+                        deposit_amount: depositCollected,
+                        deposit_status: depositCollected > 0 ? 'collected' : 'pending',
+                        complete_month_daily_rate: Number(manualInvoiceForm.ratePerDay) || 500,
+                        incomplete_month_daily_rate: Number(manualInvoiceForm.ratePerDay) || 1000,
+                        notes: finalNotes,
+                    }])
+                    .select('id')
+                    .single();
+                if (!svcErr && newSvc) {
+                    serviceId = newSvc.id;
                 }
+            } else {
+                await supabase
+                    .from('services')
+                    .update({
+                        deposit_amount: depositCollected,
+                        complete_month_daily_rate: Number(manualInvoiceForm.ratePerDay) || 500,
+                        status: 'active',
+                    })
+                    .eq('id', serviceId);
+            }
+
+            // 2. Persist to unified service_bills ledger (type: 'recurring')
+            if (serviceId) {
+                const billNotes = JSON.stringify({
+                    invoice_number: invData.invoice_number || '',
+                    invoice_pdf_url: invData.public_url,
+                    status: 'pending',
+                    gross_amount: grossAmount,
+                    deposit: depositCollected,
+                    net_amount: netAmount,
+                    service_type: manualInvoiceForm.serviceName,
+                    rate_per_day: Number(manualInvoiceForm.ratePerDay),
+                    days: days,
+                    source: 'manual_invoice',
+                });
+
+                await supabase
+                    .from('service_bills')
+                    .insert([{
+                        service_id: serviceId,
+                        period_start: manualInvoiceForm.startDate,
+                        period_end: manualInvoiceForm.endDate,
+                        total_days: days,
+                        daily_rate_used: Number(manualInvoiceForm.ratePerDay),
+                        amount: netAmount,
+                        deposit_applied: depositCollected,
+                        type: 'recurring',
+                        notes: billNotes,
+                    }]);
             }
 
             setMonthlyBills(prev => [{
@@ -1514,6 +1565,7 @@ export default function Billing() {
             toast.success('Manual invoice generated and sent on WhatsApp.', { id: toastId, duration: 4000 });
             window.open(invData.public_url, '_blank');
             resetManualInvoice();
+            setServicesRefreshKey(k => k + 1);
             fetchBillingData();
         } catch (err: any) {
             console.error('Manual invoice generation failed:', err);
@@ -1937,6 +1989,7 @@ export default function Billing() {
                 /* Unified Services & Monthly Billing Lifecycle View */
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
                     <ServicesPanel
+                        key={servicesRefreshKey}
                         isEmbedded
                         onOpenManualInvoice={() => {
                             setManualInvoiceForm(manualInvoiceInitialForm());

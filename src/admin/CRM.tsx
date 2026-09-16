@@ -1600,11 +1600,16 @@ export default function CRM() {
         if (location.state?.openLeadId && leads.length > 0) {
             const lead = leads.find(l => l.id === location.state.openLeadId);
             if (lead && (!selectedInspectorLead || selectedInspectorLead.id !== lead.id)) {
+                if (clientStages.includes(lead.pipeline_stage)) {
+                    setActiveTab('clients');
+                } else if (pipelineStages.includes(lead.pipeline_stage)) {
+                    setActiveTab('pipeline');
+                }
                 setSelectedInspectorLead(lead);
                 fetchLeadActivity(lead.id, lead.duplicate_of_lead_id);
             }
         }
-    }, [location.state?.openLeadId, leads]);
+    }, [location.state?.openLeadId, leads, clientStages, pipelineStages]);
 
     // ── Activity: Log a new event ──────────────────────────────────────────
     const logActivity = async (leadId: string, eventType: string, description: string, metadata: any = {}) => {
@@ -2272,7 +2277,7 @@ export default function CRM() {
                         .order('created_at', { ascending: false });
                     if (fallbackError) throw fallbackError;
 
-                    const fallbackRows = (fallback || []).filter((l) => !isManualInvoiceLead(l));
+                    const fallbackRows = fallback || [];
                     
                     // Filter duplicates
                     const uniqueFallbackRows = [];
@@ -2318,7 +2323,7 @@ export default function CRM() {
                 throw error;
             }
 
-            const rawRows = (data || []).filter((l) => !isManualInvoiceLead(l));
+            const rawRows = data || [];
             // Filter duplicates
             const uniqueRows = [];
             const phoneMap3 = new Set();
@@ -3639,10 +3644,6 @@ export default function CRM() {
                 { event: 'UPDATE', schema: 'public', table: 'crm_leads' },
                 (payload) => {
                     const newLead = payload.new as any;
-                    if (isManualInvoiceLead(newLead)) {
-                        setLeads(prev => prev.filter(lead => lead.id !== newLead.id));
-                        return;
-                    }
                     // Merge the updated lead directly — preserves assigned_worker_name from DB
                     setLeads(prev => prev.map(lead => lead.id === newLead.id ? { ...lead, ...newLead } : lead));
 
@@ -3657,7 +3658,6 @@ export default function CRM() {
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'crm_leads' },
                 (payload) => {
-                    if (isManualInvoiceLead(payload.new as any)) return;
                     setLeads(prev => [payload.new as any, ...prev]);
                 }
             )
@@ -4983,15 +4983,21 @@ export default function CRM() {
                     <div className="flex items-center p-1 sm:p-1.5 bg-slate-200/50 rounded-xl sm:rounded-2xl shrink-0 border border-slate-200 shadow-inner overflow-x-auto hide-scrollbar max-w-full">
                         <button
                             onClick={() => setActiveTab('pipeline')}
-                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            Pipeline
+                            <span>Pipeline</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'pipeline' ? 'bg-primary/10 text-primary' : 'bg-slate-200 text-slate-600'}`}>
+                                {leads.filter(l => pipelineStages.includes(l.pipeline_stage)).length}
+                            </span>
                         </button>
                         <button
                             onClick={() => setActiveTab('clients')}
-                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
+                            className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            Clients
+                            <span>Clients</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'clients' ? 'bg-primary/10 text-primary' : 'bg-slate-200 text-slate-600'}`}>
+                                {leads.filter(l => clientStages.includes(l.pipeline_stage)).length}
+                            </span>
                         </button>
                         <button
                             onClick={() => setActiveTab('automations')}
