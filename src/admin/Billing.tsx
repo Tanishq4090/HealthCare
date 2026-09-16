@@ -1548,6 +1548,27 @@ export default function Billing() {
                     }]);
             }
 
+            // 3. Record collected deposit in payments table so it appears in Deposit Collection History
+            if (depositCollected > 0) {
+                const depositRef = `MANUAL-DEP-${leadId.slice(0, 8).toUpperCase()}`;
+                const { data: existingDeposit } = await supabase
+                    .from('payments')
+                    .select('id')
+                    .eq('transaction_ref', depositRef)
+                    .limit(1);
+
+                if (!existingDeposit || existingDeposit.length === 0) {
+                    await supabase.from('payments').insert([{
+                        amount: depositCollected,
+                        client_name: manualInvoiceForm.clientName.trim(),
+                        recorded_by: 'admin',
+                        transaction_ref: depositRef,
+                        payment_date: new Date().toISOString(),
+                        payment_type: 'deposit',
+                    }]);
+                }
+            }
+
             setMonthlyBills(prev => [{
                 id: `manual-${leadId}`,
                 client_id: leadId,
