@@ -52,6 +52,7 @@ interface ServicesPanelProps {
     isEmbedded?: boolean;
     onOpenManualInvoice?: () => void;
     onPrepareInvoice?: (service: ServiceWithDetails, bill?: any) => void;
+    onPreviewInvoice?: (service: ServiceWithDetails, bill: any) => void;
     onRecordCollection?: (service: ServiceWithDetails, bill?: any) => void;
 }
 
@@ -59,6 +60,7 @@ export default function ServicesPanel({
     isEmbedded = false, 
     onOpenManualInvoice,
     onPrepareInvoice,
+    onPreviewInvoice,
     onRecordCollection,
 }: ServicesPanelProps) {
     const [services, setServices] = useState<ServiceWithDetails[]>([]);
@@ -794,13 +796,24 @@ export default function ServicesPanel({
                                                                                         )}
                                                                                     </td>
                                                                                     <td className="px-3 py-2.5 text-right space-x-1.5 whitespace-nowrap">
-                                                                                        {onPrepareInvoice && (
+                                                                                        {onPreviewInvoice ? (
+                                                                                            <button
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    onPreviewInvoice(service, bill);
+                                                                                                }}
+                                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs cursor-pointer"
+                                                                                                title="Preview Invoice"
+                                                                                            >
+                                                                                                <FileText className="w-3.5 h-3.5" /> Preview Invoice
+                                                                                            </button>
+                                                                                        ) : onPrepareInvoice && (
                                                                                             <button
                                                                                                 onClick={(e) => {
                                                                                                     e.stopPropagation();
                                                                                                     onPrepareInvoice(service, bill);
                                                                                                 }}
-                                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs"
+                                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs cursor-pointer"
                                                                                                 title="Preview & Generate Invoice for this cycle"
                                                                                             >
                                                                                                 <FileText className="w-3.5 h-3.5" /> Preview Invoice

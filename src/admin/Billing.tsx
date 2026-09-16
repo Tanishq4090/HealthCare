@@ -23,6 +23,7 @@ type ManualInvoiceForm = {
     ratePerDay: string;
     depositCollected: string;
     serviceHours: '10' | '24';
+    billingMode: 'ongoing' | 'settle_deposit_and_end';
 };
 
 type ClientMatch = {
@@ -80,6 +81,8 @@ const buildManualInvoiceNotes = (form: ManualInvoiceForm, extras: Record<string,
         `End Date: ${form.endDate}`,
         `Rate Per Day: ${Number(form.ratePerDay) || 0}`,
         `Deposit Collected: ${Number(form.depositCollected || 0)}`,
+        `Billing Mode: ${form.billingMode || 'ongoing'}`,
+        `Deposit Settled: ${form.billingMode === 'settle_deposit_and_end' ? 'true' : 'false'}`,
         ...Object.entries(extras).map(([key, value]) => `${key}: ${value}`),
     ];
     return lines.join('\n');
@@ -96,6 +99,7 @@ const manualInvoiceInitialForm = (): ManualInvoiceForm => ({
     ratePerDay: '800',
     depositCollected: '0',
     serviceHours: '10',
+    billingMode: 'ongoing',
 });
 
 
@@ -172,11 +176,33 @@ export default function Billing() {
     const [ciDays, setCiDays] = useState<number>(1);
     const [ciRate, setCiRate] = useState<number>(0);
     const [ciDeposit, setCiDeposit] = useState<number>(0);
+    const [ciSettleDeposit, setCiSettleDeposit] = useState(false);
+    const [ciEndService, setCiEndService] = useState(false);
     const [ciStartDate, setCiStartDate] = useState('');
     const [ciEndDate, setCiEndDate] = useState('');
     const [ciAttendanceVerified, setCiAttendanceVerified] = useState(true);
     const [ciAttendanceSummary, setCiAttendanceSummary] = useState<ClientAttendanceSummary | null>(null);
     const [isCiLoadingAttendance, setIsCiLoadingAttendance] = useState(false);
+
+    const handleCiDaysChange = (newDays: number) => {
+        setCiDays(newDays);
+        if (!ciAttendanceVerified || !ciAttendanceSummary || (ciAttendanceSummary.halfDayDates?.length === 0 && ciAttendanceSummary.absentDates?.length === 0)) {
+            const calDays = ciAttendanceSummary?.totalCalendarDays || 1;
+            const diff = Math.max(0, calDays - newDays);
+            const halfDaysCount = Math.round(diff / 0.5);
+            const fullDaysCount = Math.max(0, calDays - halfDaysCount);
+            setCiAttendanceSummary(prev => ({
+                totalCalendarDays: calDays,
+                fullDays: fullDaysCount,
+                halfDays: halfDaysCount,
+                absentDays: 0,
+                effectiveDays: newDays,
+                halfDayDates: [],
+                absentDates: [],
+                fullDayDates: [],
+            }));
+        }
+    };
 
     const fetchClientInvoiceAttendance = async (startStr: string, endStr: string, targetBill?: any) => {
         const bill = targetBill || clientInvoiceBill;
@@ -221,17 +247,24 @@ export default function Billing() {
                 const calDays = (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1)
                     ? Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1)
                     : 1;
+
+                const existingDays = bill?.total_days !== undefined ? Number(bill.total_days) : (bill?.days ? parseFloat(bill.days) : undefined);
+                const finalDays = (existingDays !== undefined && !isNaN(existingDays) && existingDays > 0) ? existingDays : calDays;
+                const diff = Math.max(0, calDays - finalDays);
+                const halfDaysCount = Math.round(diff / 0.5);
+                const fullDaysCount = Math.max(0, calDays - halfDaysCount);
+
                 setCiAttendanceSummary({
                     totalCalendarDays: calDays,
-                    fullDays: calDays,
-                    halfDays: 0,
+                    fullDays: fullDaysCount,
+                    halfDays: halfDaysCount,
                     absentDays: 0,
-                    effectiveDays: calDays,
+                    effectiveDays: finalDays,
                     halfDayDates: [],
                     absentDates: [],
                     fullDayDates: [],
                 });
-                setCiDays(calDays);
+                setCiDays(finalDays);
                 setCiAttendanceVerified(false);
                 return;
             }
@@ -256,16 +289,25 @@ export default function Billing() {
             const calDays = (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1)
                 ? Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1)
                 : 1;
+
+            const existingDays = bill?.total_days !== undefined ? Number(bill.total_days) : (bill?.days ? parseFloat(bill.days) : undefined);
+            const finalDays = (existingDays !== undefined && !isNaN(existingDays) && existingDays > 0) ? existingDays : calDays;
+            const diff = Math.max(0, calDays - finalDays);
+            const halfDaysCount = Math.round(diff / 0.5);
+            const fullDaysCount = Math.max(0, calDays - halfDaysCount);
+
             setCiAttendanceSummary({
                 totalCalendarDays: calDays,
-                fullDays: calDays,
-                halfDays: 0,
+                fullDays: fullDaysCount,
+                halfDays: halfDaysCount,
                 absentDays: 0,
-                effectiveDays: calDays,
+                effectiveDays: finalDays,
                 halfDayDates: [],
                 absentDates: [],
                 fullDayDates: [],
             });
+            setCiDays(finalDays);
+            setCiAttendanceVerified(false);
         } finally {
             setIsCiLoadingAttendance(false);
         }
@@ -647,6 +689,40 @@ export default function Billing() {
         await persistClientBillingRate(clientInvoiceBill, ciRate);
         setInvoiceStartDate(ciStartDate);
         setInvoiceEndDate(ciEndDate);
+
+        try {
+            const billId = clientInvoiceBill.bill_id || clientInvoiceBill.id;
+            const serviceId = clientInvoiceBill.service_id;
+            const totalGross = ciDays * ciRate;
+            const depApplied = ciSettleDeposit ? ciDeposit : 0;
+            const netPayable = Math.max(0, totalGross - depApplied);
+
+            if (billId && typeof billId === 'string' && !billId.startsWith('manual-') && !billId.startsWith('asgn-')) {
+                await supabase
+                    .from('service_bills')
+                    .update({
+                        total_days: ciDays,
+                        daily_rate_used: ciRate,
+                        deposit_applied: depApplied,
+                        deposit_settled: ciSettleDeposit,
+                        amount: netPayable,
+                    })
+                    .eq('id', billId);
+            }
+
+            if (serviceId && ciEndService) {
+                await supabase
+                    .from('services')
+                    .update({
+                        status: 'ended',
+                        deposit_status: 'settled',
+                        end_date: ciEndDate || new Date().toISOString().split('T')[0],
+                    })
+                    .eq('id', serviceId);
+            }
+        } catch (err) {
+            console.warn('Could not sync draft to service_bills:', err);
+        }
     };
 
     const fetchPayments = async () => {
@@ -1404,11 +1480,13 @@ export default function Billing() {
             const { leadId, normalizedPhone } = await ensureManualInvoiceClient(mode, match);
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const isEndAndSettle = manualInvoiceForm.billingMode === 'settle_deposit_and_end';
             const calcDays = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
             const days = manualInvoiceForm.customDays !== undefined && manualInvoiceForm.customDays !== '' ? parseFloat(manualInvoiceForm.customDays) || 0 : calcDays;
             const grossAmount = days * Number(manualInvoiceForm.ratePerDay);
             const depositCollected = Number(manualInvoiceForm.depositCollected || 0);
-            const netAmount = Math.max(0, grossAmount - depositCollected);
+            const depositToApply = isEndAndSettle ? depositCollected : 0;
+            const netAmount = Math.max(0, grossAmount - depositToApply);
 
             const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                 method: 'POST',
@@ -1429,7 +1507,7 @@ export default function Billing() {
                     days: days,
                     total_days: days,
                     rate_per_day: Number(manualInvoiceForm.ratePerDay),
-                    deposit_collected: Number(manualInvoiceForm.depositCollected || 0),
+                    deposit_collected: depositToApply,
                     invoice_date: todayInputDate(),
                     due_date: addDaysInputDate(todayInputDate(), 3),
                 }),
@@ -1464,6 +1542,7 @@ export default function Billing() {
 
             const finalNotes = buildManualInvoiceNotes(manualInvoiceForm, {
                 'Gross Amount': grossAmount,
+                'Deposit Applied': depositToApply,
                 'Amount Payable': netAmount,
                 'Invoice No': invData.invoice_number || '',
                 'Invoice PDF': invData.public_url,
@@ -1474,7 +1553,7 @@ export default function Billing() {
                 .update({
                     notes: finalNotes,
                     estimated_value_monthly: netAmount,
-                    status: 'Invoice Generated',
+                    status: isEndAndSettle ? 'Service Ended' : 'Invoice Generated',
                     pipeline_stage: 'Monthly Billing',
                 })
                 .eq('id', leadId);
@@ -1487,6 +1566,9 @@ export default function Billing() {
                 .eq('client_id', leadId)
                 .maybeSingle();
 
+            const svcStatus = isEndAndSettle ? 'ended' : 'active';
+            const depStatus = isEndAndSettle ? 'settled' : (depositCollected > 0 ? 'collected' : 'pending');
+
             let serviceId = existingSvc?.id;
             if (!serviceId) {
                 const { data: newSvc, error: svcErr } = await supabase
@@ -1498,9 +1580,9 @@ export default function Billing() {
                         hours_per_day: manualInvoiceForm.serviceHours === '24' ? 24 : 10,
                         start_date: manualInvoiceForm.startDate || format(new Date(), 'yyyy-MM-dd'),
                         end_date: manualInvoiceForm.endDate || null,
-                        status: 'active',
+                        status: svcStatus,
                         deposit_amount: depositCollected,
-                        deposit_status: depositCollected > 0 ? 'collected' : 'pending',
+                        deposit_status: depStatus,
                         complete_month_daily_rate: Number(manualInvoiceForm.ratePerDay) || 500,
                         incomplete_month_daily_rate: Number(manualInvoiceForm.ratePerDay) || 1000,
                         notes: finalNotes,
@@ -1515,25 +1597,28 @@ export default function Billing() {
                     .from('services')
                     .update({
                         deposit_amount: depositCollected,
+                        deposit_status: depStatus,
                         complete_month_daily_rate: Number(manualInvoiceForm.ratePerDay) || 500,
-                        status: 'active',
+                        status: svcStatus,
+                        end_date: manualInvoiceForm.endDate || null,
                     })
                     .eq('id', serviceId);
             }
 
-            // 2. Persist to unified service_bills ledger (type: 'recurring')
+            // 2. Persist to unified service_bills ledger (type: 'recurring' or 'final')
             if (serviceId) {
                 const billNotes = JSON.stringify({
                     invoice_number: invData.invoice_number || '',
                     invoice_pdf_url: invData.public_url,
                     status: 'pending',
                     gross_amount: grossAmount,
-                    deposit: depositCollected,
+                    deposit: depositToApply,
                     net_amount: netAmount,
                     service_type: manualInvoiceForm.serviceName,
                     rate_per_day: Number(manualInvoiceForm.ratePerDay),
                     days: days,
                     source: 'manual_invoice',
+                    billing_mode: manualInvoiceForm.billingMode,
                 });
 
                 await supabase
@@ -1545,8 +1630,9 @@ export default function Billing() {
                         total_days: days,
                         daily_rate_used: Number(manualInvoiceForm.ratePerDay),
                         amount: netAmount,
-                        deposit_applied: depositCollected,
-                        type: 'recurring',
+                        deposit_applied: depositToApply,
+                        deposit_settled: isEndAndSettle,
+                        type: isEndAndSettle ? 'final' : 'recurring',
                         notes: billNotes,
                     }]);
             }
@@ -1605,6 +1691,7 @@ export default function Billing() {
             return;
         }
 
+        const isEndAndSettle = manualInvoiceForm.billingMode === 'settle_deposit_and_end';
         const invoiceNo = `INV-M${Math.floor(Math.random() * 9000) + 1000}`;
         const calcDays = inclusiveDays(manualInvoiceForm.startDate, manualInvoiceForm.endDate);
         const days = manualInvoiceForm.customDays !== undefined && manualInvoiceForm.customDays !== '' 
@@ -1612,8 +1699,9 @@ export default function Billing() {
             : calcDays;
         const rate = Number(manualInvoiceForm.ratePerDay) || 800;
         const deposit = Number(manualInvoiceForm.depositCollected) || 0;
+        const depositToApply = isEndAndSettle ? deposit : 0;
         const gross = days * rate;
-        const netBalance = gross - deposit;
+        const netBalance = gross - depositToApply;
         const isRefund = netBalance < 0;
         const refundAmount = Math.abs(netBalance);
         const payable = Math.max(0, netBalance);
@@ -1641,7 +1729,7 @@ export default function Billing() {
             invoice_no: invoiceNo,
             amount: isRefund ? `₹${refundAmount} (Refund)` : payable.toString(),
             totalAmount: isRefund ? 0 : payable,
-            depositCollected: deposit,
+            depositCollected: depositToApply,
             days: days,
             rate: rate,
             startDate: manualInvoiceForm.startDate,
@@ -1659,7 +1747,7 @@ export default function Billing() {
             service: itemDescription,
             amount: isRefund ? 0 : payable,
             totalAmount: isRefund ? 0 : payable,
-            depositCollected: deposit,
+            depositCollected: depositToApply,
             date: new Date().toISOString(),
             invoiceNumber: invoiceNo,
             days: days,
@@ -1693,6 +1781,82 @@ export default function Billing() {
         } catch (err: any) {
             toast.error(err.message || 'Failed to generate manual invoice.');
         }
+    };
+
+    const handleDirectPreviewBill = (service: any, bill: any) => {
+        let noteData: any = {};
+        if (bill?.notes) {
+            try { noteData = JSON.parse(bill.notes); } catch {}
+        }
+
+        const clientName = service.clients?.client_name || service.client_name || 'Client';
+        const clientPhone = service.clients?.phone_number || service.client_phone || '';
+        const days = Number(bill.total_days) || Number(noteData.days) || 1;
+        const rate = Number(bill.daily_rate_used) || Number(noteData.rate_per_day) || Number(service.complete_month_daily_rate) || 800;
+        const gross = Number(noteData.gross_amount) || (days * rate);
+        const deposit = Number(bill.deposit_applied) !== undefined && !isNaN(Number(bill.deposit_applied))
+            ? Number(bill.deposit_applied)
+            : (Number(noteData.deposit) || 0);
+        const net = Number(bill.amount) !== undefined && !isNaN(Number(bill.amount))
+            ? Number(bill.amount)
+            : (Number(noteData.net_amount) || Math.max(0, gross - deposit));
+        const invNo = bill.invoice_number || noteData.invoice_number || `INV-${Math.floor(1000 + Math.random() * 9000)}`;
+        const isRefund = net <= 0 && deposit > gross;
+        const refundAmount = Math.max(0, deposit - gross);
+
+        const sDate = bill.period_start ? bill.period_start.split('T')[0] : (service.start_date?.split('T')[0] || '');
+        const eDate = bill.period_end ? bill.period_end.split('T')[0] : (service.end_date?.split('T')[0] || '');
+        const formatDateStr = (ds: string) => {
+            if (!ds) return '';
+            const [y, m, d] = ds.split('-');
+            return `${d}/${m}/${y}`;
+        };
+        const formattedPeriod = (sDate && eDate) ? `${formatDateStr(sDate)} To ${formatDateStr(eDate)}` : 'As agreed';
+        const rawShift = (service.hours_per_day || 24).toString();
+        const serviceCategory = (service.service_type || 'Old Age Care').toUpperCase();
+        const itemDescription = `${rawShift}-HOUR SHIFT (${serviceCategory}) — ${days} DAY${days !== 1 ? 'S' : ''} (${formattedPeriod})`;
+
+        const targetBill = {
+            ...bill,
+            client: clientName,
+            client_phone: clientPhone,
+            client_address: noteData.client_address || '',
+            invoice_no: invNo,
+            amount: isRefund ? `₹${refundAmount} (Refund)` : net.toString(),
+            totalAmount: isRefund ? 0 : net,
+            depositCollected: deposit,
+            days: days,
+            rate: rate,
+            startDate: sDate,
+            endDate: eDate,
+            isRefund: isRefund,
+            refundAmount: refundAmount,
+            invoice_pdf_url: noteData.invoice_pdf_url || '',
+        };
+
+        setAgentTargetBill(targetBill);
+        setInvoiceData({
+            clientName: clientName,
+            phone: clientPhone,
+            address: noteData.client_address || '',
+            service: itemDescription,
+            amount: isRefund ? 0 : net,
+            totalAmount: isRefund ? 0 : net,
+            depositCollected: deposit,
+            date: bill.created_at || new Date().toISOString(),
+            invoiceNumber: invNo,
+            days: days,
+            rate: rate,
+            startDate: sDate,
+            endDate: eDate,
+            service_name: service.service_type || 'Old Age Care',
+            service_hours: rawShift,
+            isRefund: isRefund,
+            refundAmount: refundAmount,
+        });
+        setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
+        setInvoiceDepositAmount(net.toString());
+        setIsInvoiceOpen(true);
     };
 
     const heldDeposits = deposits.filter(d => d.status === 'Paid' && d.is_active_cycle);
@@ -2021,6 +2185,9 @@ export default function Billing() {
                             setIsDuplicateChoiceOpen(false);
                             setIsManualInvoiceOpen(true);
                         }}
+                        onPreviewInvoice={(service, bill) => {
+                            handleDirectPreviewBill(service, bill);
+                        }}
                         onPrepareInvoice={async (service, bill) => {
                             const activeWorker = (service.service_worker_assignments || []).find(a => !a.end_date) || (service.service_worker_assignments || [])[0];
                             
@@ -2103,9 +2270,19 @@ export default function Billing() {
                                 rawService: service
                             };
 
+                            const depositAmt = service.deposit_amount || 0;
                             setClientInvoiceBill(billObj);
                             setCiRate(billRate);
-                            setCiDeposit(service.deposit_amount || 0);
+                            setCiDeposit(depositAmt);
+
+                            let hasDepositDeducted = false;
+                            if (bill?.deposit_applied && Number(bill.deposit_applied) > 0) {
+                                hasDepositDeducted = true;
+                            } else if (noteData.deposit && Number(noteData.deposit) > 0) {
+                                hasDepositDeducted = true;
+                            }
+                            setCiSettleDeposit(hasDepositDeducted);
+                            setCiEndService(bill?.deposit_settled === true || service.status === 'ended');
 
                             // 1. Determine start date:
                             let startStr = '';
@@ -2130,19 +2307,20 @@ export default function Billing() {
                             setCiStartDate(startStr);
                             setCiEndDate(endStr);
 
-                            let calculatedDays = bill?.total_days || 1;
-                            if (!bill?.total_days && startStr && endStr) {
+                            let calculatedDays = (bill?.total_days !== undefined && !isNaN(bill.total_days)) ? Number(bill.total_days) : 0;
+                            if (!calculatedDays && startStr && endStr) {
                                 const d1 = new Date(startStr);
                                 const d2 = new Date(endStr);
                                 if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 >= d1) {
                                     calculatedDays = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
                                 }
                             }
+                            if (!calculatedDays) calculatedDays = 1;
                             setCiDays(calculatedDays);
                             setIsClientInvoiceOpen(true);
 
                             // Fetch full attendance breakdown across all assigned workers
-                            fetchClientInvoiceAttendance(startStr, endStr, billObj);
+                            fetchClientInvoiceAttendance(startStr, endStr, { ...billObj, total_days: calculatedDays });
                         }}
                         onRecordCollection={(service: any, bill?: any) => {
                             const clientName = service.clients?.client_name || 'Client';
@@ -2897,11 +3075,13 @@ export default function Billing() {
                 const days = manualInvoiceForm.customDays !== undefined && manualInvoiceForm.customDays !== '' 
                     ? parseFloat(manualInvoiceForm.customDays) || 0 
                     : calcDays;
+                const isEndAndSettle = manualInvoiceForm.billingMode === 'settle_deposit_and_end';
                 const rate = Number(manualInvoiceForm.ratePerDay) || 0;
                 const deposit = Number(manualInvoiceForm.depositCollected) || 0;
                 const gross = days * rate;
-                const netBalance = gross - deposit;
-                const isRefund = netBalance < 0;
+                const depositToApply = isEndAndSettle ? deposit : 0;
+                const netBalance = gross - depositToApply;
+                const isRefund = isEndAndSettle && netBalance < 0;
                 const refundAmount = Math.abs(netBalance);
                 const payable = Math.max(0, netBalance);
 
@@ -3101,15 +3281,67 @@ export default function Billing() {
                                     </div>
                                 </div>
 
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2.5">Invoice Billing Type</label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateManualInvoiceForm({ billingMode: 'ongoing' })}
+                                            className={`p-3 rounded-xl border text-left transition-all ${
+                                                manualInvoiceForm.billingMode !== 'settle_deposit_and_end'
+                                                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-xs'
+                                                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-bold text-xs text-slate-900">Regular Monthly Invoice</span>
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Ongoing</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 mt-1">
+                                                Deposit (₹{deposit.toLocaleString('en-IN')}) remains held in client account. Full bill: ₹{gross.toLocaleString('en-IN')}.
+                                            </p>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => updateManualInvoiceForm({ billingMode: 'settle_deposit_and_end' })}
+                                            className={`p-3 rounded-xl border text-left transition-all ${
+                                                manualInvoiceForm.billingMode === 'settle_deposit_and_end'
+                                                    ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-600/20 shadow-xs'
+                                                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-bold text-xs text-slate-900">Final Settlement & End Service</span>
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Settlement</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 mt-1">
+                                                Deposit (₹{deposit.toLocaleString('en-IN')}) is deducted from this bill, deposit marked settled, and service ended.
+                                            </p>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-slate-500">{days || 0} day{days !== 1 ? 's' : ''} x ₹{rate.toLocaleString('en-IN')}/day</span>
                                         <span className="font-semibold text-slate-800">₹{gross.toLocaleString('en-IN')}</span>
                                     </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-slate-500">Deposit Collected</span>
-                                        <span className="font-semibold text-emerald-600">− ₹{deposit.toLocaleString('en-IN')}</span>
-                                    </div>
+                                    {isEndAndSettle ? (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500 flex items-center gap-1.5">
+                                                Security Deposit Deducted <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700 uppercase">Settling</span>
+                                            </span>
+                                            <span className="font-semibold text-emerald-600">− ₹{deposit.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500 flex items-center gap-1.5">
+                                                Security Deposit <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 uppercase">Held In Account</span>
+                                            </span>
+                                            <span className="font-semibold text-slate-500">₹{deposit.toLocaleString('en-IN')} (not deducted)</span>
+                                        </div>
+                                    )}
                                     {isRefund ? (
                                         <div className="border-t border-amber-200 pt-2 mt-1 space-y-1">
                                             <div className="flex justify-between text-base font-bold">
@@ -3209,7 +3441,11 @@ export default function Billing() {
             {/* Client Invoice Generator Modal */}
             {isClientInvoiceOpen && clientInvoiceBill && (() => {
                 const total = ciDays * ciRate;
-                const net = Math.max(0, total - ciDeposit);
+                const depositDeducted = ciSettleDeposit ? Math.min(total, ciDeposit) : 0;
+                const netBalance = total - (ciSettleDeposit ? ciDeposit : 0);
+                const isRefund = ciSettleDeposit && netBalance < 0;
+                const refundAmount = Math.abs(netBalance);
+                const payable = Math.max(0, netBalance);
                 return (
                     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                         <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
@@ -3337,8 +3573,35 @@ export default function Billing() {
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Days of Service</label>
-                                        <input type="number" min="0" step="0.5" value={ciDays} onChange={e => setCiDays(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Days of Service</label>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCiDaysChange(Math.max(0.5, ciDays - 0.5))}
+                                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded transition-colors"
+                                                    title="Subtract Half Day (-0.5)"
+                                                >
+                                                    -0.5d
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCiDaysChange(ciDays + 0.5)}
+                                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded transition-colors"
+                                                    title="Add Half Day (+0.5)"
+                                                >
+                                                    +0.5d
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.5"
+                                            value={ciDays}
+                                            onChange={e => handleCiDaysChange(parseFloat(e.target.value) || 0)}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
@@ -3359,15 +3622,85 @@ export default function Billing() {
                                         />
                                     </div>
                                 </div>
+
+                                {ciDeposit > 0 && (
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={ciSettleDeposit}
+                                                onChange={e => {
+                                                    const checked = e.target.checked;
+                                                    setCiSettleDeposit(checked);
+                                                    if (!checked) setCiEndService(false);
+                                                }}
+                                                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                                            />
+                                            <div>
+                                                <span className="text-xs font-bold text-slate-800">
+                                                    Settle Security Deposit (₹{ciDeposit.toLocaleString('en-IN')}) on this invoice
+                                                </span>
+                                                <p className="text-[11px] text-slate-500">
+                                                    {ciSettleDeposit 
+                                                        ? `Deducting ₹${ciDeposit.toLocaleString('en-IN')} deposit from this invoice.` 
+                                                        : `Deposit is held in client account. Leave unchecked for regular monthly bill.`}
+                                                </p>
+                                            </div>
+                                        </label>
+
+                                        {ciSettleDeposit && (
+                                            <label className="flex items-center gap-2.5 cursor-pointer select-none pl-6 border-t border-slate-200/60 pt-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={ciEndService}
+                                                    onChange={e => setCiEndService(e.target.checked)}
+                                                    className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                                                />
+                                                <span className="text-xs font-semibold text-slate-700">
+                                                    Mark service as ended and finalize settlement
+                                                </span>
+                                            </label>
+                                        )}
+                                    </div>
+                                )}
+
                                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-slate-500">{ciDays} day{ciDays !== 1 ? 's' : ''} × ₹{ciRate.toLocaleString('en-IN')}/day</span>
                                         <span className="font-semibold text-slate-800">₹{total.toLocaleString('en-IN')}</span>
                                     </div>
-                                    <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
-                                        <span className="text-slate-800">Monthly Bill Amount</span>
-                                        <span className="text-primary font-black">₹{total.toLocaleString('en-IN')}</span>
-                                    </div>
+                                    {ciSettleDeposit ? (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500 flex items-center gap-1.5">
+                                                Deposit Deducted <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700 uppercase">Settled</span>
+                                            </span>
+                                            <span className="font-semibold text-emerald-600">− ₹{ciDeposit.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    ) : ciDeposit > 0 ? (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-500 flex items-center gap-1.5">
+                                                Deposit Held <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 uppercase">Active</span>
+                                            </span>
+                                            <span className="font-semibold text-slate-500">₹{ciDeposit.toLocaleString('en-IN')} (not deducted)</span>
+                                        </div>
+                                    ) : null}
+
+                                    {isRefund ? (
+                                        <div className="border-t border-amber-200 pt-2 mt-1 space-y-1">
+                                            <div className="flex justify-between text-base font-bold">
+                                                <span className="text-amber-800 flex items-center gap-1.5">
+                                                    Refund Due to Client <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 uppercase tracking-wide">To Return</span>
+                                                </span>
+                                                <span className="text-amber-600 font-black text-lg">₹{refundAmount.toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <p className="text-[11px] font-medium text-amber-700">Deposit collected (₹{ciDeposit.toLocaleString('en-IN')}) exceeds total charges by ₹{refundAmount.toLocaleString('en-IN')}.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
+                                            <span className="text-slate-800">Amount Payable</span>
+                                            <span className="text-primary font-black">₹{payable.toLocaleString('en-IN')}</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3 rounded-b-2xl">
@@ -3399,13 +3732,16 @@ export default function Billing() {
                                             const targetBill = {
                                                 ...clientInvoiceBill,
                                                 invoice_no: invoiceNo,
-                                                amount: total.toString(),
-                                                totalAmount: total,
+                                                amount: isRefund ? `₹${refundAmount} (Refund)` : payable.toString(),
+                                                totalAmount: isRefund ? 0 : payable,
+                                                grossAmount: total,
                                                 days: ciDays,
                                                 rate: ciRate,
                                                 startDate: ciStartDate,
                                                 endDate: ciEndDate,
-                                                depositCollected: 0,
+                                                depositCollected: depositDeducted,
+                                                isRefund: isRefund,
+                                                refundAmount: refundAmount,
                                                 client_address: clientInvoiceBill.client_address || '',
                                                 service_category: clientInvoiceBill.service_category || 'Old Age Care',
                                                 shift_duration: clientInvoiceBill.shift_duration || '24',
@@ -3416,9 +3752,12 @@ export default function Billing() {
                                                 phone: clientInvoiceBill.client_phone || '',
                                                 address: clientInvoiceBill.client_address || '',
                                                 service: itemDescription,
-                                                amount: total,
-                                                totalAmount: total,
-                                                depositCollected: 0,
+                                                amount: isRefund ? 0 : payable,
+                                                totalAmount: isRefund ? 0 : payable,
+                                                grossAmount: total,
+                                                depositCollected: depositDeducted,
+                                                isRefund: isRefund,
+                                                refundAmount: refundAmount,
                                                 date: new Date().toISOString(),
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
@@ -3429,7 +3768,7 @@ export default function Billing() {
                                                 service_hours: clientInvoiceBill.shift_duration || '24',
                                             });
                                             setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
-                                            setInvoiceDepositAmount(total.toString());
+                                            setInvoiceDepositAmount((isRefund ? 0 : payable).toString());
                                             setIsInvoiceOpen(true);
                                         }}
                                         className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
@@ -3462,13 +3801,16 @@ export default function Billing() {
                                             const targetBill = {
                                                 ...clientInvoiceBill,
                                                 invoice_no: invoiceNo,
-                                                amount: total.toString(),
-                                                totalAmount: total,
+                                                amount: isRefund ? `₹${refundAmount} (Refund)` : payable.toString(),
+                                                totalAmount: isRefund ? 0 : payable,
+                                                grossAmount: total,
                                                 days: ciDays,
                                                 rate: ciRate,
                                                 startDate: ciStartDate,
                                                 endDate: ciEndDate,
-                                                depositCollected: 0,
+                                                depositCollected: depositDeducted,
+                                                isRefund: isRefund,
+                                                refundAmount: refundAmount,
                                                 client_address: clientInvoiceBill.client_address || '',
                                                 service_category: clientInvoiceBill.service_category || 'Old Age Care',
                                                 shift_duration: clientInvoiceBill.shift_duration || '24',
@@ -3479,9 +3821,12 @@ export default function Billing() {
                                                 phone: clientInvoiceBill.client_phone || '',
                                                 address: clientInvoiceBill.client_address || '',
                                                 service: itemDescription,
-                                                amount: total,
-                                                totalAmount: total,
-                                                depositCollected: 0,
+                                                amount: isRefund ? 0 : payable,
+                                                totalAmount: isRefund ? 0 : payable,
+                                                grossAmount: total,
+                                                depositCollected: depositDeducted,
+                                                isRefund: isRefund,
+                                                refundAmount: refundAmount,
                                                 date: new Date().toISOString(),
                                                 invoiceNumber: invoiceNo,
                                                 days: ciDays,
@@ -3493,7 +3838,7 @@ export default function Billing() {
                                             });
                                             const draft = generateWhatsappDraft(targetBill, agentDraftLang);
                                             setAgentDraftText(draft);
-                                            setInvoiceDepositAmount(total.toString());
+                                            setInvoiceDepositAmount((isRefund ? 0 : payable).toString());
                                             setIsAgentModalOpen(true);
                                         }}
                                         className="flex-[1.5] sm:flex-none px-5 py-2.5 rounded-xl font-bold text-white bg-[#25D366] hover:bg-[#1ebd5a] transition-all shadow-md flex items-center justify-center gap-2 whitespace-nowrap"
