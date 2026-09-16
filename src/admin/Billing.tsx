@@ -141,7 +141,7 @@ export default function Billing() {
         amount: number;
     } | null>(null);
     const [collectionAmount, setCollectionAmount] = useState<number>(0);
-    const [collectionMethod, setCollectionMethod] = useState<'UPI' | 'Cash' | 'Bank Transfer' | 'Cheque'>('UPI');
+    const [collectionMethod, setCollectionMethod] = useState<'UPI' | 'Cash' | 'Online Transfer' | 'Cheque'>('UPI');
     const [collectionRef, setCollectionRef] = useState<string>('');
     const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isSubmittingCollection, setIsSubmittingCollection] = useState(false);
@@ -802,26 +802,29 @@ export default function Billing() {
 
     const handleConfirmCollection = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!collectionTarget || collectionAmount <= 0) {
-            toast.error('Please enter a valid collection amount');
+        if (!collectionTarget || collectionTarget.amount <= 0) {
+            toast.error('Invalid collection target');
             return;
         }
 
         setIsSubmittingCollection(true);
         try {
+            const prefix = collectionMethod === 'Online Transfer' ? 'ONLINE-TRANSFER' : collectionMethod.toUpperCase().replace(/\s+/g, '-');
+            const finalTxnRef = collectionRef || `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
+
             const success = await markServiceBillPaid({
                 billId: collectionTarget.bill?.id,
                 serviceId: collectionTarget.service.id,
                 clientName: collectionTarget.clientName,
-                amount: Number(collectionAmount),
+                amount: Number(collectionTarget.amount),
                 paymentMethod: collectionMethod,
-                transactionRef: collectionRef,
-                paymentDate: collectionDate,
+                transactionRef: finalTxnRef,
+                paymentDate: collectionDate || new Date().toISOString(),
             });
 
             if (!success) throw new Error('Failed to record payment in database');
 
-            toast.success(`Payment of ₹${Number(collectionAmount).toLocaleString('en-IN')} recorded for ${collectionTarget.clientName}!`);
+            toast.success(`Payment of ₹${Number(collectionTarget.amount).toLocaleString('en-IN')} recorded for ${collectionTarget.clientName}!`);
             setIsRecordCollectionOpen(false);
             setCollectionTarget(null);
             setServicesRefreshKey(k => k + 1);
@@ -2159,6 +2162,8 @@ export default function Billing() {
                                 ? `${new Date(bill.period_start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} – ${new Date(bill.period_end).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
                                 : 'Billing Cycle';
 
+                            const defaultRef = `UPI-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
+
                             setCollectionTarget({
                                 service,
                                 bill,
@@ -2169,7 +2174,7 @@ export default function Billing() {
                             });
                             setCollectionAmount(billAmount);
                             setCollectionMethod('UPI');
-                            setCollectionRef('');
+                            setCollectionRef(defaultRef);
                             setCollectionDate(new Date().toISOString().split('T')[0]);
                             setIsRecordCollectionOpen(true);
                         }}
@@ -2377,128 +2382,95 @@ export default function Billing() {
 
             {/* Service Bill Collection Modal */}
             {isRecordCollectionOpen && collectionTarget && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-all">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 flex flex-col">
-                        <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
-                                    <RupeeIcon className="w-5 h-5 text-xl font-bold" />
-                                </div>
-                                <div>
-                                    <h2 className="text-base font-bold text-white">Record Invoice Collection</h2>
-                                    <p className="text-xs text-slate-300">
-                                        {collectionTarget.clientName} • {collectionTarget.invoiceNo}
-                                    </p>
-                                </div>
-                            </div>
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all">
+                    <div className="bg-white/95 backdrop-blur-xl border border-white/40 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 bg-white/50 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <RupeeIcon className="w-5 h-5 text-emerald-500 text-lg" /> Record Collection
+                            </h2>
                             <button
                                 onClick={() => {
                                     setIsRecordCollectionOpen(false);
                                     setCollectionTarget(null);
                                 }}
-                                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <form onSubmit={handleConfirmCollection} className="p-6 space-y-4">
-                            {/* Cycle info badge */}
-                            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                                <div>
-                                    <span className="text-slate-500 block font-medium">Billing Period</span>
-                                    <span className="text-slate-800 font-bold">{collectionTarget.period}</span>
+                        <form onSubmit={handleConfirmCollection} className="p-5 space-y-4">
+                            {/* Summary Details */}
+                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70 space-y-2 text-xs">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">Client</span>
+                                    <span className="font-bold text-slate-800">{collectionTarget.clientName}</span>
                                 </div>
-                                <div className="text-right">
-                                    <span className="text-slate-500 block font-medium">Billed Amount</span>
-                                    <span className="text-emerald-700 font-extrabold text-sm">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">Invoice No</span>
+                                    <span className="font-mono font-bold text-slate-700">{collectionTarget.invoiceNo}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">Period</span>
+                                    <span className="font-semibold text-slate-600">{collectionTarget.period}</span>
+                                </div>
+                                <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                                    <span className="font-bold text-slate-700">Amount Due</span>
+                                    <span className="text-base font-extrabold text-emerald-600">
                                         ₹{collectionTarget.amount.toLocaleString('en-IN')}
                                     </span>
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
-                                    Amount Received (₹) <span className="text-red-500">*</span>
-                                </label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₹</span>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        required
-                                        value={collectionAmount || ''}
-                                        onChange={(e) => setCollectionAmount(parseFloat(e.target.value) || 0)}
-                                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-base font-bold text-slate-800"
-                                        placeholder="2500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
-                                    Payment Method <span className="text-red-500">*</span>
-                                </label>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">Payment Method</label>
                                 <select
                                     value={collectionMethod}
-                                    onChange={(e: any) => setCollectionMethod(e.target.value)}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-sm font-semibold text-slate-700 bg-white"
+                                    onChange={(e) => {
+                                        const m = e.target.value;
+                                        setCollectionMethod(m as any);
+                                        const prefix = m === 'Online Transfer' ? 'ONLINE-TRANSFER' : m.toUpperCase().replace(/\s+/g, '-');
+                                        setCollectionRef(`${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`);
+                                    }}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white"
                                 >
-                                    <option value="UPI">UPI (GooglePay / PhonePe / Paytm / QR)</option>
-                                    <option value="Cash">Cash in Hand</option>
-                                    <option value="Bank Transfer">Bank Transfer (NEFT / IMPS / RTGS)</option>
+                                    <option value="UPI">UPI Setup</option>
+                                    <option value="Online Transfer">Online Transfer (NEFT/RTGS)</option>
+                                    <option value="Cash">Cash</option>
                                     <option value="Cheque">Cheque</option>
                                 </select>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
-                                        Payment Date
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={collectionDate}
-                                        onChange={(e) => setCollectionDate(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-xs font-medium text-slate-700"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
-                                        Transaction Ref / Note
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={collectionRef}
-                                        onChange={(e) => setCollectionRef(e.target.value)}
-                                        placeholder="e.g. UPI Ref / Cashier"
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-xs font-medium text-slate-700"
-                                    />
-                                </div>
+                            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200/70 rounded-lg text-xs">
+                                <span className="text-slate-500 font-medium">Reference ID</span>
+                                <span className="font-mono font-bold text-slate-700">{collectionRef}</span>
                             </div>
 
-                            <div className="pt-3 flex gap-3">
+                            <p className="text-xs text-slate-500">
+                                Upon recording this payment, the invoice will be marked as Paid and recorded in Collection History.
+                            </p>
+
+                            <div className="pt-2 flex gap-3">
                                 <button
                                     type="button"
                                     onClick={() => {
                                         setIsRecordCollectionOpen(false);
                                         setCollectionTarget(null);
                                     }}
-                                    className="flex-1 py-2.5 rounded-xl font-bold text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                                    className="flex-1 py-2 rounded-lg font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={isSubmittingCollection}
-                                    className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                                    className="flex-1 py-2 rounded-lg font-semibold text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
                                 >
                                     {isSubmittingCollection ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />
                                     ) : (
-                                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                        'Confirm Payment'
                                     )}
-                                    Confirm Collection
                                 </button>
                             </div>
                         </form>

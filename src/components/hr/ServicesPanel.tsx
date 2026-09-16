@@ -576,27 +576,6 @@ export default function ServicesPanel({
                                     <div className="flex items-center gap-3 shrink-0">
                                         {/* Financial Action Buttons */}
                                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                            {(() => {
-                                                const latestUnpaidBill = (service.service_bills || []).find((b: any) => {
-                                                    let noteData: any = {};
-                                                    try { noteData = b.notes ? JSON.parse(b.notes) : {}; } catch {}
-                                                    return noteData.status !== 'paid' && b.deposit_settled !== true;
-                                                });
-                                                if (latestUnpaidBill && onRecordCollection) {
-                                                    return (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onRecordCollection(service, latestUnpaidBill);
-                                                            }}
-                                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors cursor-pointer"
-                                                        >
-                                                            <IndianRupee className="w-3.5 h-3.5 text-emerald-400" /> Record Collection
-                                                        </button>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
                                             {onPrepareInvoice && service.status === 'active' && (
                                                 <button
                                                     onClick={(e) => {
