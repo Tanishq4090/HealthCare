@@ -94,7 +94,7 @@ serve(async (req) => {
                 // Find existing lead to attach to
                 const { data: existingLeads } = await supabase
                     .from('crm_leads')
-                    .select('id, pipeline_stage')
+                    .select('id, pipeline_stage, name, notes')
                     .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`)
                     .order('created_at', { ascending: false })
                     .limit(1);
@@ -106,9 +106,24 @@ serve(async (req) => {
                         ? existingLead.name 
                         : (formData.relative_name || formData.patient_name || 'Unknown Lead');
 
+                    const consentAddress = (formData.address || '').trim();
+                    const priorNotes = existingLead.notes || '';
+                    const noteAdditions: string[] = [];
+                    if (consentAddress && !priorNotes.toLowerCase().includes('location:') && !priorNotes.toLowerCase().includes('address:')) {
+                        noteAdditions.push(`Address: ${consentAddress}`);
+                    }
+                    if (formData.other_details && !priorNotes.toLowerCase().includes(formData.other_details.toLowerCase())) {
+                        noteAdditions.push(`Patient Details: ${formData.other_details}`);
+                    }
+
+                    const updatedNotes = noteAdditions.length > 0
+                        ? (priorNotes ? `${priorNotes}\n${noteAdditions.join('\n')}` : noteAdditions.join('\n'))
+                        : priorNotes;
+
                     await supabase.from('crm_leads').update({
                         pipeline_stage: 'Form Submitted',
-                        name: newLeadName
+                        name: newLeadName,
+                        ...(noteAdditions.length > 0 ? { notes: updatedNotes } : {})
                     }).eq('id', existingLead.id);
 
                     // Securely store the patient details and terms acceptance
@@ -323,6 +338,10 @@ serve(async (req) => {
                 : (existingService !== 'Unknown' ? existingService : 'Unknown');
 
             let notesStr = `Service: ${resolvedService}\nShift: ${shiftType}\nLocation: ${locationStr}\nCare for: ${careFor}`;
+            if (city) notesStr += `\nCity: ${city}`;
+            if (state) notesStr += `\nState: ${state}`;
+            if (country) notesStr += `\nCountry: ${country}`;
+            if (area) notesStr += `\nArea: ${area}`;
             if (startDate) notesStr += `\nStart Date: ${startDate}`;
             if (endDate) notesStr += `\nEnd Date: ${endDate}`;
             if (duration) notesStr += `\nDuration: ${duration}`;
@@ -334,6 +353,19 @@ serve(async (req) => {
                 ...(shouldUpdateStage ? { pipeline_stage: 'In Discussion' } : {}),
                 notes: notesStr,
                 last_greeted_at: new Date().toISOString(),
+                work_form_data: {
+                    form_type: 'intake_form',
+                    service: resolvedService,
+                    shift_type: shiftType,
+                    country,
+                    state,
+                    city,
+                    area,
+                    care_for: careFor,
+                    start_date: startDate,
+                    end_date: endDate,
+                    duration,
+                },
             };
 
             let upsertedLeadId: string | null = existingLead?.id ?? null;
@@ -383,6 +415,10 @@ serve(async (req) => {
                         shift_type: shiftType,
                         care_for: careFor,
                         location: locationStr,
+                        country,
+                        state,
+                        city,
+                        area,
                         start_date: startDate,
                         end_date: endDate,
                         duration,

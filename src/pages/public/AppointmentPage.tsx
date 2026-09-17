@@ -31,7 +31,8 @@ const formSchema = z.object({
   serviceId: z.string().min(1, "Please select a service"),
   date: z.date({ message: "Please select a preferred date" }),
   timeSlot: z.string().min(1, "Please select a preferred time"),
-  location: z.string().min(5, "Please provide a more specific location in Surat"),
+  city: z.string().min(1, "Please select your city"),
+  location: z.string().min(2, "Please provide your area / street address"),
   notes: z.string().max(500).optional(),
 });
 
@@ -51,6 +52,7 @@ export default function AppointmentPage() {
       phone: '',
       email: '',
       serviceId: '',
+      city: 'Surat',
       location: '',
       notes: '',
     },
@@ -60,8 +62,16 @@ export default function AppointmentPage() {
     try {
       setIsLoading(true);
       
+      const selectedCity = data.city || 'Surat';
+      const formattedLocation = `${data.location}, ${selectedCity}`;
+      const enrichedNotes = [
+        data.notes || '',
+        `City: ${selectedCity}`,
+        `Area: ${data.location}`,
+      ].filter(Boolean).join('\n');
+
       // 1. Primary persistence: Save to Supabase appointments table (triggers CRM sync)
-      const { error: dbError } = await supabase
+      const { data: insertedAppt, error: dbError } = await supabase
         .from('appointments')
         .insert([{
           full_name: data.fullName,
@@ -70,13 +80,34 @@ export default function AppointmentPage() {
           service: data.serviceId,
           preferred_date: format(data.date, 'yyyy-MM-dd'),
           preferred_time: data.timeSlot,
-          location: data.location,
-          notes: data.notes || null,
+          location: formattedLocation,
+          notes: enrichedNotes,
           status: 'pending'
-        }]);
+        }])
+        .select('id, crm_lead_id')
+        .maybeSingle();
 
       if (dbError) {
         throw new Error(dbError.message || 'Failed to save appointment in database');
+      }
+
+      // Ensure created CRM lead has structured work_form_data and city
+      try {
+        const leadId = insertedAppt?.crm_lead_id;
+        if (leadId) {
+          await supabase.from('crm_leads').update({
+            work_form_data: {
+              form_type: 'website_booking',
+              city: selectedCity,
+              area: data.location,
+              service: data.serviceId,
+              preferred_date: format(data.date, 'yyyy-MM-dd'),
+              preferred_time: data.timeSlot,
+            }
+          }).eq('id', leadId);
+        }
+      } catch (leadUpdateErr) {
+        console.warn('Non-fatal error updating lead with website booking city:', leadUpdateErr);
       }
 
       // 2. Secondary dispatches: Email Lead Notification & WhatsApp Confirmation (non-blocking)
@@ -310,20 +341,45 @@ export default function AppointmentPage() {
                       )}
                     </div>
 
-                    {/* Location & Notes */}
-                    <FormField
-                      control={form.control}
-                      name="location"
-                      render={({ field }) => (
-                        <FormItem className="space-y-2">
-                          <FormLabel className="text-sm font-semibold text-gray-900 dark:text-white ml-1">Your Location in Surat <span className="text-red-500">*</span></FormLabel>
-                          <FormControl>
-                            <Input placeholder="E.g., Pal, Adajan, Vesu, City Light..." className="h-13 bg-slate-50/80 dark:bg-slate-800/80 border-gray-200/80 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue rounded-2xl" {...field} />
-                          </FormControl>
-                          <FormMessage className="ml-1" />
-                        </FormItem>
-                      )}
-                    />
+                    {/* City & Area / Street Address */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="city"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-semibold text-gray-900 dark:text-white ml-1">City <span className="text-red-500">*</span></FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value || 'Surat'}>
+                              <FormControl>
+                                <SelectTrigger className="h-13 bg-slate-50/80 dark:bg-slate-800/80 border-gray-200/80 dark:border-slate-700 text-gray-900 dark:text-white focus:ring-brand-blue rounded-2xl">
+                                  <SelectValue placeholder="Select city" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 rounded-2xl shadow-xl">
+                                {['Surat', 'Navsari', 'Bardoli', 'Bharuch', 'Valsad', 'Vapi', 'Ahmedabad', 'Vadodara', 'Mumbai', 'Other'].map((cityName) => (
+                                  <SelectItem key={cityName} value={cityName} className="text-gray-700 dark:text-gray-300 focus:bg-slate-50 dark:focus:bg-slate-800 rounded-xl my-1">{cityName}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage className="ml-1" />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="location"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-semibold text-gray-900 dark:text-white ml-1">Area / Street Address <span className="text-red-500">*</span></FormLabel>
+                            <FormControl>
+                              <Input placeholder="E.g., Pal, Adajan, Vesu, Lunsikui..." className="h-13 bg-slate-50/80 dark:bg-slate-800/80 border-gray-200/80 dark:border-slate-700 text-gray-900 dark:text-white focus-visible:ring-brand-blue rounded-2xl" {...field} />
+                            </FormControl>
+                            <FormMessage className="ml-1" />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <FormField
                       control={form.control}

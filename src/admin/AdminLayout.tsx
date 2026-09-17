@@ -230,13 +230,34 @@ export default function AdminLayout() {
                         .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
                         .limit(5)
                         .then(({ data }) => data || []) : Promise.resolve([]),
-                    canSearchInvoices ? supabase
-                        .from('worker_assignments')
-                        .select('id, final_invoice_number, clients(client_name)')
-                        .not('final_invoice_number', 'is', null)
-                        .ilike('final_invoice_number', `%${searchQuery}%`)
-                        .limit(5)
-                        .then(({ data }) => data || []) : Promise.resolve([])
+                    canSearchInvoices ? Promise.all([
+                        supabase
+                            .from('worker_assignments')
+                            .select('id, final_invoice_number, clients(client_name)')
+                            .not('final_invoice_number', 'is', null)
+                            .ilike('final_invoice_number', `%${searchQuery}%`)
+                            .limit(5)
+                            .then(({ data }) => (data || []).map((inv: any) => ({
+                                id: inv.id,
+                                title: inv.final_invoice_number,
+                                subtitle: `Client: ${inv.clients?.client_name || 'Unknown'}`,
+                                type: 'assignment',
+                                targetTab: 'monthly'
+                            }))),
+                        supabase
+                            .from('payments')
+                            .select('id, transaction_ref, client_name, amount')
+                            .ilike('transaction_ref', `%${searchQuery}%`)
+                            .limit(5)
+                            .then(({ data }) => (data || []).map((pay: any) => ({
+                                id: pay.id,
+                                title: pay.transaction_ref,
+                                subtitle: `${pay.client_name || 'Client'} • ₹${parseFloat(pay.amount || 0).toLocaleString('en-IN')}`,
+                                type: 'payment',
+                                targetTab: 'history',
+                                searchVal: pay.transaction_ref
+                            })))
+                    ]).then(([assigns, pays]) => [...assigns, ...pays].slice(0, 5)) : Promise.resolve([])
                 ]);
 
                 setSearchResults({
@@ -839,20 +860,29 @@ export default function AdminLayout() {
                                         {searchResults.invoices.length > 0 && (
                                             <div>
                                                 <div className="px-3 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
-                                                    Invoices
+                                                    Invoices & Transactions
                                                 </div>
                                                 {searchResults.invoices.map(invoice => (
                                                     <button
                                                         key={invoice.id}
                                                         onClick={() => {
                                                             setIsSearchOpen(false);
-                                                            navigate('/admin/billing');
+                                                            if (invoice.type === 'payment') {
+                                                                navigate(`/admin/billing?tab=history&search=${encodeURIComponent(invoice.searchVal || invoice.title)}`);
+                                                            } else {
+                                                                navigate('/admin/billing?tab=monthly');
+                                                            }
                                                         }}
                                                         className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
                                                     >
-                                                        <span className="text-sm font-semibold text-slate-900">{invoice.final_invoice_number}</span>
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-sm font-semibold text-slate-900 font-mono">{invoice.title || invoice.final_invoice_number}</span>
+                                                            {invoice.type === 'payment' && (
+                                                                <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Ref ID</span>
+                                                            )}
+                                                        </div>
                                                         <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                            <span className="text-primary font-medium">Client: {(invoice as any).clients?.client_name || 'Unknown'}</span>
+                                                            <span className="text-primary font-medium">{invoice.subtitle || `Client: ${(invoice as any).clients?.client_name || 'Unknown'}`}</span>
                                                         </div>
                                                     </button>
                                                 ))}

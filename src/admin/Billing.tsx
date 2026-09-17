@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download, Loader2, Bot, ShieldCheck } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download, Loader2, Bot, ShieldCheck, Copy } from 'lucide-react';
 
 const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { resolveClientBillingRatePerDay, numberToWordsINR, calculateClientAttendanceSummary, calculateClientServiceDaysFromAttendance, type ClientAttendanceSummary } from '../utils/billingRate';
 import ServicesPanel from '../components/hr/ServicesPanel';
 import { recordServiceInvoice, markServiceBillPaid } from '../services/serviceLifecycle';
+import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
 
 type ManualInvoiceForm = {
     clientName: string;
@@ -108,11 +109,15 @@ export default function Billing() {
     const currentMonthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
 
-    // Sync active tab with URL query parameter (?tab=monthly, deposits, history)
+    // Sync active tab and search query with URL parameters (?tab=monthly, deposits, history & search=...)
     useEffect(() => {
         const tabParam = searchParams.get('tab') as any;
         if (tabParam && ['deposits', 'monthly', 'history'].includes(tabParam) && tabParam !== activeTab) {
             setActiveTab(tabParam);
+        }
+        const searchParam = searchParams.get('search');
+        if (searchParam !== null) {
+            setHistorySearch(searchParam);
         }
     }, [searchParams]);
     const [historySubTab, setHistorySubTab] = useState<'deposit' | 'service'>('deposit');
@@ -120,6 +125,8 @@ export default function Billing() {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     });
+    const [historySearch, setHistorySearch] = useState<string>(() => searchParams.get('search') || '');
+    const [loadingInvoicePaymentId, setLoadingInvoicePaymentId] = useState<string | null>(null);
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -728,19 +735,187 @@ export default function Billing() {
     const fetchPayments = async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('payments')
-                .select('*')
-                .order('payment_date', { ascending: false });
+            const [paymentsRes, leadsRes, assignmentsRes] = await Promise.all([
+                supabase
+                    .from('payments')
+                    .select('*')
+                    .order('payment_date', { ascending: false }),
+                supabase
+                    .from('crm_leads')
+                    .select('id, name, notes, phone'),
+                supabase
+                    .from('worker_assignments')
+                    .select('id, client_id, invoice_pdf_url')
+            ]);
             
-            if (error) throw error;
-            setPayments(data || []);
+            if (paymentsRes.error) throw paymentsRes.error;
+            const paymentsData = paymentsRes.data || [];
+            const leadsData = leadsRes.data || [];
+            const assignmentsData = assignmentsRes.data || [];
+
+            const enriched = paymentsData.map(p => {
+                let lead = null;
+                if (p.transaction_ref && p.transaction_ref.startsWith('MANUAL-DEP-')) {
+                    const hex = p.transaction_ref.replace('MANUAL-DEP-', '').toLowerCase();
+                    lead = leadsData.find(l => l.id.toLowerCase().startsWith(hex));
+                }
+                if (!lead && p.client_name) {
+                    lead = leadsData.find(l => l.name?.trim().toLowerCase() === p.client_name?.trim().toLowerCase());
+                }
+
+                let serviceInvoiceUrl: string | null = null;
+                let depositInvoiceUrl: string | null = null;
+
+                if (lead?.notes) {
+                    const match = lead.notes.match(/Invoice PDF:\s*(https:\/\/[^\s\n\r]+)/i);
+                    if (match && match[1]) {
+                        if (match[1].includes('/DEP-')) {
+                            depositInvoiceUrl = match[1];
+                        } else {
+                            serviceInvoiceUrl = match[1];
+                        }
+                    }
+                }
+                if (lead) {
+                    const asgn = assignmentsData.find(a => a.client_id === lead.id && a.invoice_pdf_url);
+                    if (asgn?.invoice_pdf_url) {
+                        if (asgn.invoice_pdf_url.includes('/DEP-')) {
+                            depositInvoiceUrl = asgn.invoice_pdf_url;
+                        } else if (!serviceInvoiceUrl) {
+                            serviceInvoiceUrl = asgn.invoice_pdf_url;
+                        }
+                    }
+                }
+
+                return {
+                    ...p,
+                    matched_lead_id: lead?.id,
+                    cached_service_url: serviceInvoiceUrl,
+                    cached_deposit_url: depositInvoiceUrl,
+                };
+            });
+
+            setPayments(enriched);
         } catch (err: any) {
             console.error('Error fetching payments:', err);
             toast.error('Failed to load payment history');
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleViewPaymentInvoice = async (payment: any) => {
+        const isDeposit = historySubTab === 'deposit'
+            ? true
+            : historySubTab === 'service'
+                ? false
+                : (payment.payment_type === 'deposit' || 
+                   (!payment.payment_type && ['ONLINE', 'UPI', 'CHEQUE', 'CASH', 'MANUAL-DEP', 'DEP'].some(prefix => payment.transaction_ref?.toUpperCase().startsWith(prefix))));
+
+        const leadId = payment.matched_lead_id;
+        if (!leadId) {
+            toast.error(`No associated client record found for "${payment.client_name || 'this client'}".`);
+            return;
+        }
+
+        setLoadingInvoicePaymentId(payment.id);
+        try {
+            // 1. If viewing Deposit History, prioritize DEP- invoices
+            if (isDeposit) {
+                if (payment.cached_deposit_url) {
+                    window.open(payment.cached_deposit_url, '_blank');
+                    return;
+                }
+
+                // Check storage bucket for existing DEP-*.pdf
+                const { data: files, error } = await supabase.storage.from('invoices').list(leadId);
+                if (error) throw error;
+                const pdfFiles = (files || []).filter(f => f.name.endsWith('.pdf'));
+                const existingDepFile = pdfFiles.find(f => f.name.toUpperCase().startsWith('DEP-'));
+
+                if (existingDepFile) {
+                    const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(`${leadId}/${existingDepFile.name}`);
+                    const finalUrl = `${pubData.publicUrl}?t=${Date.now()}`;
+                    setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, cached_deposit_url: finalUrl } : p));
+                    window.open(finalUrl, '_blank');
+                    return;
+                }
+
+                // If no DEP-*.pdf exists, generate an official Security Deposit Receipt & Invoice PDF on the fly!
+                const refSuffix = (payment.transaction_ref || '')
+                    .replace(/^MANUAL-DEP-|^DEP-|^UPI-|^CASH-|^ONLINE-TRANSFER-/, '')
+                    .replace(/[^A-Za-z0-9]/g, '')
+                    .slice(0, 8)
+                    .toUpperCase() || leadId.slice(0, 8).toUpperCase();
+
+                const invNumber = `DEP-${refSuffix}`;
+                const depositAmt = parseFloat(payment.amount || 0);
+                const payDate = payment.payment_date ? payment.payment_date.split('T')[0] : new Date().toISOString().split('T')[0];
+
+                const { data: leadData } = await supabase.from('crm_leads').select('name, phone, whatsapp_number, notes').eq('id', leadId).maybeSingle();
+                const notesStr = leadData?.notes || '';
+                const sMatch = notesStr.match(/^Service:\s*(.+)$/im);
+                const serviceCategory = sMatch ? sMatch[1].trim() : 'Healthcare Service';
+                const lMatch = notesStr.match(/^Location:\s*(.+)$/im);
+                const clientAddress = lMatch ? lMatch[1].trim() : '';
+
+                const newDepUrl = await generateAndUploadInvoicePdf({
+                    clientId: leadId,
+                    clientName: payment.client_name || leadData?.name || 'Client',
+                    clientPhone: leadData?.phone || leadData?.whatsapp_number || undefined,
+                    clientAddress: clientAddress || undefined,
+                    invoiceNumber: invNumber,
+                    invoiceDate: payDate,
+                    dueDate: payDate,
+                    serviceName: `Security Deposit — ${serviceCategory}`,
+                    servicePeriod: 'Security Deposit Received',
+                    days: 1,
+                    ratePerDay: depositAmt,
+                    grossAmount: depositAmt,
+                    previouslyBilled: 0,
+                    depositCollected: 0,
+                    settlementAmount: depositAmt,
+                    isFinalSettlement: false,
+                    isDeposit: true,
+                });
+
+                setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, cached_deposit_url: newDepUrl } : p));
+                window.open(newDepUrl, '_blank');
+                return;
+            }
+
+            // 2. If viewing Service Invoice History, prioritize INV- invoices
+            if (payment.cached_service_url) {
+                window.open(payment.cached_service_url, '_blank');
+                return;
+            }
+
+            const { data: files, error } = await supabase.storage.from('invoices').list(leadId);
+            if (error) throw error;
+            const pdfFiles = (files || []).filter(f => f.name.endsWith('.pdf'));
+            const invFile = pdfFiles.find(f => f.name.toUpperCase().startsWith('INV-')) || pdfFiles[0];
+
+            if (invFile) {
+                const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(`${leadId}/${invFile.name}`);
+                const finalUrl = `${pubData.publicUrl}?t=${Date.now()}`;
+                setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, cached_service_url: finalUrl } : p));
+                window.open(finalUrl, '_blank');
+                return;
+            }
+
+            toast.info(`No service invoice PDF found for ${payment.client_name}.`);
+        } catch (err: any) {
+            console.error('Error viewing invoice PDF:', err);
+            toast.error('Could not load invoice PDF');
+        } finally {
+            setLoadingInvoicePaymentId(null);
+        }
+    };
+
+    const handleCopyRef = (ref: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(ref);
+        toast.success(`Copied Reference ID: ${ref}`);
     };
 
     useEffect(() => {
@@ -2367,6 +2542,27 @@ export default function Billing() {
                             <h2 className="font-semibold text-slate-900">Recorded Collection Log</h2>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
+                            {/* Search Filter by Reference ID, Client, Amount */}
+                            <div className="relative min-w-[220px]">
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    placeholder="Search Ref ID, Client, Amount..."
+                                    value={historySearch}
+                                    onChange={(e) => setHistorySearch(e.target.value)}
+                                    className="pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary w-full text-slate-800 placeholder:text-slate-400 font-medium transition-all"
+                                />
+                                {historySearch && (
+                                    <button
+                                        onClick={() => setHistorySearch('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+                                        title="Clear search"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+
                             {/* Month navigator with left/right arrows */}
                             <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden">
                                 <button
@@ -2431,22 +2627,31 @@ export default function Billing() {
                                 <p className="text-slate-500 max-w-xs">Use the "Record Payment" buttons in the other tabs to log collections here.</p>
                             </div>
                         ) : (() => {
-                            const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH')));
+                            const depositPayments = payments.filter(p => p.payment_type === 'deposit' || (!p.payment_type && (p.transaction_ref?.startsWith('ONLINE') || p.transaction_ref?.startsWith('UPI') || p.transaction_ref?.startsWith('CHEQUE') || p.transaction_ref?.startsWith('CASH') || p.transaction_ref?.startsWith('MANUAL-DEP'))));
                             const servicePayments = payments.filter(p => p.payment_type === 'service' || (!p.payment_type && p.transaction_ref?.startsWith('TXN')));
 
-                            // Filter by selected month
-                            const filterByMonth = (rows: any[]) => rows.filter(p => {
-                                const d = new Date(p.payment_date);
-                                const rowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                                return rowMonth === selectedMonth;
-                            });
+                            const allSubTabRows = historySubTab === 'deposit' ? depositPayments : servicePayments;
 
-                            const rows = filterByMonth(historySubTab === 'deposit' ? depositPayments : servicePayments);
+                            const isSearching = historySearch.trim().length > 0;
+                            const searchLower = historySearch.trim().toLowerCase();
+
+                            // If searching, search across all records in this sub-tab; otherwise filter by month
+                            const rows = isSearching
+                                ? allSubTabRows.filter(p =>
+                                    (p.transaction_ref || '').toLowerCase().includes(searchLower) ||
+                                    (p.client_name || '').toLowerCase().includes(searchLower) ||
+                                    String(p.amount || '').includes(searchLower)
+                                )
+                                : allSubTabRows.filter(p => {
+                                    const d = new Date(p.payment_date);
+                                    const rowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                                    return rowMonth === selectedMonth;
+                                });
+
                             const color = historySubTab === 'deposit' ? 'blue' : 'emerald';
 
                             // Build list of available months from all payments for the nav
-                            const allRows = historySubTab === 'deposit' ? depositPayments : servicePayments;
-                            const availableMonths = [...new Set(allRows.map(p => {
+                            const availableMonths = [...new Set(allSubTabRows.map(p => {
                                 const d = new Date(p.payment_date);
                                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                             }))].sort((a, b) => b.localeCompare(a));
@@ -2456,26 +2661,28 @@ export default function Billing() {
                                 return new Date(Number(y), Number(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
                             };
 
-                            // Total for selected month
-                            const monthTotal = rows.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+                            // Total for current view
+                            const viewTotal = rows.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
                             return (
                                 <div>
-                                    {/* Record count bar with month summary */}
+                                    {/* Record count bar with summary */}
                                     <div className={`px-6 py-3 flex items-center gap-3 border-b flex-wrap ${color === 'blue' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'}`}>
                                         <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${color === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
                                         <span className={`text-xs font-bold uppercase tracking-widest ${color === 'blue' ? 'text-blue-700' : 'text-emerald-700'}`}>
                                             {historySubTab === 'deposit' ? 'Deposit Invoice History' : 'Service Invoice History'}
                                         </span>
-                                        <span className="text-xs text-slate-500 font-medium">— {monthLabel(selectedMonth)}</span>
+                                        <span className="text-xs text-slate-500 font-medium">
+                                            {isSearching ? `— Search results for "${historySearch.trim()}" (all months)` : `— ${monthLabel(selectedMonth)}`}
+                                        </span>
                                         <span className={`ml-auto flex items-center gap-3 text-xs font-semibold ${color === 'blue' ? 'text-blue-600' : 'text-emerald-600'}`}>
                                             <span>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
-                                            {rows.length > 0 && <span className="font-bold">₹{monthTotal.toLocaleString('en-IN')}</span>}
+                                            {rows.length > 0 && <span className="font-bold">₹{viewTotal.toLocaleString('en-IN')}</span>}
                                         </span>
                                     </div>
 
                                     {/* Quick month navigation pills */}
-                                    {availableMonths.length > 1 && (
+                                    {!isSearching && availableMonths.length > 1 && (
                                         <div className="px-6 py-2 flex items-center gap-2 flex-wrap border-b border-slate-100 bg-slate-50/50">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Jump to:</span>
                                             {availableMonths.map(m => (
@@ -2498,13 +2705,17 @@ export default function Billing() {
                                             <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50'}`}>
                                                 <RupeeIcon className={`text-2xl ${color === 'blue' ? 'text-blue-300' : 'text-emerald-300'}`} />
                                             </div>
-                                            <h3 className="text-base font-bold text-slate-900 mb-1">No Records for {monthLabel(selectedMonth)}</h3>
+                                            <h3 className="text-base font-bold text-slate-900 mb-1">
+                                                {isSearching ? `No records matching "${historySearch.trim()}"` : `No Records for ${monthLabel(selectedMonth)}`}
+                                            </h3>
                                             <p className="text-slate-500 text-sm max-w-xs">
-                                                {availableMonths.length > 0
-                                                    ? 'Try selecting a different month above.'
-                                                    : historySubTab === 'deposit'
-                                                        ? 'Record a deposit collection from the Deposit Entries tab.'
-                                                        : 'Record a service payment from the Monthly Billing tab.'}
+                                                {isSearching
+                                                    ? 'Try checking for typos or searching by client name or amount.'
+                                                    : availableMonths.length > 0
+                                                        ? 'Try selecting a different month above.'
+                                                        : historySubTab === 'deposit'
+                                                            ? 'Record a deposit collection from the Deposit Entries tab.'
+                                                            : 'Record a service payment from the Monthly Billing tab.'}
                                             </p>
                                         </div>
                                     ) : (
@@ -2516,13 +2727,14 @@ export default function Billing() {
                                                     <th className="py-3 px-6">Client</th>
                                                     <th className="py-3 px-6">Reference ID</th>
                                                     <th className="py-3 px-6">Amount</th>
-                                                    <th className="py-3 px-6 text-right">Status</th>
+                                                    <th className="py-3 px-6">Status</th>
+                                                    <th className="py-3 px-6 text-right">Invoice</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {rows.map(payment => (
                                                     <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
-                                                        <td className="py-4 px-6 text-sm text-slate-600">
+                                                        <td className="py-4 px-6 text-sm text-slate-600 whitespace-nowrap">
                                                             {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                                                         </td>
                                                         <td className="py-4 px-6">
@@ -2534,16 +2746,40 @@ export default function Billing() {
                                                             </div>
                                                         </td>
                                                         <td className="py-4 px-6">
-                                                            <span className="text-sm font-bold text-slate-900 font-mono">{payment.transaction_ref}</span>
+                                                            <div className="inline-flex items-center gap-1.5 group">
+                                                                <span className="text-sm font-bold text-slate-900 font-mono tracking-tight">{payment.transaction_ref}</span>
+                                                                <button
+                                                                    onClick={(e) => handleCopyRef(payment.transaction_ref, e)}
+                                                                    title="Copy Reference ID"
+                                                                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors opacity-70 group-hover:opacity-100"
+                                                                >
+                                                                    <Copy className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="py-4 px-6">
                                                             <span className="text-sm font-bold text-emerald-600">₹{parseFloat(payment.amount).toLocaleString('en-IN')}</span>
                                                         </td>
-                                                        <td className="py-4 px-6 text-right">
-                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                                        <td className="py-4 px-6">
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 whitespace-nowrap">
                                                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                                                 Collected
                                                             </span>
+                                                        </td>
+                                                        <td className="py-4 px-6 text-right whitespace-nowrap">
+                                                            <button
+                                                                onClick={() => handleViewPaymentInvoice(payment)}
+                                                                disabled={loadingInvoicePaymentId === payment.id}
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-primary hover:border-primary/40 shadow-sm transition-all disabled:opacity-50 active:scale-95"
+                                                                title="Open Invoice PDF in new tab"
+                                                            >
+                                                                {loadingInvoicePaymentId === payment.id ? (
+                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                                                ) : (
+                                                                    <FileText className="w-3.5 h-3.5 text-primary" />
+                                                                )}
+                                                                <span>View PDF</span>
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 ))}

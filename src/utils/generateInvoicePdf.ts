@@ -42,13 +42,14 @@ export interface InvoicePdfOptions {
     dueDate?: string;
     serviceName: string;
     servicePeriod: string;
-    days: number;
-    ratePerDay: number;
+    days?: number;
+    ratePerDay?: number;
     grossAmount: number;
     previouslyBilled?: number;
     depositCollected?: number;
     settlementAmount?: number; // negative means refund
     isFinalSettlement?: boolean;
+    isDeposit?: boolean;
 }
 
 export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Promise<string> {
@@ -154,9 +155,13 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
         return dStr;
     };
 
+    const isDepositMode = opts.isDeposit || opts.invoiceNumber.startsWith('DEP-');
+
     drawMeta('Invoice #:', opts.invoiceNumber, true);
     drawMeta('Invoice Date:', formatDateStr(opts.invoiceDate) || 'Today', true);
-    if (opts.dueDate) {
+    if (isDepositMode) {
+        drawMeta('Category:', 'Security Deposit', true);
+    } else if (opts.dueDate) {
         drawMeta('Due Date:', formatDateStr(opts.dueDate), true);
     }
 
@@ -193,7 +198,9 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
     page.drawText(grossStr, { x: COL_4 - amtW, y: curY, size: 10, font: regular, color: DARK });
 
     curY -= 14;
-    const detailLine = `Service Period: ${opts.servicePeriod} (${opts.days} Days @ Rs. ${opts.ratePerDay.toLocaleString('en-IN')}/day)`;
+    const detailLine = isDepositMode
+        ? `Security Deposit: ${opts.servicePeriod || 'Advance payment held against service commencement'}`
+        : `Service Period: ${opts.servicePeriod} (${opts.days || 1} Days @ Rs. ${(opts.ratePerDay || opts.grossAmount).toLocaleString('en-IN')}/day)`;
     page.drawText(detailLine, { x: COL_2, y: curY, size: 8.5, font: regular, color: GRAY });
 
     curY -= 16;
@@ -210,7 +217,7 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
     const refundAmount = Math.abs(settlement);
     const balanceDue = Math.max(0, settlement);
 
-    const totLbl = 'Total Gross Amount';
+    const totLbl = isDepositMode ? 'Total Deposit Amount' : 'Total Gross Amount';
     const totLblW = bold.widthOfTextAtSize(totLbl, 11);
     page.drawText(totLbl, { x: COL_3 + 10 - totLblW, y: curY, size: 11, font: bold, color: DARK });
     const totVal = `Rs. ${grossStr}`;
@@ -218,7 +225,7 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
     page.drawText(totVal, { x: COL_4 - totValW, y: curY, size: 11, font: bold, color: DARK });
     curY -= 18;
 
-    if (prevBilled > 0) {
+    if (!isDepositMode && prevBilled > 0) {
         const prevLbl = 'Collected Earlier';
         const prevLblW = regular.widthOfTextAtSize(prevLbl, 9.5);
         page.drawText(prevLbl, { x: COL_3 + 10 - prevLblW, y: curY, size: 9.5, font: regular, color: GRAY });
@@ -228,7 +235,7 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
         curY -= 16;
     }
 
-    if (deposit > 0) {
+    if (!isDepositMode && deposit > 0) {
         const depLbl = 'Security Deposit';
         const depLblW = regular.widthOfTextAtSize(depLbl, 9.5);
         page.drawText(depLbl, { x: COL_3 + 10 - depLblW, y: curY, size: 9.5, font: regular, color: GRAY });
@@ -238,7 +245,7 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
         curY -= 16;
     }
 
-    if (isRefund) {
+    if (!isDepositMode && isRefund) {
         const refLbl = 'Refund Due to Client';
         const refLblW = bold.widthOfTextAtSize(refLbl, 10);
         page.drawText(refLbl, { x: COL_3 + 10 - refLblW, y: curY, size: 10, font: bold, color: rgb(0.8, 0.35, 0.1) });
@@ -249,9 +256,11 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
     }
 
     page.drawText('Total Items / Qty : 1 / 1', { x: 40, y: curY, size: 8, font: regular, color: GRAY });
-    const inWords = isRefund
-        ? `Refund amount (in words): INR ${numberToWordsINR(Math.round(refundAmount))} Rupees Refund Due to Client.`
-        : `Total amount (in words): INR ${numberToWordsINR(Math.round(balanceDue))} Rupees Only.`;
+    const inWords = isDepositMode
+        ? `Total deposit amount (in words): INR ${numberToWordsINR(Math.round(opts.grossAmount))} Rupees Only.`
+        : isRefund
+            ? `Refund amount (in words): INR ${numberToWordsINR(Math.round(refundAmount))} Rupees Refund Due to Client.`
+            : `Total amount (in words): INR ${numberToWordsINR(Math.round(balanceDue))} Rupees Only.`;
     const wordW = regular.widthOfTextAtSize(inWords, 8);
     page.drawText(inWords, { x: W - 40 - wordW, y: curY, size: 8, font: regular, color: DARK });
 
@@ -259,15 +268,17 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
     page.drawLine({ start: { x: 40, y: curY }, end: { x: W - 40, y: curY }, thickness: 1, color: BLUE_LINE });
     curY -= 16;
 
-    const pLbl = isRefund ? 'Amount to Return:' : 'Amount Payable:';
+    const pLbl = isDepositMode ? 'Deposit Received:' : (isRefund ? 'Amount to Return:' : 'Amount Payable:');
     const pLblW = bold.widthOfTextAtSize(pLbl, 10);
-    page.drawText(pLbl, { x: COL_3 + 10 - pLblW, y: curY, size: 10, font: bold, color: isRefund ? rgb(0.8, 0.35, 0.1) : GRAY });
+    page.drawText(pLbl, { x: COL_3 + 10 - pLblW, y: curY, size: 10, font: bold, color: isDepositMode ? rgb(0.1, 0.6, 0.3) : (isRefund ? rgb(0.8, 0.35, 0.1) : GRAY) });
 
-    const payableValue = isRefund
-        ? `Rs. ${refundAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Refund)`
-        : `Rs. ${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const payableValue = isDepositMode
+        ? `Rs. ${grossStr}`
+        : isRefund
+            ? `Rs. ${refundAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Refund)`
+            : `Rs. ${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     const pValW = bold.widthOfTextAtSize(payableValue, 10);
-    page.drawText(payableValue, { x: COL_4 - pValW, y: curY, size: 10, font: bold, color: isRefund ? rgb(0.8, 0.35, 0.1) : DARK });
+    page.drawText(payableValue, { x: COL_4 - pValW, y: curY, size: 10, font: bold, color: isDepositMode ? rgb(0.1, 0.6, 0.3) : (isRefund ? rgb(0.8, 0.35, 0.1) : DARK) });
 
     curY -= 35;
 
@@ -307,16 +318,22 @@ export async function generateAndUploadInvoicePdf(opts: InvoicePdfOptions): Prom
     curY -= 35;
     page.drawText('Notes:', { x: 40, y: curY, size: 8.5, font: bold, color: DARK });
     curY -= 12;
-    page.drawText(opts.isFinalSettlement ? 'Final Settlement Invoice — Service concluded.' : 'Service Invoice.', { x: 40, y: curY, size: 8, font: regular, color: DARK });
-    curY -= 10;
-    page.drawText(`Service Period: ${opts.servicePeriod} (${opts.days} Days Attendance Verified)`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
-    curY -= 10;
-    if (deposit > 0) {
-        page.drawText(`Security Deposit of Rs. ${deposit.toLocaleString('en-IN')} adjusted against service fee of Rs. ${grossStr}.`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
+    if (isDepositMode) {
+        page.drawText('Official Security Deposit Receipt & Invoice.', { x: 40, y: curY, size: 8, font: regular, color: DARK });
         curY -= 10;
-    }
-    if (isRefund) {
-        page.drawText(`Net refundable balance of Rs. ${refundAmount.toLocaleString('en-IN')} will be refunded to the client bank account.`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
+        page.drawText(`Security Deposit of Rs. ${grossStr} received and held against service commencement.`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
+    } else {
+        page.drawText(opts.isFinalSettlement ? 'Final Settlement Invoice — Service concluded.' : 'Service Invoice.', { x: 40, y: curY, size: 8, font: regular, color: DARK });
+        curY -= 10;
+        page.drawText(`Service Period: ${opts.servicePeriod} (${opts.days || 1} Days Attendance Verified)`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
+        curY -= 10;
+        if (deposit > 0) {
+            page.drawText(`Security Deposit of Rs. ${deposit.toLocaleString('en-IN')} adjusted against service fee of Rs. ${grossStr}.`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
+            curY -= 10;
+        }
+        if (isRefund) {
+            page.drawText(`Net refundable balance of Rs. ${refundAmount.toLocaleString('en-IN')} will be refunded to the client bank account.`, { x: 40, y: curY, size: 8, font: regular, color: DARK });
+        }
     }
 
     const pdfBytes = await pdfDoc.save();

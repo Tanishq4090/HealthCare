@@ -147,34 +147,190 @@ export function extractCity(entity: any): string {
         return c.charAt(0).toUpperCase() + c.slice(1);
     }
 
-    const raw = [
+    // Direct work_form_data from WhatsApp Flow or Website Booking
+    if (entity.work_form_data && typeof entity.work_form_data === 'object' && entity.work_form_data.city) {
+        const c = String(entity.work_form_data.city).trim();
+        if (c && c.toLowerCase() !== 'other') {
+            return c.charAt(0).toUpperCase() + c.slice(1);
+        }
+    }
+
+    // Explicit "City: ..." line extraction from notes
+    const cityNoteMatch = (entity.notes || '').match(/^City:\s*([^\n\r,]+)/im);
+    if (cityNoteMatch && cityNoteMatch[1].trim() && cityNoteMatch[1].trim().toLowerCase() !== 'other') {
+        const c = cityNoteMatch[1].trim();
+        return c.charAt(0).toUpperCase() + c.slice(1);
+    }
+
+    // Gather all text sources: notes, location, address, client_consents, work_forms, transcripts
+    const textSources: string[] = [
         entity.notes || '',
         entity.location || '',
         entity.address || '',
         entity.client_address || '',
+        entity.patient_notes || '',
+        entity.patientNotes || '',
         typeof entity.work_form_data === 'object' ? JSON.stringify(entity.work_form_data) : (entity.work_form_data || ''),
-        Array.isArray(entity.client_consents) ? entity.client_consents.map((c: any) => c.address).join(' ') : (entity.client_consents?.address || ''),
-    ].join(' ').toLowerCase();
+        Array.isArray(entity.client_consents) 
+            ? entity.client_consents.map((c: any) => `${c.address || ''} ${c.other_details || ''}`).join(' ')
+            : `${entity.client_consents?.address || ''} ${entity.client_consents?.other_details || ''}`,
+        Array.isArray(entity.client_work_forms)
+            ? entity.client_work_forms.map((w: any) => `${w.other_work || ''} ${w.patient_name || ''}`).join(' ')
+            : `${entity.client_work_forms?.other_work || ''}`,
+        entity.summary || '',
+        entity.transcript || '',
+    ];
+    const raw = textSources.join(' ').toLowerCase();
 
-    // Specific cities in Gujarat / surrounding regions
-    if (raw.includes('navsari')) return 'Navsari';
-    if (raw.includes('bardoli')) return 'Bardoli';
-    if (raw.includes('bharuch') || raw.includes('ankleshwar')) return 'Bharuch';
-    if (raw.includes('valsad')) return 'Valsad';
-    if (raw.includes('vapi')) return 'Vapi';
-    if (raw.includes('vyara')) return 'Vyara';
-    if (raw.includes('bilimora')) return 'Bilimora';
-    if (raw.includes('ahmedabad')) return 'Ahmedabad';
-    if (raw.includes('vadodara') || raw.includes('baroda')) return 'Vadodara';
-    if (raw.includes('mumbai') || raw.includes('thane')) return 'Mumbai';
-    if (raw.includes('pune')) return 'Pune';
-    if (raw.includes('delhi')) return 'Delhi';
-    if (raw.includes('rajkot')) return 'Rajkot';
-    if (raw.includes('bhavnagar')) return 'Bhavnagar';
-    if (raw.includes('jamnagar')) return 'Jamnagar';
-    if (raw.includes('gandhinagar')) return 'Gandhinagar';
+    // Specific non-Surat cities / regions (Check these first to catch regional inquiries)
+    // 1. Navsari & areas / pincodes
+    if (
+        raw.includes('navsari') ||
+        raw.includes('lunsikui') ||
+        raw.includes('jalalpore') ||
+        raw.includes('maroli') ||
+        raw.includes('vesma') ||
+        raw.includes('vijalpore') ||
+        raw.includes('kaliawadi') ||
+        raw.includes('dudhia talav') ||
+        raw.includes('396445') ||
+        raw.includes('396450') ||
+        raw.includes('396415')
+    ) {
+        return 'Navsari';
+    }
 
-    // Surat and common Surat areas/pincodes
+    // 2. Bardoli & areas / pincodes
+    if (
+        raw.includes('bardoli') ||
+        raw.includes('swaraj ashram') ||
+        raw.includes('sardar baug') ||
+        raw.includes('dhulia road') ||
+        raw.includes('394601') ||
+        raw.includes('394602')
+    ) {
+        return 'Bardoli';
+    }
+
+    // 3. Bharuch / Ankleshwar
+    if (
+        raw.includes('bharuch') ||
+        raw.includes('ankleshwar') ||
+        raw.includes('dahej') ||
+        raw.includes('zadeshwar') ||
+        raw.includes('shravan chokdi') ||
+        raw.includes('392001') ||
+        raw.includes('393001') ||
+        raw.includes('393002')
+    ) {
+        return 'Bharuch';
+    }
+
+    // 4. Valsad
+    if (
+        raw.includes('valsad') ||
+        raw.includes('tithal') ||
+        raw.includes('dharampur') ||
+        raw.includes('parnera') ||
+        raw.includes('396001') ||
+        raw.includes('396002')
+    ) {
+        return 'Valsad';
+    }
+
+    // 5. Vapi
+    if (
+        raw.includes('vapi') ||
+        raw.includes('gunjan') ||
+        raw.includes('chanod') ||
+        raw.includes('gidc vapi') ||
+        raw.includes('daman road') ||
+        raw.includes('chala') ||
+        raw.includes('silvassa') ||
+        raw.includes('396191') ||
+        raw.includes('396195')
+    ) {
+        return 'Vapi';
+    }
+
+    // 6. Vyara / Tapi
+    if (raw.includes('vyara') || raw.includes('songadh') || raw.includes('394650')) {
+        return 'Vyara';
+    }
+
+    // 7. Bilimora / Gandevi / Chikhli
+    if (raw.includes('bilimora') || raw.includes('gandevi') || raw.includes('chikhli') || raw.includes('396321')) {
+        return 'Bilimora';
+    }
+
+    // 8. Ahmedabad
+    if (
+        raw.includes('ahmedabad') ||
+        raw.includes('amdavad') ||
+        raw.includes('satellite') ||
+        raw.includes('bodakdev') ||
+        raw.includes('vastrapur') ||
+        raw.includes('maninagar') ||
+        raw.includes('bopal') ||
+        raw.includes('chandkheda') ||
+        raw.includes('prahlad nagar') ||
+        /\b380\d{3}\b/.test(raw)
+    ) {
+        return 'Ahmedabad';
+    }
+
+    // 9. Vadodara / Baroda
+    if (
+        raw.includes('vadodara') ||
+        raw.includes('baroda') ||
+        raw.includes('alkapuri') ||
+        raw.includes('gotri') ||
+        raw.includes('manjalpur') ||
+        raw.includes('karelibaug') ||
+        raw.includes('sayajigunj') ||
+        raw.includes('waghodia') ||
+        /\b390\d{3}\b/.test(raw)
+    ) {
+        return 'Vadodara';
+    }
+
+    // 10. Mumbai / Thane / Navi Mumbai
+    if (
+        raw.includes('mumbai') ||
+        raw.includes('bombay') ||
+        raw.includes('thane') ||
+        raw.includes('borivali') ||
+        raw.includes('kandivali') ||
+        raw.includes('andheri') ||
+        raw.includes('bandra') ||
+        raw.includes('dadar') ||
+        raw.includes('navi mumbai') ||
+        raw.includes('vashi') ||
+        raw.includes('ghatkopar') ||
+        raw.includes('goregaon') ||
+        raw.includes('bhayandar') ||
+        raw.includes('mira road') ||
+        /\b400\d{3}\b/.test(raw)
+    ) {
+        return 'Mumbai';
+    }
+
+    // 11. Pune
+    if (raw.includes('pune') || raw.includes('wakad') || raw.includes('hinjewadi') || raw.includes('baner') || /\b411\d{3}\b/.test(raw)) {
+        return 'Pune';
+    }
+
+    // 12. Delhi / NCR
+    if (raw.includes('delhi') || raw.includes('noida') || raw.includes('gurgaon') || raw.includes('gurugram') || raw.includes('faridabad') || /\b110\d{3}\b/.test(raw)) {
+        return 'Delhi';
+    }
+
+    // 13. Rajkot
+    if (raw.includes('rajkot') || raw.includes('kalawad road') || /\b360\d{3}\b/.test(raw)) {
+        return 'Rajkot';
+    }
+
+    // 14. Surat and common Surat neighborhoods / pincodes
     if (
         raw.includes('surat') ||
         raw.includes('adajan') ||
@@ -185,35 +341,98 @@ export function extractCity(entity: any): string {
         raw.includes('katargam') ||
         raw.includes('varachha') ||
         raw.includes('althan') ||
+        raw.includes('alathan') ||
         raw.includes('rander') ||
         raw.includes('udhna') ||
         raw.includes('bhatar') ||
         raw.includes('city light') ||
+        raw.includes('citylight') ||
         raw.includes('piplod') ||
         raw.includes('athwa') ||
         raw.includes('amroli') ||
         raw.includes('mota varachha') ||
         raw.includes('ghod dod') ||
+        raw.includes('ghoddod') ||
         raw.includes('chauta') ||
-        raw.includes('395')
+        raw.includes('nanpura') ||
+        raw.includes('kamrej') ||
+        raw.includes('sarthana') ||
+        raw.includes('jahangirpura') ||
+        raw.includes('parvat patiya') ||
+        raw.includes('puna gam') ||
+        raw.includes('punagam') ||
+        raw.includes('pandesara') ||
+        raw.includes('bhestan') ||
+        raw.includes('majura') ||
+        raw.includes('khatodara') ||
+        raw.includes('dumas') ||
+        raw.includes('hazira') ||
+        raw.includes('bamroli') ||
+        raw.includes('olpad') ||
+        raw.includes('kosamba') ||
+        raw.includes('magdalla') ||
+        raw.includes('395') ||
+        raw.includes('394101') ||
+        raw.includes('394107') ||
+        raw.includes('394210') ||
+        raw.includes('394221')
     ) {
         return 'Surat';
     }
 
-    // Explicit "Location: ..." or "City: ..." line extraction
-    const locMatch = (entity.notes || '').match(/(?:Location|City|Address):\s*([^\n\r]+)/i);
+    // Explicit "Location: ..." or "Address: ..." line extraction fallback
+    const locMatch = (entity.notes || '').match(/(?:Location|Address):\s*([^\n\r]+)/i);
     if (locMatch && locMatch[1].trim()) {
         const parts = locMatch[1].split(',').map((s: string) => s.trim()).filter(Boolean);
         if (parts.length > 0) {
-            const candidate = parts[parts.length - 1].replace(/\d+/g, '').trim();
-            if (candidate.length >= 3 && candidate.length <= 25) {
-                return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+            // Check each comma-separated component from right to left (city is usually near the end)
+            for (let i = parts.length - 1; i >= 0; i--) {
+                const cleaned = parts[i].replace(/\d+/g, '').trim();
+                if (cleaned.length >= 3 && cleaned.length <= 25 && !['india', 'gujarat', 'maharashtra'].includes(cleaned.toLowerCase())) {
+                    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+                }
             }
         }
     }
 
     // Default territory for 99 Care operations
     return 'Surat';
+}
+
+/**
+ * Intelligently extracts state from lead / client records.
+ */
+export function extractState(entity: any): string {
+    if (!entity) return 'Gujarat';
+    if (entity.state && typeof entity.state === 'string' && entity.state.trim()) {
+        return entity.state.trim();
+    }
+    if (entity.work_form_data && typeof entity.work_form_data === 'object' && entity.work_form_data.state) {
+        return String(entity.work_form_data.state).trim();
+    }
+    const stateMatch = (entity.notes || '').match(/^State:\s*([^\n\r,]+)/im);
+    if (stateMatch && stateMatch[1].trim()) {
+        return stateMatch[1].trim();
+    }
+    return 'Gujarat';
+}
+
+/**
+ * Intelligently extracts country from lead / client records.
+ */
+export function extractCountry(entity: any): string {
+    if (!entity) return 'India';
+    if (entity.country && typeof entity.country === 'string' && entity.country.trim()) {
+        return entity.country.trim();
+    }
+    if (entity.work_form_data && typeof entity.work_form_data === 'object' && entity.work_form_data.country) {
+        return String(entity.work_form_data.country).trim();
+    }
+    const countryMatch = (entity.notes || '').match(/^Country:\s*([^\n\r,]+)/im);
+    if (countryMatch && countryMatch[1].trim()) {
+        return countryMatch[1].trim();
+    }
+    return 'India';
 }
 
 /**
