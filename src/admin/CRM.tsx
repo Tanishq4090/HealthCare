@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search, XCircle } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search, XCircle, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -24,6 +24,9 @@ import {
     isPipelineVisibleLead,
     NEW_LEAD_PIPELINE_STAGE,
     sanitizePipelineStages,
+    extractCity,
+    isLeadInMonth,
+    getLeadMonthKey,
 } from '../utils/crm';
 import {
     formatLeadValueDisplay,
@@ -220,6 +223,34 @@ export default function CRM() {
     const [isLoadingReviews, setIsLoadingReviews] = useState(false);
     // Returning client modal state
     const [returningClientModal, setReturningClientModal] = useState<{ phone: string; name: string; existingClient: any; pendingLeadData: any } | null>(null);
+
+    // Month and City Filtering for Pipeline & Clients tabs
+    const [crmSelectedMonth, setCrmSelectedMonth] = useState<string>(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
+    const [crmViewAllMonths, setCrmViewAllMonths] = useState<boolean>(false);
+    const [crmSelectedCity, setCrmSelectedCity] = useState<string>('all');
+    const [isCityDropdownOpen, setIsCityDropdownOpen] = useState<boolean>(false);
+
+    const crmMonthLabel = (ym: string) => {
+        if (!ym) return '';
+        const [y, m] = ym.split('-');
+        const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
+        return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    };
+
+    const crmPrevMonth = () => {
+        const [y, m] = crmSelectedMonth.split('-');
+        const prev = new Date(parseInt(y, 10), parseInt(m, 10) - 2, 1);
+        setCrmSelectedMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+    };
+
+    const crmNextMonth = () => {
+        const [y, m] = crmSelectedMonth.split('-');
+        const next = new Date(parseInt(y, 10), parseInt(m, 10), 1);
+        setCrmSelectedMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+    };
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -3585,21 +3616,24 @@ export default function CRM() {
     };
 
     const handleExportLeadsToCSV = () => {
-        if (!leads || leads.length === 0) {
+        const exportList = filteredLeads && filteredLeads.length > 0 ? filteredLeads : leads;
+        if (!exportList || exportList.length === 0) {
             toast.error("No leads available to export.");
             return;
         }
 
-        const headers = ["ID", "Name", "Phone", "Email", "Source", "Status", "Pipeline Stage", "Est. Monthly Value"];
-        const rows = leads.map(l => [
+        const headers = ["ID", "Name", "Phone", "Email", "City", "Source", "Status", "Pipeline Stage", "Est. Monthly Value", "Created At"];
+        const rows = exportList.map(l => [
             l.id,
             l.name,
             l.phone || "",
             l.email || "",
+            extractCity(l),
             l.source || "",
             l.status || "",
             l.pipeline_stage || "",
-            `INR ${l.estimated_value_monthly || 0}`
+            `INR ${l.estimated_value_monthly || 0}`,
+            l.created_at || ""
         ]);
 
         const csvContent = [
@@ -3611,7 +3645,7 @@ export default function CRM() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", `CRM_Leads_Pipeline_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.setAttribute("download", `CRM_Leads_Pipeline_${crmSelectedCity !== 'all' ? crmSelectedCity + '_' : ''}${!crmViewAllMonths ? crmSelectedMonth + '_' : 'All_'}${new Date().toISOString().slice(0, 10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -4220,11 +4254,67 @@ export default function CRM() {
         return acc;
     }, {} as Record<string, number>);
 
-    // Organize leads into columns based on active tab
+    // Filtered leads based on Month and City
+    const filteredLeads = useMemo(() => {
+        return leads.filter(l => {
+            // Month filter
+            if (!crmViewAllMonths && !isLeadInMonth(l, crmSelectedMonth)) {
+                return false;
+            }
+            // City filter
+            if (crmSelectedCity !== 'all') {
+                const cCity = extractCity(l);
+                if (cCity.toLowerCase() !== crmSelectedCity.toLowerCase()) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }, [leads, crmViewAllMonths, crmSelectedMonth, crmSelectedCity]);
+
+    // Tab-level leads (for current active tab: pipeline or clients)
+    const currentTabAllLeads = useMemo(() => {
+        const targetStages = activeTab === 'clients' ? clientStages : pipelineStages;
+        return leads.filter(l => targetStages.includes(l.pipeline_stage));
+    }, [leads, activeTab, clientStages, pipelineStages]);
+
+    // Month-scoped tab leads (used for counts)
+    const monthScopedTabLeads = useMemo(() => {
+        return currentTabAllLeads.filter(l => isLeadInMonth(l, crmSelectedMonth));
+    }, [currentTabAllLeads, crmSelectedMonth]);
+
+    // Available cities with counts for the active tab (respecting current month scope if not viewing all months)
+    const availableCities = useMemo(() => {
+        const baseLeads = crmViewAllMonths ? currentTabAllLeads : monthScopedTabLeads;
+        const counts: Record<string, number> = {};
+        baseLeads.forEach(l => {
+            const c = extractCity(l);
+            counts[c] = (counts[c] || 0) + 1;
+        });
+        const list = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+        if (!list.includes('Surat')) list.push('Surat');
+        return list.map(city => ({
+            name: city,
+            count: counts[city] || 0
+        }));
+    }, [crmViewAllMonths, currentTabAllLeads, monthScopedTabLeads]);
+
+    // Counts for the toggle buttons (respects city selection if active)
+    const tabTotalCount = useMemo(() => {
+        if (crmSelectedCity === 'all') return currentTabAllLeads.length;
+        return currentTabAllLeads.filter(l => extractCity(l).toLowerCase() === crmSelectedCity.toLowerCase()).length;
+    }, [currentTabAllLeads, crmSelectedCity]);
+
+    const tabMonthCount = useMemo(() => {
+        if (crmSelectedCity === 'all') return monthScopedTabLeads.length;
+        return monthScopedTabLeads.filter(l => extractCity(l).toLowerCase() === crmSelectedCity.toLowerCase()).length;
+    }, [monthScopedTabLeads, crmSelectedCity]);
+
+    // Organize leads into columns based on active tab and filtered leads
     const columns = activeStages.map(stage => ({
         title: stage,
-        count: leads.filter(l => l.pipeline_stage === stage).length,
-        items: leads.filter(l => l.pipeline_stage === stage).map(l => {
+        count: filteredLeads.filter(l => l.pipeline_stage === stage).length,
+        items: filteredLeads.filter(l => l.pipeline_stage === stage).map(l => {
             const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
 
             // Extract latest quote dates
@@ -4987,7 +5077,7 @@ export default function CRM() {
                         >
                             <span>Pipeline</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'pipeline' ? 'bg-primary/10 text-primary' : 'bg-slate-200 text-slate-600'}`}>
-                                {leads.filter(l => pipelineStages.includes(l.pipeline_stage)).length}
+                                {filteredLeads.filter(l => pipelineStages.includes(l.pipeline_stage)).length}
                             </span>
                         </button>
                         <button
@@ -4996,7 +5086,7 @@ export default function CRM() {
                         >
                             <span>Clients</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'clients' ? 'bg-primary/10 text-primary' : 'bg-slate-200 text-slate-600'}`}>
-                                {leads.filter(l => clientStages.includes(l.pipeline_stage)).length}
+                                {filteredLeads.filter(l => clientStages.includes(l.pipeline_stage)).length}
                             </span>
                         </button>
                         <button
@@ -5027,19 +5117,149 @@ export default function CRM() {
 
             {(activeTab === 'pipeline' || activeTab === 'clients') && (
                 <div className="flex flex-col flex-1 h-full min-h-0">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                        <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-[#1AA6A8]"></span>
-                            Live Sync Active
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/80 shadow-xs">
+                        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+                            {/* Live Sync Status */}
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium pr-2 border-r border-slate-200 hidden md:flex">
+                                <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse"></span>
+                                Live Sync
+                            </div>
+
+                            {/* View Mode Toggle: All vs By Month */}
+                            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                <button
+                                    onClick={() => setCrmViewAllMonths(true)}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                        crmViewAllMonths
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                    }`}
+                                >
+                                    All {activeTab === 'clients' ? 'Clients' : 'Leads'} ({tabTotalCount})
+                                </button>
+                                <button
+                                    onClick={() => setCrmViewAllMonths(false)}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                        !crmViewAllMonths
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                    }`}
+                                >
+                                    By Month ({tabMonthCount})
+                                </button>
+                            </div>
+
+                            {/* Month Navigator */}
+                            <div className={`flex items-center bg-white border rounded-lg overflow-hidden transition-all ${
+                                !crmViewAllMonths 
+                                    ? 'border-[#1AA6A8] ring-2 ring-[#1AA6A8]/20 shadow-xs' 
+                                    : 'border-slate-200 opacity-80 hover:opacity-100'
+                            }`}>
+                                <button 
+                                    onClick={() => {
+                                        setCrmViewAllMonths(false);
+                                        crmPrevMonth();
+                                    }} 
+                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm cursor-pointer"
+                                    title="Previous Month"
+                                >
+                                    ‹
+                                </button>
+                                <span 
+                                    onClick={() => setCrmViewAllMonths(false)}
+                                    className={`px-3 py-1.5 text-xs font-bold min-w-[125px] text-center border-x border-slate-200 select-none cursor-pointer transition-colors ${
+                                        !crmViewAllMonths ? 'text-[#1AA6A8] bg-teal-50/50' : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                    title="Click to view by this month"
+                                >
+                                    {crmMonthLabel(crmSelectedMonth)}
+                                </span>
+                                <button 
+                                    onClick={() => {
+                                        setCrmViewAllMonths(false);
+                                        crmNextMonth();
+                                    }} 
+                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm cursor-pointer"
+                                    title="Next Month"
+                                >
+                                    ›
+                                </button>
+                            </div>
+
+                            {/* City Filter Dropdown */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setIsCityDropdownOpen(!isCityDropdownOpen)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                        crmSelectedCity !== 'all'
+                                            ? 'bg-sky-50 border-sky-300 text-sky-700 ring-2 ring-sky-200/50'
+                                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                                    <span>{crmSelectedCity === 'all' ? 'All Cities' : crmSelectedCity}</span>
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isCityDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isCityDropdownOpen && (
+                                    <>
+                                        <div
+                                            className="fixed inset-0 z-30"
+                                            onClick={() => setIsCityDropdownOpen(false)}
+                                        />
+                                        <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-40 animate-in fade-in zoom-in-95">
+                                            <div className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                                                Filter by City
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setCrmSelectedCity('all');
+                                                    setIsCityDropdownOpen(false);
+                                                }}
+                                                className={`w-full text-left px-3 py-1.5 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                                                    crmSelectedCity === 'all' ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                <span>All Cities</span>
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold">
+                                                    {crmViewAllMonths ? currentTabAllLeads.length : monthScopedTabLeads.length}
+                                                </span>
+                                            </button>
+                                            {availableCities.map(c => (
+                                                <button
+                                                    key={c.name}
+                                                    onClick={() => {
+                                                        setCrmSelectedCity(c.name);
+                                                        setIsCityDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-1.5 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                                                        crmSelectedCity === c.name ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    <span className="flex items-center gap-1.5">
+                                                        <MapPin className="w-3 h-3 text-slate-400" />
+                                                        {c.name}
+                                                    </span>
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">
+                                                        {c.count}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2 sm:gap-3">
+
+                        {/* Action buttons (Add Lead/Client & Export CSV) */}
+                        <div className="flex items-center gap-2 sm:gap-3 ml-auto">
                             {activeTab === 'clients' ? (
                                 <button
                                     onClick={() => {
                                         resetAddClientForm();
                                         setIsAddClientModalOpen(true);
                                     }}
-                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm"
+                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm cursor-pointer"
                                 >
                                     <UserPlus className="w-4 h-4" /> Add Client
                                 </button>
@@ -5052,12 +5272,12 @@ export default function CRM() {
                                         setAddLeadDuplicateWarning(null);
                                         setAddLeadConfirmDuplicate(false);
                                     }}
-                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm"
+                                    className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm cursor-pointer"
                                 >
                                     <Plus className="w-4 h-4" /> Add Lead
                                 </button>
                             )}
-                            <button onClick={handleExportLeadsToCSV} className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex">
+                            <button onClick={handleExportLeadsToCSV} className="px-3 sm:px-4 py-2 bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm hidden sm:flex cursor-pointer">
                                 Export CSV
                             </button>
                         </div>
@@ -5242,6 +5462,14 @@ export default function CRM() {
                                                                                     <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold border uppercase tracking-wider shrink-0 ${priorityMeta.cls}`}>
                                                                                         {priorityMeta.label}
                                                                                     </span>
+                                                                                    {(() => {
+                                                                                        const city = extractCity(item);
+                                                                                        return (
+                                                                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase shrink-0">
+                                                                                                <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })()}
                                                                                     {serviceName && (
                                                                                         <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider truncate shrink-0 max-w-[130px]">
                                                                                             {serviceName}
@@ -5351,6 +5579,14 @@ export default function CRM() {
                                                                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
                                                                                                 {priorityMeta.label}
                                                                                             </span>
+                                                                                            {(() => {
+                                                                                                const city = extractCity(item);
+                                                                                                return (
+                                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase tracking-wider">
+                                                                                                        <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
+                                                                                                    </span>
+                                                                                                );
+                                                                                            })()}
                                                                                             {serviceName && (
                                                                                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
                                                                                                     {serviceName}

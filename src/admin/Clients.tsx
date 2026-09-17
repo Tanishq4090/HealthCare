@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ClientDetailsModal from './components/ClientDetailsModal';
 import { restartClientService } from '../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
+import { extractCity } from '../utils/crm';
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
 const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
@@ -27,6 +28,10 @@ export default function Clients() {
     // Search and View All filters
     const [searchQuery, setSearchQuery] = useState('');
     const [viewAllMonths, setViewAllMonths] = useState(true);
+
+    // City filter state
+    const [selectedCity, setSelectedCity] = useState<string>('all');
+    const [isCityDropdownOpen, setIsCityDropdownOpen] = useState<boolean>(false);
 
     // Monthly slider state
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -770,6 +775,7 @@ export default function Clients() {
                     activeService: activeService || latestService,
                     activeAssignment: activeAssignment || latestAssignment,
                     created_at: c.created_at,
+                    city: extractCity({ ...c, ...leadInfo }),
                     services: clientServices,
                     assignments: clientAssignments,
                 };
@@ -854,23 +860,31 @@ export default function Clients() {
                             </button>
 
                             {/* All vs By Month segmented tabs */}
-                            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
-                                <button
-                                    onClick={() => setViewAllMonths(true)}
-                                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                                        viewAllMonths
-                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
-                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                    }`}
-                                >
-                                    All Clients ({clients.filter(c => c.status !== 'Trash').length})
-                                </button>
-                                {(() => {
-                                    const mCount = clients.filter(c => c.status !== 'Trash' && isClientInMonth(c, selectedMonth)).length;
-                                    return (
+                            {(() => {
+                                const activeClients = clients.filter(c => {
+                                    if (c.status === 'Trash') return false;
+                                    if (selectedCity !== 'all') {
+                                        const city = c.city || extractCity(c);
+                                        if (city.toLowerCase() !== selectedCity.toLowerCase()) return false;
+                                    }
+                                    return true;
+                                });
+                                const mCount = activeClients.filter(c => isClientInMonth(c, selectedMonth)).length;
+                                return (
+                                    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                                        <button
+                                            onClick={() => setViewAllMonths(true)}
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                                viewAllMonths
+                                                    ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            All Clients ({activeClients.length})
+                                        </button>
                                         <button
                                             onClick={() => setViewAllMonths(false)}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
                                                 !viewAllMonths
                                                     ? 'bg-[#1AA6A8] text-white shadow-2xs'
                                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -878,9 +892,9 @@ export default function Clients() {
                                         >
                                             By Month ({mCount})
                                         </button>
-                                    );
-                                })()}
-                            </div>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Month Navigator: ALWAYS VISIBLE */}
                             <div className={`flex items-center bg-white border rounded-lg overflow-hidden transition-all ${
@@ -893,7 +907,7 @@ export default function Clients() {
                                         setViewAllMonths(false);
                                         prevMonth();
                                     }} 
-                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm"
+                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm cursor-pointer"
                                     title="Previous Month"
                                 >
                                     ‹
@@ -912,13 +926,93 @@ export default function Clients() {
                                         setViewAllMonths(false);
                                         nextMonth();
                                     }} 
-                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm disabled:opacity-30 disabled:hover:bg-transparent"
-                                    disabled={selectedMonth === (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; })()}
+                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm cursor-pointer"
                                     title="Next Month"
                                 >
                                     ›
                                 </button>
                             </div>
+
+                            {/* City Filter Dropdown */}
+                            {(() => {
+                                const baseClients = clients.filter(c => {
+                                    if (c.status === 'Trash') return false;
+                                    if (!viewAllMonths && !isClientInMonth(c, selectedMonth)) return false;
+                                    return true;
+                                });
+                                const counts: Record<string, number> = {};
+                                baseClients.forEach(c => {
+                                    const city = c.city || extractCity(c);
+                                    counts[city] = (counts[city] || 0) + 1;
+                                });
+                                const cityList = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+                                if (!cityList.includes('Surat')) cityList.push('Surat');
+
+                                return (
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setIsCityDropdownOpen(!isCityDropdownOpen)}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                                selectedCity !== 'all'
+                                                    ? 'bg-sky-50 border-sky-300 text-sky-700 ring-2 ring-sky-200/50'
+                                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                                            <span>{selectedCity === 'all' ? 'All Cities' : selectedCity}</span>
+                                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isCityDropdownOpen ? 'rotate-180' : ''}`} />
+                                        </button>
+
+                                        {isCityDropdownOpen && (
+                                            <>
+                                                <div
+                                                    className="fixed inset-0 z-30"
+                                                    onClick={() => setIsCityDropdownOpen(false)}
+                                                />
+                                                <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-40 animate-in fade-in zoom-in-95">
+                                                    <div className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                                                        Filter by City
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedCity('all');
+                                                            setIsCityDropdownOpen(false);
+                                                        }}
+                                                        className={`w-full text-left px-3 py-1.5 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                                                            selectedCity === 'all' ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700 hover:bg-slate-50'
+                                                        }`}
+                                                    >
+                                                        <span>All Cities</span>
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold">
+                                                            {baseClients.length}
+                                                        </span>
+                                                    </button>
+                                                    {cityList.map(cName => (
+                                                        <button
+                                                            key={cName}
+                                                            onClick={() => {
+                                                                setSelectedCity(cName);
+                                                                setIsCityDropdownOpen(false);
+                                                            }}
+                                                            className={`w-full text-left px-3 py-1.5 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                                                                selectedCity === cName ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <span className="flex items-center gap-1.5">
+                                                                <MapPin className="w-3 h-3 text-slate-400" />
+                                                                {cName}
+                                                            </span>
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">
+                                                                {counts[cName] || 0}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -937,6 +1031,11 @@ export default function Clients() {
                                     if (!nameMatch && !phoneMatch && !emailMatch) return false;
                                 }
 
+                                if (selectedCity !== 'all') {
+                                    const cCity = c.city || extractCity(c);
+                                    if (cCity.toLowerCase() !== selectedCity.toLowerCase()) return false;
+                                }
+
                                 if (viewAllMonths) return true;
 
                                 return isClientInMonth(c, selectedMonth);
@@ -945,7 +1044,13 @@ export default function Clients() {
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
                                     <p className="text-sm font-semibold text-slate-600">
-                                        {viewingTrash ? 'Trash is empty' : searchQuery ? 'No matching clients found' : `No clients joined in ${monthLabel(selectedMonth)}`}
+                                        {viewingTrash 
+                                            ? 'Trash is empty' 
+                                            : searchQuery 
+                                                ? 'No matching clients found' 
+                                                : selectedCity !== 'all' 
+                                                    ? `No clients found for ${selectedCity}${viewAllMonths ? '' : ' in ' + monthLabel(selectedMonth)}` 
+                                                    : `No clients joined in ${monthLabel(selectedMonth)}`}
                                     </p>
                                     <p className="text-xs text-slate-400 mt-1 max-w-sm">
                                         {viewingTrash ? '' : searchQuery ? 'Try clearing your search query.' : `No new client registrations recorded in ${monthLabel(selectedMonth)}. You can view all clients or browse previous months.`}
@@ -978,8 +1083,18 @@ export default function Clients() {
                                             <Building className="w-5 h-5 text-primary" />
                                         </div>
                                         <div>
-                                            <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
-                                            <p className="text-sm text-slate-500 flex items-center gap-1">
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
+                                                {(() => {
+                                                    const city = client.city || extractCity(client);
+                                                    return (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase tracking-wider">
+                                                            <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
                                                 <Users className="w-3.5 h-3.5" /> {client.activeWorkerCount} Active / {client.workerCount} Total Workers
                                             </p>
                                         </div>

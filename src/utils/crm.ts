@@ -133,3 +133,149 @@ export function isPipelineVisibleLead(
     if (isLegacyPipelineStage(stage)) return false;
     return new Set([...pipelineStages, ...clientStages]).has(stage);
 }
+
+/**
+ * Intelligently extracts city from lead / client records.
+ * Checks notes, location fields, work form data, and consent addresses.
+ */
+export function extractCity(entity: any): string {
+    if (!entity) return 'Surat';
+
+    // Direct field if present
+    if (entity.city && typeof entity.city === 'string' && entity.city.trim()) {
+        const c = entity.city.trim();
+        return c.charAt(0).toUpperCase() + c.slice(1);
+    }
+
+    const raw = [
+        entity.notes || '',
+        entity.location || '',
+        entity.address || '',
+        entity.client_address || '',
+        typeof entity.work_form_data === 'object' ? JSON.stringify(entity.work_form_data) : (entity.work_form_data || ''),
+        Array.isArray(entity.client_consents) ? entity.client_consents.map((c: any) => c.address).join(' ') : (entity.client_consents?.address || ''),
+    ].join(' ').toLowerCase();
+
+    // Specific cities in Gujarat / surrounding regions
+    if (raw.includes('navsari')) return 'Navsari';
+    if (raw.includes('bardoli')) return 'Bardoli';
+    if (raw.includes('bharuch') || raw.includes('ankleshwar')) return 'Bharuch';
+    if (raw.includes('valsad')) return 'Valsad';
+    if (raw.includes('vapi')) return 'Vapi';
+    if (raw.includes('vyara')) return 'Vyara';
+    if (raw.includes('bilimora')) return 'Bilimora';
+    if (raw.includes('ahmedabad')) return 'Ahmedabad';
+    if (raw.includes('vadodara') || raw.includes('baroda')) return 'Vadodara';
+    if (raw.includes('mumbai') || raw.includes('thane')) return 'Mumbai';
+    if (raw.includes('pune')) return 'Pune';
+    if (raw.includes('delhi')) return 'Delhi';
+    if (raw.includes('rajkot')) return 'Rajkot';
+    if (raw.includes('bhavnagar')) return 'Bhavnagar';
+    if (raw.includes('jamnagar')) return 'Jamnagar';
+    if (raw.includes('gandhinagar')) return 'Gandhinagar';
+
+    // Surat and common Surat areas/pincodes
+    if (
+        raw.includes('surat') ||
+        raw.includes('adajan') ||
+        raw.includes('pal') ||
+        raw.includes('salabatpura') ||
+        raw.includes('dindoli') ||
+        raw.includes('vesu') ||
+        raw.includes('katargam') ||
+        raw.includes('varachha') ||
+        raw.includes('althan') ||
+        raw.includes('rander') ||
+        raw.includes('udhna') ||
+        raw.includes('bhatar') ||
+        raw.includes('city light') ||
+        raw.includes('piplod') ||
+        raw.includes('athwa') ||
+        raw.includes('amroli') ||
+        raw.includes('mota varachha') ||
+        raw.includes('ghod dod') ||
+        raw.includes('chauta') ||
+        raw.includes('395')
+    ) {
+        return 'Surat';
+    }
+
+    // Explicit "Location: ..." or "City: ..." line extraction
+    const locMatch = (entity.notes || '').match(/(?:Location|City|Address):\s*([^\n\r]+)/i);
+    if (locMatch && locMatch[1].trim()) {
+        const parts = locMatch[1].split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (parts.length > 0) {
+            const candidate = parts[parts.length - 1].replace(/\d+/g, '').trim();
+            if (candidate.length >= 3 && candidate.length <= 25) {
+                return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+            }
+        }
+    }
+
+    // Default territory for 99 Care operations
+    return 'Surat';
+}
+
+/**
+ * Returns YYYY-MM month string for a lead based on creation or appointment date
+ */
+export function getLeadMonthKey(lead: any): string {
+    if (!lead) return '';
+    const dateStr = lead.created_at || lead.appointment_datetime || '';
+    if (!dateStr) return '';
+    try {
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            return `${y}-${m}`;
+        }
+    } catch {}
+    return dateStr.slice(0, 7);
+}
+
+/**
+ * Checks if a lead belongs to a specific YYYY-MM month key
+ */
+export function isLeadInMonth(lead: any, ym: string): boolean {
+    if (!ym || ym === 'all') return true;
+    const leadYm = getLeadMonthKey(lead);
+    if (leadYm === ym) return true;
+
+    // Fallback: check appointment_datetime if different from created_at
+    if (lead.appointment_datetime) {
+        try {
+            const d = new Date(lead.appointment_datetime);
+            if (!isNaN(d.getTime())) {
+                const parsedYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                if (parsedYm === ym) return true;
+            }
+        } catch {}
+        if (lead.appointment_datetime.slice(0, 7) === ym) return true;
+    }
+
+    // Check quotations if present
+    if (Array.isArray(lead.crm_quotations)) {
+        for (const q of lead.crm_quotations) {
+            if (q.created_at && q.created_at.slice(0, 7) === ym) return true;
+            if (q.start_date && q.start_date.slice(0, 7) === ym) return true;
+        }
+    }
+
+    // Fallback: check notes for service start date or date mention
+    const dateMatch = (lead.notes || '').match(/(?:Start Date|Date):\s*([^\n\r]+)/i);
+    if (dateMatch && dateMatch[1]) {
+        const rawDate = dateMatch[1].trim();
+        if (rawDate.startsWith(ym)) return true;
+        try {
+            const d = new Date(rawDate);
+            if (!isNaN(d.getTime())) {
+                const parsedYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                if (parsedYm === ym) return true;
+            }
+        } catch {}
+    }
+
+    return false;
+}
+
