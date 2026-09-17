@@ -512,32 +512,33 @@ export default function Billing() {
                                 previous_deposits: previousDeposits
                             });
                         }
-                    } else {
-                        // Client has ended services only
-                        for (const s of endedSvcs) {
-                            const matchingAsgn = clientAsgns.find(a => (s.start_date && a.start_date?.startsWith(s.start_date)) || a.id === s.legacy_assignment_id);
-                            const leadMeta = leadsMetaMap[cId];
-                            const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
-                            const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || 0;
-                            if (Number(depositAmt) > 0 || s.deposit_status === 'collected' || s.deposit_status === 'settled') {
-                                mappedDeposits.push({
-                                    id: matchingAsgn?.id || s.id,
-                                    assignment_id: matchingAsgn?.id,
-                                    service_id: s.id,
-                                    client_id: cId,
-                                    client: (s as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
-                                    service_name: serviceName,
-                                    client_phone: (s as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
-                                    amount: `₹${depositAmt}`,
-                                    numeric_amount: Number(depositAmt) || 0,
-                                    status: s.deposit_status === 'settled' ? 'Settled' : 'Paid',
-                                    is_active_cycle: false,
-                                    date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                                    invoice_no: "",
-                                    invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null,
-                                    previous_deposits: []
-                                });
-                            }
+                    }
+
+                    // Always map ended services that had deposits so they appear in Settled / Historical
+                    for (const s of endedSvcs) {
+                        const matchingAsgn = clientAsgns.find(a => (s.start_date && a.start_date?.startsWith(s.start_date)) || a.id === s.legacy_assignment_id)
+                            || clientAsgns.find(a => a.invoice_pdf_url && a.assignment_status === 'completed');
+                        const leadMeta = leadsMetaMap[cId];
+                        const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
+                        const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || 0;
+                        if (Number(depositAmt) > 0 || s.deposit_status === 'collected' || s.deposit_status === 'settled') {
+                            mappedDeposits.push({
+                                id: s.id,
+                                assignment_id: matchingAsgn?.id,
+                                service_id: s.id,
+                                client_id: cId,
+                                client: (s as any).clients?.client_name || matchingAsgn?.clients?.client_name || 'Unknown',
+                                service_name: serviceName,
+                                client_phone: (s as any).clients?.phone_number || matchingAsgn?.clients?.phone_number || '+91 9016116564',
+                                amount: `₹${depositAmt}`,
+                                numeric_amount: Number(depositAmt) || 0,
+                                status: s.deposit_status === 'settled' ? 'Settled' : 'Paid',
+                                is_active_cycle: false,
+                                date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                invoice_no: "",
+                                invoice_pdf_url: matchingAsgn?.invoice_pdf_url || (matchingAsgn as any)?.final_invoice_url || null,
+                                previous_deposits: []
+                            });
                         }
                     }
                 }
@@ -572,6 +573,33 @@ export default function Billing() {
                             date: new Date(asgn.assigned_at || asgn.start_date || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                             invoice_no: "",
                             invoice_pdf_url: asgn.invoice_pdf_url || null,
+                            previous_deposits: []
+                        });
+                    }
+                }
+
+                // 3. Add manual invoice leads with settled deposits (e.g. prayag raj)
+                for (const lead of (manualLeadsResult.data || [])) {
+                    if (processedClientIds.has(lead.id)) continue;
+                    const info = parseManualInvoiceNotes(lead.notes);
+                    const depositAmt = Number(info['deposit collected'] || 0);
+                    if (depositAmt > 0) {
+                        processedClientIds.add(lead.id);
+                        mappedDeposits.push({
+                            id: `manual-dep-${lead.id}`,
+                            assignment_id: null,
+                            service_id: null,
+                            client_id: lead.id,
+                            client: lead.name || 'Manual Client',
+                            service_name: formatServiceName(info.service, lead.notes),
+                            client_phone: lead.whatsapp_number || lead.phone || '',
+                            amount: `₹${depositAmt}`,
+                            numeric_amount: depositAmt,
+                            status: 'Settled',
+                            is_active_cycle: false,
+                            date: new Date(info['start date'] || lead.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            invoice_no: info['invoice no'] || '',
+                            invoice_pdf_url: info['invoice pdf'] || null,
                             previous_deposits: []
                         });
                     }
@@ -916,6 +944,37 @@ export default function Billing() {
         e.stopPropagation();
         navigator.clipboard.writeText(ref);
         toast.success(`Copied Reference ID: ${ref}`);
+    };
+
+    const [loadingDepositDocId, setLoadingDepositDocId] = useState<string | null>(null);
+
+    const handleOpenDepositDoc = async (docUrl?: string | null, clientId?: string | null, docId?: string) => {
+        if (docUrl) {
+            window.open(docUrl, '_blank');
+            return;
+        }
+        if (!clientId) {
+            toast.info('No document attached.');
+            return;
+        }
+        if (docId) setLoadingDepositDocId(docId);
+        try {
+            const { data: files } = await supabase.storage.from('invoices').list(clientId);
+            const pdfFiles = (files || []).filter(f => f.name.endsWith('.pdf'));
+            if (pdfFiles.length > 0) {
+                // Find most appropriate invoice or deposit PDF (prefer settlement invoice, then deposit)
+                const target = pdfFiles.find(f => f.name.startsWith('INV-')) || pdfFiles[0];
+                const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(`${clientId}/${target.name}`);
+                window.open(`${pubData.publicUrl}?t=${Date.now()}`, '_blank');
+                return;
+            }
+            toast.info('No invoice or deposit document found in storage.');
+        } catch (err) {
+            console.error('Error fetching document from storage:', err);
+            toast.error('Could not load invoice document.');
+        } finally {
+            if (docId) setLoadingDepositDocId(null);
+        }
     };
 
     useEffect(() => {
@@ -2041,6 +2100,7 @@ export default function Billing() {
     const totalPendingAmount = pendingDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
 
     const settledDeposits = deposits.filter(d => d.status === 'Settled' || !d.is_active_cycle);
+    const totalSettledAmount = settledDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
 
     const filteredDeposits = deposits.filter(dep => {
         const q = depositSearch.trim().toLowerCase();
@@ -2138,10 +2198,10 @@ export default function Billing() {
                                 <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between">
                                     <div>
                                         <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Settled / Historical</div>
-                                        <div className="text-lg font-black text-teal-700">{settledDeposits.length} records</div>
+                                        <div className="text-lg font-black text-teal-700">₹{totalSettledAmount.toLocaleString('en-IN')}</div>
                                     </div>
                                     <div className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-100">
-                                        Settled on bill
+                                        {settledDeposits.length} settled
                                     </div>
                                 </div>
                             </div>
@@ -2291,9 +2351,13 @@ export default function Billing() {
 
                                                 {(dep.status === 'Invoice Sent' || dep.status === 'Paid' || dep.status === 'Settled') && (
                                                     <>
-                                                        {dep.invoice_pdf_url && (
-                                                            <button onClick={() => window.open(dep.invoice_pdf_url, '_blank')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer">
-                                                                <FileText className="w-4 h-4 text-primary" /> View PDF
+                                                        {(dep.invoice_pdf_url || dep.status === 'Settled') && (
+                                                            <button 
+                                                                onClick={() => handleOpenDepositDoc(dep.invoice_pdf_url, dep.client_id, dep.id)} 
+                                                                disabled={loadingDepositDocId === dep.id}
+                                                                className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                                            >
+                                                                {loadingDepositDocId === dep.id ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <FileText className="w-4 h-4 text-primary" />} View PDF
                                                             </button>
                                                         )}
                                                         {dep.status === 'Invoice Sent' && (
@@ -2330,14 +2394,13 @@ export default function Billing() {
                                                                     {prev.status}
                                                                 </span>
                                                             </div>
-                                                            {prev.invoice_pdf_url && (
-                                                                <button
-                                                                    onClick={() => window.open(prev.invoice_pdf_url, '_blank')}
-                                                                    className="text-primary hover:text-primary/80 font-medium flex items-center gap-1 text-xs cursor-pointer"
-                                                                >
-                                                                    <FileText className="w-3.5 h-3.5 text-primary" /> View Final Bill / Receipt
-                                                                </button>
-                                                            )}
+                                                            <button
+                                                                onClick={() => handleOpenDepositDoc(prev.invoice_pdf_url, dep.client_id, `${dep.id}-${idx}`)}
+                                                                disabled={loadingDepositDocId === `${dep.id}-${idx}`}
+                                                                className="text-primary hover:text-primary/80 font-medium flex items-center gap-1 text-xs cursor-pointer disabled:opacity-50"
+                                                            >
+                                                                {loadingDepositDocId === `${dep.id}-${idx}` ? <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" /> : <FileText className="w-3.5 h-3.5 text-primary" />} View Final Bill / Receipt
+                                                            </button>
                                                         </div>
                                                     ))}
                                                 </div>

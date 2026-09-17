@@ -71,7 +71,7 @@ export default function AppointmentPage() {
       ].filter(Boolean).join('\n');
 
       // 1. Primary persistence: Save to Supabase appointments table (triggers CRM sync)
-      const { data: insertedAppt, error: dbError } = await supabase
+      const { error: dbError } = await supabase
         .from('appointments')
         .insert([{
           full_name: data.fullName,
@@ -83,31 +83,10 @@ export default function AppointmentPage() {
           location: formattedLocation,
           notes: enrichedNotes,
           status: 'pending'
-        }])
-        .select('id, crm_lead_id')
-        .maybeSingle();
+        }]);
 
       if (dbError) {
         throw new Error(dbError.message || 'Failed to save appointment in database');
-      }
-
-      // Ensure created CRM lead has structured work_form_data and city
-      try {
-        const leadId = insertedAppt?.crm_lead_id;
-        if (leadId) {
-          await supabase.from('crm_leads').update({
-            work_form_data: {
-              form_type: 'website_booking',
-              city: selectedCity,
-              area: data.location,
-              service: data.serviceId,
-              preferred_date: format(data.date, 'yyyy-MM-dd'),
-              preferred_time: data.timeSlot,
-            }
-          }).eq('id', leadId);
-        }
-      } catch (leadUpdateErr) {
-        console.warn('Non-fatal error updating lead with website booking city:', leadUpdateErr);
       }
 
       // 2. Secondary dispatches: Email Lead Notification & WhatsApp Confirmation (non-blocking)
