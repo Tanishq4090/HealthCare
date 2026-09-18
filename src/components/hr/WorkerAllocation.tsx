@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
   ChevronDown, Building2, Shield, Trash2, RotateCcw,
-  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle, Coins, Clock,
+  Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle, Coins, Clock, Lock,
 } from 'lucide-react';
 
 // shadcn/ui
@@ -484,6 +484,8 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const [endDate, setEndDate] = useState('');
   const [isEndDateOpenEnded, setIsEndDateOpenEnded] = useState(true);
   const [hoursPerDay, setHoursPerDay] = useState<number>(10);
+  const [minStartDate, setMinStartDate] = useState<string>('');
+  const [lockedDateWarning, setLockedDateWarning] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ url: string; whatsappSent: boolean; whatsappError?: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -500,6 +502,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
     if (!open) {
       setResult(null); setSelectedClient(null); setNotes(''); setClientSearch('');
       setShowNewClient(false); setStartDate(''); setEndDate(''); setIsEndDateOpenEnded(true); setHoursPerDay(10);
+      setMinStartDate(''); setLockedDateWarning('');
     }
   }, [open]);
 
@@ -582,8 +585,73 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
           setHoursPerDay(10);
         }
 
-        if (svc?.start_date) setStartDate(svc.start_date);
-        else if (quote?.start_date) setStartDate(quote.start_date);
+        // 4. Check if THIS worker was previously assigned and released/completed for this client
+        let latestLockedDate: string | null = null;
+        if (employee?.id && selectedClient?.id) {
+          const { data: pastAssignments } = await supabase
+            .from('worker_assignments')
+            .select('id, end_date, start_date')
+            .eq('employee_id', employee.id)
+            .eq('client_id', selectedClient.id)
+            .in('assignment_status', ['completed', 'relieved', 'ended']);
+
+          (pastAssignments || []).forEach(p => {
+            const ed = p.end_date ? p.end_date.split('T')[0] : null;
+            if (ed && (!latestLockedDate || ed > latestLockedDate)) {
+              latestLockedDate = ed;
+            }
+          });
+
+          const pastIds = (pastAssignments || []).map(p => p.id);
+          if (pastIds.length > 0) {
+            const { data: attLogs } = await supabase
+              .from('attendance')
+              .select('duty_date')
+              .eq('worker_id', employee.id)
+              .in('assignment_id', pastIds)
+              .order('duty_date', { ascending: false })
+              .limit(1);
+            if (attLogs?.[0]?.duty_date && (!latestLockedDate || attLogs[0].duty_date > latestLockedDate)) {
+              latestLockedDate = attLogs[0].duty_date;
+            }
+          }
+
+          // Check locked final payroll records
+          const { data: finalPayrolls } = await supabase
+            .from('payroll')
+            .select('period_end')
+            .eq('worker_id', employee.id)
+            .eq('type', 'final')
+            .order('period_end', { ascending: false })
+            .limit(1);
+          if (finalPayrolls?.[0]?.period_end && (!latestLockedDate || finalPayrolls[0].period_end > latestLockedDate)) {
+            latestLockedDate = finalPayrolls[0].period_end;
+          }
+        }
+
+        let calculatedStartDate = '';
+        if (svc?.start_date) calculatedStartDate = svc.start_date;
+        else if (quote?.start_date) calculatedStartDate = quote.start_date;
+        else calculatedStartDate = new Date().toISOString().slice(0, 10);
+
+        if (latestLockedDate) {
+          const d = new Date(latestLockedDate + 'T00:00:00');
+          d.setDate(d.getDate() + 1);
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const nextAllowed = `${yyyy}-${mm}-${dd}`;
+          setMinStartDate(nextAllowed);
+          setLockedDateWarning(`Worker was previously relieved up to ${latestLockedDate}. Next assignment can only start from ${nextAllowed}.`);
+          if (!calculatedStartDate || calculatedStartDate <= latestLockedDate) {
+            calculatedStartDate = nextAllowed;
+          }
+        } else {
+          setMinStartDate('');
+          setLockedDateWarning('');
+        }
+
+        setStartDate(calculatedStartDate);
 
         if (svc?.end_date) {
           setEndDate(svc.end_date);
@@ -601,7 +669,7 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
     }
 
     fetchClientShift();
-  }, [selectedClient]);
+  }, [selectedClient, employee]);
 
   const handleCreateClient = async () => {
     if (!newClientName.trim()) { toast.error('Client name required.'); return; }
@@ -626,6 +694,10 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   const handleAssign = async () => {
     if (!employee || !selectedClient) { toast.error('Please select a client.'); return; }
     if (!startDate) { toast.error('Please set an assignment start date.'); return; }
+    if (minStartDate && startDate < minStartDate) {
+      toast.error(`Cannot assign before ${minStartDate}. This worker was already released/marked on prior duties.`);
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await assignWorkerToClient(
@@ -872,9 +944,32 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-600">Start Date <span className="text-red-400">*</span></label>
-                  <Input type="date" className="mt-1 text-sm border-slate-200" value={startDate}
-                    onChange={e => setStartDate(e.target.value)} />
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-600">Start Date <span className="text-red-400">*</span></label>
+                    {lockedDateWarning && (
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5 text-amber-600" /> Min: {minStartDate}
+                      </span>
+                    )}
+                  </div>
+                  <Input 
+                    type="date" 
+                    className={`mt-1 text-sm ${lockedDateWarning ? 'border-amber-300 focus:ring-amber-500 bg-amber-50/20' : 'border-slate-200'}`}
+                    value={startDate}
+                    min={minStartDate || undefined}
+                    onChange={e => {
+                      if (minStartDate && e.target.value < minStartDate) {
+                        toast.error(`Cannot assign before ${minStartDate} (worker was already released on prior duties)`);
+                        return;
+                      }
+                      setStartDate(e.target.value);
+                    }} 
+                  />
+                  {lockedDateWarning && (
+                    <p className="text-[10px] text-amber-600 mt-1 font-medium leading-tight">
+                      {lockedDateWarning}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
