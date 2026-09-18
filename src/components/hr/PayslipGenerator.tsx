@@ -19,6 +19,7 @@ interface PayslipGeneratorProps {
     advance_paid?: number;
     client_billing_rate?: number;
     hours_per_day?: number | null;
+    locked_days_worked?: number | null;
     employees: {
       id: string;
       full_name: string;
@@ -53,7 +54,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
 
   const totalPeriodDays = eachDayOfInterval({ start: safeStartDate, end: endDate }).length;
   const assignmentHours = resolveAssignmentHoursPerDay(assignment.hours_per_day);
-  const daysWorked = attendanceSummary ? parseFloat(attendanceSummary.days_present || 0) : 0;
+  const lockedDays = assignment.locked_days_worked != null ? parseFloat(String(assignment.locked_days_worked)) : null;
+  const daysWorked = attendanceSummary
+    ? parseFloat(attendanceSummary.days_present || 0)
+    : (lockedDays ?? 0);
 
   const payCalc = calculateWorkerPay({
     rate_10hr: emp?.rate_10hr,
@@ -161,36 +165,39 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       const half = mapped.filter(d => d.status === 'Half Day').length;
       const absent = mapped.filter(d => d.status === 'Absent' || d.status === 'No Duty').length;
       const effectiveDays = full + half * 0.5;
+      const finalPresentDays = (lockedDays != null && effectiveDays === 0) ? lockedDays : effectiveDays;
 
       setAttendanceSummary({
         days_full: full,
-        days_present: effectiveDays,
+        days_present: finalPresentDays,
         days_half: half,
         days_absent: absent,
         total_days: totalPeriodDays,
       });
 
-      // Also try RPC in background to check if server-side calculation matches
-      try {
-        const { data: rpcData } = await supabase.rpc('get_assignment_attendance_summary', {
-          p_assignment_id: assignment.id
-        });
-        const res = rpcData?.[0];
-        if (res && res.days_present !== undefined && res.days_present !== null) {
-          const rpcPres = parseFloat(res.days_present || 0);
-          if (rpcPres > effectiveDays) {
-            setAttendanceSummary({
-              ...res,
-              days_full: Math.max(0, rpcPres - (parseInt(res.days_half || 0, 10) * 0.5)),
-              days_present: rpcPres,
-              days_half: parseInt(res.days_half || 0, 10),
-              days_absent: parseInt(res.days_absent || 0, 10),
-              total_days: parseInt(res.total_days || totalPeriodDays, 10)
-            });
+      // Also try RPC in background to check if server-side calculation matches (only if not a locked settlement)
+      if (lockedDays == null) {
+        try {
+          const { data: rpcData } = await supabase.rpc('get_assignment_attendance_summary', {
+            p_assignment_id: assignment.id
+          });
+          const res = rpcData?.[0];
+          if (res && res.days_present !== undefined && res.days_present !== null) {
+            const rpcPres = parseFloat(res.days_present || 0);
+            if (rpcPres > effectiveDays) {
+              setAttendanceSummary({
+                ...res,
+                days_full: Math.max(0, rpcPres - (parseInt(res.days_half || 0, 10) * 0.5)),
+                days_present: rpcPres,
+                days_half: parseInt(res.days_half || 0, 10),
+                days_absent: parseInt(res.days_absent || 0, 10),
+                total_days: parseInt(res.total_days || totalPeriodDays, 10)
+              });
+            }
           }
+        } catch {
+          // Fallback already accurately set from mapped
         }
-      } catch {
-        // Fallback already accurately set from mapped
       }
     } catch (err: any) {
       toast.error('Failed to fetch attendance: ' + err.message);

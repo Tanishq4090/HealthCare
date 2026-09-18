@@ -2615,6 +2615,12 @@ export default function HR() {
                                                                                         if (data) assignment = data;
                                                                                     }
 
+                                                                                    const svc = item.service_details || (servicesList && servicesList.find((s: any) => s.id === item.service_id));
+                                                                                    const effectiveShiftHours = item.hours_per_day 
+                                                                                        || svc?.hours_per_day
+                                                                                        || (item.daily_rate && item.daily_rate <= 600 ? 10 : 24)
+                                                                                        || 10;
+
                                                                                     if (assignment) {
                                                                                         // Always prefer the payroll row's own period dates over
                                                                                         // the DB assignment dates so relieved-staff Generator
@@ -2631,6 +2637,8 @@ export default function HR() {
                                                                                             ...assignment,
                                                                                             start_date: effectiveStart,
                                                                                             end_date: effectiveEnd,
+                                                                                            hours_per_day: effectiveShiftHours,
+                                                                                            locked_days_worked: item.days_worked || item.days_counted,
                                                                                         };
                                                                                         setAutoCloseAssignmentOnGenerate(false);
                                                                                         setBillingAssignment(generatorAssignment);
@@ -2645,7 +2653,8 @@ export default function HR() {
                                                                                             employee_id: targetEmployeeId,
                                                                                             start_date: item.period_start || item.start_date,
                                                                                             end_date: item.period_end || item.end_date || new Date().toISOString().split('T')[0],
-                                                                                            hours_per_day: item.hours_per_day || 24,
+                                                                                            hours_per_day: effectiveShiftHours,
+                                                                                            locked_days_worked: item.days_worked || item.days_counted,
                                                                                             employees: empRecord ? {
                                                                                                 id: empRecord.id,
                                                                                                 full_name: empRecord.name,
