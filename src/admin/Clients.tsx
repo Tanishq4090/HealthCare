@@ -835,8 +835,8 @@ export default function Clients() {
             <div className="grid lg:grid-cols-3 gap-6 flex-1">
                 {/* Client List */}
                 <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3">
-                        <div className="relative flex-1 max-w-sm">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                        <div className="relative flex-1 min-w-[200px] max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                             <input
                                 type="text"
@@ -847,7 +847,7 @@ export default function Clients() {
                             />
                         </div>
                         {/* View Controls: All Clients vs By Month toggle + ALWAYS-VISIBLE Month Navigator + Trash */}
-                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 onClick={() => setViewingTrash(!viewingTrash)}
                                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
@@ -969,7 +969,7 @@ export default function Clients() {
                                                     className="fixed inset-0 z-30"
                                                     onClick={() => setIsCityDropdownOpen(false)}
                                                 />
-                                                <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-40 animate-in fade-in zoom-in-95">
+                                                <div className="absolute right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95">
                                                     <div className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                                                         Filter by City
                                                     </div>
