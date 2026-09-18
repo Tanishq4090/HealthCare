@@ -181,12 +181,13 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
       await fetchAttendance();
 
-      // Automatically keep payroll record in sync if one already exists for this assignment/worker
+      // Automatically keep payroll record in sync if one already exists for this specific assignment
       try {
         const { data: existingPayroll } = await supabase
           .from('payroll')
           .select('*')
-          .or(`assignment_id.eq.${assignment.id},worker_id.eq.${assignment.employee_id}`)
+          .eq('assignment_id', assignment.id)
+          .neq('type', 'final')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -199,6 +200,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             .from('attendance')
             .select('status, is_half_day, is_absent')
             .eq('worker_id', assignment.employee_id)
+            .eq('assignment_id', assignment.id)
             .gte('duty_date', pStart)
             .lte('duty_date', pEnd);
 
