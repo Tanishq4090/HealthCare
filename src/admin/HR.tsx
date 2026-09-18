@@ -2407,12 +2407,16 @@ export default function HR() {
                                                                                     }
 
                                                                                     if (assignment) {
-                                                                                        const effectiveStart = assignment.start_date
-                                                                                            ? assignment.start_date.split('T')[0]
-                                                                                            : (item.period_start || item.start_date);
-                                                                                        const effectiveEnd = assignment.end_date
-                                                                                            ? assignment.end_date.split('T')[0]
-                                                                                            : (item.period_end || item.end_date);
+                                                                                        // Always prefer the payroll row's own period dates over
+                                                                                        // the DB assignment dates so relieved-staff Generator
+                                                                                        // shows the correct historical period, not the latest
+                                                                                        // active assignment's dates.
+                                                                                        const effectiveStart = item.period_start
+                                                                                            || item.start_date
+                                                                                            || (assignment.start_date ? assignment.start_date.split('T')[0] : undefined);
+                                                                                        const effectiveEnd = item.period_end
+                                                                                            || item.end_date
+                                                                                            || (assignment.end_date ? assignment.end_date.split('T')[0] : undefined);
 
                                                                                         const generatorAssignment = {
                                                                                             ...assignment,

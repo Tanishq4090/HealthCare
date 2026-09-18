@@ -34,8 +34,11 @@ export function daysInCalendarMonth(ref: Date = new Date()): number {
 }
 
 export function periodDaysInclusive(start: Date, end: Date): number {
-    const ms = Math.abs(end.getTime() - start.getTime());
-    return Math.max(1, Math.ceil(ms / (1000 * 60 * 60 * 24)) + 1);
+    // Normalize to midnight so intra-day time offsets don't inflate the count
+    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    const diffDays = Math.round(Math.abs(e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays + 1;   // inclusive of both start and end day
 }
 
 export function resolveAssignmentHoursPerDay(hours?: number | null): number | null {

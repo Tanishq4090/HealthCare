@@ -78,6 +78,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         .from('attendance')
         .select('id, status, is_half_day, duty_date, is_absent, hours_worked, check_in_time, check_out_time, notes')
         .eq('worker_id', assignment.employee_id)
+        .eq('assignment_id', assignment.id)
         .gte('duty_date', format(safeStartDate, 'yyyy-MM-dd'))
         .lte('duty_date', format(endDate, 'yyyy-MM-dd'))
         .order('duty_date', { ascending: true });
