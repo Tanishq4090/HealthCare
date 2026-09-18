@@ -504,15 +504,24 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
   }, [open]);
 
   useEffect(() => {
-    // Search crm_leads instead of clients
-    const validStages = ['Form Submitted', 'Staff Assigned', 'Active Client', 'Deposit Pending', 'Trial in Progress'];
-    supabase.from('crm_leads')
+    // Search crm_leads: include all active, monthly billing, and in-progress leads (exclude only archived/lost)
+    let query = supabase.from('crm_leads')
       .select('id, name, phone, whatsapp_number, pipeline_stage')
       .is('deleted_at', null)
-      .in('pipeline_stage', validStages)
-      .ilike('name', `%${debouncedSearch}%`)
-      .limit(20)
-      .then(({ data }) => {
+      .not('pipeline_stage', 'in', '("Archived","Lost","Closed Lost")');
+
+    if (debouncedSearch && debouncedSearch.trim().length > 0) {
+      query = query.ilike('name', `%${debouncedSearch.trim()}%`);
+    }
+
+    query
+      .order('name', { ascending: true })
+      .limit(30)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Error fetching clients for assignment:', error);
+          return;
+        }
         const formatted = (data ?? []).map(l => ({
           id: l.id,
           client_name: l.name,
