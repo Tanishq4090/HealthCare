@@ -73,15 +73,22 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const fetchAttendance = async () => {
     setIsLoadingAttendance(true);
     try {
-      // 1. Fetch granular daily attendance records for this worker and period
-      const { data: rawLogs, error: logErr } = await supabase
+      // For synthetic/temp assignment IDs (relieved staff without a stored assignment_id),
+      // fall back to worker_id + date range only, since the real assignment_id is unknown.
+      const isSyntheticId = assignment.id.startsWith('temp-');
+      let query = supabase
         .from('attendance')
         .select('id, status, is_half_day, duty_date, is_absent, hours_worked, check_in_time, check_out_time, notes')
         .eq('worker_id', assignment.employee_id)
-        .eq('assignment_id', assignment.id)
         .gte('duty_date', format(safeStartDate, 'yyyy-MM-dd'))
         .lte('duty_date', format(endDate, 'yyyy-MM-dd'))
         .order('duty_date', { ascending: true });
+
+      if (!isSyntheticId) {
+        query = query.eq('assignment_id', assignment.id);
+      }
+
+      const { data: rawLogs, error: logErr } = await query;
 
       if (logErr) throw logErr;
 

@@ -2386,6 +2386,8 @@ export default function HR() {
                                                                                     }
 
                                                                                     let assignment = null;
+
+                                                                                    // 1. Try direct assignment_id lookup (works for both active and released)
                                                                                     if (item.assignment_id) {
                                                                                         const { data: directAsgn } = await supabase
                                                                                             .from('worker_assignments')
@@ -2395,7 +2397,10 @@ export default function HR() {
                                                                                         if (directAsgn) assignment = directAsgn;
                                                                                     }
 
-                                                                                    if (!assignment && targetEmployeeId) {
+                                                                                    // 2. For ACTIVE staff only: fall back to latest assignment by employee_id.
+                                                                                    //    For RELEASED staff, skip this — fetching the latest assignment
+                                                                                    //    returns the current/new assignment (wrong client, wrong ID).
+                                                                                    if (!assignment && targetEmployeeId && isCurrentlyActive) {
                                                                                         const { data } = await supabase
                                                                                             .from('worker_assignments')
                                                                                             .select('*, employees(*), clients(*)')
@@ -2426,6 +2431,9 @@ export default function HR() {
                                                                                         setAutoCloseAssignmentOnGenerate(false);
                                                                                         setBillingAssignment(generatorAssignment);
                                                                                     } else if (targetEmployeeId) {
+                                                                                        // Synthetic construction from the payroll row's own data.
+                                                                                        // Used for relieved staff with no assignment_id, or any
+                                                                                        // item where the assignment record is missing.
                                                                                         const empRecord = workers.find(w => w.id === targetEmployeeId || w.name === item.worker);
                                                                                         setAutoCloseAssignmentOnGenerate(false);
                                                                                         setBillingAssignment({
