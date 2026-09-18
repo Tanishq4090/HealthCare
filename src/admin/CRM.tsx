@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, ListChecks, Search, XCircle, MapPin } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -606,6 +606,10 @@ export default function CRM() {
     const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
     const [agentDraftLang, setAgentDraftLang] = useState<'English' | 'Hindi' | 'Hinglish'>('English');
     const [agentDraftText, setAgentDraftText] = useState('');
+    const [staffModalActiveTab, setStaffModalActiveTab] = useState<'client' | 'worker'>('client');
+    const [workerDraftText, setWorkerDraftText] = useState('');
+    const [isSendingToWorker, setIsSendingToWorker] = useState(false);
+    const [workerSentSuccess, setWorkerSentSuccess] = useState(false);
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
     const [templateDraftText, setTemplateDraftText] = useState('');
     const [quotationVars, setQuotationVars] = useState({ v1: '', v2: '', v3: '', v4: '' });
@@ -2467,6 +2471,40 @@ export default function CRM() {
             .replace(/\{\{v4\}\}/g, quotationVars.v4 || '[Price]');
     };
 
+    const generateWorkerAssignmentDraft = (
+        worker: any,
+        lead: any,
+        startDateStr: string,
+        hours: number,
+        addressOverride?: string
+    ) => {
+        const workerName = worker?.name || worker?.full_name || 'Care Professional';
+        const clientName = lead?.client_consents?.[0]?.patient_name || lead?.name || 'Client';
+        const relativeName = lead?.client_consents?.[0]?.relative_name;
+        const clientDisplayName = relativeName && relativeName !== clientName ? `${clientName} (Attn: ${relativeName})` : clientName;
+
+        let addr = addressOverride || lead?.client_consents?.[0]?.address || lead?.location || lead?.work_form_data?.address || '';
+        if (!addr && lead?.notes) {
+            const m = lead.notes.match(/address[:\s-]*([^\n\r]+)/i);
+            if (m && m[1]) addr = m[1].trim();
+        }
+        if (!addr) addr = '[Address to be shared]';
+
+        const shiftTypeLabel = hours === 24 ? '24-Hour Shift (Live-in)' : '10-Hour Shift';
+
+        let formattedDate = 'Today';
+        if (startDateStr) {
+            try {
+                const [y, m, d] = startDateStr.split('-');
+                formattedDate = `${d}/${m}/${y}`;
+            } catch {
+                formattedDate = startDateStr;
+            }
+        }
+
+        return `Namaste ${workerName}! 🙏\n\nYou have been assigned to a new client by 99 Care:\n\n👤 Client: ${clientDisplayName}\n📅 Start Date: ${formattedDate}\n🕒 Shift: ${shiftTypeLabel}\n📍 Address: ${addr}\n\nPlease ensure you reach the location on time in proper uniform. For any assistance or questions, please call the office at +91 9016116564.\n\n- 99 Care Team`;
+    };
+
     const fetchWorkers = async (targetLead: any) => {
         setIsLoadingWorkers(true);
         try {
@@ -2665,6 +2703,8 @@ export default function CRM() {
             setAgentTargetLead(staffPickerTargetLead);
             setAgentTargetAction('staff');
             setIsEditingTemplate(false);
+            setStaffModalActiveTab('client');
+            setWorkerSentSuccess(false);
 
             const draft = generateWhatsappDraft(
                 staffPickerTargetLead.name,
@@ -2674,10 +2714,20 @@ export default function CRM() {
                 result.shareableUrl
             );
             setAgentDraftText(draft);
+
+            // Generate worker assignment draft
+            const wDraft = generateWorkerAssignmentDraft(
+                selectedWorker,
+                staffPickerTargetLead,
+                serviceStartDate,
+                serviceHours
+            );
+            setWorkerDraftText(wDraft);
+
             setIsAgentModalOpen(true);
 
             toast.success(
-                `${selectedWorker.name || selectedWorker.full_name} assigned! Review the message below.`,
+                `${selectedWorker.name || selectedWorker.full_name} assigned! Review message to client and worker below.`,
                 { id: toastId, duration: 3000 }
             );
             fetchLeads();
@@ -3369,6 +3419,83 @@ export default function CRM() {
         }
     };
 
+    const handleDispatchToWorker = async () => {
+        if (!selectedWorker) {
+            toast.error("No worker selected!");
+            return;
+        }
+
+        const workerPhone = selectedWorker?.phone;
+        if (!workerPhone) {
+            toast.error(`⚠️ No phone number found for ${selectedWorker?.name || 'worker'}. Please update their profile in HR.`);
+            return;
+        }
+
+        let digits = workerPhone.replace(/\D/g, '');
+        if (digits.length === 10) digits = `91${digits}`;
+
+        setIsSendingToWorker(true);
+        const toastId = toast.loading(`Sending assignment details to ${selectedWorker?.name || 'worker'} (+${digits})...`);
+
+        try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'apikey': SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({
+                    phone: digits,
+                    message: workerDraftText,
+                    useTemplate: false,
+                    leadId: agentTargetLead?.id,
+                })
+            });
+
+            const resData = await response.json().catch(() => ({}));
+            if (!response.ok || resData.success === false) {
+                // Seamless fallback to wa.me if session closed or API error
+                const encoded = encodeURIComponent(workerDraftText);
+                window.open(`https://wa.me/${digits}?text=${encoded}`, '_blank');
+                toast.success(`Opened WhatsApp to send to ${selectedWorker?.name || 'worker'}!`, { id: toastId });
+            } else {
+                toast.success(`✅ Assignment message sent to ${selectedWorker?.name || 'worker'} via WhatsApp!`, { id: toastId, duration: 5000 });
+            }
+
+            setWorkerSentSuccess(true);
+
+            if (agentTargetLead?.id) {
+                try {
+                    await supabase.from('crm_lead_activity').insert([{
+                        lead_id: agentTargetLead.id,
+                        event_type: 'worker_notified',
+                        description: `Assignment details sent to worker ${selectedWorker?.name || selectedWorker?.full_name} (+${digits})`,
+                        metadata: {
+                            worker_id: selectedWorker.id,
+                            worker_phone: digits,
+                            start_date: serviceStartDate,
+                            shift_hours: serviceHours
+                        }
+                    }]);
+                } catch (actErr: any) {
+                    console.error('Activity log error:', actErr);
+                }
+            }
+        } catch (err: any) {
+            console.error("Worker dispatch error:", err);
+            const encoded = encodeURIComponent(workerDraftText);
+            window.open(`https://wa.me/${digits}?text=${encoded}`, '_blank');
+            toast.success(`Opened WhatsApp for ${selectedWorker?.name || 'worker'}`, { id: toastId });
+            setWorkerSentSuccess(true);
+        } finally {
+            setIsSendingToWorker(false);
+        }
+    };
+
     const handleDispatchMessage = async () => {
         setIsAgentModalOpen(false);
         const toastId = toast.loading(`Dispatching AI Message to ${agentTargetLead?.name || 'Lead'}...`);
@@ -3580,6 +3707,8 @@ export default function CRM() {
                         toast.success(`Staff assignment updated locally!`, { id: toastId, duration: 4000 });
                     }
                     setSelectedWorker(null);
+                    setWorkerSentSuccess(false);
+                    setStaffModalActiveTab('client');
                 }
                 // If Deposit Invoice -> move to Deposit Pending
                 else if (agentTargetAction === 'deposit') {
@@ -6586,6 +6715,46 @@ export default function CRM() {
                                         </button>
                                     )}
                                 </div>
+
+                                {/* Recipient Switcher when assigning a worker */}
+                                {agentTargetAction === 'staff' && selectedWorker && !isEditingTemplate && (
+                                    <div className="bg-slate-100/90 p-1 rounded-xl flex items-center gap-1 border border-slate-200/80 mb-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setStaffModalActiveTab('client')}
+                                            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                                staffModalActiveTab === 'client'
+                                                    ? 'bg-white text-slate-800 shadow-xs'
+                                                    : 'text-slate-500 hover:text-slate-700'
+                                            }`}
+                                        >
+                                            <User className="w-3.5 h-3.5 text-[#1AA6A8]" />
+                                            <span>Client Message (ID Card)</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setStaffModalActiveTab('worker')}
+                                            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                                staffModalActiveTab === 'worker'
+                                                    ? 'bg-white text-slate-800 shadow-xs'
+                                                    : 'text-slate-500 hover:text-slate-700'
+                                            }`}
+                                        >
+                                            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                            <span>Worker Message</span>
+                                            {workerSentSuccess ? (
+                                                <span className="inline-flex items-center text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.2 rounded-full">
+                                                    Sent ✓
+                                                </span>
+                                            ) : selectedWorker?.phone ? (
+                                                <span className="text-[10px] text-slate-400 font-normal">
+                                                    (+91 {selectedWorker.phone.replace(/\D/g, '').slice(-10)})
+                                                </span>
+                                            ) : null}
+                                        </button>
+                                    </div>
+                                )}
+
                                 <div className="relative">
                                     {agentTargetAction === 'consent' && !isEditingTemplate ? (
                                         <div className="w-full h-48 bg-[#EAFBFB] border border-[#1AA6A8]/20 rounded-xl p-6 flex flex-col items-center justify-center text-center shadow-inner">
@@ -6606,7 +6775,7 @@ export default function CRM() {
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Hours of Service</label>
-                                                    <input type="text" value={quotationVars.v2} onChange={e => setQuotationVars({ ...quotationVars, v2: e.target.value })} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. 12 Hours" />
+                                                    <input type="text" value={quotationVars.v2} onChange={e => setQuotationVars({ ...quotationVars, v2: e.target.value })} className="w-full text-sm font-medium border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#1AA6A8]" placeholder="e.g. 10 Hours or 24 Hours" />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Complete Month (Per Day Rate)</label>
@@ -6717,15 +6886,35 @@ export default function CRM() {
                                         </div>
                                     ) : (
                                         <textarea
-                                            value={isEditingTemplate ? templateDraftText : agentDraftText}
-                                            onChange={(e) => isEditingTemplate ? setTemplateDraftText(e.target.value) : setAgentDraftText(e.target.value)}
+                                            value={
+                                                isEditingTemplate
+                                                    ? templateDraftText
+                                                    : (agentTargetAction === 'staff' && selectedWorker && staffModalActiveTab === 'worker')
+                                                        ? workerDraftText
+                                                        : agentDraftText
+                                            }
+                                            onChange={(e) => {
+                                                if (isEditingTemplate) {
+                                                    setTemplateDraftText(e.target.value);
+                                                } else if (agentTargetAction === 'staff' && selectedWorker && staffModalActiveTab === 'worker') {
+                                                    setWorkerDraftText(e.target.value);
+                                                } else {
+                                                    setAgentDraftText(e.target.value);
+                                                }
+                                            }}
                                             readOnly={!isEditingTemplate && agentTargetAction === 'inquiry'}
-                                            className={`w-full h-32 px-4 py-3 rounded-xl border border-[#1AA6A8]/20 outline-none focus:ring-2 focus:ring-[#1AA6A8] focus:border-transparent text-sm resize-none font-medium leading-relaxed mb-6 ${(!isEditingTemplate && agentTargetAction === 'inquiry') ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-[#E6F7F7] text-[#0E7C7E]'}`}
+                                            className={`w-full h-36 px-4 py-3 rounded-xl border border-[#1AA6A8]/20 outline-none focus:ring-2 focus:ring-[#1AA6A8] focus:border-transparent text-sm resize-none font-medium leading-relaxed mb-3 ${
+                                                (!isEditingTemplate && agentTargetAction === 'inquiry')
+                                                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                                                    : (agentTargetAction === 'staff' && staffModalActiveTab === 'worker')
+                                                        ? 'bg-emerald-50/50 text-emerald-900 border-emerald-300 focus:ring-emerald-500'
+                                                        : 'bg-[#E6F7F7] text-[#0E7C7E]'
+                                            }`}
                                         />
                                     )}
 
                                     {(!isEditingTemplate && agentTargetAction !== 'quotation' && agentTargetAction !== 'deposit') && (
-                                        <div className="absolute bottom-3 right-3 flex gap-1">
+                                        <div className="absolute bottom-6 right-3 flex gap-1">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                                             <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-75"></span>
                                             <span className="w-2 h-2 rounded-full bg-[#1AA6A8] animate-pulse delay-150"></span>
@@ -6735,21 +6924,62 @@ export default function CRM() {
 
                                 {isEditingTemplate ? (
                                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5 font-medium">Use <code className="px-1 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">{"{{name}}"}</code> and <code className="px-1 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">{"{{link}}"}</code> as dynamic variables.</p>
+                                ) : (agentTargetAction === 'staff' && selectedWorker && staffModalActiveTab === 'worker') ? (
+                                    <div className="mt-1 flex items-center justify-between text-xs">
+                                        <p className="text-emerald-700 font-medium flex items-center gap-1.5">
+                                            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                            Worker: <span className="font-bold">{selectedWorker.name || selectedWorker.full_name}</span> ({selectedWorker.phone ? `+91 ${selectedWorker.phone.replace(/\D/g, '').slice(-10)}` : '⚠️ No phone'})
+                                        </p>
+                                        <span className="text-slate-400 text-[11px]">Shift: {serviceHours === 24 ? '24h Live-in' : '10h'}</span>
+                                    </div>
                                 ) : (
                                     <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-[#1AA6A8]" /> Human conformation ensures quality outbound interactions.</p>
                                 )}
                             </div>
                         </div>
-                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-                            <button onClick={() => setIsAgentModalOpen(false)} className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-wrap sm:flex-nowrap items-center gap-2.5">
+                            <button onClick={() => setIsAgentModalOpen(false)} className="px-4 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors shrink-0">
                                 Cancel
                             </button>
+
+                            {/* Optional: Send to Worker Button */}
+                            {agentTargetAction === 'staff' && selectedWorker && !isEditingTemplate && (
+                                <button
+                                    type="button"
+                                    onClick={handleDispatchToWorker}
+                                    disabled={isSendingToWorker}
+                                    title={workerSentSuccess ? 'Assignment message sent to worker' : `Send assignment notification to ${selectedWorker.name || 'worker'}`}
+                                    className={`py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs flex items-center justify-center gap-2 shrink-0 ${
+                                        workerSentSuccess
+                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                                    }`}
+                                >
+                                    {isSendingToWorker ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Sending to Worker...</span>
+                                        </>
+                                    ) : workerSentSuccess ? (
+                                        <>
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                            <span>Sent to Worker ✓</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MessageSquare className="w-4 h-4" />
+                                            <span>Send to Worker</span>
+                                        </>
+                                    )}
+                                </button>
+                            )}
+
                             {isEditingTemplate ? (
                                 <button onClick={handleSaveTemplate} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1AA6A8] hover:bg-[#1AA6A8] transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                                     Save as Default
                                 </button>
                             ) : (
-                                <button onClick={handleDispatchMessage} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-[#1AA6A8] to-[#0E7C7E] hover:from-[#1AA6A8] hover:to-[#0E7C7E] transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+                                <button onClick={handleDispatchMessage} className="flex-1 py-2.5 px-4 rounded-xl font-bold text-white bg-gradient-to-r from-[#1AA6A8] to-[#0E7C7E] hover:from-[#1AA6A8] hover:to-[#0E7C7E] transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 text-xs sm:text-sm">
                                     <Send className="w-4 h-4" /> Confirm & Dispatch
                                 </button>
                             )}
@@ -7621,17 +7851,19 @@ export default function CRM() {
                                                 <div className="flex items-center gap-1.5 flex-1 max-w-[240px] justify-end">
                                                     <select
                                                         autoFocus
-                                                        value={inspectorConsentDraft}
+                                                        value={
+                                                            inspectorConsentDraft.includes('24') || inspectorConsentDraft.toLowerCase().includes('live')
+                                                                ? '24 Hours (Live-in)'
+                                                                : inspectorConsentDraft.includes('10')
+                                                                ? '10 Hours'
+                                                                : inspectorConsentDraft
+                                                        }
                                                         onChange={e => setInspectorConsentDraft(e.target.value)}
                                                         className="text-xs font-semibold bg-white border border-primary/40 rounded-lg px-2.5 py-1.5 outline-none w-full"
                                                     >
                                                         <option value="">Select Shift...</option>
                                                         <option value="10 Hours">10 Hours</option>
-                                                        <option value="10-Hour Shift">10-Hour Shift</option>
-                                                        <option value="12 Hours">12 Hours</option>
-                                                        <option value="12-Hour Shift">12-Hour Shift</option>
                                                         <option value="24 Hours (Live-in)">24 Hours (Live-in)</option>
-                                                        <option value="24-Hour Shift">24-Hour Shift</option>
                                                     </select>
                                                     <button
                                                         onClick={() => handleSaveConsentField(leadId, 'offered_time', inspectorConsentDraft, 'Offered Time / Shift', consent?.offered_time || '—', inspectorConsentDraft)}
@@ -9734,17 +9966,19 @@ export default function CRM() {
                                             Shift / Offered Time
                                         </label>
                                         <select
-                                            value={quickEditForm.shiftType}
+                                            value={
+                                                quickEditForm.shiftType.includes('24') || quickEditForm.shiftType.toLowerCase().includes('live')
+                                                    ? '24 Hours (Live-in)'
+                                                    : quickEditForm.shiftType.includes('10')
+                                                    ? '10 Hours'
+                                                    : quickEditForm.shiftType
+                                            }
                                             onChange={e => setQuickEditForm(prev => ({ ...prev, shiftType: e.target.value }))}
                                             className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white text-sm font-medium text-slate-800"
                                         >
                                             <option value="">Select Shift...</option>
                                             <option value="10 Hours">10 Hours</option>
-                                            <option value="10-Hour Shift">10-Hour Shift</option>
-                                            <option value="12 Hours">12 Hours</option>
-                                            <option value="12-Hour Shift">12-Hour Shift</option>
                                             <option value="24 Hours (Live-in)">24 Hours (Live-in)</option>
-                                            <option value="24-Hour Shift">24-Hour Shift</option>
                                         </select>
                                     </div>
                                 </div>
