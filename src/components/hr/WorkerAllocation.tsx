@@ -560,8 +560,9 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         const notesStr = String(lead?.notes || '');
         const offeredTime = String(lead?.client_consents?.[0]?.offered_time || '');
 
-        if (
-          svcHours >= 12 || 
+        if (svcHours > 0) {
+          setHoursPerDay(svcHours >= 12 ? 24 : 10);
+        } else if (
           qHours.includes('24') || 
           qHours.toLowerCase().includes('live') || 
           notesStr.includes('24') || 

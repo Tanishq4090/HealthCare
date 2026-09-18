@@ -427,14 +427,6 @@ export default function HR() {
                     const periodDays = start ? periodDaysInclusive(start, end) : daysInCalendarMonth();
                     const days = workerAttendance.length > 0 ? verifiedDays : (periodDays > 0 ? periodDays : 1);
 
-                    const pay = calculateWorkerPay({
-                        rate_10hr: emp?.rate_10hr,
-                        rate_24hr: emp?.rate_24hr,
-                        daysWorked: days,
-                        periodDays,
-                        hoursPerDay: a.hours_per_day,
-                    });
-
                     const clientName = clientObj?.client_name || emp?.assigned_client || 'Unassigned';
                     const matchedService = findServiceForItem(
                         { 
@@ -450,6 +442,17 @@ export default function HR() {
                         assignmentsData || [],
                         leadData || []
                     );
+
+                    // Service shift takes precedence over stale/default assignment hours
+                    const effectiveHours = matchedService?.hours_per_day || a.hours_per_day || 10;
+
+                    const pay = calculateWorkerPay({
+                        rate_10hr: emp?.rate_10hr,
+                        rate_24hr: emp?.rate_24hr,
+                        daysWorked: days,
+                        periodDays,
+                        hoursPerDay: effectiveHours,
+                    });
 
                     return {
                         id: `synth-${a.id}`,
@@ -467,7 +470,7 @@ export default function HR() {
                         payroll_type: 'payslip',
                         start_date: a.start_date,
                         end_date: a.end_date || null,
-                        hours_per_day: a.hours_per_day,
+                        hours_per_day: effectiveHours,
                         preferred_payment_type: emp?.preferred_payment_type,
                         assignment_status: a.assignment_status,
                         worker_assignments: { assignment_status: a.assignment_status },
