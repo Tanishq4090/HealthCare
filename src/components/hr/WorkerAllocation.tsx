@@ -1245,7 +1245,15 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
     }
   };
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel('available-workers-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_assignments' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load]);
 
   const filtered = employees.filter(e =>
     !debouncedSearch ||
@@ -1454,7 +1462,15 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel('active-assignments-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_assignments' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load]);
 
   const handleResend = async (a: ActiveAssignment) => {
     setResending(a.id);

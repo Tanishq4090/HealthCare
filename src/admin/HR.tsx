@@ -212,13 +212,20 @@ export default function HR() {
                     if (!a.employee_id) return false;
 
                     const hasMatchingDbPayroll = (payrollData || []).some((p: any) => {
-                        if (p.assignment_id === a.id) return true;
+                        if (p.assignment_id === a.id) {
+                            if (a.assignment_status === 'active' && p.type === 'final') return false;
+                            return true;
+                        }
                         
                         // Check if p.assignment_id maps to this specific worker assignment through service_worker_assignments
                         if (servicesData && p.assignment_id) {
                             for (const s of servicesData) {
                                 const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
                                 if (swa && swa.employee_id === a.employee_id) {
+                                    // If 'a' is an active deployment, an old relieved SWA (with end_date or p.type === 'final') is NOT this active ongoing deployment!
+                                    if (a.assignment_status === 'active' && (p.type === 'final' || swa.end_date)) {
+                                        continue;
+                                    }
                                     const aStart = a.start_date ? a.start_date.split('T')[0] : '';
                                     const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
                                     if (aStart && swaStart && aStart === swaStart) {
@@ -358,6 +365,10 @@ export default function HR() {
                             const swaStart = swa.start_date ? swa.start_date.split('T')[0] : '';
                             matchedAsgn = (assignmentsData || []).find((a: any) => 
                                 a.employee_id === empId && 
+                                a.start_date?.split('T')[0] === swaStart &&
+                                (p.type === 'final' ? (a.assignment_status === 'completed' || !!a.end_date) : a.assignment_status === 'active')
+                            ) || (assignmentsData || []).find((a: any) => 
+                                a.employee_id === empId && 
                                 a.start_date?.split('T')[0] === swaStart
                             );
                             if (matchedAsgn) break;
@@ -367,11 +378,15 @@ export default function HR() {
                 if (!matchedAsgn && empId) {
                     matchedAsgn = (assignmentsData || []).find((a: any) => 
                         a.employee_id === empId && 
+                        (a.clients?.client_name || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase() &&
+                        (p.type === 'final' ? (a.assignment_status === 'completed' || !!a.end_date) : a.assignment_status === 'active')
+                    ) || (assignmentsData || []).find((a: any) => 
+                        a.employee_id === empId && 
                         (a.clients?.client_name || '').trim().toLowerCase() === (p.client_name || '').trim().toLowerCase()
                     );
                 }
 
-                const asgnStatus = matchedAsgn ? matchedAsgn.assignment_status : (p.type === 'final' ? 'completed' : 'active');
+                const asgnStatus = p.type === 'final' ? 'completed' : (matchedAsgn ? matchedAsgn.assignment_status : 'active');
                 const enrichedBase = {
                     ...p,
                     assignment_status: asgnStatus,
@@ -571,13 +586,44 @@ export default function HR() {
         }
     };
 
+    const fetchLiveAttendance = useCallback(async () => {
+        setAttendanceLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('worker_assignments')
+                .select(`
+                    *,
+                    employees(*),
+                    clients(client_name)
+                `)
+                .eq('assignment_status', 'active')
+                .order('assigned_at', { ascending: false });
+
+            if (error) throw error;
+            setActiveAssignments(data || []);
+        } catch (err: any) {
+            console.error('Error fetching active assignments:', err);
+            toast.error('Failed to load active assignments');
+        } finally {
+            setAttendanceLoading(false);
+        }
+    }, []);
+
     // Initial data load on mount only
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    // Supabase Realtime: sync employees table live across all admin sessions
+    // Supabase Realtime: sync employees, assignments, payroll, attendance, and services live across all admin sessions
     useEffect(() => {
+        let timer: any = null;
+        const debouncedFetch = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                fetchData();
+            }, 300);
+        };
+
         const channel = supabase
-            .channel('employees-realtime')
+            .channel('hr-live-sync-realtime')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, (payload) => {
                 if (payload.eventType === 'INSERT') {
                     setWorkers(prev => [payload.new as any, ...prev]);
@@ -586,9 +632,23 @@ export default function HR() {
                 } else if (payload.eventType === 'DELETE') {
                     setWorkers(prev => prev.filter(w => w.id !== (payload.old as any).id));
                 }
-            }).subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, []);
+                debouncedFetch();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_assignments' }, debouncedFetch)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll' }, debouncedFetch)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
+                debouncedFetch();
+                if (activeTab === 'attendance') fetchLiveAttendance();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'service_worker_assignments' }, debouncedFetch)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, debouncedFetch)
+            .subscribe();
+
+        return () => {
+            clearTimeout(timer);
+            supabase.removeChannel(channel);
+        };
+    }, [fetchData, fetchLiveAttendance, activeTab]);
 
     // Handle direct worker link via URL param
     useEffect(() => {
@@ -630,31 +690,6 @@ export default function HR() {
             setActiveTab(tabParam);
         }
     }, [searchParams]);
-
-
-
-    const fetchLiveAttendance = async () => {
-        setAttendanceLoading(true);
-        try {
-            const { data, error } = await supabase
-                .from('worker_assignments')
-                .select(`
-                    *,
-                    employees(*),
-                    clients(client_name)
-                `)
-                .eq('assignment_status', 'active')
-                .order('assigned_at', { ascending: false });
-
-            if (error) throw error;
-            setActiveAssignments(data || []);
-        } catch (err: any) {
-            console.error('Error fetching active assignments:', err);
-            toast.error('Failed to load active assignments');
-        } finally {
-            setAttendanceLoading(false);
-        }
-    };
 
     const handleInlineAttendanceMark = async (workerId: string, status: string) => {
         setInlineMarkingId(workerId);
