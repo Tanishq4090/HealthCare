@@ -2526,67 +2526,12 @@ export default function HR() {
                                                                                     
                                                                                     const toastId = toast.loading("Generating payslip and dispatching...");
                                                                                     try {
-                                                                                        const isAdvance = false;
-                                                                                        const paymentType = item.preferred_payment_type || 'cash';
-                                                                                        let invoicePdfBlob: Blob | null = null;
-                                                                                        let invoicePdfUrl: string | null = null;
-                                                                                        
-                                                                                        try {
-                                                                                            const clientPdfDoc = await generateClientBillDoc(item);
-                                                                                            invoicePdfBlob = clientPdfDoc.output('blob');
-                                                                                            const clientFileName = `invoice_${item.id}_${Date.now()}.pdf`;
-                                                                                            const { data: uploadData, error: uploadErr } = await supabase.storage
-                                                                                                .from('documents')
-                                                                                                .upload(`invoices/${clientFileName}`, invoicePdfBlob, {
-                                                                                                    contentType: 'application/pdf',
-                                                                                                    upsert: true
-                                                                                                });
-                                                                                            if (!uploadErr && uploadData) {
-                                                                                                const { data: publicData } = supabase.storage
-                                                                                                    .from('documents')
-                                                                                                    .getPublicUrl(uploadData.path);
-                                                                                                invoicePdfUrl = publicData.publicUrl;
-                                                                                            }
-                                                                                        } catch (docErr) {
-                                                                                            console.warn("Client invoice PDF upload skipped:", docErr);
-                                                                                        }
-
-                                                                                        const workerPdfDoc = await generateWorkerPayslipDoc(item);
-                                                                                        const pdfBlob = workerPdfDoc.output('blob');
-                                                                                        const fileName = `payslip_${item.id}_${Date.now()}.pdf`;
-                                                                                        const { data: uploadData, error: uploadErr } = await supabase.storage
-                                                                                            .from('documents')
-                                                                                            .upload(`payslips/${fileName}`, pdfBlob, {
-                                                                                                contentType: 'application/pdf',
-                                                                                                upsert: true
-                                                                                            });
-                                                                                        if (uploadErr) throw uploadErr;
-
-                                                                                        const { data: publicData } = supabase.storage
-                                                                                            .from('documents')
-                                                                                            .getPublicUrl(uploadData.path);
-                                                                                        const pdfUrl = publicData.publicUrl;
-
-                                                                                        const dispatchRes = await markPayslipDispatched({
-                                                                                            payrollId: item.id,
-                                                                                            assignmentId: item.assignment_id,
-                                                                                            workerName: item.worker,
-                                                                                            workerPhone: phone,
-                                                                                            totalAmount: balance.totalGross,
-                                                                                            pdfUrl: pdfUrl,
-                                                                                            isAdvance: isAdvance,
-                                                                                            paymentType: paymentType,
-                                                                                            invoicePdfUrl: invoicePdfUrl,
-                                                                                            clientName: item.client_name || item.client
-                                                                                        });
-
-                                                                                        if (!dispatchRes.success) {
-                                                                                            throw new Error(dispatchRes.error || "Dispatch failed");
-                                                                                        }
-
-                                                                                        toast.success("Payslip generated & dispatched via WhatsApp!", { id: toastId });
-                                                                                        await fetchData();
+                                                                                        await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
                                                                                     } catch (err: any) {
+                                                                                        toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
+                                                                                    }
+                                                                                }}
+                                                                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 ${
                                                                                     balance.isFullyPaid
                                                                                         ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
                                                                                         : 'bg-green-50 text-green-600 hover:bg-green-500 hover:text-white'
@@ -2594,6 +2539,15 @@ export default function HR() {
                                                                                 title={balance.isFullyPaid ? "Payslip sent & marked as Paid. Click to resend via WhatsApp." : "Send payslip via WhatsApp (automatically marks as Paid)"}
                                                                             >
                                                                                 <Send className="w-3 h-3" /> {balance.isFullyPaid ? 'WhatsApp (Resend)' : 'WhatsApp'}
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setEditingPayroll(item);
+                                                                                    setIsEditPayrollModalOpen(true);
+                                                                                }}
+                                                                                className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 rounded transition-colors flex items-center gap-1"
+                                                                            >
+                                                                                <Edit3 className="w-3 h-3" /> Edit
                                                                             </button>
                                                                             <button
                                                                                 onClick={async () => {
