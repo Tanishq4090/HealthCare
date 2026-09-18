@@ -2415,35 +2415,6 @@ export default function HR() {
 
                             return (
                                 <div className="space-y-4">
-                                    {/* Expand/Collapse All Toolbar */}
-                                    <div className="flex items-center justify-between gap-3 px-1">
-                                        <p className="text-xs font-semibold text-slate-500">
-                                            Showing {groups.length} Client Ledger{groups.length !== 1 ? 's' : ''}
-                                        </p>
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setCollapsedClients({})}
-                                                className="text-[11px] font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
-                                                title="Expand all client payslip lists"
-                                            >
-                                                Expand All
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const cMap: Record<string, boolean> = {};
-                                                    groups.forEach(g => { cMap[g.clientId] = true; });
-                                                    setCollapsedClients(cMap);
-                                                }}
-                                                className="text-[11px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
-                                                title="Collapse all client payslip lists"
-                                            >
-                                                Collapse All
-                                            </button>
-                                        </div>
-                                    </div>
-
                                     {groups.map(group => {
                                         const isCollapsed = !!collapsedClients[group.clientId];
 
@@ -2455,7 +2426,7 @@ export default function HR() {
                                                 {/* Client Service Header with Open/Close Toggle */}
                                                 <div 
                                                     onClick={() => setCollapsedClients(prev => ({ ...prev, [group.clientId]: !prev[group.clientId] }))}
-                                                    className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-100/50 transition-colors"
+                                                    className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer select-none hover:bg-slate-100/50 transition-colors"
                                                     title={isCollapsed ? "Click to expand payslip list" : "Click to collapse payslip list"}
                                                 >
                                                     <div className="flex items-center gap-3">
@@ -2490,15 +2461,12 @@ export default function HR() {
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center justify-between sm:justify-end gap-3.5 w-full sm:w-auto">
+                                                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-6 w-full sm:w-auto shrink-0">
                                                         <div className="text-left sm:text-right">
                                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Staff Payout</p>
                                                             <p className="text-base font-black text-[#1AA6A8]">₹{group.totalPayables.toFixed(2)}</p>
                                                         </div>
-                                                        <div className="p-1 rounded-lg text-slate-400 hover:text-slate-700 transition-colors flex items-center gap-1">
-                                                            <span className="text-[11px] font-semibold text-slate-400 hidden sm:inline">
-                                                                {isCollapsed ? 'Open' : 'Close'}
-                                                            </span>
+                                                        <div className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 transition-colors flex items-center justify-center">
                                                             <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${isCollapsed ? '-rotate-90 text-slate-400' : 'rotate-0 text-[#1AA6A8]'}`} />
                                                         </div>
                                                     </div>
