@@ -76,7 +76,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       // For synthetic/temp assignment IDs (relieved staff without a stored assignment_id),
       // fall back to worker_id + date range only, since the real assignment_id is unknown.
       const isSyntheticId = assignment.id.startsWith('temp-');
-      let query = supabase
+      const baseQuery = () => supabase
         .from('attendance')
         .select('id, status, is_half_day, duty_date, is_absent, hours_worked, check_in_time, check_out_time, notes')
         .eq('worker_id', assignment.employee_id)
@@ -84,13 +84,29 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         .lte('duty_date', format(endDate, 'yyyy-MM-dd'))
         .order('duty_date', { ascending: true });
 
+      let rawLogs: any[] | null = null;
+      let logErr: any = null;
+
       if (!isSyntheticId) {
-        query = query.eq('assignment_id', assignment.id);
+        // Try with assignment_id filter first
+        const res = await baseQuery().eq('assignment_id', assignment.id);
+        logErr = res.error;
+        rawLogs = res.data;
+
+        // If assignment_id filter returned zero results, the payroll record's
+        // assignment_id may not match the attendance records' assignment_id
+        // (e.g. service_worker_assignments vs worker_assignments).
+        // Retry without the filter to find the actual attendance.
+        if (!logErr && (!rawLogs || rawLogs.length === 0)) {
+          const fallback = await baseQuery();
+          logErr = fallback.error;
+          rawLogs = fallback.data;
+        }
+      } else {
+        const res = await baseQuery();
+        logErr = res.error;
+        rawLogs = res.data;
       }
-
-      const { data: rawLogs, error: logErr } = await query;
-
-      if (logErr) throw logErr;
 
       const logMap = new Map<string, any>();
       (rawLogs || []).forEach(r => {

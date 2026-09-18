@@ -31,6 +31,7 @@ export default function HR() {
     const [workers, setWorkers] = useState<any[]>([]);
     const [payrollItems, setPayrollItems] = useState<any[]>([]);
     const [pipelineLeads, setPipelineLeads] = useState<any[]>([]);
+    const [servicesList, setServicesList] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [workerSearch, setWorkerSearch] = useState('');
     const [workerStatusFilter, setWorkerStatusFilter] = useState<string>('All');
@@ -151,6 +152,137 @@ export default function HR() {
         toast.success("Workforce Directory exported successfully!");
     };
 
+    const safeFormatDate = (dateStr: string | null | undefined, fallback: string = 'N/A') => {
+        if (!dateStr) return fallback;
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return fallback;
+            return format(d, 'dd MMM yyyy');
+        } catch {
+            return fallback;
+        }
+    };
+
+    const findServiceForItem = (
+        item: { 
+            assignment_id?: string; 
+            worker_id?: string; 
+            worker?: string;
+            client_name?: string; 
+            start_date?: string | null; 
+            hours_per_day?: number | null; 
+            assignment_status?: string; 
+            type?: string; 
+        },
+        services: any[],
+        assignments: any[],
+        leads: any[]
+    ) => {
+        if (!services || services.length === 0) return null;
+
+        // 1. Direct match by assignment_id on service_worker_assignments
+        if (item.assignment_id) {
+            for (const s of services) {
+                if (s.service_worker_assignments?.some((swa: any) => swa.id === item.assignment_id)) {
+                    return s;
+                }
+                if (s.legacy_assignment_id === item.assignment_id) {
+                    return s;
+                }
+            }
+            // Check if item.assignment_id matches a worker_assignment in assignmentsData
+            const matchedLegacy = (assignments || []).find((a: any) => a.id === item.assignment_id);
+            if (matchedLegacy) {
+                const clientMatches = services.filter((s: any) => 
+                    s.client_id === matchedLegacy.client_id || s.lead_id === matchedLegacy.client_id
+                );
+                if (clientMatches.length === 1) return clientMatches[0];
+                if (clientMatches.length > 1) {
+                    // Check if worker matches in SWA
+                    for (const s of clientMatches) {
+                        const swa = s.service_worker_assignments?.find((sw: any) => 
+                            sw.employee_id === matchedLegacy.employee_id &&
+                            (!sw.start_date || !matchedLegacy.start_date || sw.start_date.split('T')[0] === matchedLegacy.start_date.split('T')[0])
+                        );
+                        if (swa) return s;
+                    }
+                    // Check shift match
+                    if (matchedLegacy.hours_per_day) {
+                        const shiftMatch = clientMatches.find((s: any) => s.hours_per_day === matchedLegacy.hours_per_day);
+                        if (shiftMatch) return shiftMatch;
+                    }
+                    // Check start_date overlap
+                    const asgnStart = matchedLegacy.start_date ? matchedLegacy.start_date.split('T')[0] : '';
+                    if (asgnStart) {
+                        for (const s of clientMatches) {
+                            const sStart = s.start_date ? s.start_date.split('T')[0] : '';
+                            const sEnd = s.end_date ? s.end_date.split('T')[0] : '';
+                            if (sStart && asgnStart >= sStart && (!sEnd || asgnStart <= sEnd)) return s;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Client matching
+        const rawClient = (item.client_name || '').trim().toLowerCase();
+        if (!rawClient || rawClient === 'n/a' || rawClient === 'unassigned' || rawClient === 'internal / general operations') {
+            return null;
+        }
+
+        const lead = (leads || []).find((l: any) => (l.name || l.client_name || '').trim().toLowerCase() === rawClient);
+        const clientServices = services.filter((s: any) => {
+            if (lead && (s.client_id === lead.id || s.lead_id === lead.id)) return true;
+            return false;
+        });
+
+        if (clientServices.length === 1) return clientServices[0];
+        if (clientServices.length > 1) {
+            const itemEmpId = item.worker_id;
+            const itemStart = item.start_date ? item.start_date.split('T')[0] : '';
+            const itemHours = item.hours_per_day;
+
+            // Check if worker is in SWA of any service
+            if (itemEmpId) {
+                for (const s of clientServices) {
+                    const swa = s.service_worker_assignments?.find((sw: any) => {
+                        const matchEmp = sw.employee_id === itemEmpId;
+                        const matchStart = itemStart && sw.start_date ? sw.start_date.split('T')[0] === itemStart : true;
+                        return matchEmp && matchStart;
+                    });
+                    if (swa) return s;
+                }
+            }
+
+            // Match by shift
+            if (itemHours) {
+                const hoursMatch = clientServices.find((s: any) => s.hours_per_day === itemHours);
+                if (hoursMatch) return hoursMatch;
+            }
+
+            // Match by date overlap
+            if (itemStart) {
+                for (const s of clientServices) {
+                    const sStart = s.start_date ? s.start_date.split('T')[0] : '';
+                    const sEnd = s.end_date ? s.end_date.split('T')[0] : '';
+                    if (sStart && itemStart >= sStart && (!sEnd || itemStart <= sEnd)) return s;
+                }
+            }
+
+            // Match by active vs ended
+            const isActive = item.assignment_status === 'active' && item.type !== 'final';
+            if (isActive) {
+                const activeSvc = clientServices.find((s: any) => s.status === 'active');
+                if (activeSvc) return activeSvc;
+            } else {
+                const endedSvc = clientServices.find((s: any) => s.status !== 'active');
+                if (endedSvc) return endedSvc;
+            }
+        }
+
+        return null;
+    };
+
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -202,7 +334,8 @@ export default function HR() {
             // Fetch services to map legacy assignments and service assignments for accurate deduplication
             const { data: servicesData } = await supabase
                 .from('services')
-                .select('id, legacy_assignment_id, client_id, status, service_worker_assignments(id, employee_id, start_date, end_date)');
+                .select('id, legacy_assignment_id, client_id, lead_id, service_type, hours_per_day, start_date, end_date, status, notes, service_worker_assignments(id, employee_id, start_date, end_date)');
+            setServicesList(servicesData || []);
 
             // Build payroll items: prefer official DB records, fall back to synthetic items only if no DB payroll exists for that worker & client/service
             const syntheticItems = (assignmentsData || [])
@@ -277,6 +410,20 @@ export default function HR() {
                     });
 
                     const clientName = clientObj?.client_name || emp?.assigned_client || 'Unassigned';
+                    const matchedService = findServiceForItem(
+                        { 
+                            assignment_id: a.id, 
+                            worker_id: a.employee_id, 
+                            worker: emp?.full_name, 
+                            client_name: clientName, 
+                            start_date: a.start_date, 
+                            hours_per_day: a.hours_per_day, 
+                            assignment_status: a.assignment_status 
+                        },
+                        servicesData || [],
+                        assignmentsData || [],
+                        leadData || []
+                    );
 
                     return {
                         id: `synth-${a.id}`,
@@ -298,6 +445,8 @@ export default function HR() {
                         preferred_payment_type: emp?.preferred_payment_type,
                         assignment_status: a.assignment_status,
                         worker_assignments: { assignment_status: a.assignment_status },
+                        service_id: matchedService?.id || null,
+                        service_details: matchedService || null,
                         _isSynthetic: true
                     };
                 });
@@ -387,11 +536,28 @@ export default function HR() {
                 }
 
                 const asgnStatus = p.type === 'final' ? 'completed' : (matchedAsgn ? matchedAsgn.assignment_status : 'active');
+                const matchedService = findServiceForItem(
+                    { 
+                        assignment_id: p.assignment_id || matchedAsgn?.id, 
+                        worker_id: empId, 
+                        worker: p.worker, 
+                        client_name: p.client_name || p.client, 
+                        start_date: p.period_start || p.start_date || matchedAsgn?.start_date, 
+                        hours_per_day: p.hours_per_day || matchedAsgn?.hours_per_day, 
+                        assignment_status: asgnStatus, 
+                        type: p.type 
+                    },
+                    servicesData || [],
+                    assignmentsData || [],
+                    leadData || []
+                );
                 const enrichedBase = {
                     ...p,
                     assignment_status: asgnStatus,
                     worker_assignments: { assignment_status: asgnStatus },
                     end_date: matchedAsgn ? matchedAsgn.end_date : (p.type === 'final' ? (p.period_end || p.end_date) : null),
+                    service_id: matchedService?.id || null,
+                    service_details: matchedService || null,
                 };
 
                 const isOngoingActive = asgnStatus === 'active' || p.type !== 'final';
@@ -2268,12 +2434,9 @@ export default function HR() {
                                                 </div>
                                             </div>
 
-                                            {/* Worker Payslips for this Client */}
+                                            {/* Worker Payslips for this Client Grouped by Service Window */}
                                             <div>
                                                 {(() => {
-                                                    const activeItems = group.items.filter(isPayrollItemActive);
-                                                    const releasedItems = group.items.filter(i => !isPayrollItemActive(i));
-
                                                     const renderWorkerRow = (item: any, isCurrentlyActive: boolean) => {
                                                         const days = getDays(item);
                                                         const balance = computePayrollBalance(item);
@@ -2363,12 +2526,67 @@ export default function HR() {
                                                                                     
                                                                                     const toastId = toast.loading("Generating payslip and dispatching...");
                                                                                     try {
-                                                                                        await handleGenerateSinglePayslip(item, { mode: 'whatsapp', phone, toastId });
+                                                                                        const isAdvance = false;
+                                                                                        const paymentType = item.preferred_payment_type || 'cash';
+                                                                                        let invoicePdfBlob: Blob | null = null;
+                                                                                        let invoicePdfUrl: string | null = null;
+                                                                                        
+                                                                                        try {
+                                                                                            const clientPdfDoc = await generateClientBillDoc(item);
+                                                                                            invoicePdfBlob = clientPdfDoc.output('blob');
+                                                                                            const clientFileName = `invoice_${item.id}_${Date.now()}.pdf`;
+                                                                                            const { data: uploadData, error: uploadErr } = await supabase.storage
+                                                                                                .from('documents')
+                                                                                                .upload(`invoices/${clientFileName}`, invoicePdfBlob, {
+                                                                                                    contentType: 'application/pdf',
+                                                                                                    upsert: true
+                                                                                                });
+                                                                                            if (!uploadErr && uploadData) {
+                                                                                                const { data: publicData } = supabase.storage
+                                                                                                    .from('documents')
+                                                                                                    .getPublicUrl(uploadData.path);
+                                                                                                invoicePdfUrl = publicData.publicUrl;
+                                                                                            }
+                                                                                        } catch (docErr) {
+                                                                                            console.warn("Client invoice PDF upload skipped:", docErr);
+                                                                                        }
+
+                                                                                        const workerPdfDoc = await generateWorkerPayslipDoc(item);
+                                                                                        const pdfBlob = workerPdfDoc.output('blob');
+                                                                                        const fileName = `payslip_${item.id}_${Date.now()}.pdf`;
+                                                                                        const { data: uploadData, error: uploadErr } = await supabase.storage
+                                                                                            .from('documents')
+                                                                                            .upload(`payslips/${fileName}`, pdfBlob, {
+                                                                                                contentType: 'application/pdf',
+                                                                                                upsert: true
+                                                                                            });
+                                                                                        if (uploadErr) throw uploadErr;
+
+                                                                                        const { data: publicData } = supabase.storage
+                                                                                            .from('documents')
+                                                                                            .getPublicUrl(uploadData.path);
+                                                                                        const pdfUrl = publicData.publicUrl;
+
+                                                                                        const dispatchRes = await markPayslipDispatched({
+                                                                                            payrollId: item.id,
+                                                                                            assignmentId: item.assignment_id,
+                                                                                            workerName: item.worker,
+                                                                                            workerPhone: phone,
+                                                                                            totalAmount: balance.totalGross,
+                                                                                            pdfUrl: pdfUrl,
+                                                                                            isAdvance: isAdvance,
+                                                                                            paymentType: paymentType,
+                                                                                            invoicePdfUrl: invoicePdfUrl,
+                                                                                            clientName: item.client_name || item.client
+                                                                                        });
+
+                                                                                        if (!dispatchRes.success) {
+                                                                                            throw new Error(dispatchRes.error || "Dispatch failed");
+                                                                                        }
+
+                                                                                        toast.success("Payslip generated & dispatched via WhatsApp!", { id: toastId });
+                                                                                        await fetchData();
                                                                                     } catch (err: any) {
-                                                                                        toast.error(err.message || "Failed to dispatch payslip", { id: toastId });
-                                                                                    }
-                                                                                }}
-                                                                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 ${
                                                                                     balance.isFullyPaid
                                                                                         ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
                                                                                         : 'bg-green-50 text-green-600 hover:bg-green-500 hover:text-white'
@@ -2468,45 +2686,173 @@ export default function HR() {
                                                         );
                                                     };
 
-                                                    return (
-                                                        <div>
-                                                            {activeItems.length > 0 && (
-                                                                <div>
-                                                                    <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 flex items-center justify-between">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                                                                            <span className="text-[11px] font-bold text-sky-900 uppercase tracking-wide">
-                                                                                Currently Deployed Staff ({activeItems.length})
-                                                                            </span>
-                                                                        </div>
-                                                                        <span className="text-[10px] text-sky-600 font-medium">
-                                                                            Accrues daily • Locks upon release
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="divide-y divide-slate-100">
-                                                                        {activeItems.map(item => renderWorkerRow(item, true))}
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                                    // Group this client's payroll items by service window
+                                                    const serviceBucketsMap = new Map<string, {
+                                                        key: string;
+                                                        serviceObj: any;
+                                                        title: string;
+                                                        shiftLabel: string;
+                                                        dateRange: string;
+                                                        isActiveCycle: boolean;
+                                                        items: any[];
+                                                        subtotal: number;
+                                                        activeCount: number;
+                                                    }>();
 
-                                                            {releasedItems.length > 0 && (
-                                                                <div>
-                                                                    <div className="px-5 py-2 bg-slate-50 border-y border-slate-200/80 flex items-center justify-between">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
-                                                                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
-                                                                                Completed &amp; Relieved Staff ({releasedItems.length})
-                                                                            </span>
+                                                    group.items.forEach(item => {
+                                                        const svc = item.service_details || findServiceForItem(
+                                                            { 
+                                                                assignment_id: item.assignment_id, 
+                                                                worker_id: item.worker_id, 
+                                                                worker: item.worker,
+                                                                client_name: group.clientName, 
+                                                                start_date: item.start_date || item.period_start, 
+                                                                hours_per_day: item.hours_per_day,
+                                                                assignment_status: item.assignment_status,
+                                                                type: item.type
+                                                            },
+                                                            servicesList,
+                                                            activeAssignments,
+                                                            pipelineLeads
+                                                        );
+
+                                                        let bucketKey = 'general';
+                                                        let title = 'General Deployments';
+                                                        let shiftLabel = item.hours_per_day ? `${item.hours_per_day}-Hour Shift` : 'Standard Shift';
+                                                        let dateRange = item.start_date ? safeFormatDate(item.start_date) : (item.period_start ? safeFormatDate(item.period_start) : 'Ongoing');
+                                                        let isActiveCycle = isPayrollItemActive(item);
+
+                                                        if (svc) {
+                                                            bucketKey = svc.id;
+                                                            title = svc.service_type || 'Care Service';
+                                                            shiftLabel = `${svc.hours_per_day || 10}-Hour Shift`;
+                                                            dateRange = `${safeFormatDate(svc.start_date)} → ${svc.end_date ? safeFormatDate(svc.end_date) : 'Ongoing'}`;
+                                                            isActiveCycle = svc.status === 'active';
+                                                        }
+
+                                                        if (!serviceBucketsMap.has(bucketKey)) {
+                                                            serviceBucketsMap.set(bucketKey, {
+                                                                key: bucketKey,
+                                                                serviceObj: svc,
+                                                                title,
+                                                                shiftLabel,
+                                                                dateRange,
+                                                                isActiveCycle,
+                                                                items: [],
+                                                                subtotal: 0,
+                                                                activeCount: 0,
+                                                            });
+                                                        }
+
+                                                        const b = serviceBucketsMap.get(bucketKey)!;
+                                                        b.items.push(item);
+                                                        const bal = computePayrollBalance(item);
+                                                        b.subtotal += bal.totalGross;
+                                                        if (isPayrollItemActive(item)) {
+                                                            b.activeCount++;
+                                                        }
+                                                    });
+
+                                                    const serviceBuckets = Array.from(serviceBucketsMap.values()).sort((a, b) => {
+                                                        if (a.isActiveCycle && !b.isActiveCycle) return -1;
+                                                        if (!a.isActiveCycle && b.isActiveCycle) return 1;
+                                                        const aDate = a.serviceObj?.start_date || a.items[0]?.start_date || a.items[0]?.period_start || '1970-01-01';
+                                                        const bDate = b.serviceObj?.start_date || b.items[0]?.start_date || b.items[0]?.period_start || '1970-01-01';
+                                                        return new Date(bDate).getTime() - new Date(aDate).getTime();
+                                                    });
+
+                                                    return (
+                                                        <div className="divide-y divide-slate-200">
+                                                            {serviceBuckets.map((svcBucket) => {
+                                                                const svcActiveItems = svcBucket.items.filter(isPayrollItemActive);
+                                                                const svcReleasedItems = svcBucket.items.filter(i => !isPayrollItemActive(i));
+
+                                                                return (
+                                                                    <div key={svcBucket.key} className="bg-white">
+                                                                        {/* Service Window Header Bar */}
+                                                                        <div className="px-5 py-2.5 bg-gradient-to-r from-slate-100/90 via-teal-50/15 to-white border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2.5">
+                                                                            <div className="flex items-center gap-2.5 flex-wrap">
+                                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1.5 ${
+                                                                                    svcBucket.isActiveCycle
+                                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                                                        : 'bg-slate-200/80 text-slate-700 border border-slate-300'
+                                                                                }`}>
+                                                                                    {svcBucket.isActiveCycle ? (
+                                                                                        <>
+                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                                                            Active Service Cycle
+                                                                                        </>
+                                                                                    ) : (
+                                                                                        <>
+                                                                                            <History className="w-3 h-3 text-slate-500" />
+                                                                                            Ended Service Cycle
+                                                                                        </>
+                                                                                    )}
+                                                                                </span>
+                                                                                <span className="text-xs font-bold text-slate-800">
+                                                                                    {svcBucket.title}
+                                                                                </span>
+                                                                                <span className="text-[11px] text-slate-600 font-semibold">
+                                                                                    • {svcBucket.shiftLabel}
+                                                                                </span>
+                                                                                <span className="text-[11px] text-slate-400 font-mono">
+                                                                                    ({svcBucket.dateRange})
+                                                                                </span>
+                                                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
+                                                                                    {svcBucket.items.length} staff record{svcBucket.items.length !== 1 ? 's' : ''}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="text-right flex items-center gap-1.5">
+                                                                                <span className="text-[10px] uppercase font-bold text-slate-400">Service Staff Payout:</span>
+                                                                                <span className="text-xs font-black text-[#1AA6A8]">
+                                                                                    ₹{svcBucket.subtotal.toFixed(2)}
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
-                                                                        <span className="text-[10px] text-slate-500 font-medium">
-                                                                            Duties ended • Ready for final payout
-                                                                        </span>
+
+                                                                        {/* Worker Rows inside this Service Window */}
+                                                                        <div>
+                                                                            {svcActiveItems.length > 0 && (
+                                                                                <div>
+                                                                                    <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 flex items-center justify-between">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                                                                                            <span className="text-[11px] font-bold text-sky-900 uppercase tracking-wide">
+                                                                                                Currently Deployed Staff ({svcActiveItems.length})
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <span className="text-[10px] text-sky-600 font-medium">
+                                                                                            Accrues daily • Locks upon release
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div className="divide-y divide-slate-100">
+                                                                                        {svcActiveItems.map(item => renderWorkerRow(item, true))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {svcReleasedItems.length > 0 && (
+                                                                                <div>
+                                                                                    <div className="px-5 py-2 bg-slate-50 border-y border-slate-200/80 flex items-center justify-between">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+                                                                                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                                                                                                Completed &amp; Relieved Staff ({svcReleasedItems.length})
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <span className="text-[10px] text-slate-500 font-medium">
+                                                                                            Duties ended • Ready for final payout
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div className="divide-y divide-slate-100 bg-slate-50/30">
+                                                                                        {svcReleasedItems.map(item => renderWorkerRow(item, false))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="divide-y divide-slate-100 bg-slate-50/30">
-                                                                        {releasedItems.map(item => renderWorkerRow(item, false))}
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                                                );
+                                                            })}
                                                         </div>
                                                     );
                                                 })()}
