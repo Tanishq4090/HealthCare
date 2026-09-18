@@ -84,6 +84,10 @@ export default function Clients() {
     } | null>(null);
     const [depositPaymentMethod, setDepositPaymentMethod] = useState('UPI');
     const [depositPaymentAmount, setDepositPaymentAmount] = useState<number | ''>(5000);
+    const [depositPaymentDate, setDepositPaymentDate] = useState<string>(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
     const [depositPaymentRef, setDepositPaymentRef] = useState('');
     const [isRecordingPayment, setIsRecordingPayment] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -116,6 +120,8 @@ export default function Clients() {
         setDepositPaymentAmount(amount);
         setDepositPaymentMethod(initialMethod);
         setDepositPaymentRef(generateDepositRef(initialMethod));
+        const d = new Date();
+        setDepositPaymentDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
         setGeneratedInvoiceUrl(null);
         setCopiedInvoiceLink(false);
     };
@@ -136,12 +142,13 @@ export default function Clients() {
         window.open(waUrl, '_blank');
     };
 
-    const handleShareDepositReceiptWhatsApp = (client: any, amount: number, method: string, ref: string, serviceName: string) => {
+    const handleShareDepositReceiptWhatsApp = (client: any, amount: number, method: string, ref: string, serviceName: string, paymentDate?: string) => {
         const rawPhone = (client.phone || '').replace(/\D/g, '');
         const cleanPhone = rawPhone.startsWith('91') ? rawPhone : `91${rawPhone}`;
-        const todayFormatted = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        const dateObj = paymentDate ? new Date(paymentDate.includes('T') ? paymentDate : `${paymentDate}T12:00:00`) : new Date();
+        const formattedDate = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-        const msg = `Namaste ${client.name} ji! 🙏\n\nHumne aapka 99 Care security deposit payment successfully receive kar liya hai.\n\n💰 *Amount Received*: ₹${amount.toLocaleString('en-IN')}\n💳 *Payment Mode*: ${method}\n🔖 *Reference ID*: ${ref}\n💼 *Service*: ${serviceName}\n📅 *Date*: ${todayFormatted}\n\nAapki care service smoothly active hai. Kisi bhi sahayata ke liye humse sampark karein.\n\nDhanyawad,\n99 Care Support Team`;
+        const msg = `Namaste ${client.name} ji! 🙏\n\nHumne aapka 99 Care security deposit payment successfully receive kar liya hai.\n\n💰 *Amount Received*: ₹${amount.toLocaleString('en-IN')}\n💳 *Payment Mode*: ${method}\n🔖 *Reference ID*: ${ref}\n💼 *Service*: ${serviceName}\n📅 *Date*: ${formattedDate}\n\nAapki care service smoothly active hai. Kisi bhi sahayata ke liye humse sampark karein.\n\nDhanyawad,\n99 Care Support Team`;
 
         const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
         window.open(waUrl, '_blank');
@@ -190,6 +197,9 @@ export default function Clients() {
         try {
             const client = depositModal.client;
             const nowIso = new Date().toISOString();
+            const paymentDateIso = depositPaymentDate
+                ? (depositPaymentDate.includes('T') ? new Date(depositPaymentDate).toISOString() : new Date(`${depositPaymentDate}T12:00:00`).toISOString())
+                : nowIso;
 
             // 1. Update active service
             await supabase
@@ -217,7 +227,7 @@ export default function Clients() {
             const { error: insertPayError } = await supabase.from('payments').insert([{
                 client_name: client.name,
                 amount: amount,
-                payment_date: nowIso,
+                payment_date: paymentDateIso,
                 payment_type: 'deposit',
                 recorded_by: 'admin',
                 transaction_ref: finalRef,
@@ -235,19 +245,21 @@ export default function Clients() {
             await supabase.from('crm_lead_activity').insert([{
                 lead_id: client.id,
                 event_type: 'payment_recorded',
-                description: `Deposit collection recorded: ₹${amount.toLocaleString('en-IN')} via ${depositPaymentMethod} (Ref: ${finalRef})`,
+                description: `Deposit collection recorded: ₹${amount.toLocaleString('en-IN')} via ${depositPaymentMethod} (Ref: ${finalRef}, Date: ${depositPaymentDate})`,
+                created_at: paymentDateIso,
                 metadata: {
                     amount,
                     payment_type: 'deposit',
                     payment_method: depositPaymentMethod,
                     transaction_ref: finalRef,
+                    payment_date: paymentDateIso,
                 }
             }]);
 
             toast.success(`Deposit payment of ₹${amount.toLocaleString('en-IN')} recorded for ${client.name}! 🎉`, {
                 action: {
                     label: 'WhatsApp Receipt',
-                    onClick: () => handleShareDepositReceiptWhatsApp(client, amount, depositPaymentMethod, finalRef, depositModal.serviceName),
+                    onClick: () => handleShareDepositReceiptWhatsApp(client, amount, depositPaymentMethod, finalRef, depositModal.serviceName, depositPaymentDate),
                 },
                 duration: 6000,
             });
@@ -2103,43 +2115,59 @@ export default function Clients() {
                                     </div>
                                 </div>
 
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-xs font-semibold text-slate-600">
-                                            Transaction Reference ID (Auto-Generated)
-                                        </label>
-                                        <button
-                                            type="button"
-                                            onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
-                                            className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
-                                            title="Generate new reference code"
-                                        >
-                                            <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
-                                        </button>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Received Date *</label>
+                                        <div className="relative">
+                                            <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                            <input
+                                                type="date"
+                                                required
+                                                value={depositPaymentDate}
+                                                onChange={e => setDepositPaymentDate(e.target.value)}
+                                                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="relative flex items-center">
-                                        <input
-                                            type="text"
-                                            value={depositPaymentRef}
-                                            onChange={e => setDepositPaymentRef(e.target.value)}
-                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(depositPaymentRef);
-                                                toast.success('Reference ID copied');
-                                            }}
-                                            className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
-                                            title="Copy Reference ID"
-                                        >
-                                            <Copy className="w-3.5 h-3.5" />
-                                        </button>
+
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs font-semibold text-slate-600">
+                                                Transaction Reference ID (Auto-Generated)
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
+                                                className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
+                                                title="Generate new reference code"
+                                            >
+                                                <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
+                                            </button>
+                                        </div>
+                                        <div className="relative flex items-center">
+                                            <input
+                                                type="text"
+                                                value={depositPaymentRef}
+                                                onChange={e => setDepositPaymentRef(e.target.value)}
+                                                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(depositPaymentRef);
+                                                    toast.success('Reference ID copied');
+                                                }}
+                                                className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
+                                                title="Copy Reference ID"
+                                            >
+                                                <Copy className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <p className="text-[10px] text-slate-400 mt-1">
-                                        Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
-                                    </p>
                                 </div>
+                                <p className="text-[10px] text-slate-400">
+                                    Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
+                                </p>
                             </div>
                         </div>
 
