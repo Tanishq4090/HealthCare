@@ -10,6 +10,8 @@ import { format } from 'date-fns';
 import WorkerAllocation from '../components/hr/WorkerAllocation';
 import AssignmentAttendancePanel from '../components/hr/AssignmentAttendancePanel';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
+import { useAuth } from '../contexts/AuthContext';
+import RequestDeletionModal from '../components/common/RequestDeletionModal';
 import {
     calculateWorkerPay,
     grossFromPayrollItem,
@@ -32,6 +34,8 @@ export default function HR() {
     const [isLoading, setIsLoading] = useState(true);
     const [workerSearch, setWorkerSearch] = useState('');
     const [workerStatusFilter, setWorkerStatusFilter] = useState<string>('All');
+    const { user } = useAuth();
+    const [requestDeleteWorker, setRequestDeleteWorker] = useState<{ id: string; name: string } | null>(null);
     const [deletingWorkerId, setDeletingWorkerId] = useState<string | null>(null);
     const [isDeletingWorker, setIsDeletingWorker] = useState(false);
 
@@ -549,6 +553,10 @@ export default function HR() {
     };
 
     const handleDeleteWorker = async (workerId: string, workerName: string) => {
+        if (user?.role !== 'admin') {
+            setRequestDeleteWorker({ id: workerId, name: workerName });
+            return;
+        }
         setIsDeletingWorker(true);
         try {
             const { error } = await supabase.from('employees').delete().eq('id', workerId);
@@ -3306,6 +3314,16 @@ export default function HR() {
                         </div>
                     </div>
                 </div>
+            )}
+            {requestDeleteWorker && (
+                <RequestDeletionModal
+                    isOpen={Boolean(requestDeleteWorker)}
+                    onClose={() => setRequestDeleteWorker(null)}
+                    entityType="worker"
+                    entityId={requestDeleteWorker.id}
+                    entityName={requestDeleteWorker.name || 'Worker'}
+                    defaultActionType="permanent_delete"
+                />
             )}
         </div>
     );

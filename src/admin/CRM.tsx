@@ -13,6 +13,8 @@ import { CARE_SERVICES } from '../constants/services';
 import PayslipGenerator from '../components/hr/PayslipGenerator';
 import { recordServiceInvoice, endService } from '../services/serviceLifecycle';
 import ClientDetailsModal from './components/ClientDetailsModal';
+import { useAuth } from '../contexts/AuthContext';
+import RequestDeletionModal from '../components/common/RequestDeletionModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
 import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
@@ -216,6 +218,8 @@ export default function CRM() {
     const [leads, setLeads] = useState<any[]>([]);
     const [trashedLeads, setTrashedLeads] = useState<any[]>([]);
     const [isLoadingTrash, setIsLoadingTrash] = useState(false);
+    const { user } = useAuth();
+    const [requestDeleteLead, setRequestDeleteLead] = useState<{ id: string; name: string; defaultActionType?: 'move_to_trash' | 'permanent_delete' } | null>(null);
     // Delete choice modal state
     const [deleteChoiceModal, setDeleteChoiceModal] = useState<{ id: string; name: string } | null>(null);
     // Reviews state
@@ -4042,6 +4046,11 @@ export default function CRM() {
     };
 
     const handleDeleteLead = async (leadId: string, leadName: string) => {
+        if (user?.role !== 'admin') {
+            setRequestDeleteLead({ id: leadId, name: leadName, defaultActionType: 'move_to_trash' });
+            setSelectedInspectorLead(null);
+            return;
+        }
         // Show choice modal instead of window.confirm
         setDeleteChoiceModal({ id: leadId, name: leadName });
         setSelectedInspectorLead(null);
@@ -4049,6 +4058,10 @@ export default function CRM() {
 
     const handleMoveToTrash = async (leadId: string, leadName: string) => {
         setDeleteChoiceModal(null);
+        if (user?.role !== 'admin') {
+            setRequestDeleteLead({ id: leadId, name: leadName, defaultActionType: 'move_to_trash' });
+            return;
+        }
         if (leadId.length < 10) {
             setLeads(prev => prev.filter(l => l.id !== leadId));
             toast.success(`Lead "${leadName}" removed.`);
@@ -4070,6 +4083,10 @@ export default function CRM() {
 
     const handleDeletePermanently = async (leadId: string, leadName: string) => {
         setDeleteChoiceModal(null);
+        if (user?.role !== 'admin') {
+            setRequestDeleteLead({ id: leadId, name: leadName, defaultActionType: 'permanent_delete' });
+            return;
+        }
         if (leadId.length < 10) {
             setLeads(prev => prev.filter(l => l.id !== leadId));
             setTrashedLeads(prev => prev.filter(l => l.id !== leadId));
@@ -4136,6 +4153,10 @@ export default function CRM() {
 
     const handleEmptyTrash = async () => {
         if (trashedLeads.length === 0) return;
+        if (user?.role !== 'admin') {
+            toast.error('Only System Admin can empty the trash.');
+            return;
+        }
         const toastId = toast.loading(`Permanently deleting ${trashedLeads.length} lead(s)...`);
         try {
             await Promise.all(trashedLeads.map(l =>
@@ -8542,8 +8563,8 @@ export default function CRM() {
                 </div>
             )}
 
-            {/* Delete Choice Modal */}
-            {deleteChoiceModal && (
+            {/* Delete Choice Modal (Admin Only) */}
+            {deleteChoiceModal && user?.role === 'admin' && (
                 <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
@@ -8585,6 +8606,18 @@ export default function CRM() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Non-Admin Deletion Request Modal */}
+            {requestDeleteLead && (
+                <RequestDeletionModal
+                    isOpen={Boolean(requestDeleteLead)}
+                    onClose={() => setRequestDeleteLead(null)}
+                    entityType="lead"
+                    entityId={requestDeleteLead.id}
+                    entityName={requestDeleteLead.name || 'Lead'}
+                    defaultActionType={requestDeleteLead.defaultActionType || 'move_to_trash'}
+                />
             )}
             {/* Service Period Modal */}
             {isServicePeriodOpen && selectedWorker && (

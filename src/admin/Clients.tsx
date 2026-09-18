@@ -7,6 +7,8 @@ import ClientDetailsModal from './components/ClientDetailsModal';
 import { restartClientService } from '../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
 import { extractCity } from '../utils/crm';
+import { useAuth } from '../contexts/AuthContext';
+import RequestDeletionModal from '../components/common/RequestDeletionModal';
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
 const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
@@ -322,9 +324,19 @@ export default function Clients() {
     };
 
     // Remove from pipeline confirmation state
+    const { user } = useAuth();
+    const [requestDeleteClient, setRequestDeleteClient] = useState<any>(null);
     const [removeConfirmClient, setRemoveConfirmClient] = useState<any>(null);
     const [deleteConfirmClient, setDeleteConfirmClient] = useState<any>(null);
     const [viewingTrash, setViewingTrash] = useState(false);
+
+    const handleDeleteClientClick = (client: any) => {
+        if (user?.role !== 'admin') {
+            setRequestDeleteClient(client);
+        } else {
+            setDeleteConfirmClient(client);
+        }
+    };
 
     const handleRemoveFromPipeline = async (client: any) => {
         const isArchived = client.status === 'Archived';
@@ -361,6 +373,11 @@ export default function Clients() {
 
     const confirmTemporaryDelete = async () => {
         if (!deleteConfirmClient) return;
+        if (user?.role !== 'admin') {
+            toast.error('Only System Admin can delete records.');
+            setDeleteConfirmClient(null);
+            return;
+        }
         const client = deleteConfirmClient;
         setDeleteConfirmClient(null);
         try {
@@ -386,6 +403,11 @@ export default function Clients() {
 
     const confirmDeleteClient = async () => {
         if (!deleteConfirmClient) return;
+        if (user?.role !== 'admin') {
+            toast.error('Only System Admin can delete records.');
+            setDeleteConfirmClient(null);
+            return;
+        }
         const client = deleteConfirmClient;
         setDeleteConfirmClient(null);
         try {
@@ -1194,7 +1216,7 @@ export default function Clients() {
                                                     <ArchiveRestore className="w-3.5 h-3.5" /> Restore Client
                                                 </button>
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmClient(client); }}
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteClientClick(client); }}
                                                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
                                                     title="Delete permanently"
                                                 >
@@ -1254,7 +1276,7 @@ export default function Clients() {
                                                     }
                                                 </button>
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirmClient(client); }}
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteClientClick(client); }}
                                                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
                                                     title="Delete permanently"
                                                 >
@@ -1862,7 +1884,7 @@ export default function Clients() {
                 </div>
             )}
 
-            {deleteConfirmClient && (
+            {deleteConfirmClient && user?.role === 'admin' && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-slate-100 bg-red-50 flex items-center gap-3">
@@ -1886,6 +1908,18 @@ export default function Clients() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Non-Admin Deletion Request Modal */}
+            {requestDeleteClient && (
+                <RequestDeletionModal
+                    isOpen={Boolean(requestDeleteClient)}
+                    onClose={() => setRequestDeleteClient(null)}
+                    entityType="client"
+                    entityId={requestDeleteClient.id}
+                    entityName={requestDeleteClient.name || 'Client'}
+                    defaultActionType={requestDeleteClient.status === 'Trash' ? 'permanent_delete' : 'move_to_trash'}
+                />
             )}
 
             {/* Deposit Invoice & Payment Modal */}

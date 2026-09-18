@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, type AccessModule } from '../contexts/AuthContext';
+import { AdminDeletionRequestsModal } from './components/AdminDeletionRequestsModal';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { generateMonthlyBilling } from '../services/serviceLifecycle';
@@ -100,6 +101,8 @@ export default function AdminLayout() {
     const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [globalAlerts, setGlobalAlerts] = useState<any[]>([]);
+    const [isDeletionModalOpen, setIsDeletionModalOpen] = useState(false);
+    const [pendingDeletionCount, setPendingDeletionCount] = useState(0);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<{clients: any[], workers: any[], invoices: any[]}>({ clients: [], workers: [], invoices: [] });
@@ -455,6 +458,33 @@ export default function AdminLayout() {
             supabase.removeChannel(whatsappSub);
         };
     }, []);
+
+    // Fetch and subscribe to pending deletion requests for System Admins
+    useEffect(() => {
+        if (user?.role !== 'admin') return;
+
+        const fetchPendingCount = async () => {
+            const { count, error } = await supabase
+                .from('deletion_requests')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+            if (!error && count !== null) {
+                setPendingDeletionCount(count);
+            }
+        };
+
+        fetchPendingCount();
+
+        const deletionSub = supabase.channel('admin_deletion_requests_count_v1')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'deletion_requests' }, () => {
+                fetchPendingCount();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(deletionSub);
+        };
+    }, [user?.role]);
 
     // Show Month-End billing popup ONCE per session, ONLY in Finance or Dashboard
     useEffect(() => {
@@ -896,6 +926,26 @@ export default function AdminLayout() {
 
                     {/* Right actions */}
                     <div className="flex items-center gap-4 ml-auto">
+                        {user?.role === 'admin' && (
+                            <button
+                                onClick={() => setIsDeletionModalOpen(true)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                                    pendingDeletionCount > 0
+                                        ? 'bg-amber-100 border-amber-300 text-amber-900 hover:bg-amber-200 animate-pulse shadow-xs'
+                                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                                }`}
+                                title="Deletion Requests"
+                            >
+                                <ShieldAlert className={`w-3.5 h-3.5 ${pendingDeletionCount > 0 ? 'text-amber-700' : 'text-slate-500'}`} />
+                                <span className="hidden sm:inline">Delete Requests</span>
+                                {pendingDeletionCount > 0 && (
+                                    <span className="px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px] font-extrabold">
+                                        {pendingDeletionCount}
+                                    </span>
+                                )}
+                            </button>
+                        )}
+
                         <div className="relative">
                             <button 
                                 onClick={() => setIsGlobalNotificationsOpen(!isGlobalNotificationsOpen)}
@@ -987,6 +1037,20 @@ export default function AdminLayout() {
                         );
                     })}
                 </nav>
+
+                {user?.role === 'admin' && (
+                    <AdminDeletionRequestsModal
+                        isOpen={isDeletionModalOpen}
+                        onClose={() => setIsDeletionModalOpen(false)}
+                        onActionCompleted={async () => {
+                            const { count } = await supabase
+                                .from('deletion_requests')
+                                .select('*', { count: 'exact', head: true })
+                                .eq('status', 'pending');
+                            if (count !== null) setPendingDeletionCount(count);
+                        }}
+                    />
+                )}
             </main>
         </div>
     );

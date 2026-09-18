@@ -47,6 +47,8 @@ import { EmployeeIDCard } from '../hr/EmployeeIDCard';
 import PayslipGenerator from './PayslipGenerator';
 import type { Employee, EmployeeStatus, CreateEmployeeInput } from '../../types/hr';
 import { formatIdCardDuty } from '../../utils/employeeIdCard';
+import { useAuth } from '../../contexts/AuthContext';
+import RequestDeletionModal from '../common/RequestDeletionModal';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -1225,7 +1227,14 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
     finally { setIsLoading(false); }
   }, []);
 
+  const { user } = useAuth();
+  const [requestDeleteEmp, setRequestDeleteEmp] = useState<Employee | null>(null);
+
   const handleDelete = async (emp: Employee) => {
+    if (user?.role !== 'admin') {
+      setRequestDeleteEmp(emp);
+      return;
+    }
     if (!confirm(`Are you sure you want to remove ${emp.full_name}? This will permanently delete their record.`)) return;
     try {
       await deleteEmployee(emp.id);
@@ -1362,6 +1371,16 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
         setEditEmployee(null);
       }}
     />
+    {requestDeleteEmp && (
+      <RequestDeletionModal
+        isOpen={Boolean(requestDeleteEmp)}
+        onClose={() => setRequestDeleteEmp(null)}
+        entityType="worker"
+        entityId={requestDeleteEmp.id}
+        entityName={requestDeleteEmp.full_name || 'Worker'}
+        defaultActionType="move_to_trash"
+      />
+    )}
     </>
   );
 }
@@ -1901,6 +1920,8 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actingId, setActingId] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [requestDeleteEmp, setRequestDeleteEmp] = useState<Employee | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1925,6 +1946,10 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
   };
 
   const handlePermanentDelete = async (emp: Employee) => {
+    if (user?.role !== 'admin') {
+      setRequestDeleteEmp(emp);
+      return;
+    }
     if (!confirm(`WARNING: Are you sure you want to PERMANENTLY delete ${emp.full_name}? This cannot be undone.`)) return;
     setActingId(emp.id);
     try {
@@ -1938,6 +1963,10 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
 
   const handleWipeAll = async () => {
     if (employees.length === 0) return;
+    if (user?.role !== 'admin') {
+      toast.error('Only System Admin can wipe recycle bin.');
+      return;
+    }
     if (!confirm(`CRITICAL WARNING: Are you sure you want to PERMANENTLY delete ALL ${employees.length} records in the recycle bin? This action is IRREVERSIBLE.`)) return;
     
     setIsLoading(true);
@@ -2053,6 +2082,16 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
           </table>
         </div>
       </div>
+      {requestDeleteEmp && (
+        <RequestDeletionModal
+          isOpen={Boolean(requestDeleteEmp)}
+          onClose={() => setRequestDeleteEmp(null)}
+          entityType="worker"
+          entityId={requestDeleteEmp.id}
+          entityName={requestDeleteEmp.full_name || 'Worker'}
+          defaultActionType="permanent_delete"
+        />
+      )}
     </div>
   );
 }

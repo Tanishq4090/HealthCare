@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, AccessModule } from '../contexts/AuthContext';
-import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save } from 'lucide-react';
+import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+    fetchAllDeletionRequests,
+    approveDeletionRequest,
+    rejectDeletionRequest,
+    type DeletionRequest,
+    type DeletionRequestStatus
+} from '../services/deletionService';
 
 const MODULES: { id: AccessModule; label: string; desc: string }[] = [
     { id: 'dashboard', label: 'Main Dashboard', desc: 'Access to high-level analytics and business overview.' },
@@ -15,10 +22,22 @@ const MODULES: { id: AccessModule; label: string; desc: string }[] = [
 export default function AccessControl() {
     const { user, allUsers, refreshUsers, createUser, updateUser, deleteUser } = useAuth();
 
-    // UI States
+    // Tab state: staff accounts vs deletion requests
+    const [activeTab, setActiveTab] = useState<'staff' | 'deletions'>('staff');
+
+    // UI States for Staff
     const [isAdding, setIsAdding] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Deletion requests states
+    const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
+    const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [actionProcessingId, setActionProcessingId] = useState<string | null>(null);
+    const [rejectPromptId, setRejectPromptId] = useState<string | null>(null);
+    const [rejectNote, setRejectNote] = useState('');
 
     // Form States
     const [formData, setFormData] = useState<Partial<User>>({
@@ -36,6 +55,75 @@ export default function AccessControl() {
         if (allUsers.length > 0) return allUsers;
         return user?.role === 'admin' ? [user] : [];
     }, [allUsers, user]);
+
+    const loadDeletionRequests = useCallback(async () => {
+        setIsLoadingRequests(true);
+        try {
+            const data = await fetchAllDeletionRequests();
+            setDeletionRequests(data);
+        } catch (err: any) {
+            console.error('Failed to load deletion requests:', err);
+            toast.error('Failed to load deletion requests.');
+        } finally {
+            setIsLoadingRequests(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadDeletionRequests();
+    }, [loadDeletionRequests]);
+
+    const pendingRequestsCount = useMemo(() => {
+        return deletionRequests.filter(r => r.status === 'pending').length;
+    }, [deletionRequests]);
+
+    const filteredRequests = useMemo(() => {
+        return deletionRequests.filter(r => {
+            const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+            const matchesSearch = !searchQuery ||
+                r.entity_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                r.requested_by_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (r.reason && r.reason.toLowerCase().includes(searchQuery.toLowerCase()));
+            return matchesStatus && matchesSearch;
+        });
+    }, [deletionRequests, statusFilter, searchQuery]);
+
+    const handleApproveRequest = async (req: DeletionRequest) => {
+        const confirmMsg = req.action_type === 'permanent_delete'
+            ? `Permanently delete "${req.entity_name}" (${req.entity_type})? This action CANNOT be undone.`
+            : `Approve moving "${req.entity_name}" to trash?`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        setActionProcessingId(req.id);
+        const toastId = toast.loading(`Executing deletion for "${req.entity_name}"...`);
+        try {
+            await approveDeletionRequest(req, user?.name || user?.username || 'System Admin');
+            toast.success(`Request approved and "${req.entity_name}" deleted.`, { id: toastId });
+            loadDeletionRequests();
+        } catch (err: any) {
+            console.error('Failed to approve deletion request:', err);
+            toast.error(`Approval failed: ${err.message}`, { id: toastId });
+        } finally {
+            setActionProcessingId(null);
+        }
+    };
+
+    const handleRejectRequest = async (requestId: string) => {
+        setActionProcessingId(requestId);
+        try {
+            await rejectDeletionRequest(requestId, rejectNote, user?.name || user?.username || 'System Admin');
+            toast.success('Deletion request rejected.');
+            setRejectPromptId(null);
+            setRejectNote('');
+            loadDeletionRequests();
+        } catch (err: any) {
+            console.error('Failed to reject deletion request:', err);
+            toast.error(`Rejection failed: ${err.message}`);
+        } finally {
+            setActionProcessingId(null);
+        }
+    };
 
     // Block non-admins preemptively (though ProtectedRoute also handles this)
     if (user?.role !== 'admin') {
@@ -123,15 +211,15 @@ export default function AccessControl() {
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] flex items-center gap-2">
                         <UserCheck className="w-6 h-6 text-primary" />
-                        Access Control
+                        Access & Security Control
                     </h1>
-                    <p className="text-slate-500 mt-1">Manage staff accounts and their module permissions.</p>
+                    <p className="text-slate-500 mt-1">Manage staff accounts, module permissions, and deletion request approvals.</p>
                 </div>
-                {!isAdding && !editingUserId && (
+                {activeTab === 'staff' && !isAdding && !editingUserId && (
                     <button
                         onClick={() => { resetForm(); setIsAdding(true); }}
                         className="bg-primary hover:bg-primary/90 text-white font-medium px-4 py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 shrink-0 shadow-sm"
@@ -142,6 +230,43 @@ export default function AccessControl() {
                 )}
             </div>
 
+            {/* Sub-navigation tabs */}
+            <div className="flex items-center gap-2 mb-6 border-b border-slate-200 pb-3">
+                <button
+                    onClick={() => setActiveTab('staff')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                        activeTab === 'staff'
+                            ? 'bg-primary text-white shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                    }`}
+                >
+                    <Users className="w-4 h-4" />
+                    Staff Accounts
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold ${activeTab === 'staff' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        {displayUsers.length}
+                    </span>
+                </button>
+
+                <button
+                    onClick={() => setActiveTab('deletions')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                        activeTab === 'deletions'
+                            ? 'bg-amber-600 text-white shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                    }`}
+                >
+                    <ShieldAlert className="w-4 h-4" />
+                    Deletion Requests
+                    {pendingRequestsCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500 text-white animate-pulse">
+                            {pendingRequestsCount} Pending
+                        </span>
+                    )}
+                </button>
+            </div>
+
+            {activeTab === 'staff' && (
+                <>
             {/* --- FORM REGION --- */}
             {(isAdding || editingUserId) && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
@@ -332,6 +457,226 @@ export default function AccessControl() {
                     </table>
                 </div>
             </div>
+            </>
+            )}
+
+            {/* --- DELETION REQUESTS REGION --- */}
+            {activeTab === 'deletions' && (
+                <div className="space-y-4">
+                    {/* Controls Bar */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+                            {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => (
+                                <button
+                                    key={st}
+                                    onClick={() => setStatusFilter(st)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all shrink-0 ${
+                                        statusFilter === st
+                                            ? 'bg-slate-900 text-white shadow-xs'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    {st === 'all' ? `All (${deletionRequests.length})` : st}
+                                    {st === 'pending' && pendingRequestsCount > 0 && (
+                                        <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px]">
+                                            {pendingRequestsCount}
+                                        </span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1 sm:w-64">
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search entity, staff or reason..."
+                                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                                />
+                            </div>
+                            <button
+                                onClick={loadDeletionRequests}
+                                disabled={isLoadingRequests}
+                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Table View */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        {isLoadingRequests ? (
+                            <div className="p-16 flex flex-col items-center justify-center text-slate-400">
+                                <Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" />
+                                <p className="text-sm font-medium">Loading deletion requests...</p>
+                            </div>
+                        ) : filteredRequests.length === 0 ? (
+                            <div className="p-16 text-center text-slate-400">
+                                <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400 mb-3" />
+                                <h4 className="font-bold text-slate-800 text-base">No Requests Found</h4>
+                                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                                    {statusFilter === 'pending'
+                                        ? 'Great! There are no pending deletion requests awaiting admin review.'
+                                        : 'No deletion requests match the selected filters.'}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-slate-50/80 text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3.5">Target Record</th>
+                                            <th className="px-6 py-3.5">Requested Action</th>
+                                            <th className="px-6 py-3.5">Requested By</th>
+                                            <th className="px-6 py-3.5">Reason</th>
+                                            <th className="px-6 py-3.5">Status</th>
+                                            <th className="px-6 py-3.5 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredRequests.map((req) => {
+                                            const isPending = req.status === 'pending';
+                                            const isProcessing = actionProcessingId === req.id;
+                                            const isRejecting = rejectPromptId === req.id;
+
+                                            return (
+                                                <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                                                    <td className="px-6 py-4">
+                                                        <div className="font-bold text-slate-900">{req.entity_name}</div>
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase border border-slate-200">
+                                                                {req.entity_type}
+                                                            </span>
+                                                            <span className="text-[11px] text-slate-400 font-mono">
+                                                                ID: {req.entity_id.slice(0, 8)}...
+                                                            </span>
+                                                        </div>
+                                                    </td>
+
+                                                    <td className="px-6 py-4">
+                                                        <span
+                                                            className={`text-xs font-bold px-2 py-0.5 rounded-md border ${
+                                                                req.action_type === 'permanent_delete'
+                                                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                                            }`}
+                                                        >
+                                                            {req.action_type === 'permanent_delete' ? 'Permanent Delete' : 'Move to Trash'}
+                                                        </span>
+                                                    </td>
+
+                                                    <td className="px-6 py-4">
+                                                        <div className="font-semibold text-slate-900 text-xs">{req.requested_by_name}</div>
+                                                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                                            <Clock className="w-3 h-3" />
+                                                            {new Date(req.created_at).toLocaleDateString('en-IN', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit',
+                                                            })}
+                                                        </div>
+                                                    </td>
+
+                                                    <td className="px-6 py-4 max-w-xs">
+                                                        <p className="text-xs text-slate-700 line-clamp-2">
+                                                            {req.reason || <span className="italic text-slate-400">No reason stated</span>}
+                                                        </p>
+                                                    </td>
+
+                                                    <td className="px-6 py-4">
+                                                        <span
+                                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                                                                req.status === 'approved'
+                                                                    ? 'bg-emerald-100 text-emerald-800'
+                                                                    : req.status === 'rejected'
+                                                                    ? 'bg-red-100 text-red-800'
+                                                                    : 'bg-amber-100 text-amber-800 animate-pulse'
+                                                            }`}
+                                                        >
+                                                            {req.status === 'approved' && <Check className="w-3 h-3" />}
+                                                            {req.status === 'rejected' && <Ban className="w-3 h-3" />}
+                                                            {req.status.toUpperCase()}
+                                                        </span>
+                                                        {req.reviewed_by && (
+                                                            <div className="text-[10px] text-slate-400 mt-1">
+                                                                by {req.reviewed_by}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-6 py-4 text-right">
+                                                        {isPending ? (
+                                                            isRejecting ? (
+                                                                <div className="flex flex-col items-end gap-1.5">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={rejectNote}
+                                                                        onChange={(e) => setRejectNote(e.target.value)}
+                                                                        placeholder="Rejection note..."
+                                                                        className="px-2 py-1 text-xs border rounded-md w-40"
+                                                                    />
+                                                                    <div className="flex gap-1">
+                                                                        <button
+                                                                            onClick={() => setRejectPromptId(null)}
+                                                                            className="px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 rounded"
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleRejectRequest(req.id)}
+                                                                            disabled={isProcessing}
+                                                                            className="px-2 py-0.5 text-xs font-bold text-white bg-red-600 rounded hover:bg-red-700"
+                                                                        >
+                                                                            Confirm
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <button
+                                                                        onClick={() => setRejectPromptId(req.id)}
+                                                                        disabled={isProcessing}
+                                                                        className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors border border-slate-200"
+                                                                    >
+                                                                        Reject
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleApproveRequest(req)}
+                                                                        disabled={isProcessing}
+                                                                        className={`px-3 py-1 text-xs font-bold text-white rounded-lg transition-all shadow-xs flex items-center gap-1 ${
+                                                                            req.action_type === 'permanent_delete'
+                                                                                ? 'bg-red-600 hover:bg-red-700'
+                                                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                                                        }`}
+                                                                    >
+                                                                        {isProcessing ? (
+                                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                        ) : (
+                                                                            <Check className="w-3.5 h-3.5" />
+                                                                        )}
+                                                                        Approve
+                                                                    </button>
+                                                                </div>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400 italic">Resolved</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
