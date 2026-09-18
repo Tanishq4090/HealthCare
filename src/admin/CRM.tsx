@@ -590,6 +590,10 @@ export default function CRM() {
     const [staffSearchQuery, setStaffSearchQuery] = useState('');
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
     const [depositMethod, setDepositMethod] = useState('Online Transfer');
+    const [depositDate, setDepositDate] = useState<string>(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
     const [depositLeadTarget, setDepositLeadTarget] = useState<any>(null);
     const [staffPickerTargetLead, setStaffPickerTargetLead] = useState<any>(null);
     const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
@@ -3847,6 +3851,8 @@ export default function CRM() {
         if (!lead?.id) return;
         setDepositLeadTarget(lead);
         setDepositMethod('Online Transfer');
+        const d = new Date();
+        setDepositDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
         setIsDepositModalOpen(true);
     };
 
@@ -3907,12 +3913,16 @@ export default function CRM() {
                 || 15000;
 
             if (!existingPayment && parseMoneyValue(assignment.deposit_paid) <= 0) {
+                const depositDateISO = depositDate
+                    ? (depositDate.includes('T') ? new Date(depositDate).toISOString() : new Date(`${depositDate}T12:00:00`).toISOString())
+                    : new Date().toISOString();
+
                 const { error: insertPaymentError } = await supabase.from('payments').insert([{
                     amount,
                     client_name: lead.name,
                     recorded_by: 'admin',
                     transaction_ref: `${depositMethod.toUpperCase().replace(/\s+/g, '-')}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`,
-                    payment_date: new Date().toISOString(),
+                    payment_date: depositDateISO,
                     payment_type: 'deposit'
                 }]);
 
@@ -8492,6 +8502,19 @@ export default function CRM() {
                             </h2>
                         </div>
                         <form onSubmit={confirmDepositReceived} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                                    <span>Deposit Date</span>
+                                    <span className="text-[11px] font-normal text-slate-400">Date deposit received</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={depositDate}
+                                    onChange={(e) => setDepositDate(e.target.value)}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white font-medium text-slate-700 cursor-pointer"
+                                />
+                            </div>
                             <div>
                                 <label className="block text-sm font-semibold text-slate-700 mb-2">Payment Method</label>
                                 <select

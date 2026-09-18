@@ -139,6 +139,7 @@ export default function Billing() {
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
     const [activeDepositId, setActiveDepositId] = useState<any | null>(null);
     const [depositMethod, setDepositMethod] = useState('Online');
+    const [depositDate, setDepositDate] = useState<string>(todayInputDate());
 
     // Service Bill Collection Modal State
     const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
@@ -154,7 +155,7 @@ export default function Billing() {
     const [collectionAmount, setCollectionAmount] = useState<number>(0);
     const [collectionMethod, setCollectionMethod] = useState<'UPI' | 'Cash' | 'Online Transfer' | 'Cheque'>('UPI');
     const [collectionRef, setCollectionRef] = useState<string>('');
-    const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [collectionDate, setCollectionDate] = useState<string>(todayInputDate());
     const [isSubmittingCollection, setIsSubmittingCollection] = useState(false);
 
     // Edit Monthly Bill Modal State
@@ -1042,13 +1043,17 @@ export default function Billing() {
             setIsLoading(true);
             const depositAmount = parseFloat(deposit.amount.replace(/[^\d.-]/g, ''));
             try {
+                const depositDateISO = depositDate
+                    ? (depositDate.includes('T') ? new Date(depositDate).toISOString() : new Date(`${depositDate}T12:00:00`).toISOString())
+                    : new Date().toISOString();
+
                 // 1. Record in Payments table
                 const { error: payError } = await supabase.from('payments').insert([{
                     amount: depositAmount,
                     client_name: deposit.client,
                     recorded_by: 'admin',
                     transaction_ref: `${depositMethod.toUpperCase()}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`,
-                    payment_date: new Date().toISOString(),
+                    payment_date: depositDateISO,
                     payment_type: 'deposit'
                 }]);
 
@@ -1122,6 +1127,10 @@ export default function Billing() {
             const prefix = collectionMethod === 'Online Transfer' ? 'ONLINE-TRANSFER' : collectionMethod.toUpperCase().replace(/\s+/g, '-');
             const finalTxnRef = collectionRef || `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
 
+            const paymentDateISO = collectionDate
+                ? (collectionDate.includes('T') ? new Date(collectionDate).toISOString() : new Date(`${collectionDate}T12:00:00`).toISOString())
+                : new Date().toISOString();
+
             const success = await markServiceBillPaid({
                 billId: collectionTarget.bill?.id,
                 serviceId: collectionTarget.service.id,
@@ -1129,7 +1138,7 @@ export default function Billing() {
                 amount: Number(collectionTarget.amount),
                 paymentMethod: collectionMethod,
                 transactionRef: finalTxnRef,
-                paymentDate: collectionDate || new Date().toISOString(),
+                paymentDate: paymentDateISO,
             });
 
             if (!success) throw new Error('Failed to record payment in database');
@@ -2365,7 +2374,7 @@ export default function Billing() {
                                                                 <button onClick={() => openAgentModal({ ...dep, isDepositMode: true })} className="px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1.5 cursor-pointer">
                                                                     <Send className="w-4 h-4" /> Resend Invoice
                                                                 </button>
-                                                                <button onClick={() => { setActiveDepositId(dep.id); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5 cursor-pointer">
+                                                                <button onClick={() => { setActiveDepositId(dep.id); setDepositDate(todayInputDate()); setIsDepositModalOpen(true); }} className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5 cursor-pointer">
                                                                     <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Record Collection
                                                                 </button>
                                                             </>
@@ -2591,7 +2600,7 @@ export default function Billing() {
                             setCollectionAmount(billAmount);
                             setCollectionMethod('UPI');
                             setCollectionRef(defaultRef);
-                            setCollectionDate(new Date().toISOString().split('T')[0]);
+                            setCollectionDate(todayInputDate());
                             setIsRecordCollectionOpen(true);
                         }}
                     />
@@ -2899,6 +2908,21 @@ export default function Billing() {
                                 </div>
                             </div>
 
+                            {/* Collection Date Picker */}
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                                    <span>Collection Date</span>
+                                    <span className="text-[11px] font-normal text-slate-400">Date payment received</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={collectionDate}
+                                    onChange={(e) => setCollectionDate(e.target.value)}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white font-medium text-slate-700 cursor-pointer"
+                                />
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-semibold text-slate-700 mb-2">Payment Method</label>
                                 <select
@@ -2965,6 +2989,19 @@ export default function Billing() {
                             </h2>
                         </div>
                         <form onSubmit={handleCollectDeposit} className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                                    <span>Deposit Date</span>
+                                    <span className="text-[11px] font-normal text-slate-400">Date deposit received</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={depositDate}
+                                    onChange={(e) => setDepositDate(e.target.value)}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm bg-white font-medium text-slate-700 cursor-pointer"
+                                />
+                            </div>
                             <div>
                                 <label className="block text-sm font-semibold text-slate-700 mb-2">Payment Method</label>
                                 <select

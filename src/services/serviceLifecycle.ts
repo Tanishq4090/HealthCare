@@ -1308,7 +1308,9 @@ export interface MarkServiceBillPaidParams {
 export async function markServiceBillPaid(params: MarkServiceBillPaidParams): Promise<boolean> {
     try {
         const txnRef = params.transactionRef?.trim() || `${params.paymentMethod.toUpperCase().replace(/\s+/g, '')}-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
-        const payDate = params.paymentDate ? new Date(params.paymentDate).toISOString() : new Date().toISOString();
+        const payDate = params.paymentDate
+            ? (params.paymentDate.includes('T') ? new Date(params.paymentDate).toISOString() : new Date(`${params.paymentDate}T12:00:00`).toISOString())
+            : new Date().toISOString();
 
         // 1. Record in payments table
         await supabase.from('payments').insert({
@@ -1336,7 +1338,7 @@ export async function markServiceBillPaid(params: MarkServiceBillPaidParams): Pr
             }
 
             notesObj.status = 'paid';
-            notesObj.paid_at = new Date().toISOString();
+            notesObj.paid_at = payDate;
             notesObj.payment_method = params.paymentMethod;
             notesObj.transaction_ref = txnRef;
 
