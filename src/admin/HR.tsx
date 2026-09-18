@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare, Download, Eye } from 'lucide-react';
+import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare, Download, Eye, ChevronDown } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
@@ -80,6 +80,7 @@ export default function HR() {
     const [previewPayslip, setPreviewPayslip] = useState<any>(null);
     const [billingAssignment, setBillingAssignment] = useState<any>(null);
     const [autoCloseAssignmentOnGenerate, setAutoCloseAssignmentOnGenerate] = useState(false);
+    const [collapsedClients, setCollapsedClients] = useState<Record<string, boolean>>({});
 
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
@@ -364,6 +365,31 @@ export default function HR() {
                                     if (aStart && swaStart && aStart === swaStart) {
                                         return true;
                                     }
+                                }
+                            }
+                        }
+
+                        // Also match by worker ID/name + client name:
+                        // If this assignment is completed/relieved, and the DB already has a payslip/payroll record for this worker & client, do NOT create a synthetic duplicate!
+                        const pWorkerId = p.worker_id;
+                        const aWorkerId = a.employee_id;
+                        const pWorkerName = (p.worker || '').trim().toLowerCase();
+                        const aWorkerName = (a.employees?.full_name || '').trim().toLowerCase();
+                        const sameWorker = (pWorkerId && aWorkerId && pWorkerId === aWorkerId) ||
+                                           (pWorkerName && aWorkerName && pWorkerName === aWorkerName);
+
+                        if (sameWorker) {
+                            const pClient = (p.client_name || '').trim().toLowerCase();
+                            const aClient = (a.clients?.client_name || a.clients?.name || '').trim().toLowerCase();
+                            const lead = (leadData || []).find((l: any) => l.id === a.client_id || l.id === a.lead_id);
+                            const leadName = (lead?.name || '').trim().toLowerCase();
+
+                            if (pClient && (pClient === aClient || pClient === leadName)) {
+                                if (a.assignment_status === 'completed') {
+                                    return true;
+                                }
+                                if (a.assignment_status === 'active' && p.type !== 'final') {
+                                    return true;
                                 }
                             }
                         }
@@ -2388,54 +2414,99 @@ export default function HR() {
                             });
 
                             return (
-                                <div className="space-y-5">
-                                    {groups.map(group => (
-                                        <div
-                                            key={group.clientId}
-                                            className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"
-                                        >
-                                            {/* Client Service Header */}
-                                            <div className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-9 h-9 rounded-xl bg-[#1AA6A8] text-white font-bold flex items-center justify-center text-sm shadow-xs shrink-0">
-                                                        {group.clientName.charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <h3 className="font-bold text-slate-900 text-sm">{group.clientName}</h3>
-                                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
-                                                                {group.items.length} Payslip{group.items.length !== 1 ? 's' : ''}
-                                                            </span>
-                                                            {group.activeCount > 0 && (
-                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-700 flex items-center gap-1">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
-                                                                    {group.activeCount} Active
-                                                                </span>
-                                                            )}
-                                                            {group.paidCount > 0 && (
-                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                                                                    {group.paidCount} Paid
-                                                                </span>
-                                                            )}
-                                                            {group.pendingCount > 0 && (
-                                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
-                                                                    {group.pendingCount} Pending
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <p className="text-[11px] text-slate-500 mt-0.5">
-                                                            Assigned Staff Payslips & Payout Ledger
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="text-left sm:text-right">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Staff Payout</p>
-                                                    <p className="text-base font-black text-[#1AA6A8]">₹{group.totalPayables.toFixed(2)}</p>
-                                                </div>
-                                            </div>
+                                <div className="space-y-4">
+                                    {/* Expand/Collapse All Toolbar */}
+                                    <div className="flex items-center justify-between gap-3 px-1">
+                                        <p className="text-xs font-semibold text-slate-500">
+                                            Showing {groups.length} Client Ledger{groups.length !== 1 ? 's' : ''}
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setCollapsedClients({})}
+                                                className="text-[11px] font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                                                title="Expand all client payslip lists"
+                                            >
+                                                Expand All
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const cMap: Record<string, boolean> = {};
+                                                    groups.forEach(g => { cMap[g.clientId] = true; });
+                                                    setCollapsedClients(cMap);
+                                                }}
+                                                className="text-[11px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                                                title="Collapse all client payslip lists"
+                                            >
+                                                Collapse All
+                                            </button>
+                                        </div>
+                                    </div>
 
-                                            {/* Worker Payslips for this Client Grouped by Service Window */}
-                                            <div>
+                                    {groups.map(group => {
+                                        const isCollapsed = !!collapsedClients[group.clientId];
+
+                                        return (
+                                            <div
+                                                key={group.clientId}
+                                                className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all duration-200"
+                                            >
+                                                {/* Client Service Header with Open/Close Toggle */}
+                                                <div 
+                                                    onClick={() => setCollapsedClients(prev => ({ ...prev, [group.clientId]: !prev[group.clientId] }))}
+                                                    className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-teal-50/20 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-100/50 transition-colors"
+                                                    title={isCollapsed ? "Click to expand payslip list" : "Click to collapse payslip list"}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-9 h-9 rounded-xl bg-[#1AA6A8] text-white font-bold flex items-center justify-center text-sm shadow-xs shrink-0">
+                                                            {group.clientName.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h3 className="font-bold text-slate-900 text-sm">{group.clientName}</h3>
+                                                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                                                    {group.items.length} Payslip{group.items.length !== 1 ? 's' : ''}
+                                                                </span>
+                                                                {group.activeCount > 0 && (
+                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-700 flex items-center gap-1">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                                                                        {group.activeCount} Active
+                                                                    </span>
+                                                                )}
+                                                                {group.paidCount > 0 && (
+                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                                                        {group.paidCount} Paid
+                                                                    </span>
+                                                                )}
+                                                                {group.pendingCount > 0 && (
+                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                                                                        {group.pendingCount} Pending
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                                                Assigned Staff Payslips & Payout Ledger
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between sm:justify-end gap-3.5 w-full sm:w-auto">
+                                                        <div className="text-left sm:text-right">
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Staff Payout</p>
+                                                            <p className="text-base font-black text-[#1AA6A8]">₹{group.totalPayables.toFixed(2)}</p>
+                                                        </div>
+                                                        <div className="p-1 rounded-lg text-slate-400 hover:text-slate-700 transition-colors flex items-center gap-1">
+                                                            <span className="text-[11px] font-semibold text-slate-400 hidden sm:inline">
+                                                                {isCollapsed ? 'Open' : 'Close'}
+                                                            </span>
+                                                            <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${isCollapsed ? '-rotate-90 text-slate-400' : 'rotate-0 text-[#1AA6A8]'}`} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Worker Payslips for this Client Grouped by Service Window */}
+                                                {!isCollapsed && (
+                                                    <div>
                                                 {(() => {
                                                     const renderWorkerRow = (item: any, isCurrentlyActive: boolean) => {
                                                         const days = getDays(item);
@@ -2644,17 +2715,38 @@ export default function HR() {
                                                         activeCount: number;
                                                     }>();
 
+                                                    // Pre-seed any active services for this client so active service window always appears
+                                                    const clientServices = (servicesList || []).filter((s: any) => 
+                                                        (group.clientId && (s.client_id === group.clientId || s.lead_id === group.clientId)) ||
+                                                        (s.clients?.client_name && s.clients.client_name.trim().toLowerCase() === group.clientName.trim().toLowerCase())
+                                                    );
+                                                    clientServices.filter((s: any) => s.status === 'active').forEach((s: any) => {
+                                                        if (!serviceBucketsMap.has(s.id)) {
+                                                            serviceBucketsMap.set(s.id, {
+                                                                key: s.id,
+                                                                serviceObj: s,
+                                                                title: s.service_type || 'Care Service',
+                                                                shiftLabel: `${s.hours_per_day || 10}-Hour Shift`,
+                                                                dateRange: `${safeFormatDate(s.start_date)} → ${s.end_date ? safeFormatDate(s.end_date) : 'Ongoing'}`,
+                                                                isActiveCycle: true,
+                                                                items: [],
+                                                                subtotal: 0,
+                                                                activeCount: 0,
+                                                            });
+                                                        }
+                                                    });
+
                                                     group.items.forEach(item => {
                                                         const svc = item.service_details || findServiceForItem(
                                                             { 
                                                                 assignment_id: item.assignment_id, 
                                                                 worker_id: item.worker_id, 
-                                                                worker: item.worker,
+                                                                worker: item.worker, 
                                                                 client_name: group.clientName, 
                                                                 start_date: item.start_date || item.period_start, 
-                                                                hours_per_day: item.hours_per_day,
-                                                                assignment_status: item.assignment_status,
-                                                                type: item.type
+                                                                hours_per_day: item.hours_per_day, 
+                                                                assignment_status: item.assignment_status, 
+                                                                type: item.type 
                                                             },
                                                             servicesList,
                                                             activeAssignments,
@@ -2690,6 +2782,30 @@ export default function HR() {
                                                         }
 
                                                         const b = serviceBucketsMap.get(bucketKey)!;
+                                                        
+                                                        // Deduplicate: if an item for the same worker and date period is already in this bucket
+                                                        const existingIdx = b.items.findIndex(existing => {
+                                                            const sameWorker = (existing.worker_id && item.worker_id && existing.worker_id === item.worker_id) ||
+                                                                               (existing.worker && item.worker && existing.worker.trim().toLowerCase() === item.worker.trim().toLowerCase());
+                                                            if (!sameWorker) return false;
+                                                            const eStart = existing.start_date?.split('T')[0] || existing.period_start?.split('T')[0];
+                                                            const iStart = item.start_date?.split('T')[0] || item.period_start?.split('T')[0];
+                                                            return !eStart || !iStart || eStart === iStart;
+                                                        });
+
+                                                        if (existingIdx >= 0) {
+                                                            // If incoming is real DB and existing is synthetic, replace synthetic with real DB record
+                                                            if (!item._isSynthetic && b.items[existingIdx]._isSynthetic) {
+                                                                const oldBal = computePayrollBalance(b.items[existingIdx]);
+                                                                b.subtotal -= oldBal.totalGross;
+                                                                if (isPayrollItemActive(b.items[existingIdx])) b.activeCount--;
+                                                                b.items.splice(existingIdx, 1);
+                                                            } else {
+                                                                // Skip duplicate
+                                                                return;
+                                                            }
+                                                        }
+
                                                         b.items.push(item);
                                                         const bal = computePayrollBalance(item);
                                                         b.subtotal += bal.totalGross;
@@ -2802,8 +2918,10 @@ export default function HR() {
                                                     );
                                                 })()}
                                             </div>
-                                        </div>
-                                    ))}
+                                        )}
+                                    </div>
+                                );
+                            })}
                                 </div>
                             );
                         })()}
