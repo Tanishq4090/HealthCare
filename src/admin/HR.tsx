@@ -2541,15 +2541,6 @@ export default function HR() {
                                                                                 <Send className="w-3 h-3" /> {balance.isFullyPaid ? 'WhatsApp (Resend)' : 'WhatsApp'}
                                                                             </button>
                                                                             <button
-                                                                                onClick={() => {
-                                                                                    setEditingPayroll(item);
-                                                                                    setIsEditPayrollModalOpen(true);
-                                                                                }}
-                                                                                className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-600 hover:bg-slate-200 rounded transition-colors flex items-center gap-1"
-                                                                            >
-                                                                                <Edit3 className="w-3 h-3" /> Edit
-                                                                            </button>
-                                                                            <button
                                                                                 onClick={async () => {
                                                                                     let targetEmployeeId = item.worker_id;
                                                                                     if (!targetEmployeeId) {
