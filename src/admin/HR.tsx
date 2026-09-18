@@ -921,13 +921,10 @@ export default function HR() {
                 hours_worked: existing?.hours_worked || hoursWorked
             };
 
-            if (existing) {
-                const { error } = await supabase.from('attendance').update(payload).eq('id', existing.id);
-                if (error) throw error;
-            } else {
-                const { error } = await supabase.from('attendance').insert([payload]);
-                if (error) throw error;
-            }
+            const { error } = await supabase.from('attendance').upsert([payload], {
+                onConflict: 'worker_id, duty_date'
+            });
+            if (error) throw error;
 
             toast.success(`Marked as ${status}`);
             fetchLiveAttendance(); // Silent refresh
@@ -968,7 +965,9 @@ export default function HR() {
                 hours_worked: 8
             }));
 
-            const { error } = await supabase.from('attendance').insert(payloads);
+            const { error } = await supabase.from('attendance').upsert(payloads, {
+                onConflict: 'worker_id, duty_date'
+            });
             if (error) throw error;
 
             toast.success(`Bulk marked ${workersToMark.length} workers as Present.`, { id: 'bulk-mark' });

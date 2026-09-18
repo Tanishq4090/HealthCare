@@ -107,7 +107,6 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         .from('attendance')
         .select('id, duty_date, status, is_half_day, assignment_id')
         .eq('worker_id', assignment.employee_id)
-        .eq('assignment_id', assignment.id)
         .gte('duty_date', format(startDate, 'yyyy-MM-dd'))
         .lte('duty_date', format(endDate, 'yyyy-MM-dd'));
 
@@ -155,25 +154,28 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         if (existing?.attendanceId) {
           const { error } = await supabase.from('attendance').delete().eq('id', existing.attendanceId);
           if (error) throw error;
+        } else {
+          await supabase.from('attendance').delete()
+            .eq('worker_id', assignment.employee_id)
+            .eq('duty_date', dateStr);
         }
-      } else if (existing?.attendanceId) {
-        const { error } = await supabase.from('attendance').update({
-          assignment_id: assignment.id, status: dbStatus, is_half_day: isHalfDay,
-          hours_worked: status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0),
-          check_in_time: new Date(`${dateStr}T09:00:00`).toISOString(),
-          check_out_time: status !== 'Absent' ? new Date(`${dateStr}T${status === 'Half Day' ? '13' : '17'}:00:00`).toISOString() : null,
-          is_absent: status === 'Absent', is_leave: false
-        }).eq('id', existing.attendanceId);
-        if (error) throw error;
       } else {
-        const { error } = await supabase.from('attendance').insert([{
-          worker_id: assignment.employee_id, assignment_id: assignment.id, duty_date: dateStr,
-          status: dbStatus, is_half_day: isHalfDay,
+        const payload = {
+          worker_id: assignment.employee_id,
+          assignment_id: assignment.id,
+          duty_date: dateStr,
+          status: dbStatus,
+          is_half_day: isHalfDay,
           hours_worked: status === 'Present' ? 8 : (status === 'Half Day' ? 4 : 0),
           check_in_time: new Date(`${dateStr}T09:00:00`).toISOString(),
           check_out_time: status !== 'Absent' ? new Date(`${dateStr}T${status === 'Half Day' ? '13' : '17'}:00:00`).toISOString() : null,
-          is_absent: status === 'Absent', is_leave: false
-        }]);
+          is_absent: status === 'Absent',
+          is_leave: false
+        };
+
+        const { error } = await supabase.from('attendance').upsert([payload], {
+          onConflict: 'worker_id, duty_date'
+        });
         if (error) throw error;
       }
 
@@ -245,15 +247,22 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
       const inserts = unmarkedPast.map(d => {
         const dateStr = format(d, 'yyyy-MM-dd');
         return {
-          worker_id: assignment.employee_id, assignment_id: assignment.id, duty_date: dateStr,
-          status: 'Present', is_half_day: false, hours_worked: 8,
+          worker_id: assignment.employee_id,
+          assignment_id: assignment.id,
+          duty_date: dateStr,
+          status: 'Present',
+          is_half_day: false,
+          hours_worked: 8,
           check_in_time: new Date(`${dateStr}T09:00:00`).toISOString(),
           check_out_time: new Date(`${dateStr}T17:00:00`).toISOString(),
-          is_absent: false, is_leave: false
+          is_absent: false,
+          is_leave: false
         };
       });
 
-      const { error } = await supabase.from('attendance').insert(inserts);
+      const { error } = await supabase.from('attendance').upsert(inserts, {
+        onConflict: 'worker_id, duty_date'
+      });
       if (error) throw error;
 
       toast.success(
