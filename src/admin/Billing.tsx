@@ -380,12 +380,17 @@ export default function Billing() {
 
             let leadsMap: Record<string, number> = {};
             let activeLeadIds = new Set<string>();
-            const leadsMetaMap: Record<string, { notes?: string, role?: string }> = {};
+            const leadsMetaMap: Record<string, { notes?: string, role?: string, quoted_monthly_rate?: number, estimated_value_monthly?: number }> = {};
             if (leadsResult.data) {
                 leadsResult.data.forEach((l: any) => {
                     activeLeadIds.add(l.id);
                     if (l.estimated_value_monthly) leadsMap[l.id] = l.estimated_value_monthly;
-                    leadsMetaMap[l.id] = { notes: l.notes, role: l.assigned_worker_role };
+                    leadsMetaMap[l.id] = { 
+                        notes: l.notes, 
+                        role: l.assigned_worker_role,
+                        quoted_monthly_rate: l.quoted_monthly_rate ? Number(l.quoted_monthly_rate) : undefined,
+                        estimated_value_monthly: l.estimated_value_monthly ? Number(l.estimated_value_monthly) : undefined
+                    };
                 });
             }
 
@@ -487,14 +492,14 @@ export default function Billing() {
                             || clientAsgns.find(a => a.assignment_status === 'active')
                             || clientAsgns[0];
                         const leadMeta = leadsMetaMap[cId];
+                        const isPaid = activeSvc.deposit_status === 'collected';
+                        const hasInvoiceSent = !!matchingAsgn?.deposit_invoice_sent;
                         const depositAmt = activeSvc.deposit_amount 
                             || matchingAsgn?.deposit_amount 
                             || quotesMap[cId]?.deposit 
                             || leadMeta?.quoted_monthly_rate 
                             || leadMeta?.estimated_value_monthly 
                             || (hasInvoiceSent ? 15000 : 0);
-                        const isPaid = activeSvc.deposit_status === 'collected';
-                        const hasInvoiceSent = !!matchingAsgn?.deposit_invoice_sent;
                         const depStatus = isPaid ? 'Paid' : (hasInvoiceSent ? 'Invoice Sent' : 'Pending Invoice');
                         const serviceName = formatServiceName(activeSvc.service_type, activeSvc.notes || leadMeta?.notes, leadMeta?.role);
 
@@ -1396,7 +1401,6 @@ export default function Billing() {
 
                 if (!waResp.ok) throw new Error(await waResp.text());
 
-                const depositVal = Number(invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '')) || 15000;
                 const targetAsgnId = agentTargetBill.assignment_id || agentTargetBill.id;
                 if (targetAsgnId) {
                     await supabase
