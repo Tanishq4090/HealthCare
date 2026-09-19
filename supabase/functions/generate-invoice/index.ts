@@ -116,7 +116,15 @@ serve(async (req) => {
             const parsed = new Date(`${dateStr}T00:00:00`);
             return isNaN(parsed.getTime()) ? null : parsed;
         };
-        const now          = parseDateOnly(invoice_date) || new Date();
+
+        // Current date in IST (Indian Standard Time, UTC+5:30)
+        const getIndianDate = () => {
+            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+            const parts = formatter.format(new Date()); // "YYYY-MM-DD"
+            return new Date(`${parts}T00:00:00`);
+        };
+
+        const now          = parseDateOnly(invoice_date) || getIndianDate();
         
         let due = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
         if (due_date) {
@@ -261,10 +269,7 @@ serve(async (req) => {
                 page.drawText('99 CARE', { x: 40, y: curY - 20, size: 24, font: bold, color: BLUE });
             }
         }
-        
-        if (is_deposit) {
-            page.drawText('SECURITY DEPOSIT RECEIPT', { x: 40, y: curY - taxInvoiceYOffset, size: 14, font: bold, color: DARK });
-        }
+
 
         // Company Info (Right)
         const cRightX = W - 40;
@@ -340,6 +345,12 @@ serve(async (req) => {
         drawMeta('Due Date:', dueDate, true);
 
         curY = Math.min(curY, metaY) - 10;
+
+        if (is_deposit) {
+            curY -= 4;
+            page.drawText('SECURITY DEPOSIT RECEIPT', { x: 40, y: curY, size: 12, font: bold, color: DARK });
+            curY -= 16;
+        }
 
         // ── 3. TABLE ────────────────────────────────────────────
         const TABLE_H = 20;

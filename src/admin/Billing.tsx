@@ -486,11 +486,16 @@ export default function Billing() {
                         const matchingAsgn = clientAsgns.find(a => a.assignment_status === 'active' && a.invoice_pdf_url)
                             || clientAsgns.find(a => a.assignment_status === 'active')
                             || clientAsgns[0];
-                        const depositAmt = activeSvc.deposit_amount || matchingAsgn?.deposit_amount || quotesMap[cId]?.deposit || 0;
+                        const leadMeta = leadsMetaMap[cId];
+                        const depositAmt = activeSvc.deposit_amount 
+                            || matchingAsgn?.deposit_amount 
+                            || quotesMap[cId]?.deposit 
+                            || leadMeta?.quoted_monthly_rate 
+                            || leadMeta?.estimated_value_monthly 
+                            || (hasInvoiceSent ? 15000 : 0);
                         const isPaid = activeSvc.deposit_status === 'collected';
                         const hasInvoiceSent = !!matchingAsgn?.deposit_invoice_sent;
                         const depStatus = isPaid ? 'Paid' : (hasInvoiceSent ? 'Invoice Sent' : 'Pending Invoice');
-                        const leadMeta = leadsMetaMap[cId];
                         const serviceName = formatServiceName(activeSvc.service_type, activeSvc.notes || leadMeta?.notes, leadMeta?.role);
 
                         // Only include real deposits (deposit amount > 0, paid, invoice sent, or previous deposits exist)
@@ -521,7 +526,12 @@ export default function Billing() {
                             || clientAsgns.find(a => a.invoice_pdf_url && a.assignment_status === 'completed');
                         const leadMeta = leadsMetaMap[cId];
                         const serviceName = formatServiceName(s.service_type, s.notes || leadMeta?.notes, leadMeta?.role);
-                        const depositAmt = s.deposit_amount || matchingAsgn?.deposit_amount || 0;
+                        const depositAmt = s.deposit_amount 
+                            || matchingAsgn?.deposit_amount 
+                            || quotesMap[cId]?.deposit 
+                            || leadMeta?.quoted_monthly_rate 
+                            || leadMeta?.estimated_value_monthly 
+                            || 0;
                         if (Number(depositAmt) > 0 || s.deposit_status === 'collected' || s.deposit_status === 'settled') {
                             mappedDeposits.push({
                                 id: s.id,
@@ -550,11 +560,15 @@ export default function Billing() {
                     if (!cId || processedClientIds.has(cId)) continue;
                     processedClientIds.add(cId);
 
-                    const depositAmt = asgn.deposit_amount || quotesMap[cId]?.deposit || 0;
-                    const isPaid = asgn.deposit_paid && asgn.deposit_paid > 0;
-                    const hasInvoiceSent = !!asgn.deposit_invoice_sent;
-                    const depStatus = isPaid ? 'Paid' : (hasInvoiceSent ? 'Invoice Sent' : 'Pending Invoice');
                     const leadMeta = leadsMetaMap[cId];
+                    const hasInvoiceSent = !!asgn.deposit_invoice_sent;
+                    const depositAmt = asgn.deposit_amount 
+                        || quotesMap[cId]?.deposit 
+                        || leadMeta?.quoted_monthly_rate 
+                        || leadMeta?.estimated_value_monthly 
+                        || (hasInvoiceSent ? 15000 : 0);
+                    const isPaid = asgn.deposit_paid && asgn.deposit_paid > 0;
+                    const depStatus = isPaid ? 'Paid' : (hasInvoiceSent ? 'Invoice Sent' : 'Pending Invoice');
                     const serviceName = formatServiceName(asgn.notes, leadMeta?.notes, leadMeta?.role);
 
                     // Only include if depositAmt > 0 or isPaid or hasInvoiceSent
@@ -1281,7 +1295,15 @@ export default function Billing() {
         const billToProcess = { ...bill, invoice_no: bill.invoice_no || `INV-M${Math.floor(Math.random() * 1000) + 100}` };
         setAgentTargetBill(billToProcess);
         const amountNum = getBillPayableAmount(billToProcess);
-        setInvoiceDepositAmount(amountNum.toString());
+        const resolvedAmount = (billToProcess.isDepositMode && (!amountNum || amountNum === 0)) ? 15000 : amountNum;
+        setInvoiceDepositAmount(resolvedAmount.toString());
+
+        if (!invoiceDueDate) {
+            setInvoiceDueDate(addDaysInputDate(todayInputDate(), 2));
+        }
+        if (!invoiceStartDate) {
+            setInvoiceStartDate(todayInputDate());
+        }
 
         if (billToProcess.isDepositMode) {
             setAgentDraftText(`Hello ${billToProcess.client}, your security deposit invoice has been prepared. Please review the details attached.`);
@@ -1319,6 +1341,7 @@ export default function Billing() {
                         ? `${formatDateStr(invoiceStartDate)} To Ongoing`
                         : 'Ongoing';
 
+                const depositVal = Number(invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '')) || 15000;
                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                     method: 'POST',
                     headers: {
@@ -1327,8 +1350,9 @@ export default function Billing() {
                     },
                     body: JSON.stringify({
                         lead_id: agentTargetBill.client_id,
-                        deposit_amount: invoiceDepositAmount || 15000,
+                        deposit_amount: depositVal,
                         service_period: formattedPeriod,
+                        invoice_date: todayInputDate(),
                         due_date: invoiceDueDate,
                         is_deposit: true
                     })
@@ -1372,12 +1396,13 @@ export default function Billing() {
 
                 if (!waResp.ok) throw new Error(await waResp.text());
 
+                const depositVal = Number(invoiceDepositAmount || agentTargetBill.amount?.replace(/[^0-9.]/g, '')) || 15000;
                 const targetAsgnId = agentTargetBill.assignment_id || agentTargetBill.id;
                 if (targetAsgnId) {
                     await supabase
                         .from('worker_assignments')
                         .update({
-                            deposit_amount: Number(invoiceDepositAmount) || 15000,
+                            deposit_amount: depositVal,
                             deposit_invoice_sent: true,
                             invoice_pdf_url: invoicePdfUrl
                         })
@@ -1386,14 +1411,36 @@ export default function Billing() {
 
                 if (agentTargetBill.client_id) {
                     await supabase
+                        .from('worker_assignments')
+                        .update({
+                            deposit_amount: depositVal,
+                            deposit_invoice_sent: true,
+                            invoice_pdf_url: invoicePdfUrl
+                        })
+                        .eq('client_id', agentTargetBill.client_id)
+                        .eq('assignment_status', 'active');
+
+                    await supabase
+                        .from('services')
+                        .update({
+                            deposit_amount: depositVal,
+                            deposit_status: 'pending'
+                        })
+                        .or(`client_id.eq.${agentTargetBill.client_id},lead_id.eq.${agentTargetBill.client_id}`)
+                        .eq('status', 'active');
+
+                    await supabase
                         .from('crm_leads')
-                        .update({ pipeline_stage: 'Deposit Pending' })
+                        .update({ 
+                            deposit_amount: depositVal,
+                            pipeline_stage: 'Deposit Pending' 
+                        })
                         .eq('id', agentTargetBill.client_id);
                 }
 
                 toast.success(`Deposit Invoice dispatched to ${agentTargetBill.client}!`, { id: toastId, duration: 4000 });
                 
-                setDeposits(prev => prev.map(d => d.id === agentTargetBill.id ? { ...d, status: 'Invoice Sent', invoice_pdf_url: invoicePdfUrl, amount: `₹${Number(invoiceDepositAmount) || 15000}` } : d));
+                setDeposits(prev => prev.map(d => (d.id === agentTargetBill.id || d.client_id === agentTargetBill.client_id) ? { ...d, status: 'Invoice Sent', invoice_pdf_url: invoicePdfUrl, amount: `₹${depositVal}`, numeric_amount: depositVal } : d));
 
             } catch (error: any) {
                 console.error('Dispatch error:', error);
@@ -1443,6 +1490,7 @@ export default function Billing() {
                               end_date: endDate,
                               deposit_collected: depositCollected,
                               service_period: formattedPeriod,
+                              invoice_date: todayInputDate(),
                               due_date: invoiceDueDate,
                               invoice_number: agentTargetBill.invoice_no,
                               is_deposit: false,
@@ -1456,6 +1504,7 @@ export default function Billing() {
                               lead_id: agentTargetBill.client_id,
                               deposit_amount: netPayable,
                               service_period: formattedPeriod,
+                              invoice_date: todayInputDate(),
                               due_date: invoiceDueDate,
                               invoice_number: agentTargetBill.invoice_no,
                               is_deposit: false,

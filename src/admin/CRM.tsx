@@ -2633,35 +2633,42 @@ export default function CRM() {
 
             // ── Also create or update the Services model record ──────────
             try {
-                const existingService = staffPickerTargetLead.services?.find((s: any) => s.status === 'active' || s.status === 'pending');
-                let targetServiceId = existingService?.id;
+                // Check Supabase directly for an active service to prevent duplicate service rows
+                const { data: dbActiveSvc } = await supabase
+                    .from('services')
+                    .select('id, deposit_amount')
+                    .or(`client_id.eq.${staffPickerTargetLead.id},lead_id.eq.${staffPickerTargetLead.id}`)
+                    .eq('status', 'active')
+                    .maybeSingle();
+
+                let targetServiceId = dbActiveSvc?.id;
+
+                // Fetch quotation and lead info for rates
+                const { data: quote } = await supabase
+                    .from('crm_quotations')
+                    .select('complete_month_rate, incomplete_month_rate, deposit')
+                    .eq('lead_id', staffPickerTargetLead.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                const { data: lead } = await supabase
+                    .from('crm_leads')
+                    .select('complete_month_daily_rate, incomplete_month_daily_rate, assigned_worker_role, notes, quoted_monthly_rate, estimated_value_monthly')
+                    .eq('id', staffPickerTargetLead.id)
+                    .maybeSingle();
+
+                const cmRate = quote?.complete_month_rate || lead?.complete_month_daily_rate || (serviceHours === 24 ? 1000 : 500);
+                const icmRate = quote?.incomplete_month_rate || lead?.incomplete_month_daily_rate || (serviceHours === 24 ? 2000 : 1000);
+                const depositAmt = quote?.deposit || lead?.quoted_monthly_rate || lead?.estimated_value_monthly || 15000;
 
                 if (!targetServiceId) {
-                    // Fetch the latest quotation for rates
-                    const { data: quote } = await supabase
-                        .from('crm_quotations')
-                        .select('complete_month_rate, incomplete_month_rate, deposit')
-                        .eq('lead_id', staffPickerTargetLead.id)
-                        .order('created_at', { ascending: false })
-                        .limit(1)
-                        .maybeSingle();
-
-                    const { data: lead } = await supabase
-                        .from('crm_leads')
-                        .select('complete_month_daily_rate, incomplete_month_daily_rate, assigned_worker_role, notes')
-                        .eq('id', staffPickerTargetLead.id)
-                        .maybeSingle();
-
                     let resolvedServiceName = lead?.assigned_worker_role;
                     if (!resolvedServiceName && lead?.notes) {
                         const match = lead.notes.match(/Service:\s*([^\n\r]+)/i);
                         if (match && match[1]) resolvedServiceName = match[1].trim();
                     }
                     if (!resolvedServiceName) resolvedServiceName = 'Home Care Service';
-
-                    const cmRate = quote?.complete_month_rate || lead?.complete_month_daily_rate || (serviceHours === 24 ? 1000 : 500);
-                    const icmRate = quote?.incomplete_month_rate || lead?.incomplete_month_daily_rate || (serviceHours === 24 ? 2000 : 1000);
-                    const depositAmt = quote?.deposit || 0;
 
                     // Create service record
                     const { data: newService, error: svcError } = await supabase
@@ -2685,15 +2692,39 @@ export default function CRM() {
 
                     if (svcError) throw svcError;
                     targetServiceId = newService?.id;
+                } else {
+                    // Update existing active service with proper rates, legacy assignment, and deposit amount
+                    await supabase
+                        .from('services')
+                        .update({
+                            legacy_assignment_id: result.assignment?.id || null,
+                            start_date: serviceStartDate,
+                            end_date: serviceEndDate ? serviceEndDate : null,
+                            hours_per_day: serviceHours,
+                            complete_month_daily_rate: cmRate,
+                            incomplete_month_daily_rate: icmRate,
+                            deposit_amount: (dbActiveSvc?.deposit_amount && dbActiveSvc.deposit_amount > 0) ? dbActiveSvc.deposit_amount : depositAmt,
+                        })
+                        .eq('id', targetServiceId);
                 }
 
                 if (targetServiceId) {
-                    await supabase.from('service_worker_assignments').insert({
-                        service_id: targetServiceId,
-                        employee_id: selectedWorker.id,
-                        start_date: serviceStartDate,
-                        end_date: serviceEndDate ? serviceEndDate : null,
-                    });
+                    const { data: existingSwa } = await supabase
+                        .from('service_worker_assignments')
+                        .select('id')
+                        .eq('service_id', targetServiceId)
+                        .eq('employee_id', selectedWorker.id)
+                        .is('end_date', null)
+                        .maybeSingle();
+
+                    if (!existingSwa) {
+                        await supabase.from('service_worker_assignments').insert({
+                            service_id: targetServiceId,
+                            employee_id: selectedWorker.id,
+                            start_date: serviceStartDate,
+                            end_date: serviceEndDate ? serviceEndDate : null,
+                        });
+                    }
                 }
             } catch (svcErr) {
                 console.error('Failed to sync with services table:', svcErr);
@@ -3001,11 +3032,18 @@ export default function CRM() {
         return parseFloat(matched) || 0;
     };
 
+    const formatLocalDateInput = (date: Date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
     const toDateInputValue = (value: any) => {
         if (!value) return '';
         if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
         const parsed = new Date(value);
-        return isNaN(parsed.getTime()) ? '' : parsed.toISOString().split('T')[0];
+        return isNaN(parsed.getTime()) ? '' : formatLocalDateInput(parsed);
     };
 
     const addInclusivePeriod = (startValue: string, amount: number, unit: 'day' | 'month' | 'year') => {
@@ -3015,7 +3053,7 @@ export default function CRM() {
         if (unit === 'month') start.setMonth(start.getMonth() + amount);
         if (unit === 'year') start.setFullYear(start.getFullYear() + amount);
         if (unit !== 'day') start.setDate(start.getDate() - 1);
-        return start.toISOString().split('T')[0];
+        return formatLocalDateInput(start);
     };
 
     const deriveInvoiceEndDate = (startValue: string, duration?: string | null) => {
@@ -3084,7 +3122,7 @@ export default function CRM() {
             : assignment?.client_billing_rate || quote?.estimated_monthly_total || lead?.estimated_value_monthly || lead?.quoted_monthly_rate || 15000;
 
         setInvoiceDepositAmount(String(amount || ''));
-        setInvoiceDueDate(due.toISOString().split('T')[0]);
+        setInvoiceDueDate(formatLocalDateInput(due));
         setInvoiceStartDate(startDate);
         setInvoiceEndDate(endDate);
     };
@@ -3543,6 +3581,7 @@ export default function CRM() {
                         ? `${formatDateStr(invoiceStartDate)} To Ongoing`
                         : 'Ongoing';
 
+                const depositVal = Number(invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000);
                 const invResp = await fetch(`${SUPABASE_URL}/functions/v1/generate-invoice`, {
                     method: 'POST',
                     headers: {
@@ -3551,8 +3590,9 @@ export default function CRM() {
                     },
                     body: JSON.stringify({
                         lead_id: agentTargetLead?.id,
-                        deposit_amount: invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000,
+                        deposit_amount: depositVal,
                         service_period: formattedPeriod,
+                        invoice_date: formatLocalDateInput(new Date()),
                         start_date: invoiceStartDate || null,
                         end_date: isInvoiceOngoing ? 'Ongoing' : (invoiceEndDate || null),
                         due_date: invoiceDueDate,
@@ -3712,15 +3752,35 @@ export default function CRM() {
                 }
                 // If Deposit Invoice -> move to Deposit Pending
                 else if (agentTargetAction === 'deposit') {
+                    const depositVal = Number(invoiceDepositAmount || agentTargetLead?.quoted_monthly_rate || 15000);
+
                     if (invoicePdfUrl) {
                         await supabase
                             .from('worker_assignments')
                             .update({
+                                deposit_amount: depositVal,
                                 deposit_invoice_sent: true,
                                 invoice_pdf_url: invoicePdfUrl
                             })
                             .eq('client_id', agentTargetLead.id)
                             .eq('assignment_status', 'active');
+
+                        await supabase
+                            .from('services')
+                            .update({
+                                deposit_amount: depositVal,
+                                deposit_status: 'pending'
+                            })
+                            .or(`client_id.eq.${agentTargetLead.id},lead_id.eq.${agentTargetLead.id}`)
+                            .eq('status', 'active');
+
+                        await supabase
+                            .from('crm_leads')
+                            .update({
+                                deposit_amount: depositVal,
+                                pipeline_stage: 'Deposit Pending'
+                            })
+                            .eq('id', agentTargetLead.id);
                     }
                     await handleMoveLead(agentTargetLead.id, 'Deposit Pending');
                     toast.success(`Deposit Invoice dispatched! Moved ${agentTargetLead.name} to Deposit Pending.`, { id: toastId, duration: 4000 });

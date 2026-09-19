@@ -199,14 +199,32 @@ export async function assignWorkerToClient(
     const { data: activeSvc } = await supabase
       .from('services')
       .select('deposit_status, deposit_amount')
-      .eq('client_id', clientUuid)
+      .or(`client_id.eq.${clientUuid},lead_id.eq.${clientUuid}`)
       .eq('status', 'active')
       .maybeSingle();
 
     if (activeSvc && activeSvc.deposit_status === 'collected') {
-      resolvedDepositPaid = Number(activeSvc.deposit_amount) || 5000;
-      resolvedDepositAmount = Number(activeSvc.deposit_amount) || 5000;
+      resolvedDepositPaid = Number(activeSvc.deposit_amount) || 15000;
+      resolvedDepositAmount = Number(activeSvc.deposit_amount) || 15000;
     }
+  }
+
+  if (resolvedDepositAmount <= 0) {
+    const { data: quote } = await supabase
+      .from('crm_quotations')
+      .select('deposit')
+      .eq('lead_id', clientUuid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: leadRates } = await supabase
+      .from('crm_leads')
+      .select('quoted_monthly_rate, estimated_value_monthly, deposit_amount')
+      .eq('id', clientUuid)
+      .maybeSingle();
+
+    resolvedDepositAmount = Number(quote?.deposit || leadRates?.deposit_amount || leadRates?.quoted_monthly_rate || leadRates?.estimated_value_monthly) || 15000;
   }
 
   // ── Step 1: Create assignment record ──────────────────
@@ -395,7 +413,7 @@ export async function assignWorkerToClient(
     if (!targetServiceId) {
       const startDate = billingData?.startDate ? billingData.startDate.split('T')[0] : new Date().toISOString().split('T')[0];
       const serviceType = billingData?.serviceType || lead?.assigned_worker_role || 'Home Care Service';
-      const depositAmt = resolvedDepositAmount > 0 ? resolvedDepositAmount : 5000;
+      const depositAmt = resolvedDepositAmount > 0 ? resolvedDepositAmount : 15000;
       const depStatus = (resolvedDepositPaid >= depositAmt && depositAmt > 0) ? 'collected' : 'pending';
 
       const { data: newSvc, error: svcInsertErr } = await supabase
