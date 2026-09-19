@@ -4142,7 +4142,7 @@ export default function CRM() {
                 const { data: existingSvc } = await supabase
                     .from('services')
                     .select('id')
-                    .eq('client_id', lead.id)
+                    .or(`client_id.eq.${lead.id},lead_id.eq.${lead.id}`)
                     .eq('status', 'active')
                     .maybeSingle();
 
@@ -4157,7 +4157,7 @@ export default function CRM() {
                         .eq('id', existingSvc.id);
                 } else {
                     let serviceType = lead.assigned_worker_role || 'Home Care Service';
-                    let startDate = new Date().toISOString().split('T')[0];
+                    let startDate = formatLocalDateInput(new Date());
                     if (lead.notes) {
                         const sMatch = lead.notes.match(/Service:\s*([^\n\r]+)/i);
                         if (sMatch && sMatch[1]?.trim()) serviceType = sMatch[1].trim();
