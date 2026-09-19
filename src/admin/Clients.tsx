@@ -559,21 +559,17 @@ export default function Clients() {
 
     const fetchClients = async () => {
         try {
-            // 1. Fetch leads in client stages WITH their pipeline_stage and service metadata
-            // Also include leads with null pipeline_stage (removed from pipeline but still clients)
-            const [activeLeadsResult, archivedLeadsResult, trashLeadsResult] = await Promise.all([
-                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role')
-                    .in('pipeline_stage', ['Active Client', 'Monthly Billing', 'Closed Won']),
-                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role')
-                    .eq('pipeline_stage', 'Archived'),
-                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role')
-                    .eq('pipeline_stage', 'Trash')
+            // 1. Fetch leads to map pipeline_stage and service metadata
+            // Also fetch all records from the clients table
+            const [leadsResult, allClientsRes] = await Promise.all([
+                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role'),
+                supabase.from('clients').select('*').order('created_at', { ascending: false })
             ]);
 
-            if (activeLeadsResult.error) throw activeLeadsResult.error;
+            if (leadsResult.error) throw leadsResult.error;
+            if (allClientsRes.error) throw allClientsRes.error;
 
-            const allLeads = [...(activeLeadsResult.data || []), ...(archivedLeadsResult.data || []), ...(trashLeadsResult.data || [])];
-            const clientIds = allLeads.map(l => l.id);
+            const allLeads = leadsResult.data || [];
             // Build a map of lead_id -> pipeline_stage and lead_id -> lead data for status badge and service metadata
             const stageMap: Record<string, string> = {};
             const leadMap: Record<string, any> = {};
@@ -582,18 +578,12 @@ export default function Clients() {
                 leadMap[l.id] = l;
             });
 
-            // 2. Fetch records from the clients table
-            const { data: allClientsRes, error: clientError } = await supabase
-                .from('clients')
-                .select('*')
-                .order('created_at', { ascending: false });
-            
-            if (clientError) throw clientError;
-            const clientData = [...(allClientsRes || [])];
+            const clientData = [...(allClientsRes.data || [])];
             const existingClientIds = new Set(clientData.map(c => c.id));
 
-            // Self-heal: If any active lead in CRM is missing from clients table, include and persist it
-            const missingLeads = (activeLeadsResult.data || []).filter(l => !existingClientIds.has(l.id));
+            // Self-heal: If any confirmed active lead in CRM is missing from clients table, include and persist it
+            const activeLeads = allLeads.filter(l => ['Active Client', 'Monthly Billing', 'Closed Won'].includes(l.pipeline_stage));
+            const missingLeads = activeLeads.filter(l => !existingClientIds.has(l.id));
             if (missingLeads.length > 0) {
                 missingLeads.forEach(l => {
                     const fallbackClient = {
@@ -697,7 +687,34 @@ export default function Clients() {
             });
 
             // 5. Map database clients to UI structure (Per-service deposit calculation - NEVER merge across cycles)
-            const enrichedClients = (clientData || []).map(c => {
+            // Qualification rule:
+            // For a lead's first service, they should only appear in Client Master Database AFTER the deposit is collected.
+            // If the same client starts another service after this ends, they should remain in Client Master Database.
+            const qualifiedClients = (clientData || []).filter(c => {
+                const clientServices = services.filter(s => s.client_id === c.id);
+                const clientAssignments = assignments.filter(a => a.client_id === c.id);
+
+                // Has this client ever had a deposit collected or settled, or payment recorded?
+                const hasCollectedOrSettledDeposit = clientServices.some(s => s.deposit_status === 'collected' || s.deposit_status === 'settled')
+                    || clientAssignments.some(a => Number(a.deposit_paid) > 0)
+                    || (paidDepositByClientName[normalizeClientName(c.client_name)] || 0) > 0;
+
+                // Has this client completed any historical / ended service?
+                const hasCompletedHistoricalService = clientServices.some(s => s.status !== 'active')
+                    || clientAssignments.some(a => a.assignment_status === 'completed' || a.assignment_status === 'ended');
+
+                const leadStage = leadMap[c.id]?.pipeline_stage;
+                const isPreDepositLead = ['New Lead', 'New', 'New Inquiry', 'In Discussion', 'Quotation Sent', 'Consent Form', 'Staff Assigned', 'Deposit Pending'].includes(leadStage);
+
+                // If this lead is on their first service and deposit is NOT collected yet, don't show in Client Master Database
+                if (isPreDepositLead && !hasCollectedOrSettledDeposit && !hasCompletedHistoricalService) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            const enrichedClients = qualifiedClients.map(c => {
                 const clientServices = services.filter(s => s.client_id === c.id);
                 const clientAssignments = assignments.filter(a => a.client_id === c.id);
 
