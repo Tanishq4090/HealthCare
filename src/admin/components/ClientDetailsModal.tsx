@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2 } from 'lucide-react';
+import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { toast } from 'sonner';
@@ -24,6 +24,29 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     const [isEndingService, setIsEndingService] = useState(false);
     const [showEndConfirm, setShowEndConfirm] = useState(false);
     const [releasingWorkerId, setReleasingWorkerId] = useState<string | null>(null);
+
+    // Edit Requirements Modal State
+    const [isEditingReq, setIsEditingReq] = useState(false);
+    const [editReqData, setEditReqData] = useState({
+        service: '',
+        shift: '',
+        careFor: '',
+        location: '',
+        rawNotes: '',
+    });
+    const [isSavingReq, setIsSavingReq] = useState(false);
+
+    // Edit Patient Care Consent Modal State
+    const [isEditingConsent, setIsEditingConsent] = useState(false);
+    const [editConsentData, setEditConsentData] = useState({
+        patientName: '',
+        age: '',
+        weight: '',
+        relativeName: '',
+        contactNumber: '',
+        address: '',
+    });
+    const [isSavingConsent, setIsSavingConsent] = useState(false);
 
     const fetchDetails = useCallback(async () => {
         setIsLoading(true);
@@ -112,6 +135,143 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
             }
         });
     }
+
+    // Latest Patient Consent (if any)
+    const latestConsent = lead?.client_consents && lead.client_consents.length > 0
+        ? [...lead.client_consents].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+        : null;
+
+    // Smart computed fields that intelligently pull from Patient Care Consent and Services if notes were omitted
+    const displayService = parsedNotes['Service']
+        || lead?.assigned_worker_role
+        || latestConsent?.service_category
+        || services?.[0]?.service_type
+        || lead?.service_interest
+        || 'Not specified';
+
+    const displayShift = parsedNotes['Shift']
+        || latestConsent?.offered_time
+        || (services?.[0]?.hours_per_day ? `${services[0].hours_per_day}-Hour Shift` : null)
+        || 'Not specified';
+
+    const displayCareFor = parsedNotes['Care for']
+        || (latestConsent?.patient_name
+            ? (latestConsent.patient_name.trim().toLowerCase() === (lead?.name || '').trim().toLowerCase()
+                ? `${latestConsent.patient_name} (Self)${latestConsent.relative_name ? ` • Guardian: ${latestConsent.relative_name}` : ''}`
+                : `${latestConsent.patient_name}${latestConsent.relative_name ? ` • Guardian: ${latestConsent.relative_name}` : ''}`)
+            : null)
+        || (latestConsent?.relative_name ? `Guardian: ${latestConsent.relative_name}` : null)
+        || 'Not specified';
+
+    const displayLocation = parsedNotes['Location']
+        || parsedNotes['Address']
+        || latestConsent?.address
+        || lead?.location
+        || lead?.work_form_data?.address
+        || 'Not specified';
+
+    const formatAgeDisplay = (ageStr?: string, unit?: string) => {
+        if (!ageStr) return '—';
+        const trimmed = ageStr.trim();
+        if (/\b(yrs|years|months|month|age|kgs|kg)\b/i.test(trimmed)) {
+            return trimmed;
+        }
+        return `${trimmed} ${unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}`;
+    };
+
+    const handleOpenEditReq = () => {
+        setEditReqData({
+            service: parsedNotes['Service'] || (displayService !== 'Not specified' ? displayService : ''),
+            shift: parsedNotes['Shift'] || (displayShift !== 'Not specified' ? displayShift : ''),
+            careFor: parsedNotes['Care for'] || (displayCareFor !== 'Not specified' ? displayCareFor : ''),
+            location: parsedNotes['Location'] || parsedNotes['Address'] || (displayLocation !== 'Not specified' ? displayLocation : ''),
+            rawNotes: lead?.notes || '',
+        });
+        setIsEditingReq(true);
+    };
+
+    const handleSaveRequirements = async () => {
+        setIsSavingReq(true);
+        try {
+            const structuredNotes = `Service: ${editReqData.service}\nShift: ${editReqData.shift}\nCare for: ${editReqData.careFor}\nLocation: ${editReqData.location}`;
+            const finalNotes = editReqData.rawNotes.trim() ? editReqData.rawNotes.trim() : structuredNotes;
+
+            const { error } = await supabase
+                .from('crm_leads')
+                .update({
+                    notes: finalNotes,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', clientId);
+
+            if (error) throw error;
+            toast.success('Inquiry requirements saved successfully!');
+            setIsEditingReq(false);
+            await fetchDetails();
+            onServiceUpdated?.();
+        } catch (err: any) {
+            console.error('Error saving requirements:', err);
+            toast.error(`Failed to save requirements: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingReq(false);
+        }
+    };
+
+    const handleOpenEditConsent = () => {
+        setEditConsentData({
+            patientName: latestConsent?.patient_name || lead?.name || '',
+            age: latestConsent?.age || '',
+            weight: latestConsent?.weight || '',
+            relativeName: latestConsent?.relative_name || '',
+            contactNumber: latestConsent?.contact_number || lead?.phone || '',
+            address: latestConsent?.address || (displayLocation !== 'Not specified' ? displayLocation : ''),
+        });
+        setIsEditingConsent(true);
+    };
+
+    const handleSaveConsent = async () => {
+        setIsSavingConsent(true);
+        try {
+            if (latestConsent?.id) {
+                const { error } = await supabase
+                    .from('client_consents')
+                    .update({
+                        patient_name: editConsentData.patientName,
+                        age: editConsentData.age,
+                        weight: editConsentData.weight || null,
+                        relative_name: editConsentData.relativeName,
+                        contact_number: editConsentData.contactNumber,
+                        address: editConsentData.address,
+                    })
+                    .eq('id', latestConsent.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('client_consents')
+                    .insert([{
+                        lead_id: clientId,
+                        patient_name: editConsentData.patientName,
+                        age: editConsentData.age,
+                        weight: editConsentData.weight || null,
+                        relative_name: editConsentData.relativeName,
+                        contact_number: editConsentData.contactNumber,
+                        address: editConsentData.address,
+                        terms_accepted: true,
+                    }]);
+                if (error) throw error;
+            }
+
+            toast.success('Patient care details saved successfully!');
+            setIsEditingConsent(false);
+            await fetchDetails();
+            onServiceUpdated?.();
+        } catch (err: any) {
+            console.error('Error saving patient details:', err);
+            toast.error(`Failed to save patient details: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingConsent(false);
+        }
+    };
 
     const formatDate = (dStr: string) => {
         if (!dStr) return 'N/A';
@@ -661,73 +821,111 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Service Requirements (Initial Intake) */}
                             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                                <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4 text-sm">
-                                    <ClipboardList className="w-4 h-4 text-primary" /> Initial Inquiry Requirements
-                                </h3>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                                        <ClipboardList className="w-4 h-4 text-primary" /> Initial Inquiry Requirements
+                                    </h3>
+                                    <button
+                                        onClick={handleOpenEditReq}
+                                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200 transition-colors shadow-2xs"
+                                        title="Edit inquiry requirements"
+                                    >
+                                        <Pencil className="w-3 h-3" /> Edit
+                                    </button>
+                                </div>
                                 <div className="space-y-3">
                                     <div className="flex flex-col">
                                         <span className="text-xs font-semibold text-slate-400 uppercase">Original Service</span>
-                                        <span className="text-sm font-medium text-slate-700">{parsedNotes['Service'] || lead?.service_interest || 'Not specified'}</span>
+                                        <span className="text-sm font-medium text-slate-800">{displayService}</span>
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-xs font-semibold text-slate-400 uppercase">Shift Preference</span>
-                                        <span className="text-sm font-medium text-slate-700">{parsedNotes['Shift'] || 'Not specified'}</span>
+                                        <span className="text-sm font-medium text-slate-800">{displayShift}</span>
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-xs font-semibold text-slate-400 uppercase">Care For</span>
-                                        <span className="text-sm font-medium text-slate-700">{parsedNotes['Care for'] || 'Not specified'}</span>
+                                        <span className="text-sm font-medium text-slate-800">{displayCareFor}</span>
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
-                                        <span className="text-sm font-medium text-slate-700 flex items-start gap-1">
+                                        <span className="text-sm font-medium text-slate-800 flex items-start gap-1">
                                             <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                                            {parsedNotes['Location'] || 'Not specified'}
+                                            {displayLocation}
                                         </span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Patient & Care Details (from consent) */}
-                            {lead?.client_consents && lead.client_consents.length > 0 && (() => {
-                                const consent = [...lead.client_consents].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                                return (
-                                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4 text-sm">
-                                            <User className="w-4 h-4 text-primary" /> Patient Care Details (Consent)
-                                        </h3>
-                                        <div className="space-y-3">
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-semibold text-slate-400 uppercase">Patient Name</span>
-                                                <span className="text-sm font-medium text-slate-800">{consent.patient_name || '—'}</span>
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-semibold text-slate-400 uppercase">Age &amp; Weight</span>
-                                                <span className="text-sm font-medium text-slate-800">
-                                                    {consent.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}` : '—'}
-                                                    {consent.weight ? `, ${consent.weight} kg` : ''}
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-semibold text-slate-400 uppercase">Relative / Guardian</span>
-                                                <span className="text-sm font-medium text-slate-800">{consent.relative_name || '—'}</span>
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-semibold text-slate-400 uppercase">Contact Number</span>
-                                                <span className="text-sm font-medium text-slate-800">{consent.contact_number || '—'}</span>
-                                            </div>
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                                        <User className="w-4 h-4 text-primary" /> Patient Care Details (Consent)
+                                    </h3>
+                                    <button
+                                        onClick={handleOpenEditConsent}
+                                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200 transition-colors shadow-2xs"
+                                        title="Edit patient care details"
+                                    >
+                                        <Pencil className="w-3 h-3" /> {latestConsent ? 'Edit' : 'Add'}
+                                    </button>
+                                </div>
+                                {latestConsent ? (
+                                    <div className="space-y-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Patient Name</span>
+                                            <span className="text-sm font-medium text-slate-800">{latestConsent.patient_name || '—'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Age &amp; Weight</span>
+                                            <span className="text-sm font-medium text-slate-800">
+                                                {formatAgeDisplay(latestConsent.age, latestConsent.age_unit)}
+                                                {latestConsent.weight ? `, ${latestConsent.weight} kg` : ''}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Relative / Guardian</span>
+                                            <span className="text-sm font-medium text-slate-800">{latestConsent.relative_name || '—'}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Contact Number</span>
+                                            <span className="text-sm font-medium text-slate-800">{latestConsent.contact_number || lead?.phone || '—'}</span>
                                         </div>
                                     </div>
-                                );
-                            })()}
+                                ) : (
+                                    <div className="py-6 text-center text-slate-400 text-xs">
+                                        <User className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
+                                        <p>No patient consent recorded yet.</p>
+                                        <button
+                                            onClick={handleOpenEditConsent}
+                                            className="mt-2 text-xs font-bold text-[#1AA6A8] hover:underline"
+                                        >
+                                            + Add Patient Details
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* All Notes & Requirements */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                            <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-2 text-sm">
-                                <FileText className="w-4 h-4 text-primary" /> Intake Form Raw Notes
-                            </h3>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                                    <FileText className="w-4 h-4 text-primary" /> Intake Form Raw Notes
+                                </h3>
+                                <button
+                                    onClick={handleOpenEditReq}
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1AA6A8] hover:underline"
+                                >
+                                    <Pencil className="w-3 h-3" /> Edit Notes
+                                </button>
+                            </div>
                             <pre className="text-xs text-slate-600 whitespace-pre-wrap font-sans bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                {lead?.notes || 'No raw notes available.'}
+                                {lead?.notes || (
+                                    <span className="text-slate-400 italic">
+                                        No raw intake form notes logged. Client requirements are captured from patient care details & services.
+                                    </span>
+                                )}
                             </pre>
                         </div>
 
@@ -783,6 +981,191 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                     </div>
                 )}
             </div>
+            {/* Edit Inquiry Requirements Modal */}
+            {isEditingReq && (
+                <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setIsEditingReq(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <ClipboardList className="w-5 h-5 text-primary" /> Edit Initial Inquiry Requirements
+                            </h3>
+                            <button onClick={() => setIsEditingReq(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="space-y-3 text-sm">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Original Service</label>
+                                <input
+                                    type="text"
+                                    value={editReqData.service}
+                                    onChange={e => setEditReqData({ ...editReqData, service: e.target.value })}
+                                    placeholder="e.g. Old Age Care Taker, Maternity Care, Nursing"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Shift Preference</label>
+                                <input
+                                    type="text"
+                                    value={editReqData.shift}
+                                    onChange={e => setEditReqData({ ...editReqData, shift: e.target.value })}
+                                    placeholder="e.g. 10-Hour Shift, 24/7 Live-in, 12-Hour Day"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Care For</label>
+                                <input
+                                    type="text"
+                                    value={editReqData.careFor}
+                                    onChange={e => setEditReqData({ ...editReqData, careFor: e.target.value })}
+                                    placeholder="e.g. Self, Mother, Father, Patient Name"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Location / Address</label>
+                                <textarea
+                                    rows={2}
+                                    value={editReqData.location}
+                                    onChange={e => setEditReqData({ ...editReqData, location: e.target.value })}
+                                    placeholder="Full service / residence location address"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Raw Intake Form Notes (Optional)</label>
+                                <textarea
+                                    rows={3}
+                                    value={editReqData.rawNotes}
+                                    onChange={e => setEditReqData({ ...editReqData, rawNotes: e.target.value })}
+                                    placeholder="Leave blank to automatically construct structured notes from the above fields"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditingReq(false)}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveRequirements}
+                                disabled={isSavingReq}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm"
+                            >
+                                {isSavingReq ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                Save Requirements
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Patient Care Details Modal */}
+            {isEditingConsent && (
+                <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setIsEditingConsent(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <User className="w-5 h-5 text-primary" /> Edit Patient Care Details
+                            </h3>
+                            <button onClick={() => setIsEditingConsent(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="space-y-3 text-sm">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Patient Name</label>
+                                <input
+                                    type="text"
+                                    value={editConsentData.patientName}
+                                    onChange={e => setEditConsentData({ ...editConsentData, patientName: e.target.value })}
+                                    placeholder="Patient Full Name"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Age</label>
+                                    <input
+                                        type="text"
+                                        value={editConsentData.age}
+                                        onChange={e => setEditConsentData({ ...editConsentData, age: e.target.value })}
+                                        placeholder="e.g. 50 years"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Weight</label>
+                                    <input
+                                        type="text"
+                                        value={editConsentData.weight}
+                                        onChange={e => setEditConsentData({ ...editConsentData, weight: e.target.value })}
+                                        placeholder="e.g. 45 kg"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Relative / Guardian</label>
+                                    <input
+                                        type="text"
+                                        value={editConsentData.relativeName}
+                                        onChange={e => setEditConsentData({ ...editConsentData, relativeName: e.target.value })}
+                                        placeholder="Guardian Name"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Contact Number</label>
+                                    <input
+                                        type="text"
+                                        value={editConsentData.contactNumber}
+                                        onChange={e => setEditConsentData({ ...editConsentData, contactNumber: e.target.value })}
+                                        placeholder="Phone number"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Address / Location</label>
+                                <textarea
+                                    rows={2}
+                                    value={editConsentData.address}
+                                    onChange={e => setEditConsentData({ ...editConsentData, address: e.target.value })}
+                                    placeholder="Patient residence address"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditingConsent(false)}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveConsent}
+                                disabled={isSavingConsent}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm"
+                            >
+                                {isSavingConsent ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                Save Patient Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
