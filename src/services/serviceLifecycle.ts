@@ -552,9 +552,28 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             }]);
         }
 
-        // 4. Update CRM lead pipeline stage to Active Client
+        // 4. Update CRM lead pipeline stage to Active Client and sync service role / notes
+        const { data: currentLead } = await supabase
+            .from('crm_leads')
+            .select('notes')
+            .eq('id', input.clientId)
+            .maybeSingle();
+
+        let updatedNotes = currentLead?.notes || '';
+        if (updatedNotes) {
+            if (updatedNotes.match(/Service:\s*[^\n\r]+/i)) {
+                updatedNotes = updatedNotes.replace(/Service:\s*[^\n\r]+/i, `Service: ${input.serviceType}`);
+            } else {
+                updatedNotes = `Service: ${input.serviceType}\n` + updatedNotes;
+            }
+        } else {
+            updatedNotes = `Service: ${input.serviceType}`;
+        }
+
         const leadUpdatePayload: any = {
             pipeline_stage: 'Active Client',
+            assigned_worker_role: input.serviceType,
+            notes: updatedNotes,
             estimated_value_monthly: input.completeMonthDailyRate * 30,
             complete_month_daily_rate: input.completeMonthDailyRate,
             incomplete_month_daily_rate: input.incompleteMonthDailyRate,

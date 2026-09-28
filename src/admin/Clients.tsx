@@ -237,9 +237,10 @@ export default function Clients() {
 
             if (insertPayError) throw insertPayError;
 
-            // 4. Ensure lead is in Active Client
+            // 4. Ensure lead is in Active Client and sync service role
             await supabase.from('crm_leads').update({
                 pipeline_stage: 'Active Client',
+                assigned_worker_role: depositModal.serviceName || undefined,
                 updated_at: nowIso,
             }).eq('id', client.id);
 

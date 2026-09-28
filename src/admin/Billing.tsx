@@ -874,22 +874,6 @@ export default function Billing() {
                     window.open(payment.cached_deposit_url, '_blank');
                     return;
                 }
-
-                // Check storage bucket for existing DEP-*.pdf
-                const { data: files, error } = await supabase.storage.from('invoices').list(leadId);
-                if (error) throw error;
-                const pdfFiles = (files || []).filter(f => f.name.endsWith('.pdf'));
-                const existingDepFile = pdfFiles.find(f => f.name.toUpperCase().startsWith('DEP-'));
-
-                if (existingDepFile) {
-                    const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(`${leadId}/${existingDepFile.name}`);
-                    const finalUrl = `${pubData.publicUrl}?t=${Date.now()}`;
-                    setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, cached_deposit_url: finalUrl } : p));
-                    window.open(finalUrl, '_blank');
-                    return;
-                }
-
-                // If no DEP-*.pdf exists, generate an official Security Deposit Receipt & Invoice PDF on the fly!
                 const refSuffix = (payment.transaction_ref || '')
                     .replace(/^MANUAL-DEP-|^DEP-|^UPI-|^CASH-|^ONLINE-TRANSFER-/, '')
                     .replace(/[^A-Za-z0-9]/g, '')
@@ -900,12 +884,55 @@ export default function Billing() {
                 const depositAmt = parseFloat(payment.amount || 0);
                 const payDate = payment.payment_date ? payment.payment_date.split('T')[0] : new Date().toISOString().split('T')[0];
 
-                const { data: leadData } = await supabase.from('crm_leads').select('name, phone, whatsapp_number, notes').eq('id', leadId).maybeSingle();
+                // Check storage bucket for existing exact DEP-[ref].pdf
+                const { data: files, error } = await supabase.storage.from('invoices').list(leadId);
+                if (error) throw error;
+                const pdfFiles = (files || []).filter(f => f.name.endsWith('.pdf'));
+                const existingDepFile = pdfFiles.find(f => f.name.toUpperCase() === `${invNumber}.PDF`);
+
+                if (existingDepFile) {
+                    const { data: pubData } = supabase.storage.from('invoices').getPublicUrl(`${leadId}/${existingDepFile.name}`);
+                    const finalUrl = `${pubData.publicUrl}?t=${Date.now()}`;
+                    setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, cached_deposit_url: finalUrl } : p));
+                    window.open(finalUrl, '_blank');
+                    return;
+                }
+
+                // Fetch accurate service details: Prioritize services table and active assignments over legacy notes
+                const [{ data: svcData }, { data: asgnData }, { data: leadData }] = await Promise.all([
+                    supabase
+                        .from('services')
+                        .select('service_type, notes')
+                        .or(`client_id.eq.${leadId},lead_id.eq.${leadId}`)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle(),
+                    supabase
+                        .from('worker_assignments')
+                        .select('notes, service_type')
+                        .eq('client_id', leadId)
+                        .order('assigned_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle(),
+                    supabase
+                        .from('crm_leads')
+                        .select('name, phone, whatsapp_number, notes, assigned_worker_role')
+                        .eq('id', leadId)
+                        .maybeSingle()
+                ]);
+
                 const notesStr = leadData?.notes || '';
                 const sMatch = notesStr.match(/^Service:\s*(.+)$/im);
-                const serviceCategory = sMatch ? sMatch[1].trim() : 'Healthcare Service';
                 const lMatch = notesStr.match(/^Location:\s*(.+)$/im);
                 const clientAddress = lMatch ? lMatch[1].trim() : '';
+
+                const rawSvcType = svcData?.service_type && svcData.service_type !== 'date_range' && svcData.service_type !== 'open_ended' ? svcData.service_type : null;
+                const rawAsgnNotes = asgnData?.notes && !asgnData.notes.toLowerCase().includes('superseded') ? asgnData.notes : null;
+
+                const serviceCategory = rawSvcType 
+                    || rawAsgnNotes 
+                    || leadData?.assigned_worker_role 
+                    || (sMatch ? sMatch[1].trim() : 'Healthcare Service');
 
                 const newDepUrl = await generateAndUploadInvoicePdf({
                     clientId: leadId,
