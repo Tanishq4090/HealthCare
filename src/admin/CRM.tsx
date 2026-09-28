@@ -4042,6 +4042,16 @@ export default function CRM() {
 
     const handleDepositReceived = (lead: any) => {
         if (!lead?.id) return;
+        const isPaid = lead.has_paid_deposit ||
+            lead.deposit_status === 'collected' ||
+            lead.services?.some((s: any) => s.deposit_status === 'collected') ||
+            lead.worker_assignments?.some((a: any) => Number(a.deposit_paid || 0) >= Number(a.deposit_amount || 1));
+
+        if (isPaid) {
+            toast.info("Deposit is already collected for this client. Moving lead to Active Client...");
+            handleMoveLead(lead.id, 'Active Client');
+            return;
+        }
         setDepositLeadTarget(lead);
         setDepositMethod('Online Transfer');
         const d = new Date();
@@ -8608,15 +8618,34 @@ export default function CRM() {
                                                 </button>
                                             )}
 
-                                            {selectedInspectorLead.pipeline_stage === 'Deposit Pending' && (
-                                                <button
-                                                    onClick={() => handleDepositReceived(selectedInspectorLead)}
-                                                    className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-200 text-emerald-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group"
-                                                >
-                                                    <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                    Record Collection → Activate Client
-                                                </button>
-                                            )}
+                                            {selectedInspectorLead.pipeline_stage === 'Deposit Pending' && (() => {
+                                                const isDepositCollected = selectedInspectorLead.has_paid_deposit ||
+                                                    selectedInspectorLead.deposit_status === 'collected' ||
+                                                    selectedInspectorLead.services?.some((s: any) => s.deposit_status === 'collected') ||
+                                                    selectedInspectorLead.worker_assignments?.some((a: any) => Number(a.deposit_paid || 0) >= Number(a.deposit_amount || 1));
+
+                                                if (isDepositCollected) {
+                                                    return (
+                                                        <button
+                                                            onClick={() => handleMoveLead(selectedInspectorLead.id, 'Active Client')}
+                                                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group cursor-pointer"
+                                                        >
+                                                            <CheckCircle2 className="w-4 h-4" />
+                                                            Deposit Already Collected ✓ (Activate Client)
+                                                        </button>
+                                                    );
+                                                }
+
+                                                return (
+                                                    <button
+                                                        onClick={() => handleDepositReceived(selectedInspectorLead)}
+                                                        className="w-full bg-emerald-50 hover:bg-emerald-500 hover:text-white border border-emerald-200 text-emerald-800 font-bold py-2.5 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 group cursor-pointer"
+                                                    >
+                                                        <CheckCircle2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                        Record Collection → Activate Client
+                                                    </button>
+                                                );
+                                            })()}
 
                                             {selectedInspectorLead.pipeline_stage === 'Active Client' && (
                                                 <button

@@ -2129,97 +2129,128 @@ export default function Clients() {
                                 )}
                             </div>
 
-                            {/* Section 2: Record Payment Received */}
-                            <div className="space-y-3 pt-2 border-t border-slate-100">
-                                <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
-                                    <Wallet className="w-4 h-4 text-blue-600" />
-                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">2. Record Payment Received</h3>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Amount Received (₹) *</label>
-                                        <input
-                                            type="number"
-                                            value={depositPaymentAmount}
-                                            onChange={e => setDepositPaymentAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
-                                        <select
-                                            value={depositPaymentMethod}
-                                            onChange={e => {
-                                                const m = e.target.value;
-                                                setDepositPaymentMethod(m);
-                                                setDepositPaymentRef(generateDepositRef(m));
-                                            }}
-                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-                                        >
-                                            <option value="UPI">UPI / GPay / PhonePe</option>
-                                            <option value="Cash">Cash</option>
-                                            <option value="Bank Transfer">Bank Transfer (IMPS / NEFT)</option>
-                                            <option value="Cheque">Cheque</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Received Date *</label>
-                                        <div className="relative">
-                                            <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                            <input
-                                                type="date"
-                                                required
-                                                value={depositPaymentDate}
-                                                onChange={e => setDepositPaymentDate(e.target.value)}
-                                                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
-                                            />
+                            {/* Section 2: Record Payment Received (Only if pending / not yet collected) */}
+                            {depositModal.depositStatus === 'collected' ? (
+                                <div className="pt-2 border-t border-slate-100">
+                                    <div className="p-4 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                                                <CheckCircle2 className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900">
+                                                    Security Deposit Already Collected
+                                                </h4>
+                                                <p className="text-xs text-emerald-700 mt-0.5">
+                                                    ₹{depositModal.depositAmount.toLocaleString('en-IN')} has been collected and is securely held in reserve for {depositModal.serviceName}.
+                                                </p>
+                                            </div>
                                         </div>
+                                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase shrink-0">
+                                            ✓ In Reserve
+                                        </span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3 pt-2 border-t border-slate-100">
+                                    <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                                        <Wallet className="w-4 h-4 text-blue-600" />
+                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">2. Record Payment Received</h3>
                                     </div>
 
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="text-xs font-semibold text-slate-600">
-                                                Transaction Reference ID (Auto-Generated)
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                                <span>Amount Received (₹) *</span>
+                                                <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-200 uppercase">
+                                                    Fixed Deposit
+                                                </span>
                                             </label>
-                                            <button
-                                                type="button"
-                                                onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
-                                                className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
-                                                title="Generate new reference code"
-                                            >
-                                                <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
-                                            </button>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    disabled
+                                                    value={`₹${depositModal.depositAmount.toLocaleString('en-IN')}`}
+                                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 bg-slate-100/80 cursor-not-allowed focus:outline-none"
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="relative flex items-center">
-                                            <input
-                                                type="text"
-                                                value={depositPaymentRef}
-                                                onChange={e => setDepositPaymentRef(e.target.value)}
-                                                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(depositPaymentRef);
-                                                    toast.success('Reference ID copied');
+
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
+                                            <select
+                                                value={depositPaymentMethod}
+                                                onChange={e => {
+                                                    const m = e.target.value;
+                                                    setDepositPaymentMethod(m);
+                                                    setDepositPaymentRef(generateDepositRef(m));
                                                 }}
-                                                className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
-                                                title="Copy Reference ID"
+                                                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
                                             >
-                                                <Copy className="w-3.5 h-3.5" />
-                                            </button>
+                                                <option value="UPI">UPI / GPay / PhonePe</option>
+                                                <option value="Cash">Cash</option>
+                                                <option value="Bank Transfer">Bank Transfer (IMPS / NEFT)</option>
+                                                <option value="Cheque">Cheque</option>
+                                            </select>
                                         </div>
                                     </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Received Date *</label>
+                                            <div className="relative">
+                                                <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                                <input
+                                                    type="date"
+                                                    required
+                                                    value={depositPaymentDate}
+                                                    onChange={e => setDepositPaymentDate(e.target.value)}
+                                                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-xs font-semibold text-slate-600">
+                                                    Transaction Reference ID (Auto-Generated)
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
+                                                    className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
+                                                    title="Generate new reference code"
+                                                >
+                                                    <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
+                                                </button>
+                                            </div>
+                                            <div className="relative flex items-center">
+                                                <input
+                                                    type="text"
+                                                    value={depositPaymentRef}
+                                                    onChange={e => setDepositPaymentRef(e.target.value)}
+                                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(depositPaymentRef);
+                                                        toast.success('Reference ID copied');
+                                                    }}
+                                                    className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
+                                                    title="Copy Reference ID"
+                                                >
+                                                    <Copy className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400">
+                                        Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
+                                    </p>
                                 </div>
-                                <p className="text-[10px] text-slate-400">
-                                    Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
-                                </p>
-                            </div>
+                            )}
                         </div>
 
                         {/* Footer */}
@@ -2232,15 +2263,17 @@ export default function Clients() {
                                 Close
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={handleRecordDepositPayment}
-                                disabled={isRecordingPayment || !depositPaymentAmount || Number(depositPaymentAmount) <= 0}
-                                className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-                            >
-                                {isRecordingPayment ? <RotateCcw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                                Confirm Payment Received
-                            </button>
+                            {depositModal.depositStatus !== 'collected' && (
+                                <button
+                                    type="button"
+                                    onClick={handleRecordDepositPayment}
+                                    disabled={isRecordingPayment || !depositPaymentAmount || Number(depositPaymentAmount) <= 0}
+                                    className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                                >
+                                    {isRecordingPayment ? <RotateCcw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                    Confirm Payment Received
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

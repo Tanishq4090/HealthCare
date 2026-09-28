@@ -431,9 +431,9 @@ export default function HR() {
 
                         if (latestPaidDate) {
                             latestPaidThrough = latestPaidDate;
-                            const nextDay = new Date(latestPaidDate + 'T00:00:00');
-                            nextDay.setDate(nextDay.getDate() + 1);
-                            effectiveStartDateStr = nextDay.toISOString().split('T')[0];
+                            const [py, pm, pd] = latestPaidDate.split('-').map(Number);
+                            const nextDay = new Date(py, pm - 1, pd + 1);
+                            effectiveStartDateStr = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`;
                         }
                     }
 
