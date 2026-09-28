@@ -173,6 +173,7 @@ export default function Dashboard() {
                 { data: webBookingsData },
                 { data: assignmentsData },
                 { data: attendanceData },
+                { data: servicesData },
             ] = await Promise.all([
                 supabase.from('crm_leads').select('id, name, pipeline_stage').is('deleted_at', null),
                 supabase.from('employees').select('id, full_name, status, rate_10hr, rate_24hr'),
@@ -186,7 +187,8 @@ export default function Dashboard() {
                     .order('created_at', { ascending: false })
                     .limit(6),
                 supabase.from('worker_assignments').select('id, client_id, employee_id, assignment_status, start_date, end_date, hours_per_day, daily_rate_worker, clients(client_name)').neq('assignment_status', 'cancelled'),
-                supabase.from('attendance').select('worker_id, status, hours_worked, is_half_day, duty_date, assignment_id')
+                supabase.from('attendance').select('worker_id, status, hours_worked, is_half_day, duty_date, assignment_id'),
+                supabase.from('services').select('id, client_id, status, deposit_amount, deposit_status'),
             ]);
 
             // 1. Leads
@@ -202,9 +204,14 @@ export default function Dashboard() {
             // 3. Collections
             const allPayments = payments || [];
             const totalCollections = allPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-            const depositsHeld = allPayments
-                .filter(p => p.payment_type === 'deposit')
-                .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+            
+            // Only count deposits currently held in reserve (exclude services where deposit was settled on final bill)
+            const activeServicesWithDeposit = (servicesData || []).filter(s => s.deposit_status === 'collected');
+            const depositsHeld = activeServicesWithDeposit.length > 0
+                ? activeServicesWithDeposit.reduce((sum, s) => sum + (Number(s.deposit_amount) || 0), 0)
+                : allPayments
+                    .filter(p => p.payment_type === 'deposit')
+                    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
             const thisMonthPayments = allPayments.filter(p => {
                 if (!p.payment_date) return false;
@@ -463,6 +470,8 @@ export default function Dashboard() {
 
         const sub = supabase.channel('dashboard_realtime')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => fetchDashboardData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => fetchDashboardData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'service_bills' }, () => fetchDashboardData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll' }, () => fetchDashboardData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_leads' }, () => fetchDashboardData())
             .subscribe();
