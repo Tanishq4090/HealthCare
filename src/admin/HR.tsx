@@ -339,7 +339,17 @@ export default function HR() {
             setServicesList(servicesData || []);
 
             // Build payroll items: prefer official DB records, fall back to synthetic items only if no DB payroll exists for that worker & client/service
-            const syntheticItems = (assignmentsData || [])
+            // Deduplicate assignments so the same employee is not treated as having multiple concurrent active deployments for the same client
+            const seenActiveWorkerClient = new Set<string>();
+            const dedupedAssignmentsData = (assignmentsData || []).filter((a: any) => {
+                if (a.assignment_status !== 'active') return true;
+                const key = `${a.employee_id}_${a.client_id || a.clients?.id}`;
+                if (seenActiveWorkerClient.has(key)) return false;
+                seenActiveWorkerClient.add(key);
+                return true;
+            });
+
+            const syntheticItems = dedupedAssignmentsData
                 .filter((a: any) => {
                     const isActiveOrCompleted = a.assignment_status === 'active' || a.assignment_status === 'completed';
                     if (!isActiveOrCompleted) return false;
@@ -2216,7 +2226,9 @@ export default function HR() {
                                             });
                                         }
                                         const group = map.get(clientId)!;
-                                        group.assignments.push(asgn);
+                                        if (!group.assignments.some(existing => existing.employee_id === asgn.employee_id)) {
+                                            group.assignments.push(asgn);
+                                        }
                                         if (assignedTime > group.latestAssignedAt) {
                                             group.latestAssignedAt = assignedTime;
                                         }

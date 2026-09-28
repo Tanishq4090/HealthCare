@@ -227,6 +227,13 @@ export async function assignWorkerToClient(
     resolvedDepositAmount = Number(quote?.deposit || leadRates?.deposit_amount || leadRates?.quoted_monthly_rate || leadRates?.estimated_value_monthly) || 15000;
   }
 
+  // ── Step 0: Cancel any stale active assignment for this client/worker to prevent duplicates ──
+  await supabase
+    .from('worker_assignments')
+    .update({ assignment_status: 'cancelled', notes: 'Superseded by new assignment' })
+    .eq('client_id', clientUuid)
+    .eq('assignment_status', 'active');
+
   // ── Step 1: Create assignment record ──────────────────
   const { data: assignment, error: assignError } = await supabase
     .from('worker_assignments')
