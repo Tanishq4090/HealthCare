@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, UserMinus } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Loader2, Users, ChevronLeft, ChevronRight, AlertTriangle, UserMinus, Lock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { format, eachDayOfInterval, parseISO, isAfter, isToday, isBefore, startOfDay } from 'date-fns';
 
 interface AttendanceDay {
   date: string;
-  status: 'Present' | 'Absent' | 'Half Day' | null;
+  status: 'Present' | 'Absent' | 'Half Day' | 'Blocked' | null;
   attendanceId: string | null;
   isHalfDay: boolean;
+  isBlocked?: boolean;
+  blockedReason?: string;
 }
 
 interface AssignmentAttendancePanelProps {
@@ -97,14 +99,43 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
   const onSummaryChangeRef = useRef(onSummaryChange);
   useEffect(() => { onSummaryChangeRef.current = onSummaryChange; }, [onSummaryChange]);
 
-  const daysPresent = days.filter(d => d.status === 'Present').length;
-  const daysHalf = days.filter(d => d.status === 'Half Day').length;
-  const daysAbsent = days.filter(d => d.status === 'Absent').length;
+  const daysPresent = days.filter(d => d.status === 'Present' && !d.isBlocked).length;
+  const daysHalf = days.filter(d => d.status === 'Half Day' && !d.isBlocked).length;
+  const daysAbsent = days.filter(d => d.status === 'Absent' && !d.isBlocked).length;
   const effectiveDays = daysPresent + daysHalf * 0.5;
+
+  const markableAllDays = useMemo(() => {
+    return allDays.filter(d => {
+      const ds = format(d, 'yyyy-MM-dd');
+      return !days.find(x => x.date === ds)?.isBlocked;
+    });
+  }, [allDays, days]);
+
+  const blockedDaysCount = useMemo(() => {
+    return days.filter(d => d.isBlocked).length;
+  }, [days]);
 
   const fetchAttendance = useCallback(async () => {
     setIsLoading(true);
     try {
+      // 1. Fetch past assignments for this worker (completed/relieved/ended)
+      const { data: pastAssignments } = await supabase
+        .from('worker_assignments')
+        .select('id, start_date, end_date')
+        .eq('employee_id', assignment.employee_id)
+        .neq('id', assignment.id)
+        .in('assignment_status', ['completed', 'relieved', 'ended']);
+
+      const pastAssignmentIds = new Set((pastAssignments || []).map((p: any) => p.id));
+
+      // 2. Fetch past final payroll records for this worker
+      const { data: pastPayrolls } = await supabase
+        .from('payroll')
+        .select('period_end, period_start')
+        .eq('worker_id', assignment.employee_id)
+        .eq('type', 'final');
+
+      // 3. Fetch attendance records for this worker in the interval
       const { data, error } = await supabase
         .from('attendance')
         .select('id, duty_date, status, is_half_day, assignment_id')
@@ -114,41 +145,99 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
       if (error) throw error;
 
-      const attendanceMap: Record<string, typeof data[0]> = {};
-      (data || []).forEach(r => { attendanceMap[r.duty_date] = r; });
+      const currentAssignmentAttMap: Record<string, any> = {};
+      const priorAssignmentAttMap: Record<string, any> = {};
 
-      const mapped = allDays.map(d => {
+      (data || []).forEach((r: any) => {
+        if (r.assignment_id === assignment.id) {
+          currentAssignmentAttMap[r.duty_date] = r;
+        } else if (r.assignment_id && r.assignment_id !== assignment.id) {
+          priorAssignmentAttMap[r.duty_date] = r;
+        } else if (pastAssignmentIds.has(r.assignment_id)) {
+          priorAssignmentAttMap[r.duty_date] = r;
+        } else {
+          // If assignment_id is null, check if date falls in past assignments
+          const fallsInPast = (pastAssignments || []).some((p: any) => {
+            const pStart = p.start_date ? p.start_date.split('T')[0] : null;
+            const pEnd = p.end_date ? p.end_date.split('T')[0] : null;
+            return pStart && pEnd && r.duty_date >= pStart && r.duty_date <= pEnd;
+          });
+          if (fallsInPast) {
+            priorAssignmentAttMap[r.duty_date] = r;
+          } else {
+            currentAssignmentAttMap[r.duty_date] = r;
+          }
+        }
+      });
+
+      const mapped: AttendanceDay[] = allDays.map(d => {
         const dateStr = format(d, 'yyyy-MM-dd');
-        const rec = attendanceMap[dateStr];
+        const currentRec = currentAssignmentAttMap[dateStr];
+        const priorRec = priorAssignmentAttMap[dateStr];
+
+        // Check if covered by past completed assignment or past final payroll
+        const isCoveredByPastAssignment = (pastAssignments || []).some((p: any) => {
+          const pStart = p.start_date ? p.start_date.split('T')[0] : null;
+          const pEnd = p.end_date ? p.end_date.split('T')[0] : null;
+          return pStart && pEnd && dateStr >= pStart && dateStr <= pEnd;
+        });
+
+        const isCoveredByPastPayroll = (pastPayrolls || []).some((p: any) => {
+          const pStart = p.period_start ? p.period_start.split('T')[0] : null;
+          const pEnd = p.period_end ? p.period_end.split('T')[0] : null;
+          return pEnd && dateStr <= pEnd && (!pStart || dateStr >= pStart);
+        });
+
+        const isBlocked = !currentRec && (!!priorRec || isCoveredByPastAssignment || isCoveredByPastPayroll);
+
+        if (isBlocked) {
+          return {
+            date: dateStr,
+            status: 'Blocked',
+            attendanceId: null,
+            isHalfDay: false,
+            isBlocked: true,
+            blockedReason: priorRec
+              ? `Already marked ${priorRec.status || 'Present'} in prior shift on ${dateStr}`
+              : `Worker was already relieved on ${dateStr} in a prior duty`,
+          };
+        }
+
         return {
           date: dateStr,
-          status: rec
-            ? (rec.is_half_day ? 'Half Day' : (rec.status === 'present' || rec.status === 'Present' || rec.status === 'On Duty') ? 'Present' : 'Absent') as AttendanceDay['status']
+          status: currentRec
+            ? (currentRec.is_half_day ? 'Half Day' : (currentRec.status === 'present' || currentRec.status === 'Present' || currentRec.status === 'On Duty') ? 'Present' : 'Absent') as AttendanceDay['status']
             : null,
-          attendanceId: rec?.id || null,
-          isHalfDay: rec?.is_half_day || false,
+          attendanceId: currentRec?.id || null,
+          isHalfDay: currentRec?.is_half_day || false,
+          isBlocked: false,
         };
       });
 
       setDays(mapped);
       onSummaryChangeRef.current?.({
-        daysPresent: mapped.filter(d => d.status === 'Present').length,
-        daysAbsent: mapped.filter(d => d.status === 'Absent').length,
-        daysHalf: mapped.filter(d => d.status === 'Half Day').length,
+        daysPresent: mapped.filter(d => d.status === 'Present' && !d.isBlocked).length,
+        daysAbsent: mapped.filter(d => d.status === 'Absent' && !d.isBlocked).length,
+        daysHalf: mapped.filter(d => d.status === 'Half Day' && !d.isBlocked).length,
       });
     } catch (err: any) {
       toast.error('Failed to load attendance: ' + err.message);
     } finally {
       setIsLoading(false);
     }
-  }, [assignment.employee_id, startDate, endDate, allDays]);
+  }, [assignment.employee_id, assignment.id, startDate, endDate, allDays]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
   const markDay = async (dateStr: string, status: 'Present' | 'Absent' | 'Half Day' | null) => {
+    const existing = days.find(d => d.date === dateStr);
+    if (existing?.isBlocked) {
+      toast.warning('This date is blocked because it was already worked and settled in a prior assignment.');
+      return;
+    }
+
     setMarkingDate(dateStr);
     try {
-      const existing = days.find(d => d.date === dateStr);
       const isHalfDay = status === 'Half Day';
       const dbStatus = status === null ? null : (status === 'Half Day' ? 'Present' : status);
 
@@ -159,6 +248,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         } else {
           await supabase.from('attendance').delete()
             .eq('worker_id', assignment.employee_id)
+            .eq('assignment_id', assignment.id)
             .eq('duty_date', dateStr);
         }
       } else {
@@ -228,8 +318,8 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         console.warn('Silent payroll sync skipped:', e);
       }
 
-      const prevMarked = days.filter(d => d.status !== null).length;
-      if (status !== null && !isOpenEnded && prevMarked + 1 >= allDays.length) setShowCompletionPopup(true);
+      const prevMarked = days.filter(d => d.status !== null && !d.isBlocked).length;
+      if (status !== null && !isOpenEnded && prevMarked + 1 >= markableAllDays.length) setShowCompletionPopup(true);
     } catch (err: any) {
       toast.error('Failed to update attendance: ' + err.message);
     } finally {
@@ -243,10 +333,14 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
     try {
       const unmarkedPast = pastDays.filter(d => {
         const ds = format(d, 'yyyy-MM-dd');
-        return !days.find(x => x.date === ds && x.status !== null);
+        const day = days.find(x => x.date === ds);
+        return !day?.isBlocked && day?.status === null;
       });
 
-      if (unmarkedPast.length === 0) { toast.success('All past days already marked!', { id: 'bulk-assign' }); return; }
+      if (unmarkedPast.length === 0) {
+        toast.success(blockedDaysCount > 0 ? 'All markable past days already marked (blocked dates preserved)!' : 'All past days already marked!', { id: 'bulk-assign' });
+        return;
+      }
 
       const inserts = unmarkedPast.map(d => {
         const dateStr = format(d, 'yyyy-MM-dd');
@@ -371,7 +465,8 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
     }
   };
 
-  const getDayColor = (status: AttendanceDay['status']) => {
+  const getDayColor = (status: AttendanceDay['status'], isBlocked?: boolean) => {
+    if (isBlocked || status === 'Blocked') return 'bg-amber-50/80 border-amber-200 text-amber-900';
     if (status === 'Present') return 'bg-emerald-100 border-emerald-300 text-emerald-800';
     if (status === 'Half Day') return 'bg-amber-100 border-amber-300 text-amber-800';
     if (status === 'Absent') return 'bg-red-100 border-red-300 text-red-800';
@@ -436,8 +531,8 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             <p className="text-[11px] text-slate-400 mt-0.5">
               {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Open-ended'}
               {isOpenEnded
-                ? ` · ${allDays.length} ${allDays.length === 1 ? 'day' : 'days'} to mark so far`
-                : ` (${allDays.length} ${allDays.length === 1 ? 'day' : 'days'} assigned)`}
+                ? ` · ${markableAllDays.length} ${markableAllDays.length === 1 ? 'day' : 'days'} to mark so far${blockedDaysCount > 0 ? ` (${blockedDaysCount} blocked from prior shift)` : ''}`
+                : ` (${markableAllDays.length} ${markableAllDays.length === 1 ? 'day' : 'days'} assigned${blockedDaysCount > 0 ? `, ${blockedDaysCount} blocked` : ''})`}
             </p>
           </div>
         </div>
@@ -452,8 +547,13 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
                 <XCircle className="w-3.5 h-3.5" />{daysAbsent} absent
               </span>
             )}
+            {blockedDaysCount > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                <Lock className="w-3.5 h-3.5 text-amber-600" />{blockedDaysCount} blocked (prior shift)
+              </span>
+            )}
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
-              {days.filter(d => d.status !== null).length}/{allDays.length} {isOpenEnded ? 'days logged' : 'marked'}
+              {days.filter(d => d.status !== null && !d.isBlocked).length}/{markableAllDays.length} {isOpenEnded ? 'days logged' : 'marked'}
             </span>
           </div>
           {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -514,11 +614,22 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
                 {visibleDays.map(d => {
                   const dateStr = format(d, 'yyyy-MM-dd');
                   const dayData = days.find(x => x.date === dateStr);
+                  const isBlocked = !!dayData?.isBlocked;
                   const isFuture = isAfter(d, today) && !isToday(d);
                   const isMarking = markingDate === dateStr;
 
                   return (
-                    <div key={dateStr} className={`relative rounded-lg border p-2 text-center transition-all ${isFuture ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-100' : 'cursor-pointer hover:scale-105'} ${getDayColor(dayData?.status || null)}`}>
+                    <div
+                      key={dateStr}
+                      title={isBlocked ? (dayData?.blockedReason || 'Already worked & settled in prior assignment on this date') : undefined}
+                      className={`relative rounded-lg border p-2 text-center transition-all ${
+                        isBlocked
+                          ? 'cursor-not-allowed bg-amber-50/70 border-amber-200 text-amber-900 ring-1 ring-amber-300/50'
+                          : isFuture
+                          ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-100'
+                          : 'cursor-pointer hover:scale-105'
+                      } ${getDayColor(dayData?.status || null, isBlocked)}`}
+                    >
                       <div className="text-[10px] font-bold uppercase tracking-wide">{format(d, 'EEE')}</div>
                       <div className="text-sm font-bold mt-0.5">{format(d, 'd')}</div>
                       <div className="text-[9px] text-current/70">{format(d, 'MMM')}</div>
@@ -527,13 +638,20 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
                         </div>
                       )}
-                      {!isFuture && !isMarking && (
+                      {isBlocked ? (
+                        <div className="mt-1.5 flex flex-col items-center justify-center">
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100/90 border border-amber-300/80 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5 text-amber-600" /> Blocked
+                          </span>
+                          <span className="text-[8px] text-amber-600/90 font-medium mt-0.5">Prior Shift</span>
+                        </div>
+                      ) : !isFuture && !isMarking ? (
                         <div className="mt-1.5 flex justify-center gap-1">
                           <button title="Present" onClick={() => markDay(dateStr, dayData?.status === 'Present' ? null : 'Present')} className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-colors ${dayData?.status === 'Present' ? 'bg-emerald-500 text-white' : 'bg-white/60 hover:bg-emerald-200 text-emerald-600'}`}>P</button>
                           <button title="Half Day" onClick={() => markDay(dateStr, dayData?.status === 'Half Day' ? null : 'Half Day')} className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-colors ${dayData?.status === 'Half Day' ? 'bg-amber-500 text-white' : 'bg-white/60 hover:bg-amber-200 text-amber-600'}`}>H</button>
                           <button title="Absent" onClick={() => markDay(dateStr, dayData?.status === 'Absent' ? null : 'Absent')} className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-colors ${dayData?.status === 'Absent' ? 'bg-red-500 text-white' : 'bg-white/60 hover:bg-red-200 text-red-500'}`}>A</button>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -556,17 +674,21 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
               <span className="text-slate-500 text-xs">{isOpenEnded ? 'Attendance Status' : 'Completion'}</span>
               <p className="font-bold text-slate-900">
                 {isOpenEnded ? (
-                  days.filter(d => d.status !== null).length >= allDays.length ? (
+                  markableAllDays.length === 0 ? (
+                    <span className="text-amber-600 flex items-center gap-1 font-bold text-xs">
+                      <Lock className="w-3.5 h-3.5" /> All days so far completed in prior shift
+                    </span>
+                  ) : days.filter(d => d.status !== null && !d.isBlocked).length >= markableAllDays.length ? (
                     <span className="text-emerald-600 flex items-center gap-1 font-bold">
                       <CheckCircle2 className="w-4 h-4" /> Up to Date
                     </span>
                   ) : (
                     <span className="text-amber-600 font-bold">
-                      {allDays.length - days.filter(d => d.status !== null).length} days unlogged
+                      {markableAllDays.length - days.filter(d => d.status !== null && !d.isBlocked).length} days unlogged
                     </span>
                   )
                 ) : (
-                  `${Math.round((days.filter(d => d.status !== null).length / Math.max(allDays.length, 1)) * 100)}%`
+                  `${Math.round((days.filter(d => d.status !== null && !d.isBlocked).length / Math.max(markableAllDays.length, 1)) * 100)}%`
                 )}
               </p>
             </div>

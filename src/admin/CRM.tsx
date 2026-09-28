@@ -2597,6 +2597,63 @@ export default function CRM() {
             }
         }
 
+        // Check if THIS worker was previously assigned and released/completed for this client
+        let latestLockedDate: string | null = null;
+        if (worker?.id && staffPickerTargetLead?.id) {
+            const { data: pastAssignments } = await supabase
+                .from('worker_assignments')
+                .select('id, end_date, start_date')
+                .eq('employee_id', worker.id)
+                .eq('client_id', staffPickerTargetLead.id)
+                .in('assignment_status', ['completed', 'relieved', 'ended']);
+
+            (pastAssignments || []).forEach((p: any) => {
+                const ed = p.end_date ? p.end_date.split('T')[0] : null;
+                if (ed && (!latestLockedDate || ed > latestLockedDate)) {
+                    latestLockedDate = ed;
+                }
+            });
+
+            const pastIds = (pastAssignments || []).map((p: any) => p.id);
+            if (pastIds.length > 0) {
+                const { data: attLogs } = await supabase
+                    .from('attendance')
+                    .select('duty_date')
+                    .eq('worker_id', worker.id)
+                    .in('assignment_id', pastIds)
+                    .order('duty_date', { ascending: false })
+                    .limit(1);
+                if (attLogs?.[0]?.duty_date && (!latestLockedDate || attLogs[0].duty_date > latestLockedDate)) {
+                    latestLockedDate = attLogs[0].duty_date;
+                }
+            }
+
+            // Check locked final payroll records
+            const { data: finalPayrolls } = await supabase
+                .from('payroll')
+                .select('period_end')
+                .eq('worker_id', worker.id)
+                .eq('type', 'final')
+                .order('period_end', { ascending: false })
+                .limit(1);
+            if (finalPayrolls?.[0]?.period_end && (!latestLockedDate || finalPayrolls[0].period_end > latestLockedDate)) {
+                latestLockedDate = finalPayrolls[0].period_end;
+            }
+        }
+
+        if (latestLockedDate) {
+            const d = new Date(latestLockedDate + 'T00:00:00');
+            d.setDate(d.getDate() + 1);
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const nextAllowed = `${yyyy}-${mm}-${dd}`;
+            if (!autoStartDate || autoStartDate <= latestLockedDate) {
+                autoStartDate = nextAllowed;
+            }
+            toast.info(`Worker was previously relieved up to ${latestLockedDate}. Next assignment can only start from ${nextAllowed}.`);
+        }
+
         // Always default to ongoing (empty string / null)
         setServiceType('date_range');
         setServiceStartDate(autoStartDate);

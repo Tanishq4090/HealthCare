@@ -232,7 +232,53 @@ export async function assignWorkerToClient(
     .from('worker_assignments')
     .update({ assignment_status: 'cancelled', notes: 'Superseded by new assignment' })
     .eq('client_id', clientUuid)
+    .eq('employee_id', employeeUuid)
     .eq('assignment_status', 'active');
+
+  // ── Step 0.9: Check latest locked date if worker was previously relieved for this client ──
+  let resolvedStartDate = billingData?.startDate || new Date().toISOString();
+  if (employeeUuid && clientUuid) {
+    const { data: pastAssignments } = await supabase
+      .from('worker_assignments')
+      .select('id, end_date, start_date')
+      .eq('employee_id', employeeUuid)
+      .eq('client_id', clientUuid)
+      .in('assignment_status', ['completed', 'relieved', 'ended']);
+
+    let latestLockedDate: string | null = null;
+    (pastAssignments || []).forEach((p: any) => {
+      const ed = p.end_date ? p.end_date.split('T')[0] : null;
+      if (ed && (!latestLockedDate || ed > latestLockedDate)) {
+        latestLockedDate = ed;
+      }
+    });
+
+    const pastIds = (pastAssignments || []).map((p: any) => p.id);
+    if (pastIds.length > 0) {
+      const { data: attLogs } = await supabase
+        .from('attendance')
+        .select('duty_date')
+        .eq('worker_id', employeeUuid)
+        .in('assignment_id', pastIds)
+        .order('duty_date', { ascending: false })
+        .limit(1);
+      if (attLogs?.[0]?.duty_date && (!latestLockedDate || attLogs[0].duty_date > latestLockedDate)) {
+        latestLockedDate = attLogs[0].duty_date;
+      }
+    }
+
+    if (latestLockedDate) {
+      const reqStart = resolvedStartDate.split('T')[0];
+      if (reqStart <= latestLockedDate) {
+        const d = new Date(latestLockedDate + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        resolvedStartDate = `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
+      }
+    }
+  }
 
   // ── Step 1: Create assignment record ──────────────────
   const { data: assignment, error: assignError } = await supabase
@@ -244,7 +290,7 @@ export async function assignWorkerToClient(
       notes:             notes?.trim() ?? null,
       deposit_paid:      resolvedDepositPaid,
       deposit_amount:    resolvedDepositAmount,
-      start_date:        billingData?.startDate || new Date().toISOString(),
+      start_date:        resolvedStartDate,
       end_date:          billingData?.endDate ? billingData.endDate : null,
       service_type:      billingData?.serviceType || 'date_range',
       hours_per_day:     billingData?.hoursPerDay ?? 10,
