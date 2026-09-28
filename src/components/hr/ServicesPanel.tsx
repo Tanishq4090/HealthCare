@@ -9,13 +9,14 @@
  * - Trigger monthly billing batch
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
     Briefcase, Users, Calendar, IndianRupee, UserMinus,
     XCircle, Play, Loader2, ChevronDown, ChevronRight, RefreshCw,
     AlertTriangle, CheckCircle2, Clock, Search, Plus, FileText, Download,
-    Send, X, ShieldCheck, MessageSquare, Check,
+    Send, X, ShieldCheck, MessageSquare, Check, Sparkles,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
@@ -31,12 +32,12 @@ import { calculateClientServiceDaysFromAttendance } from '../../utils/billingRat
 function statusBadge(status: string) {
     const map: Record<string, { label: string; className: string }> = {
         active: { label: 'Active', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-        ended: { label: 'Ended', className: 'bg-slate-100 text-slate-500 border-slate-200' },
+        ended: { label: 'Completed', className: 'bg-slate-100 text-slate-700 border-slate-300 font-semibold' },
     };
     const { label, className } = map[status] ?? map.active;
     return (
         <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${className}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
             {label}
         </span>
     );
@@ -63,12 +64,13 @@ export default function ServicesPanel({
     onPreviewInvoice,
     onRecordCollection,
 }: ServicesPanelProps) {
+    const navigate = useNavigate();
     const [services, setServices] = useState<ServiceWithDetails[]>([]);
     const [paidClients, setPaidClients] = useState<Set<string>>(new Set());
     const [isLoading, setIsLoading] = useState(true);
     const [expandedService, setExpandedService] = useState<string | null>(null);
     const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'ended'>('active');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'ended'>('all');
     const [releasingId, setReleasingId] = useState<string | null>(null);
     const [endingServiceId, setEndingServiceId] = useState<string | null>(null);
     const [showEndConfirm, setShowEndConfirm] = useState<string | null>(null);
@@ -91,11 +93,7 @@ export default function ServicesPanel({
         setIsLoading(true);
         try {
             const [servicesData, paymentsRes] = await Promise.all([
-                statusFilter === 'all'
-                    ? getAllServices()
-                    : statusFilter === 'active'
-                        ? getActiveServices()
-                        : (await getAllServices()).filter(s => s.status === 'ended'),
+                getAllServices(),
                 supabase.from('payments').select('client_name').eq('payment_type', 'service'),
             ]);
 
@@ -107,7 +105,7 @@ export default function ServicesPanel({
         } finally {
             setIsLoading(false);
         }
-    }, [statusFilter]);
+    }, []);
 
     useEffect(() => { fetchServices(); }, [fetchServices]);
 
@@ -130,12 +128,33 @@ export default function ServicesPanel({
         };
     }, [fetchServices]);
 
+    // Map client_id -> array of services sorted chronologically (Cycle 1, Cycle 2, ...)
+    const clientCycleMap = useMemo(() => {
+        const map = new Map<string, ServiceWithDetails[]>();
+        services.forEach(s => {
+            const cId = s.client_id || s.lead_id || s.clients?.client_name?.toLowerCase() || s.id;
+            const list = map.get(cId) || [];
+            list.push(s);
+            map.set(cId, list);
+        });
+        map.forEach(list => {
+            list.sort((a, b) => new Date(a.start_date || a.created_at || 0).getTime() - new Date(b.start_date || b.created_at || 0).getTime());
+        });
+        return map;
+    }, [services]);
+
     const filtered = services.filter(s => {
         if (!search) return true;
         const q = search.toLowerCase();
         const clientName = s.clients?.client_name?.toLowerCase() || '';
-        return clientName.includes(q) || s.service_type?.toLowerCase().includes(q);
+        const workerNames = (s.service_worker_assignments || [])
+            .map(a => a.employees?.full_name?.toLowerCase() || '')
+            .join(' ');
+        return clientName.includes(q) || s.service_type?.toLowerCase().includes(q) || workerNames.includes(q);
     });
+
+    const activeServices = filtered.filter(s => s.status === 'active');
+    const endedServices = filtered.filter(s => s.status === 'ended');
 
     // ── Actions ─────────────────────────────────────────────
 
@@ -396,6 +415,443 @@ export default function ServicesPanel({
         }
     };
 
+    // ── Render Card Helper ────────────────────────────────────
+
+    const renderServiceCard = (service: ServiceWithDetails) => {
+        const isExpanded = expandedService === service.id;
+        const activeWorkers = (service.service_worker_assignments || []).filter(a => !a.end_date);
+        const allWorkers = service.service_worker_assignments || [];
+        
+        const startDate = service.start_date ? new Date(service.start_date + 'T00:00:00') : null;
+        const endDate = service.end_date ? new Date(service.end_date + 'T00:00:00') : null;
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        const isUpcoming = startDate ? startDate.getTime() > today.getTime() : false;
+        const isOngoing = !service.end_date;
+
+        let durationBadgeText = 'Ongoing';
+        let durationTitle = 'Ongoing';
+        let durationRateNote = 'Full month rate applies';
+
+        if (isUpcoming && startDate) {
+            const diffDays = Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            durationBadgeText = `Starts in ${diffDays}d`;
+            durationTitle = `Starts ${format(startDate, 'dd MMM')}`;
+            durationRateNote = isOngoing ? 'Open-ended (Full month rate)' : 'Scheduled service';
+        } else if (isOngoing && startDate) {
+            const daysActive = Math.max(1, Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+            durationBadgeText = `${daysActive} days (Ongoing)`;
+            durationTitle = `${daysActive} days`;
+            durationRateNote = 'Open-ended (Full month rate)';
+        } else if (startDate && endDate) {
+            const totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+            durationBadgeText = `${totalDays} days (Ended)`;
+            durationTitle = `${totalDays} days`;
+            durationRateNote = totalDays >= 30 ? 'Full month rate applies' : 'Short-term rate applies';
+        }
+
+        const clientKey = service.client_id || service.lead_id || service.clients?.client_name?.toLowerCase() || service.id;
+        const clientCycleList = clientCycleMap.get(clientKey) || [service];
+        const cycleIndex = clientCycleList.findIndex(s => s.id === service.id);
+        const cycleNumber = cycleIndex !== -1 ? cycleIndex + 1 : 1;
+        const hasMultipleCycles = clientCycleList.length > 1;
+
+        return (
+            <div key={service.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all hover:border-slate-300">
+                {/* Service Header */}
+                <button
+                    onClick={() => setExpandedService(isExpanded ? null : service.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-slate-50/80 transition-colors text-left"
+                >
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0 ${
+                            service.status === 'active'
+                                ? 'bg-gradient-to-br from-[#1AA6A8] to-[#148B8D]'
+                                : 'bg-gradient-to-br from-slate-400 to-slate-600'
+                        }`}>
+                            {(service.clients?.client_name || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-900 text-sm truncate">
+                                    {service.clients?.client_name || 'Unknown Client'}
+                                </p>
+                                {statusBadge(service.status)}
+                                {hasMultipleCycles && (
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                        service.status === 'active'
+                                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
+                                        {service.status === 'active' && <Sparkles className="w-2.5 h-2.5 text-purple-600" />}
+                                        Cycle #{cycleNumber}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
+                                <span className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {service.start_date ? format(new Date(service.start_date + 'T00:00:00'), 'dd MMM yyyy') : '—'}
+                                    {service.end_date && ` → ${format(new Date(service.end_date + 'T00:00:00'), 'dd MMM yyyy')}`}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    <Users className="w-3 h-3" />
+                                    {service.status === 'active' 
+                                        ? `${activeWorkers.length} worker${activeWorkers.length !== 1 ? 's' : ''}`
+                                        : `${allWorkers.length} worker${allWorkers.length !== 1 ? 's' : ''} (released)`
+                                    }
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {durationBadgeText}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                        {/* Financial Action Buttons */}
+                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                            {onPrepareInvoice && service.status === 'active' && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onPrepareInvoice(service);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
+                                >
+                                    <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
+                                </button>
+                            )}
+                            {onPrepareInvoice && service.status === 'ended' && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const finalBill = service.service_bills?.find(b => b.type === 'final');
+                                        onPrepareInvoice(service, finalBill);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-50 text-[#1AA6A8] hover:bg-teal-100 border border-teal-200 shadow-2xs transition-colors"
+                                >
+                                    <FileText className="w-3.5 h-3.5 text-[#1AA6A8]" /> Final Invoice
+                                </button>
+                            )}
+                            {service.status === 'ended' && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const cId = service.client_id || service.lead_id || '';
+                                        navigate(`/admin/clients?restart=${cId}`);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 shadow-2xs transition-colors"
+                                    title="Start a new service cycle for this client"
+                                >
+                                    <Plus className="w-3.5 h-3.5" /> Start New Service
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="text-right hidden sm:block">
+                            <p className="text-xs text-slate-500">Rates</p>
+                            <p className="text-sm font-bold text-slate-700">
+                                {formatCurrency(service.complete_month_daily_rate)}/day
+                            </p>
+                        </div>
+                        <div className="text-right hidden sm:block">
+                            <p className="text-xs text-slate-500">Deposit</p>
+                            <p className="text-sm font-bold text-slate-700">
+                                {formatCurrency(service.deposit_amount)}
+                            </p>
+                        </div>
+                        {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+                    </div>
+                </button>
+
+                {/* Expanded Details */}
+                {isExpanded && (
+                    <div className="border-t border-slate-100 p-4 space-y-4">
+                        {/* Rate Summary */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3 bg-slate-50 rounded-lg">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Full Month Rate</p>
+                                <p className="text-lg font-black text-slate-800 mt-0.5">{formatCurrency(service.complete_month_daily_rate)}<span className="text-xs font-normal text-slate-400">/day</span></p>
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-lg">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Short-Term Rate</p>
+                                <p className="text-lg font-black text-slate-800 mt-0.5">{formatCurrency(service.incomplete_month_daily_rate)}<span className="text-xs font-normal text-slate-400">/day</span></p>
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-lg">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deposit</p>
+                                <p className="text-lg font-black text-slate-800 mt-0.5">{formatCurrency(service.deposit_amount)}</p>
+                                <p className="text-[10px] text-slate-400 capitalize">{service.deposit_status}</p>
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-lg">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Duration</p>
+                                <p className="text-lg font-black text-slate-800 mt-0.5">{durationTitle}</p>
+                                <p className="text-[10px] text-slate-400">{durationRateNote}</p>
+                            </div>
+                        </div>
+
+                        {/* Workers Table */}
+                        <div>
+                            <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                                Worker Assignments ({allWorkers.length})
+                            </h3>
+                            {allWorkers.length === 0 ? (
+                                <p className="text-sm text-slate-400 py-3">No workers assigned yet.</p>
+                            ) : (
+                                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                                                <th className="text-left px-3 py-2">Worker</th>
+                                                <th className="text-left px-3 py-2">Start</th>
+                                                <th className="text-left px-3 py-2">End</th>
+                                                <th className="text-left px-3 py-2">Status</th>
+                                                <th className="text-right px-3 py-2">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {allWorkers.map(asgn => (
+                                                <tr key={asgn.id} className="hover:bg-slate-50">
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-7 h-7 rounded-full bg-[#1AA6A8]/10 flex items-center justify-center text-[#1AA6A8] font-bold text-[10px]">
+                                                                {(asgn.employees?.full_name || '?')[0]}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-semibold text-slate-800 text-xs">{asgn.employees?.full_name || 'Unknown'}</p>
+                                                                <p className="text-[10px] text-slate-400">{asgn.employees?.job_title || ''}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-xs text-slate-600">
+                                                        {asgn.start_date ? format(new Date(asgn.start_date), 'dd MMM yyyy') : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-xs text-slate-600">
+                                                        {asgn.end_date ? format(new Date(asgn.end_date), 'dd MMM yyyy') : <span className="text-emerald-500 font-semibold">Ongoing</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2.5">
+                                                        {asgn.end_date ? (
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Released</span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold text-emerald-600 uppercase">Active</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right">
+                                                        {!asgn.end_date && service.status === 'active' && (
+                                                            <button
+                                                                onClick={() => handleReleaseWorker(asgn.id)}
+                                                                disabled={releasingId === asgn.id}
+                                                                className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
+                                                            >
+                                                                {releasingId === asgn.id
+                                                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                                                    : <UserMinus className="w-3 h-3" />}
+                                                                Release
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {/* Monthly Invoices & Billing History */}
+                            {(() => {
+                                const bills = service.service_bills || [];
+                                const sortedBills = [...bills].sort((a, b) => new Date(b.created_at || b.period_start).getTime() - new Date(a.created_at || a.period_start).getTime());
+
+                                return (
+                                    <div className="mt-5 pt-4 border-t border-slate-100">
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                <FileText className="w-3.5 h-3.5 text-[#1AA6A8]" /> Monthly Invoices & Billing Ledger ({sortedBills.length})
+                                            </h4>
+                                            {sortedBills.length > 0 && (
+                                                <span className="text-xs text-slate-500 font-semibold">
+                                                    Total Billed: {formatCurrency(sortedBills.reduce((sum, b) => sum + (b.amount || 0), 0))}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {sortedBills.length === 0 ? (
+                                            <div className="p-3.5 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                                                No monthly invoices recorded yet. Click <strong className="text-slate-600">"Prepare Invoice"</strong> above to generate and log the first billing cycle.
+                                            </div>
+                                        ) : (
+                                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                                                <table className="w-full text-left text-xs">
+                                                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                        <tr>
+                                                            <th className="px-3 py-2.5">Billing Period</th>
+                                                            <th className="px-3 py-2.5">Days</th>
+                                                            <th className="px-3 py-2.5">Daily Rate</th>
+                                                            <th className="px-3 py-2.5">Amount</th>
+                                                            <th className="px-3 py-2.5">Status</th>
+                                                            <th className="px-3 py-2.5 text-right">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {sortedBills.map((bill, bIdx) => {
+                                                            let noteData: any = {};
+                                                            try {
+                                                                noteData = bill.notes ? JSON.parse(bill.notes) : {};
+                                                            } catch {
+                                                                noteData = {};
+                                                            }
+                                                            const isPaid = noteData.status === 'paid' || bill.deposit_settled === true;
+                                                            const pdfUrl = noteData.invoice_pdf_url;
+                                                            const invNo = noteData.invoice_number || (bill.type === 'final' ? 'FINAL-SETTLEMENT' : `INV-M${bIdx + 1}`);
+
+                                                            return (
+                                                                <tr key={bill.id || bIdx} className="hover:bg-slate-50/60 transition-colors">
+                                                                    <td className="px-3 py-2.5 font-semibold text-slate-800">
+                                                                        <div className="flex flex-col">
+                                                                            <span>
+                                                                                {(() => {
+                                                                                    const actualStart = service.start_date && bill.period_start && new Date(service.start_date) > new Date(bill.period_start)
+                                                                                        ? service.start_date
+                                                                                        : bill.period_start;
+                                                                                    return `${actualStart ? format(new Date(actualStart), 'dd MMM yyyy') : '—'} To ${bill.period_end ? format(new Date(bill.period_end), 'dd MMM yyyy') : '—'}`;
+                                                                                })()}
+                                                                            </span>
+                                                                            <span className="text-[10px] text-slate-400 font-mono">
+                                                                                {invNo} {bill.type === 'final' && '• Final Settlement'}
+                                                                            </span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-3 py-2.5 text-slate-600 font-medium">
+                                                                        {bill.total_days} day{bill.total_days !== 1 ? 's' : ''}
+                                                                    </td>
+                                                                    <td className="px-3 py-2.5 text-slate-600 font-medium">
+                                                                        {formatCurrency(bill.daily_rate_used || 0)}/day
+                                                                    </td>
+                                                                    <td className="px-3 py-2.5 font-bold text-slate-900">
+                                                                        {formatCurrency(bill.amount || 0)}
+                                                                    </td>
+                                                                    <td className="px-3 py-2.5">
+                                                                        {isPaid ? (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Paid
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                                <Clock className="w-3 h-3 text-amber-600" /> Pending Collection
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-3 py-2.5 text-right space-x-1.5 whitespace-nowrap">
+                                                                        {onPreviewInvoice ? (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onPreviewInvoice(service, bill);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs cursor-pointer"
+                                                                                title="Preview Invoice"
+                                                                            >
+                                                                                <FileText className="w-3.5 h-3.5" /> Preview Invoice
+                                                                            </button>
+                                                                        ) : onPrepareInvoice && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onPrepareInvoice(service, bill);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs cursor-pointer"
+                                                                                title="Preview & Generate Invoice for this cycle"
+                                                                            >
+                                                                                <FileText className="w-3.5 h-3.5" /> Preview Invoice
+                                                                            </button>
+                                                                        )}
+                                                                        {pdfUrl && (
+                                                                            <>
+                                                                                <a
+                                                                                    href={pdfUrl}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 px-2 py-1 rounded-md transition-colors"
+                                                                                >
+                                                                                    <Download className="w-3 h-3" /> PDF
+                                                                                </a>
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleSendBillWhatsApp(service, bill);
+                                                                                    }}
+                                                                                    className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md transition-colors"
+                                                                                    title="Send invoice to client on WhatsApp"
+                                                                                >
+                                                                                    <MessageSquare className="w-3 h-3" /> WhatsApp
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                        {!isPaid && onRecordCollection && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onRecordCollection(service, bill);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 rounded-md transition-colors shadow-2xs"
+                                                                            >
+                                                                                <IndianRupee className="w-3 h-3" /> Record Collection
+                                                                            </button>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Lifecycle Action Footer */}
+                        {service.status === 'active' && (
+                            <div className="border-t border-slate-100 pt-3 flex items-center justify-end bg-slate-50/50 -mx-4 -mb-4 p-4 rounded-b-xl">
+                                {showEndConfirm === service.id ? (
+                                    <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                                        <p className="text-xs text-red-700">
+                                            Release all {activeWorkers.length} worker(s) & settle deposit?
+                                        </p>
+                                        <button
+                                            onClick={() => handleEndService(service.id)}
+                                            disabled={endingServiceId === service.id}
+                                            className="px-2.5 py-1 text-xs font-bold bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
+                                        >
+                                            {endingServiceId === service.id
+                                                ? <Loader2 className="w-3 h-3 animate-spin inline" />
+                                                : 'Confirm End'}
+                                        </button>
+                                        <button
+                                            onClick={() => setShowEndConfirm(null)}
+                                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={() => setShowEndConfirm(service.id)}
+                                        className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-2xs"
+                                    >
+                                        <XCircle className="w-4 h-4 text-red-500" /> End Service & Settle
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // ── Render ───────────────────────────────────────────────
 
     return (
@@ -407,7 +863,7 @@ export default function ServicesPanel({
                         <Briefcase className="w-5 h-5 text-[#1AA6A8]" /> Service Lifecycle Manager
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                        {services.filter(s => s.status === 'active').length} active service(s)
+                        <strong className="text-emerald-700">{services.filter(s => s.status === 'active').length} active</strong> service(s) • <strong className="text-slate-600">{services.filter(s => s.status === 'ended').length} completed</strong> service(s)
                     </p>
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
@@ -415,21 +871,48 @@ export default function ServicesPanel({
                         <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                         <input
                             type="text"
-                            placeholder="Search client..."
+                            placeholder="Search client or worker..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-[#1AA6A8] w-44"
+                            className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-[#1AA6A8] w-48"
                         />
                     </div>
-                    <select
-                        value={statusFilter}
-                        onChange={e => setStatusFilter(e.target.value as any)}
-                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-[#1AA6A8] font-medium text-slate-700"
-                    >
-                        <option value="active">Active ({services.filter(s => s.status === 'active').length})</option>
-                        <option value="ended">Ended ({services.filter(s => s.status === 'ended').length})</option>
-                        <option value="all">All Services ({services.length})</option>
-                    </select>
+                    {/* Segmented Section Filter */}
+                    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('all')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                statusFilter === 'all'
+                                    ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                            }`}
+                        >
+                            All ({services.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('active')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                statusFilter === 'active'
+                                    ? 'bg-emerald-600 text-white shadow-2xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                            }`}
+                        >
+                            Active ({services.filter(s => s.status === 'active').length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('ended')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                statusFilter === 'ended'
+                                    ? 'bg-slate-700 text-white shadow-2xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                            }`}
+                        >
+                            Completed ({services.filter(s => s.status === 'ended').length})
+                        </button>
+                    </div>
                     {onOpenManualInvoice && (
                         <button
                             onClick={onOpenManualInvoice}
@@ -494,8 +977,8 @@ export default function ServicesPanel({
                 </div>
             )}
 
-            {/* Service List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Service List — Two Dedicated Sections */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {isLoading ? (
                     <div className="flex items-center justify-center py-20">
                         <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -507,404 +990,61 @@ export default function ServicesPanel({
                         <p className="text-sm">Services are created when a worker is assigned to a client.</p>
                     </div>
                 ) : (
-                    filtered.map(service => {
-                        const isExpanded = expandedService === service.id;
-                        const activeWorkers = (service.service_worker_assignments || []).filter(a => !a.end_date);
-                        const allWorkers = service.service_worker_assignments || [];
-                        
-                        const startDate = service.start_date ? new Date(service.start_date + 'T00:00:00') : null;
-                        const endDate = service.end_date ? new Date(service.end_date + 'T00:00:00') : null;
-                        const now = new Date();
-                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-                        const isUpcoming = startDate ? startDate.getTime() > today.getTime() : false;
-                        const isOngoing = !service.end_date;
-
-                        let durationBadgeText = 'Ongoing';
-                        let durationTitle = 'Ongoing';
-                        let durationRateNote = 'Full month rate applies';
-
-                        if (isUpcoming && startDate) {
-                            const diffDays = Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                            durationBadgeText = `Starts in ${diffDays}d`;
-                            durationTitle = `Starts ${format(startDate, 'dd MMM')}`;
-                            durationRateNote = isOngoing ? 'Open-ended (Full month rate)' : 'Scheduled service';
-                        } else if (isOngoing && startDate) {
-                            const daysActive = Math.max(1, Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                            durationBadgeText = `${daysActive} days (Ongoing)`;
-                            durationTitle = `${daysActive} days`;
-                            durationRateNote = 'Open-ended (Full month rate)';
-                        } else if (startDate && endDate) {
-                            const totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                            durationBadgeText = `${totalDays} days`;
-                            durationTitle = `${totalDays} days`;
-                            durationRateNote = totalDays >= 30 ? 'Full month rate applies' : 'Short-term rate applies';
-                        }
-
-                        return (
-                            <div key={service.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                {/* Service Header */}
-                                <button
-                                    onClick={() => setExpandedService(isExpanded ? null : service.id)}
-                                    className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
-                                >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1AA6A8] to-[#148B8D] flex items-center justify-center text-white font-bold text-sm shrink-0">
-                                            {(service.clients?.client_name || '?')[0].toUpperCase()}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className="font-semibold text-slate-900 text-sm truncate">
-                                                    {service.clients?.client_name || 'Unknown Client'}
-                                                </p>
-                                                {statusBadge(service.status)}
-                                            </div>
-                                            <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
-                                                <span className="flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    {service.start_date ? format(new Date(service.start_date + 'T00:00:00'), 'dd MMM yyyy') : '—'}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <Users className="w-3 h-3" />
-                                                    {activeWorkers.length} worker{activeWorkers.length !== 1 ? 's' : ''}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <Clock className="w-3 h-3" />
-                                                    {durationBadgeText}
-                                                </span>
-                                            </div>
-                                        </div>
+                    <>
+                        {/* Section 1: Currently Active Services */}
+                        {(statusFilter === 'all' || statusFilter === 'active') && (
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                                            Currently Active Clients & Services
+                                        </h3>
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            {activeServices.length}
+                                        </span>
                                     </div>
-                                    <div className="flex items-center gap-3 shrink-0">
-                                        {/* Financial Action Buttons */}
-                                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                            {onPrepareInvoice && service.status === 'active' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onPrepareInvoice(service);
-                                                    }}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
-                                                >
-                                                    <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
-                                                </button>
-                                            )}
-                                            {onPrepareInvoice && service.status === 'ended' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const finalBill = service.service_bills?.find(b => b.type === 'final');
-                                                        onPrepareInvoice(service, finalBill);
-                                                    }}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-50 text-[#1AA6A8] hover:bg-teal-100 border border-teal-200 shadow-2xs transition-colors"
-                                                >
-                                                    <FileText className="w-3.5 h-3.5 text-[#1AA6A8]" /> Final Invoice
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        <div className="text-right hidden sm:block">
-                                            <p className="text-xs text-slate-500">Rates</p>
-                                            <p className="text-sm font-bold text-slate-700">
-                                                {formatCurrency(service.complete_month_daily_rate)}/day
-                                            </p>
-                                        </div>
-                                        <div className="text-right hidden sm:block">
-                                            <p className="text-xs text-slate-500">Deposit</p>
-                                            <p className="text-sm font-bold text-slate-700">
-                                                {formatCurrency(service.deposit_amount)}
-                                            </p>
-                                        </div>
-                                        {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+                                    <span className="text-[11px] text-slate-400 hidden sm:inline font-medium">
+                                        Ongoing care services & daily/monthly billing
+                                    </span>
+                                </div>
+                                {activeServices.length === 0 ? (
+                                    <div className="p-6 bg-slate-50/60 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                                        No active services currently match your search.
                                     </div>
-                                </button>
-
-                                {/* Expanded Details */}
-                                {isExpanded && (
-                                    <div className="border-t border-slate-100 p-4 space-y-4">
-                                        {/* Rate Summary */}
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                            <div className="p-3 bg-slate-50 rounded-lg">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Full Month Rate</p>
-                                                <p className="text-lg font-black text-slate-800 mt-0.5">{formatCurrency(service.complete_month_daily_rate)}<span className="text-xs font-normal text-slate-400">/day</span></p>
-                                            </div>
-                                            <div className="p-3 bg-slate-50 rounded-lg">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Short-Term Rate</p>
-                                                <p className="text-lg font-black text-slate-800 mt-0.5">{formatCurrency(service.incomplete_month_daily_rate)}<span className="text-xs font-normal text-slate-400">/day</span></p>
-                                            </div>
-                                            <div className="p-3 bg-slate-50 rounded-lg">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deposit</p>
-                                                <p className="text-lg font-black text-slate-800 mt-0.5">{formatCurrency(service.deposit_amount)}</p>
-                                                <p className="text-[10px] text-slate-400 capitalize">{service.deposit_status}</p>
-                                            </div>
-                                            <div className="p-3 bg-slate-50 rounded-lg">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Duration</p>
-                                                <p className="text-lg font-black text-slate-800 mt-0.5">{durationTitle}</p>
-                                                <p className="text-[10px] text-slate-400">{durationRateNote}</p>
-                                            </div>
-                                        </div>
-
-                                        {/* Workers Table */}
-                                        <div>
-                                            <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                                                Worker Assignments ({allWorkers.length})
-                                            </h3>
-                                            {allWorkers.length === 0 ? (
-                                                <p className="text-sm text-slate-400 py-3">No workers assigned yet.</p>
-                                            ) : (
-                                                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                                                    <table className="w-full text-sm">
-                                                        <thead>
-                                                            <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                                                                <th className="text-left px-3 py-2">Worker</th>
-                                                                <th className="text-left px-3 py-2">Start</th>
-                                                                <th className="text-left px-3 py-2">End</th>
-                                                                <th className="text-left px-3 py-2">Status</th>
-                                                                <th className="text-right px-3 py-2">Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {allWorkers.map(asgn => (
-                                                                <tr key={asgn.id} className="hover:bg-slate-50">
-                                                                    <td className="px-3 py-2.5">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <div className="w-7 h-7 rounded-full bg-[#1AA6A8]/10 flex items-center justify-center text-[#1AA6A8] font-bold text-[10px]">
-                                                                                {(asgn.employees?.full_name || '?')[0]}
-                                                                            </div>
-                                                                            <div>
-                                                                                <p className="font-semibold text-slate-800 text-xs">{asgn.employees?.full_name || 'Unknown'}</p>
-                                                                                <p className="text-[10px] text-slate-400">{asgn.employees?.job_title || ''}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-3 py-2.5 text-xs text-slate-600">
-                                                                        {asgn.start_date ? format(new Date(asgn.start_date), 'dd MMM yyyy') : '—'}
-                                                                    </td>
-                                                                    <td className="px-3 py-2.5 text-xs text-slate-600">
-                                                                        {asgn.end_date ? format(new Date(asgn.end_date), 'dd MMM yyyy') : <span className="text-emerald-500 font-semibold">Ongoing</span>}
-                                                                    </td>
-                                                                    <td className="px-3 py-2.5">
-                                                                        {asgn.end_date ? (
-                                                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Released</span>
-                                                                        ) : (
-                                                                            <span className="text-[10px] font-bold text-emerald-600 uppercase">Active</span>
-                                                                        )}
-                                                                    </td>
-                                                                    <td className="px-3 py-2.5 text-right">
-                                                                        {!asgn.end_date && service.status === 'active' && (
-                                                                            <button
-                                                                                onClick={() => handleReleaseWorker(asgn.id)}
-                                                                                disabled={releasingId === asgn.id}
-                                                                                className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
-                                                                            >
-                                                                                {releasingId === asgn.id
-                                                                                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                                                                                    : <UserMinus className="w-3 h-3" />}
-                                                                                Release
-                                                                            </button>
-                                                                        )}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            )}
-
-                                            {/* Monthly Invoices & Billing History */}
-                                            {(() => {
-                                                const bills = service.service_bills || [];
-                                                const sortedBills = [...bills].sort((a, b) => new Date(b.created_at || b.period_start).getTime() - new Date(a.created_at || a.period_start).getTime());
-
-                                                return (
-                                                    <div className="mt-5 pt-4 border-t border-slate-100">
-                                                        <div className="flex items-center justify-between mb-2.5">
-                                                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                                                <FileText className="w-3.5 h-3.5 text-[#1AA6A8]" /> Monthly Invoices & Billing Ledger ({sortedBills.length})
-                                                            </h4>
-                                                            {sortedBills.length > 0 && (
-                                                                <span className="text-xs text-slate-500 font-semibold">
-                                                                    Total Billed: {formatCurrency(sortedBills.reduce((sum, b) => sum + (b.amount || 0), 0))}
-                                                                </span>
-                                                            )}
-                                                        </div>
-
-                                                        {sortedBills.length === 0 ? (
-                                                            <div className="p-3.5 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                                                                No monthly invoices recorded yet. Click <strong className="text-slate-600">"Prepare Invoice"</strong> above to generate and log the first billing cycle.
-                                                            </div>
-                                                        ) : (
-                                                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
-                                                                <table className="w-full text-left text-xs">
-                                                                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                                                        <tr>
-                                                                            <th className="px-3 py-2.5">Billing Period</th>
-                                                                            <th className="px-3 py-2.5">Days</th>
-                                                                            <th className="px-3 py-2.5">Daily Rate</th>
-                                                                            <th className="px-3 py-2.5">Amount</th>
-                                                                            <th className="px-3 py-2.5">Status</th>
-                                                                            <th className="px-3 py-2.5 text-right">Actions</th>
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody className="divide-y divide-slate-100">
-                                                                        {sortedBills.map((bill, bIdx) => {
-                                                                            let noteData: any = {};
-                                                                            try {
-                                                                                noteData = bill.notes ? JSON.parse(bill.notes) : {};
-                                                                            } catch {
-                                                                                noteData = {};
-                                                                            }
-                                                                            const isPaid = noteData.status === 'paid' || bill.deposit_settled === true;
-                                                                            const pdfUrl = noteData.invoice_pdf_url;
-                                                                            const invNo = noteData.invoice_number || (bill.type === 'final' ? 'FINAL-SETTLEMENT' : `INV-M${bIdx + 1}`);
-
-                                                                            return (
-                                                                                <tr key={bill.id || bIdx} className="hover:bg-slate-50/60 transition-colors">
-                                                                                    <td className="px-3 py-2.5 font-semibold text-slate-800">
-                                                                                        <div className="flex flex-col">
-                                                                                            <span>
-                                                                                                {(() => {
-                                                                                                    const actualStart = service.start_date && bill.period_start && new Date(service.start_date) > new Date(bill.period_start)
-                                                                                                        ? service.start_date
-                                                                                                        : bill.period_start;
-                                                                                                    return `${actualStart ? format(new Date(actualStart), 'dd MMM yyyy') : '—'} To ${bill.period_end ? format(new Date(bill.period_end), 'dd MMM yyyy') : '—'}`;
-                                                                                                })()}
-                                                                                            </span>
-                                                                                            <span className="text-[10px] text-slate-400 font-mono">
-                                                                                                {invNo} {bill.type === 'final' && '• Final Settlement'}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                    </td>
-                                                                                    <td className="px-3 py-2.5 text-slate-600 font-medium">
-                                                                                        {bill.total_days} day{bill.total_days !== 1 ? 's' : ''}
-                                                                                    </td>
-                                                                                    <td className="px-3 py-2.5 text-slate-600 font-medium">
-                                                                                        {formatCurrency(bill.daily_rate_used || 0)}/day
-                                                                                    </td>
-                                                                                    <td className="px-3 py-2.5 font-bold text-slate-900">
-                                                                                        {formatCurrency(bill.amount || 0)}
-                                                                                    </td>
-                                                                                    <td className="px-3 py-2.5">
-                                                                                        {isPaid ? (
-                                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                                                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Paid
-                                                                                            </span>
-                                                                                        ) : (
-                                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                                                                                <Clock className="w-3 h-3 text-amber-600" /> Pending Collection
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </td>
-                                                                                    <td className="px-3 py-2.5 text-right space-x-1.5 whitespace-nowrap">
-                                                                                        {onPreviewInvoice ? (
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    onPreviewInvoice(service, bill);
-                                                                                                }}
-                                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs cursor-pointer"
-                                                                                                title="Preview Invoice"
-                                                                                            >
-                                                                                                <FileText className="w-3.5 h-3.5" /> Preview Invoice
-                                                                                            </button>
-                                                                                        ) : onPrepareInvoice && (
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    onPrepareInvoice(service, bill);
-                                                                                                }}
-                                                                                                className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md transition-colors shadow-2xs cursor-pointer"
-                                                                                                title="Preview & Generate Invoice for this cycle"
-                                                                                            >
-                                                                                                <FileText className="w-3.5 h-3.5" /> Preview Invoice
-                                                                                            </button>
-                                                                                        )}
-                                                                                        {pdfUrl && (
-                                                                                            <>
-                                                                                                <a
-                                                                                                    href={pdfUrl}
-                                                                                                    target="_blank"
-                                                                                                    rel="noopener noreferrer"
-                                                                                                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 px-2 py-1 rounded-md transition-colors"
-                                                                                                >
-                                                                                                    <Download className="w-3 h-3" /> PDF
-                                                                                                </a>
-                                                                                                <button
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        handleSendBillWhatsApp(service, bill);
-                                                                                                    }}
-                                                                                                    className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md transition-colors"
-                                                                                                    title="Send invoice to client on WhatsApp"
-                                                                                                >
-                                                                                                    <MessageSquare className="w-3 h-3" /> WhatsApp
-                                                                                                </button>
-                                                                                            </>
-                                                                                        )}
-                                                                                        {!isPaid && onRecordCollection && (
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    onRecordCollection(service, bill);
-                                                                                                }}
-                                                                                                className="inline-flex items-center gap-1 text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 rounded-md transition-colors shadow-2xs"
-                                                                                            >
-                                                                                                <IndianRupee className="w-3 h-3" /> Record Collection
-                                                                                            </button>
-                                                                                        )}
-                                                                                    </td>
-                                                                                </tr>
-                                                                            );
-                                                                        })}
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-
-                                        {/* Lifecycle Action Footer */}
-                                        {service.status === 'active' && (
-                                            <div className="border-t border-slate-100 pt-3 flex items-center justify-end bg-slate-50/50 -mx-4 -mb-4 p-4 rounded-b-xl">
-                                                {showEndConfirm === service.id ? (
-                                                    <div className="flex items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg">
-                                                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                                                        <p className="text-xs text-red-700">
-                                                            Release all {activeWorkers.length} worker(s) & settle deposit?
-                                                        </p>
-                                                        <button
-                                                            onClick={() => handleEndService(service.id)}
-                                                            disabled={endingServiceId === service.id}
-                                                            className="px-2.5 py-1 text-xs font-bold bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
-                                                        >
-                                                            {endingServiceId === service.id
-                                                                ? <Loader2 className="w-3 h-3 animate-spin inline" />
-                                                                : 'Confirm End'}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setShowEndConfirm(null)}
-                                                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => setShowEndConfirm(service.id)}
-                                                        className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-2xs"
-                                                    >
-                                                        <XCircle className="w-4 h-4 text-red-500" /> End Service & Settle
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
+                                ) : (
+                                    activeServices.map(service => renderServiceCard(service))
                                 )}
                             </div>
-                        );
-                    })
+                        )}
+
+                        {/* Section 2: Completed / Inactive Services */}
+                        {(statusFilter === 'all' || statusFilter === 'ended') && (
+                            <div className="space-y-3 pt-2">
+                                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+                                        <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                            Completed & Inactive Services
+                                        </h3>
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
+                                            {endedServices.length}
+                                        </span>
+                                    </div>
+                                    <span className="text-[11px] text-slate-400 hidden sm:inline font-medium">
+                                        Ended contracts, final settlement & historical records
+                                    </span>
+                                </div>
+                                {endedServices.length === 0 ? (
+                                    <div className="p-6 bg-slate-50/60 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                                        No completed or inactive services recorded.
+                                    </div>
+                                ) : (
+                                    endedServices.map(service => renderServiceCard(service))
+                                )}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
