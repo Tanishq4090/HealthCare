@@ -86,11 +86,18 @@ export async function toggleWorkerPaidStatus(
     }
 
     if (item.assignment_id) {
-        const { data: existing } = await supabase
+        const itemStart = (item.start_date || item.period_start || '').split('T')[0];
+        let query = supabase
             .from('payroll')
             .select('id')
-            .eq('assignment_id', item.assignment_id)
-            .maybeSingle();
+            .eq('assignment_id', item.assignment_id);
+
+        if (itemStart) {
+            query = query.eq('period_start', itemStart);
+        }
+
+        const { data: existingRows } = await query;
+        const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
         if (existing?.id) {
             const { error } = await supabase.from('payroll').update(payload).eq('id', existing.id);
@@ -164,11 +171,18 @@ export async function markPayslipDispatched(
     }
 
     if (item.assignment_id) {
-        const { data: existing } = await supabase
+        const itemStart = (item.start_date || item.period_start || '').split('T')[0];
+        let query = supabase
             .from('payroll')
             .select('id')
-            .eq('assignment_id', item.assignment_id)
-            .maybeSingle();
+            .eq('assignment_id', item.assignment_id);
+
+        if (itemStart) {
+            query = query.eq('period_start', itemStart);
+        }
+
+        const { data: existingRows } = await query;
+        const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
         if (existing?.id) {
             return applyUpdate(existing.id);

@@ -447,11 +447,20 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     const isPaid = opts?.whatsappSent || netPayable <= 0;
     const status = isPaid ? 'Paid' : 'Pending Payment';
 
-    const { data: existing } = await supabase
+    const genStart = assignment.start_date ? format(safeStartDate, 'yyyy-MM-dd') : null;
+    const genEnd = format(endDate, 'yyyy-MM-dd');
+
+    let existingQuery = supabase
       .from('payroll')
-      .select('id')
-      .eq('assignment_id', assignment.id)
-      .maybeSingle();
+      .select('id, period_start, status')
+      .eq('assignment_id', assignment.id);
+
+    if (genStart) {
+      existingQuery = existingQuery.eq('period_start', genStart);
+    }
+
+    const { data: existingRows } = await existingQuery;
+    const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
     const row = {
       days_worked: daysWorked,
@@ -463,6 +472,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       paid_through_date: isPaid ? format(new Date(), 'yyyy-MM-dd') : null,
       status,
       worker_phone: emp?.phone || '',
+      period_start: genStart,
+      period_end: genEnd,
       updated_at: new Date().toISOString(),
     };
 
@@ -475,8 +486,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         deposit_received: 0,
         payslip_type: 'worker',
         payroll_type: 'payslip',
-        period_start: assignment.start_date,
-        period_end: assignment.end_date || new Date().toISOString(),
         ...row,
       }]);
       if (error) throw error;

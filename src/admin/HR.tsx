@@ -346,8 +346,9 @@ export default function HR() {
                     if (!a.employee_id) return false;
 
                     const hasMatchingDbPayroll = (payrollData || []).some((p: any) => {
+                        const isSettledPaid = p.type === 'final' || p.status === 'Paid' || p.status === 'Settled' || !!p.paid_through_date;
                         if (p.assignment_id === a.id) {
-                            if (a.assignment_status === 'active' && p.type === 'final') return false;
+                            if (a.assignment_status === 'active' && isSettledPaid) return false;
                             return true;
                         }
                         
@@ -356,8 +357,8 @@ export default function HR() {
                             for (const s of servicesData) {
                                 const swa = s.service_worker_assignments?.find((sw: any) => sw.id === p.assignment_id);
                                 if (swa && swa.employee_id === a.employee_id) {
-                                    // If 'a' is an active deployment, an old relieved SWA (with end_date or p.type === 'final') is NOT this active ongoing deployment!
-                                    if (a.assignment_status === 'active' && (p.type === 'final' || swa.end_date)) {
+                                    // If 'a' is an active deployment, an old relieved SWA (with end_date or isSettledPaid) is NOT this active ongoing deployment!
+                                    if (a.assignment_status === 'active' && (isSettledPaid || swa.end_date)) {
                                         continue;
                                     }
                                     const aStart = a.start_date ? a.start_date.split('T')[0] : '';
@@ -388,7 +389,7 @@ export default function HR() {
                                 if (a.assignment_status === 'completed') {
                                     return true;
                                 }
-                                if (a.assignment_status === 'active' && p.type !== 'final') {
+                                if (a.assignment_status === 'active' && !isSettledPaid) {
                                     return true;
                                 }
                             }
@@ -406,11 +407,41 @@ export default function HR() {
                 .map((a: any) => {
                     const emp = a.employees;
                     const clientObj = a.clients;
-                    const start = a.start_date ? new Date(a.start_date) : null;
+
+                    // Check for prior paid/settled payroll records for this assignment or worker+client
+                    const paidEntries = (payrollData || []).filter((p: any) => {
+                        const matchAsgnId = p.assignment_id && p.assignment_id === a.id;
+                        const matchWorker = (p.worker_id && p.worker_id === a.employee_id) ||
+                                            ((p.worker || '').trim().toLowerCase() === (emp?.full_name || '').trim().toLowerCase());
+                        const clientNameMatch = (clientObj?.client_name || emp?.assigned_client || '').trim().toLowerCase();
+                        const pClientMatch = (p.client_name || p.client || '').trim().toLowerCase();
+                        const matchClient = pClientMatch && clientNameMatch && pClientMatch === clientNameMatch;
+
+                        const isPaidOrSettled = p.status === 'Paid' || p.status === 'Settled' || !!p.paid_through_date || p.type === 'final';
+                        return (matchAsgnId || (matchWorker && matchClient)) && isPaidOrSettled;
+                    });
+
+                    let effectiveStartDateStr = a.start_date?.split('T')[0];
+                    let latestPaidThrough: string | null = null;
+                    if (paidEntries.length > 0 && a.assignment_status === 'active') {
+                        const latestPaidDate = paidEntries.reduce((max: string, p: any) => {
+                            const date = p.paid_through_date || p.period_end?.split('T')[0] || '';
+                            return date > max ? date : max;
+                        }, '');
+
+                        if (latestPaidDate) {
+                            latestPaidThrough = latestPaidDate;
+                            const nextDay = new Date(latestPaidDate + 'T00:00:00');
+                            nextDay.setDate(nextDay.getDate() + 1);
+                            effectiveStartDateStr = nextDay.toISOString().split('T')[0];
+                        }
+                    }
+
+                    const start = effectiveStartDateStr ? new Date(effectiveStartDateStr) : (a.start_date ? new Date(a.start_date) : null);
                     const end = a.end_date ? new Date(a.end_date) : new Date();
 
-                    // Calculate real verified attendance days strictly for THIS assignment
-                    const startDateStr = a.start_date?.split('T')[0];
+                    // Calculate real verified attendance days strictly for THIS assignment and active period
+                    const startDateStr = effectiveStartDateStr;
                     const endDateStr = a.end_date?.split('T')[0];
                     const workerAttendance = (monthStats || []).filter(s => {
                         if (s.worker_id !== a.employee_id) return false;
@@ -434,7 +465,7 @@ export default function HR() {
                             worker_id: a.employee_id, 
                             worker: emp?.full_name, 
                             client_name: clientName, 
-                            start_date: a.start_date, 
+                            start_date: effectiveStartDateStr || a.start_date, 
                             hours_per_day: a.hours_per_day, 
                             assignment_status: a.assignment_status 
                         },
@@ -465,17 +496,20 @@ export default function HR() {
                         total_amount: pay.gross,
                         days_worked: days,
                         advance_amount: a.advance_paid || 0,
-                        status: a.assignment_status === 'completed' ? 'Pending Payment' : 'Pending Payment',
-                        month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'August 2026',
+                        status: 'Pending Payment',
+                        month: start ? start.toLocaleString('default', { month: 'long', year: 'numeric' }) : 'September 2026',
                         payroll_type: 'payslip',
-                        start_date: a.start_date,
+                        start_date: effectiveStartDateStr || a.start_date,
+                        period_start: effectiveStartDateStr || a.start_date,
                         end_date: a.end_date || null,
+                        period_end: a.end_date || null,
                         hours_per_day: effectiveHours,
                         preferred_payment_type: emp?.preferred_payment_type,
                         assignment_status: a.assignment_status,
                         worker_assignments: { assignment_status: a.assignment_status },
                         service_id: matchedService?.id || null,
                         service_details: matchedService || null,
+                        paid_through_date: latestPaidThrough,
                         _isSynthetic: true
                     };
                 });
@@ -2343,6 +2377,7 @@ export default function HR() {
                                 const asgnStatus = item.worker_assignments?.assignment_status || item.assignment_status;
                                 if (asgnStatus === 'completed' || asgnStatus === 'cancelled') return false;
                                 if (item.type === 'final') return false;
+                                if (item.status === 'Paid' && !item._isSynthetic) return false;
                                 if (asgnStatus === 'active') {
                                     if (item.end_date) {
                                         const endMs = new Date(item.end_date).getTime();
@@ -2499,7 +2534,9 @@ export default function HR() {
                                                                                     </span>
                                                                                 ) : (
                                                                                     <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full uppercase tracking-tighter">
-                                                                                        Released / Past
+                                                                                        {item.assignment_status === 'active' || (activeAssignments || []).some((a: any) => a.employee_id === item.worker_id)
+                                                                                            ? 'Past Period / Settled'
+                                                                                            : 'Released / Past'}
                                                                                     </span>
                                                                                 )}
 
@@ -2517,9 +2554,9 @@ export default function HR() {
                                                                             </div>
                                                                             <p className="text-[11px] text-slate-500 font-medium mt-0.5">
                                                                                 {isCurrentlyActive ? (
-                                                                                    <span>{days} day{days !== 1 ? 's' : ''} accrued @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || (item.period_start ? format(new Date(item.period_start), 'MMMM yyyy') : 'Ongoing')} • Accrues Daily</span>
+                                                                                    <span>{days} day{days !== 1 ? 's' : ''} accrued @ ₹{item.daily_rate.toFixed(2)}/d • {item.start_date ? `${format(new Date(item.start_date), 'dd MMM')} – Ongoing` : (item.month || item.service_month || 'Ongoing')} • Accrues Daily</span>
                                                                                 ) : (
-                                                                                    <span>{days} day{days !== 1 ? 's' : ''} locked @ ₹{item.daily_rate.toFixed(2)}/d • {item.month || item.service_month || (item.period_start ? format(new Date(item.period_start), 'MMMM yyyy') : (item.start_date ? format(new Date(item.start_date), 'MMMM yyyy') : 'Final Payout'))} • Final Payout</span>
+                                                                                    <span>{days} day{days !== 1 ? 's' : ''} locked @ ₹{item.daily_rate.toFixed(2)}/d • {item.period_start && item.period_end ? `${format(new Date(item.period_start), 'dd MMM')} – ${format(new Date(item.period_end), 'dd MMM yyyy')}` : (item.month || item.service_month || 'Settled Payout')} • {balance.isFullyPaid ? 'Settled Payout' : 'Final Payout'}</span>
                                                                                 )}
                                                                             </p>
                                                                         </div>
@@ -2636,9 +2673,9 @@ export default function HR() {
                                                                                         const generatorAssignment = {
                                                                                             ...assignment,
                                                                                             start_date: effectiveStart,
-                                                                                            end_date: effectiveEnd,
+                                                                                            end_date: isCurrentlyActive ? null : effectiveEnd,
                                                                                             hours_per_day: effectiveShiftHours,
-                                                                                            locked_days_worked: item.days_worked || item.days_counted,
+                                                                                            locked_days_worked: isCurrentlyActive ? null : (item.days_worked || item.days_counted),
                                                                                         };
                                                                                         setAutoCloseAssignmentOnGenerate(false);
                                                                                         setBillingAssignment(generatorAssignment);
@@ -2767,6 +2804,14 @@ export default function HR() {
                                                             const sameWorker = (existing.worker_id && item.worker_id && existing.worker_id === item.worker_id) ||
                                                                                (existing.worker && item.worker && existing.worker.trim().toLowerCase() === item.worker.trim().toLowerCase());
                                                             if (!sameWorker) return false;
+
+                                                            // An active ongoing deployment is NEVER a duplicate of a completed/relieved/settled historical payslip!
+                                                            const existingIsActive = isPayrollItemActive(existing);
+                                                            const incomingIsActive = isPayrollItemActive(item);
+                                                            if (existingIsActive !== incomingIsActive) {
+                                                                return false;
+                                                            }
+
                                                             const eStart = existing.start_date?.split('T')[0] || existing.period_start?.split('T')[0];
                                                             const iStart = item.start_date?.split('T')[0] || item.period_start?.split('T')[0];
                                                             return !eStart || !iStart || eStart === iStart;
