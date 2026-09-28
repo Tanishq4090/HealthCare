@@ -781,12 +781,22 @@ function AssignDialog({ employee, open, onClose, onAssigned }: AssignDialogProps
         }
 
         if (targetServiceId) {
-          await supabase.from('service_worker_assignments').insert({
-            service_id: targetServiceId,
-            employee_id: employee.id,
-            start_date: startDate,
-            end_date: endDate || null,
-          });
+          const { data: existingSwa } = await supabase
+            .from('service_worker_assignments')
+            .select('id')
+            .eq('service_id', targetServiceId)
+            .eq('employee_id', employee.id)
+            .is('end_date', null)
+            .maybeSingle();
+
+          if (!existingSwa) {
+            await supabase.from('service_worker_assignments').insert({
+              service_id: targetServiceId,
+              employee_id: employee.id,
+              start_date: startDate,
+              end_date: endDate || null,
+            });
+          }
         }
       } catch (svcErr) {
         console.warn('Service sync note:', svcErr);

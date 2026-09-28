@@ -289,6 +289,19 @@ export async function assignWorkerToService(
         throw new Error(`${workerName} is currently deployed to ${clientName}. Please release or end their active deployment first.`);
     }
 
+    // Check if worker is already actively assigned to this service
+    const { data: activeForCurrentService } = await supabase
+        .from('service_worker_assignments')
+        .select('*')
+        .eq('service_id', serviceId)
+        .eq('employee_id', employeeId)
+        .is('end_date', null)
+        .maybeSingle();
+
+    if (activeForCurrentService) {
+        return activeForCurrentService as unknown as ServiceWorkerAssignment;
+    }
+
     const { data, error } = await supabase
         .from('service_worker_assignments')
         .insert({
