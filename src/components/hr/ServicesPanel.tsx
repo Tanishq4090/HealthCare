@@ -511,6 +511,7 @@ export default function ServicesPanel({
                     <div className="flex items-center gap-3 shrink-0">
                         {/* Financial Action Buttons */}
                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                            {/* Active: Prepare Invoice */}
                             {onPrepareInvoice && service.status === 'active' && (
                                 <button
                                     onClick={(e) => {
@@ -522,18 +523,67 @@ export default function ServicesPanel({
                                     <FileText className="w-3.5 h-3.5 text-emerald-600" /> Prepare Invoice
                                 </button>
                             )}
-                            {onPrepareInvoice && service.status === 'ended' && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        const finalBill = service.service_bills?.find(b => b.type === 'final');
-                                        onPrepareInvoice(service, finalBill);
-                                    }}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-50 text-[#1AA6A8] hover:bg-teal-100 border border-teal-200 shadow-2xs transition-colors"
-                                >
-                                    <FileText className="w-3.5 h-3.5 text-[#1AA6A8]" /> Final Invoice
-                                </button>
-                            )}
+
+                            {/* Ended: If final invoice is already generated & settled, show Settled badge + View Invoice */}
+                            {(() => {
+                                if (service.status !== 'ended') return null;
+                                const finalBill = service.service_bills?.find(b => b.type === 'final') || service.service_bills?.[0];
+                                if (!finalBill) {
+                                    // Fallback: If no invoice was generated for this ended service
+                                    return onPrepareInvoice ? (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onPrepareInvoice(service);
+                                            }}
+                                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 shadow-2xs transition-colors"
+                                        >
+                                            <FileText className="w-3.5 h-3.5 text-amber-600" /> Generate Final Invoice
+                                        </button>
+                                    ) : null;
+                                }
+
+                                let noteData: any = {};
+                                try {
+                                    noteData = typeof finalBill.notes === 'string' ? JSON.parse(finalBill.notes) : (finalBill.notes || {});
+                                } catch {
+                                    noteData = {};
+                                }
+                                const finalPdfUrl = noteData.invoice_pdf_url;
+
+                                return (
+                                    <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Settled
+                                        </span>
+                                        {finalPdfUrl ? (
+                                            <a
+                                                href={finalPdfUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={e => e.stopPropagation()}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors shadow-2xs"
+                                                title="View delivered final invoice PDF"
+                                            >
+                                                <Download className="w-3.5 h-3.5 text-slate-500" /> View Invoice
+                                            </a>
+                                        ) : (onPreviewInvoice || onPrepareInvoice) && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (onPreviewInvoice) onPreviewInvoice(service, finalBill);
+                                                    else if (onPrepareInvoice) onPrepareInvoice(service, finalBill);
+                                                }}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors shadow-2xs"
+                                            >
+                                                <FileText className="w-3.5 h-3.5 text-slate-500" /> View Invoice
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Completed Service: Start New Service button */}
                             {service.status === 'ended' && (
                                 <button
                                     onClick={(e) => {
