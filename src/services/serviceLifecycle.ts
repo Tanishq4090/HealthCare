@@ -464,11 +464,15 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
         const assignedWorkerNames: string[] = [];
 
         for (const w of workersList) {
-            await assignWorkerToService(service.id, w.workerId, input.startDate);
+            // Cancel any stale active assignment for this client/employee to prevent duplicates
+            await supabase
+                .from('worker_assignments')
+                .update({ assignment_status: 'cancelled', notes: 'Superseded by service restart' })
+                .eq('client_id', input.clientId)
+                .eq('employee_id', w.workerId)
+                .eq('assignment_status', 'active');
 
-            // Also create legacy worker_assignments record for backwards compatibility
-            // Note: service_type in worker_assignments has a CHECK constraint: ('one_day', 'date_range')
-            // And worker_payout_rate does NOT exist in worker_assignments table.
+            // 1. Create official worker_assignments record with full service metadata
             const { data: newAsgn, error: asgnError } = await supabase.from('worker_assignments').insert([{
                 client_id: input.clientId,
                 employee_id: w.workerId,
@@ -486,7 +490,12 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
 
             if (asgnError) {
                 console.error('Error inserting worker_assignment:', asgnError);
+            } else if (newAsgn && newAsgn[0]) {
+                await supabase.from('services').update({ legacy_assignment_id: newAsgn[0].id }).eq('id', service.id);
             }
+
+            // 2. Link service_worker_assignments (its internal check will find the existingAsgn created above and skip duplicate insertion)
+            await assignWorkerToService(service.id, w.workerId, input.startDate);
 
             // Fetch employee details to update status and record name for CRM
             const { data: empData } = await supabase.from('employees').select('full_name, job_title').eq('id', w.workerId).single();

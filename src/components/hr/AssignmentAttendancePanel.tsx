@@ -22,6 +22,8 @@ interface AssignmentAttendancePanelProps {
     employees: { full_name: string; job_title: string } | null;
     clients: { client_name: string; id?: string } | null;
     client_id?: string;
+    service_name?: string | null;
+    notes?: string | null;
   };
   onSummaryChange?: (summary: { daysPresent: number; daysAbsent: number; daysHalf: number }) => void;
   onAssignmentCompleted?: (assignment: any) => void;
@@ -408,8 +410,29 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             <Users className="w-5 h-5 text-primary" />
           </div>
           <div className="text-left">
-            <h3 className="font-bold text-slate-900 text-sm">{assignment.employees?.full_name || 'Unknown'}</h3>
-            <p className="text-xs text-slate-500">{assignment.employees?.job_title} → {assignment.clients?.client_name || 'Unknown Client'}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-bold text-slate-900 text-sm">{assignment.employees?.full_name || 'Unknown'}</h3>
+              {(assignment.service_name || (assignment.notes && !assignment.notes.toLowerCase().includes('superseded') ? assignment.notes : null)) && (
+                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200/70 px-2 py-0.5 rounded-full">
+                  {assignment.service_name || assignment.notes}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+              {(assignment.service_name || (assignment.notes && !assignment.notes.toLowerCase().includes('superseded') ? assignment.notes : null)) ? (
+                <>
+                  <span className="font-semibold text-slate-700">
+                    {assignment.service_name || assignment.notes}
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-slate-500">{assignment.employees?.job_title || 'Staff'}</span>
+                </>
+              ) : (
+                <span>{assignment.employees?.job_title || 'Staff'}</span>
+              )}
+              <span className="text-slate-400">→</span>
+              <span className="font-medium text-slate-700">{assignment.clients?.client_name || 'Unknown Client'}</span>
+            </p>
             <p className="text-[11px] text-slate-400 mt-0.5">
               {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Open-ended'}
               {isOpenEnded

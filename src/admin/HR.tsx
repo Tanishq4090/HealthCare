@@ -2264,19 +2264,32 @@ export default function HR() {
 
                                             {/* Worker Cards nested inside Client Container */}
                                             <div className="p-4 sm:p-5 space-y-4 bg-slate-50/30">
-                                                {group.assignments.map(assignment => (
-                                                    <AssignmentAttendancePanel
-                                                        key={assignment.id}
-                                                        assignment={assignment}
-                                                        onSummaryChange={() => {
-                                                            fetchData();
-                                                        }}
-                                                        onAssignmentCompleted={async () => {
-                                                            await fetchData();
-                                                            setActiveTab('payroll');
-                                                        }}
-                                                    />
-                                                ))}
+                                                {group.assignments.map(assignment => {
+                                                    const matchingSvc = (servicesList || []).find((s: any) =>
+                                                        s.legacy_assignment_id === assignment.id ||
+                                                        s.client_id === (assignment.client_id || assignment.clients?.id) ||
+                                                        s.service_worker_assignments?.some((sw: any) => sw.employee_id === assignment.employee_id)
+                                                    );
+                                                    const enriched = {
+                                                        ...assignment,
+                                                        service_name: assignment.notes && !assignment.notes.toLowerCase().includes('superseded')
+                                                            ? assignment.notes
+                                                            : (matchingSvc?.service_type || null)
+                                                    };
+                                                    return (
+                                                        <AssignmentAttendancePanel
+                                                            key={assignment.id}
+                                                            assignment={enriched}
+                                                            onSummaryChange={() => {
+                                                                fetchData();
+                                                            }}
+                                                            onAssignmentCompleted={async () => {
+                                                                await fetchData();
+                                                                setActiveTab('payroll');
+                                                            }}
+                                                        />
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     ));
