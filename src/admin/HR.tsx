@@ -299,7 +299,7 @@ export default function HR() {
             if (assignmentsData) setActiveAssignments(assignmentsData.filter((a: any) => a.assignment_status === 'active'));
             const { data: leadData } = await supabase
                 .from('crm_leads')
-                .select('id, name, phone, pipeline_stage, estimated_value_monthly')
+                .select('id, name, phone, pipeline_stage, estimated_value_monthly, notes, assigned_worker_role')
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
 
@@ -2271,11 +2271,26 @@ export default function HR() {
                                                         s.client_id === (assignment.client_id || assignment.clients?.id) ||
                                                         s.service_worker_assignments?.some((sw: any) => sw.employee_id === assignment.employee_id)
                                                     );
+                                                    const isInvalidSvc = (v?: string | null) => {
+                                                        if (!v) return true;
+                                                        const s = v.trim().toLowerCase();
+                                                        return s === 'date_range' || s === 'open_ended' || s === 'one_day' || s.includes('superseded');
+                                                    };
+                                                    const leadObj = (pipelineLeads || []).find((l: any) => l.id === (assignment.client_id || assignment.clients?.id));
+                                                    const leadNotes = leadObj?.notes || '';
+                                                    const sMatch = leadNotes.match(/^Service:\s*(.+)$/im);
+                                                    const leadService = sMatch ? sMatch[1].trim() : null;
+
+                                                    const resolvedService = (!isInvalidSvc(assignment.notes) ? assignment.notes : null)
+                                                        || (!isInvalidSvc(matchingSvc?.service_type) ? matchingSvc?.service_type : null)
+                                                        || (!isInvalidSvc(leadService) ? leadService : null)
+                                                        || (!isInvalidSvc(leadObj?.assigned_worker_role) ? leadObj?.assigned_worker_role : null)
+                                                        || (!isInvalidSvc(assignment.employees?.job_title) ? assignment.employees?.job_title : null)
+                                                        || null;
+
                                                     const enriched = {
                                                         ...assignment,
-                                                        service_name: assignment.notes && !assignment.notes.toLowerCase().includes('superseded')
-                                                            ? assignment.notes
-                                                            : (matchingSvc?.service_type || null)
+                                                        service_name: resolvedService
                                                     };
                                                     return (
                                                         <AssignmentAttendancePanel

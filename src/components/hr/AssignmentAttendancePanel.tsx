@@ -505,29 +505,43 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             <Users className="w-5 h-5 text-primary" />
           </div>
           <div className="text-left">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-bold text-slate-900 text-sm">{assignment.employees?.full_name || 'Unknown'}</h3>
-              {(assignment.service_name || (assignment.notes && !assignment.notes.toLowerCase().includes('superseded') ? assignment.notes : null)) && (
-                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200/70 px-2 py-0.5 rounded-full">
-                  {assignment.service_name || assignment.notes}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-              {(assignment.service_name || (assignment.notes && !assignment.notes.toLowerCase().includes('superseded') ? assignment.notes : null)) ? (
+            {(() => {
+              const isInvalid = (v?: string | null) => {
+                if (!v) return true;
+                const s = v.trim().toLowerCase();
+                return s === 'date_range' || s === 'open_ended' || s === 'one_day' || s.includes('superseded');
+              };
+              const displaySvc = (!isInvalid(assignment.service_name) ? assignment.service_name : null)
+                || (!isInvalid(assignment.notes) ? assignment.notes : null);
+
+              return (
                 <>
-                  <span className="font-semibold text-slate-700">
-                    {assignment.service_name || assignment.notes}
-                  </span>
-                  <span className="text-slate-300">•</span>
-                  <span className="text-slate-500">{assignment.employees?.job_title || 'Staff'}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-900 text-sm">{assignment.employees?.full_name || 'Unknown'}</h3>
+                    {displaySvc && (
+                      <span className="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200/70 px-2 py-0.5 rounded-full">
+                        {displaySvc}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    {displaySvc ? (
+                      <>
+                        <span className="font-semibold text-slate-700">
+                          {displaySvc}
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-slate-500">{assignment.employees?.job_title || 'Staff'}</span>
+                      </>
+                    ) : (
+                      <span>{assignment.employees?.job_title || 'Staff'}</span>
+                    )}
+                    <span className="text-slate-400">→</span>
+                    <span className="font-medium text-slate-700">{assignment.clients?.client_name || 'Unknown Client'}</span>
+                  </p>
                 </>
-              ) : (
-                <span>{assignment.employees?.job_title || 'Staff'}</span>
-              )}
-              <span className="text-slate-400">→</span>
-              <span className="font-medium text-slate-700">{assignment.clients?.client_name || 'Unknown Client'}</span>
-            </p>
+              );
+            })()}
             <p className="text-[11px] text-slate-400 mt-0.5">
               {format(startDate, 'dd MMM yyyy')} – {assignment.end_date ? format(parseISO(assignment.end_date), 'dd MMM yyyy') : 'Open-ended'}
               {isOpenEnded
