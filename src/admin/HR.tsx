@@ -540,9 +540,10 @@ export default function HR() {
                 const empId = p.worker_id || (employeeData || []).find((e: any) => e.full_name === p.worker)?.id;
                 const clientKey = (p.client_name || p.client || '').trim().toLowerCase();
                 const pStart = p.period_start ? p.period_start.split('T')[0] : '';
+                const pEnd = p.period_end ? p.period_end.split('T')[0] : '';
                 
-                const asgnKey = p.assignment_id ? `asgn_${p.assignment_id}` : null;
-                const wcpKey = pStart ? `wcp_${empId || p.worker}_${clientKey}_${pStart}` : null;
+                const asgnKey = p.assignment_id ? `asgn_${p.assignment_id}_${pStart}_${pEnd}` : null;
+                const wcpKey = pStart ? `wcp_${empId || p.worker}_${clientKey}_${pStart}_${pEnd}` : null;
                 
                 let counterpartAsgnKey: string | null = null;
                 if (p.assignment_id && servicesData) {
@@ -555,7 +556,7 @@ export default function HR() {
                                 a.start_date?.split('T')[0] === swaStart
                             );
                             if (matchedLegacy) {
-                                counterpartAsgnKey = `asgn_${matchedLegacy.id}`;
+                                counterpartAsgnKey = `asgn_${matchedLegacy.id}_${pStart}_${pEnd}`;
                             }
                             break;
                         }
