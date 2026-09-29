@@ -1,12 +1,15 @@
 import { useEffect, useState, useMemo } from 'react';
-import { FileText, X, Loader2, Download, Send, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, Clock, XCircle, Check } from 'lucide-react';
+import { 
+  FileText, X, Loader2, Download, Send, CalendarDays, 
+  ChevronDown, ChevronUp, CheckCircle2, Clock, XCircle, 
+  Trash2, ArrowRight, RefreshCw, BookmarkCheck
+} from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { format, eachDayOfInterval, parseISO, isAfter } from 'date-fns';
 import { calculateWorkerPay, resolveAssignmentHoursPerDay } from '../../utils/workerPayroll';
-import { PAYSLIP_SENT_STATUS } from '../../utils/payrollDispatch';
 
 interface PayslipGeneratorProps {
   assignment: {
@@ -36,20 +39,119 @@ interface PayslipGeneratorProps {
   autoCloseAssignmentOnGenerate?: boolean;
 }
 
-interface CycleOption {
-  id: string;
-  type: 'month' | 'full' | 'custom';
-  label: string;
-  fullLabel: string;
-  monthKey: string;
-  start: Date;
-  end: Date;
-  startDateStr: string;
-  endDateStr: string;
-}
-
 export default function PayslipGenerator({ assignment, onClose, onGenerated, autoCloseAssignmentOnGenerate }: PayslipGeneratorProps) {
+  const emp = assignment.employees || (assignment as any).employee;
+  const client = assignment.clients || (assignment as any).client;
+
+  // 1. Assignment absolute boundaries
+  const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
+  const assignmentStartDate = parseISO(fallbackStart.split('T')[0]);
+  const assignmentEndDate = assignment.end_date ? parseISO(assignment.end_date.split('T')[0]) : new Date();
+  const safeAssignmentStartDate = isAfter(assignmentStartDate, assignmentEndDate) ? assignmentEndDate : assignmentStartDate;
+
+  const [pastPayrolls, setPastPayrolls] = useState<any[]>([]);
+  const [isLoadingPastPayrolls, setIsLoadingPastPayrolls] = useState(false);
+
+  // 2. Fetch past billing/payment records for this worker and assignment
+  const fetchPastPayrolls = async () => {
+    setIsLoadingPastPayrolls(true);
+    try {
+      const { data } = await supabase
+        .from('payroll')
+        .select('*')
+        .eq('worker_id', assignment.employee_id)
+        .order('period_start', { ascending: true });
+      
+      const related = (data || []).filter((p: any) => {
+        if (p.assignment_id === assignment.id) return true;
+        const pClient = (p.client_name || '').trim().toLowerCase();
+        const aClient = (client?.client_name || '').trim().toLowerCase();
+        return pClient && aClient && pClient === aClient;
+      });
+
+      setPastPayrolls(related);
+      return related;
+    } catch (e) {
+      console.error('Error fetching past payrolls', e);
+      return [];
+    } finally {
+      setIsLoadingPastPayrolls(false);
+    }
+  };
+
+  // Determine latest paid-through date
+  const latestPaidThroughDate = useMemo(() => {
+    const paidList = pastPayrolls.filter(p => p.status === 'Paid' || p.paid_through_date || p.type === 'final');
+    if (paidList.length === 0) return null;
+    return paidList.reduce((max: string, p: any) => {
+      const d = p.paid_through_date || p.period_end?.split('T')[0] || '';
+      return d > max ? d : max;
+    }, '');
+  }, [pastPayrolls]);
+
+  // Suggested next starting date (day after latest paid-through date, or assignment start date)
+  const defaultNextStartDate = useMemo(() => {
+    if (latestPaidThroughDate) {
+      const [y, m, d] = latestPaidThroughDate.split('-').map(Number);
+      const nextD = new Date(y, m - 1, d + 1);
+      return nextD;
+    }
+    return safeAssignmentStartDate;
+  }, [latestPaidThroughDate, safeAssignmentStartDate]);
+
+  // Active customizable period inputs
+  const [startDateStr, setStartDateStr] = useState<string>(() => format(defaultNextStartDate, 'yyyy-MM-dd'));
+  const [endDateStr, setEndDateStr] = useState<string>(() => format(assignmentEndDate, 'yyyy-MM-dd'));
   const [advanceAmount, setAdvanceAmount] = useState((assignment.advance_paid || 0).toString());
+
+  // Update starting date when pastPayrolls finishes initial load if user hasn't changed it
+  useEffect(() => {
+    fetchPastPayrolls().then((rows) => {
+      const paidList = (rows || []).filter((p: any) => p.status === 'Paid' || p.paid_through_date || p.type === 'final');
+      if (paidList.length > 0) {
+        const latestPaid = paidList.reduce((max: string, p: any) => {
+          const d = p.paid_through_date || p.period_end?.split('T')[0] || '';
+          return d > max ? d : max;
+        }, '');
+        if (latestPaid) {
+          const [y, m, d] = latestPaid.split('-').map(Number);
+          const nextDay = new Date(y, m - 1, d + 1);
+          setStartDateStr(format(nextDay, 'yyyy-MM-dd'));
+        }
+      }
+    });
+  }, [assignment.id]);
+
+  // Active dates parsed
+  const activeStartDate = useMemo(() => {
+    try {
+      return parseISO(startDateStr);
+    } catch {
+      return safeAssignmentStartDate;
+    }
+  }, [startDateStr, safeAssignmentStartDate]);
+
+  const activeEndDate = useMemo(() => {
+    try {
+      return parseISO(endDateStr);
+    } catch {
+      return assignmentEndDate;
+    }
+  }, [endDateStr, assignmentEndDate]);
+
+  const safeStartDate = isAfter(activeStartDate, activeEndDate) ? activeEndDate : activeStartDate;
+  const safeEndDate = activeEndDate;
+
+  // Total days in active selected period
+  const totalPeriodDays = useMemo(() => {
+    try {
+      return eachDayOfInterval({ start: safeStartDate, end: safeEndDate }).length;
+    } catch {
+      return 0;
+    }
+  }, [safeStartDate, safeEndDate]);
+
+  // Attendance state
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [attendanceSummary, setAttendanceSummary] = useState<any>(null);
@@ -57,95 +159,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const [showDailyPreview, setShowDailyPreview] = useState(false);
   const [dailyRecords, setDailyRecords] = useState<any[]>([]);
   const [dailyFilter, setDailyFilter] = useState<'all' | 'present' | 'half' | 'absent'>('all');
-  const [pastPayrolls, setPastPayrolls] = useState<any[]>([]);
 
-  const emp = assignment.employees || (assignment as any).employee;
-  const client = assignment.clients || (assignment as any).client;
-
-  // Base assignment dates
-  const fallbackStart = assignment.start_date || assignment.assigned_at || new Date().toISOString();
-  const fullStartDate = parseISO(fallbackStart);
-  const fullEndDate = assignment.end_date ? parseISO(assignment.end_date) : new Date();
-  const safeFullStartDate = isAfter(fullStartDate, fullEndDate) ? fullEndDate : fullStartDate;
-
-  // Generate monthly cycle options from start to end/ongoing
-  const cycleOptions: CycleOption[] = useMemo(() => {
-    const list: CycleOption[] = [];
-    const startYear = safeFullStartDate.getFullYear();
-    const startMonth = safeFullStartDate.getMonth();
-    const endYear = fullEndDate.getFullYear();
-    const endMonth = fullEndDate.getMonth();
-
-    for (let y = startYear; y <= endYear; y++) {
-      const mFrom = (y === startYear) ? startMonth : 0;
-      const mTo = (y === endYear) ? endMonth : 11;
-      for (let m = mFrom; m <= mTo; m++) {
-        const mKey = `${y}-${String(m + 1).padStart(2, '0')}`;
-        const rawMStart = new Date(y, m, 1);
-        const rawMEnd = new Date(y, m + 1, 0); // last day of month
-
-        const cycleStart = isAfter(safeFullStartDate, rawMStart) ? safeFullStartDate : rawMStart;
-        const cycleEnd = isAfter(rawMEnd, fullEndDate) ? fullEndDate : rawMEnd;
-
-        const label = format(rawMStart, 'MMM yyyy');
-        const fullLabel = `${format(cycleStart, 'dd MMM yyyy')} – ${format(cycleEnd, 'dd MMM yyyy')}`;
-
-        list.push({
-          id: `month-${mKey}`,
-          type: 'month',
-          label,
-          fullLabel,
-          monthKey: mKey,
-          start: cycleStart,
-          end: cycleEnd,
-          startDateStr: format(cycleStart, 'yyyy-MM-dd'),
-          endDateStr: format(cycleEnd, 'yyyy-MM-dd'),
-        });
-      }
-    }
-
-    // Add 'Full Cycle' option
-    list.push({
-      id: 'full',
-      type: 'full',
-      label: 'All Days (Full Cycle)',
-      fullLabel: `${format(safeFullStartDate, 'dd MMM yyyy')} – ${assignment.end_date ? format(fullEndDate, 'dd MMM yyyy') : 'Ongoing'}`,
-      monthKey: 'all',
-      start: safeFullStartDate,
-      end: fullEndDate,
-      startDateStr: format(safeFullStartDate, 'yyyy-MM-dd'),
-      endDateStr: format(fullEndDate, 'yyyy-MM-dd'),
-    });
-
-    return list;
-  }, [assignment.start_date, assignment.assigned_at, assignment.end_date]);
-
-  // Selected cycle state
-  const [selectedCycleId, setSelectedCycleId] = useState<string>(() => {
-    return cycleOptions.length > 0 ? cycleOptions[0].id : 'full';
-  });
-
-  const [customStartDate, setCustomStartDate] = useState<string>(() => format(safeFullStartDate, 'yyyy-MM-dd'));
-  const [customEndDate, setCustomEndDate] = useState<string>(() => format(fullEndDate, 'yyyy-MM-dd'));
-
-  // Determine active effective date range based on selection
-  const selectedCycle = cycleOptions.find(c => c.id === selectedCycleId);
-  const startDate = useMemo(() => {
-    if (selectedCycleId === 'custom' && customStartDate) {
-      try { return parseISO(customStartDate); } catch { return safeFullStartDate; }
-    }
-    return selectedCycle?.start || safeFullStartDate;
-  }, [selectedCycleId, customStartDate, selectedCycle, safeFullStartDate]);
-
-  const endDate = useMemo(() => {
-    if (selectedCycleId === 'custom' && customEndDate) {
-      try { return parseISO(customEndDate); } catch { return fullEndDate; }
-    }
-    return selectedCycle?.end || fullEndDate;
-  }, [selectedCycleId, customEndDate, selectedCycle, fullEndDate]);
-
-  const safeStartDate = isAfter(startDate, endDate) ? endDate : startDate;
-  const totalPeriodDays = eachDayOfInterval({ start: safeStartDate, end: endDate }).length;
   const assignmentHours = resolveAssignmentHoursPerDay(assignment.hours_per_day);
   const lockedDays = assignment.locked_days_worked != null ? parseFloat(String(assignment.locked_days_worked)) : null;
 
@@ -168,51 +182,24 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   const netPayable = totalEarning - advanceDeduction;
   const hourlyMissingHours = false;
 
-  // Fetch past payroll records for this worker and assignment
-  const fetchPastPayrolls = async () => {
-    try {
-      const { data } = await supabase
-        .from('payroll')
-        .select('*')
-        .eq('worker_id', assignment.employee_id)
-        .order('period_start', { ascending: true });
-
-      setPastPayrolls(data || []);
-    } catch (e) {
-      console.error('Error fetching past payrolls', e);
-    }
-  };
-
-  useEffect(() => {
-    fetchPastPayrolls();
-  }, [assignment.employee_id, assignment.id]);
-
-  // Identify if currently selected period has an existing payroll record
-  const currentPeriodPayroll = useMemo(() => {
-    const sStr = format(safeStartDate, 'yyyy-MM-dd');
-    const eStr = format(endDate, 'yyyy-MM-dd');
+  // Check if current active slice matches an existing saved payroll
+  const matchingExistingPayroll = useMemo(() => {
+    const s = format(safeStartDate, 'yyyy-MM-dd');
+    const e = format(safeEndDate, 'yyyy-MM-dd');
     return pastPayrolls.find(p => {
       const pStart = p.period_start?.split('T')[0];
       const pEnd = p.period_end?.split('T')[0];
-      return pStart === sStr || (pStart && pEnd && pStart <= eStr && pEnd >= sStr);
+      return pStart === s && pEnd === e;
     });
-  }, [pastPayrolls, safeStartDate, endDate]);
+  }, [pastPayrolls, safeStartDate, safeEndDate]);
 
-  const getCyclePayrollStatus = (cycle: CycleOption) => {
-    return pastPayrolls.find(p => {
-      const pStart = p.period_start?.split('T')[0];
-      const pEnd = p.period_end?.split('T')[0];
-      return pStart === cycle.startDateStr || (pStart && pEnd && pStart <= cycle.endDateStr && pEnd >= cycle.startDateStr);
-    });
-  };
-
-  // Fetch attendance for the currently selected period
+  // Fetch attendance for active custom period
   const fetchAttendance = async () => {
     setIsLoadingAttendance(true);
     try {
       const isSyntheticId = assignment.id.startsWith('temp-');
       const startStr = format(safeStartDate, 'yyyy-MM-dd');
-      const endStr = format(endDate, 'yyyy-MM-dd');
+      const endStr = format(safeEndDate, 'yyyy-MM-dd');
 
       const baseQuery = () => supabase
         .from('attendance')
@@ -248,7 +235,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         }
       });
 
-      const allDates = eachDayOfInterval({ start: safeStartDate, end: endDate });
+      const allDates = eachDayOfInterval({ start: safeStartDate, end: safeEndDate });
       const mapped = allDates.map(d => {
         const dateKey = format(d, 'yyyy-MM-dd');
         const r = logMap.get(dateKey);
@@ -294,11 +281,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       const half = mapped.filter(d => d.status === 'Half Day').length;
       const absent = mapped.filter(d => d.status === 'Absent' || d.status === 'No Duty').length;
       const effectiveDays = full + half * 0.5;
-      const finalPresentDays = (lockedDays != null && effectiveDays === 0 && selectedCycleId === 'full') ? lockedDays : effectiveDays;
 
       setAttendanceSummary({
         days_full: full,
-        days_present: finalPresentDays,
+        days_present: effectiveDays,
         days_half: half,
         days_absent: absent,
         total_days: totalPeriodDays,
@@ -310,10 +296,9 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     }
   };
 
-  // Re-fetch attendance when dates or assignment change
   useEffect(() => {
     fetchAttendance();
-  }, [assignment.id, format(safeStartDate, 'yyyy-MM-dd'), format(endDate, 'yyyy-MM-dd')]);
+  }, [assignment.id, startDateStr, endDateStr]);
 
   const filteredDailyRecords = dailyRecords.filter(d => {
     if (dailyFilter === 'all') return true;
@@ -323,6 +308,51 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     return true;
   });
 
+  // Quick preset handlers
+  const handleSetRemainingUnpaid = () => {
+    setStartDateStr(format(defaultNextStartDate, 'yyyy-MM-dd'));
+    setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'));
+  };
+
+  const handleSetFullPeriod = () => {
+    setStartDateStr(format(safeAssignmentStartDate, 'yyyy-MM-dd'));
+    setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'));
+  };
+
+  const handleSetMonthPreset = (year: number, monthZeroIndex: number) => {
+    const mStart = new Date(year, monthZeroIndex, 1);
+    const mEnd = new Date(year, monthZeroIndex + 1, 0);
+
+    const effStart = isAfter(safeAssignmentStartDate, mStart) ? safeAssignmentStartDate : mStart;
+    const effEnd = isAfter(mEnd, assignmentEndDate) ? assignmentEndDate : mEnd;
+
+    setStartDateStr(format(effStart, 'yyyy-MM-dd'));
+    setEndDateStr(format(effEnd, 'yyyy-MM-dd'));
+  };
+
+  // Generate calendar months list for quick pills
+  const monthPills = useMemo(() => {
+    const list: { label: string; year: number; month: number }[] = [];
+    const sy = safeAssignmentStartDate.getFullYear();
+    const sm = safeAssignmentStartDate.getMonth();
+    const ey = assignmentEndDate.getFullYear();
+    const em = assignmentEndDate.getMonth();
+
+    for (let y = sy; y <= ey; y++) {
+      const fromM = (y === sy) ? sm : 0;
+      const toM = (y === ey) ? em : 11;
+      for (let m = fromM; m <= toM; m++) {
+        list.push({
+          label: format(new Date(y, m, 1), 'MMM yyyy'),
+          year: y,
+          month: m,
+        });
+      }
+    }
+    return list;
+  }, [safeAssignmentStartDate, assignmentEndDate]);
+
+  // PDF Generation
   const getLogo = (): Promise<string | null> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -341,8 +371,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
           } else {
             resolve(null);
           }
-        } catch (err) {
-          console.error('Failed to convert SVG to PNG', err);
+        } catch {
           resolve(null);
         }
       };
@@ -357,27 +386,25 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     }
     const doc = new jsPDF();
     const dateNow = format(new Date(), 'dd MMM yyyy');
-    const period = `${format(safeStartDate, 'dd MMM yyyy')} – ${format(endDate, 'dd MMM yyyy')}`;
+    const period = `${format(safeStartDate, 'dd MMM yyyy')} – ${format(safeEndDate, 'dd MMM yyyy')}`;
 
-    // Header (Logo left, Company Right - matching Tax Invoice structure)
     const logoImg = await getLogo();
     if (logoImg) {
       doc.addImage(logoImg, 'PNG', 14, 14, 38, 15);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
-      doc.setTextColor(60, 120, 216); // Accent Blue (#3c78d8)
+      doc.setTextColor(60, 120, 216);
       doc.text('WORKER PAYSLIP', 14, 35);
     } else {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(22);
-      doc.setTextColor(30, 41, 59); // Slate-800
+      doc.setTextColor(30, 41, 59);
       doc.text('99 CARE', 14, 25);
       doc.setFontSize(13);
-      doc.setTextColor(60, 120, 216); // Accent Blue (#3c78d8)
+      doc.setTextColor(60, 120, 216);
       doc.text('WORKER PAYSLIP', 14, 33);
     }
 
-    // Company Info (Right)
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
@@ -394,12 +421,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       compY += 4.5;
     });
 
-    // Divider Line (matching the blue divider)
     doc.setDrawColor(180, 200, 240);
     doc.setLineWidth(0.8);
     doc.line(14, 42, 196, 42);
 
-    // Worker Details & Payslip Meta
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(30, 41, 59);
@@ -414,7 +439,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     doc.text(`Assigned Client: ${client?.client_name || 'N/A'}`, 14, 68);
     doc.text(`Phone: ${emp?.phone || 'N/A'}`, 14, 74);
 
-    // Right side: Payslip Details
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(30, 41, 59);
@@ -427,11 +451,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     doc.text(`Service Period: ${period}`, 130, 68);
     if (hoursPerDay != null && hoursPerDay > 0) {
       doc.text(`Shift Hours: ${hoursPerDay} hours/day`, 130, 74);
-    } else if (emp?.preferred_payment_type === 'hourly') {
-      doc.text('Shift Hours: set on assignment', 130, 74);
     }
 
-    // Attendance Summary Table
     autoTable(doc, {
       startY: 84,
       theme: 'grid',
@@ -439,7 +460,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       head: [['Attendance Summary', 'Value']],
       body: [
         ['Total Days in Period', `${totalPeriodDays} days`],
-        ['Full Days Present', `${attendanceSummary?.days_full ?? (attendanceSummary?.days_present ? Math.max(0, attendanceSummary.days_present - (attendanceSummary.days_half || 0) * 0.5) : 0)} days`],
+        ['Full Days Present', `${attendanceSummary?.days_full ?? 0} days`],
         ['Half Days', `${attendanceSummary?.days_half || 0} days (0.5 day/each)`],
         ['Days Absent', `${attendanceSummary?.days_absent || 0} days`],
         ['Effective Working Days', `${daysWorked} days`],
@@ -449,7 +470,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
 
     const finalY1 = (doc as any).lastAutoTable.finalY + 8;
 
-    // Earnings Breakdown
     autoTable(doc, {
       startY: finalY1,
       theme: 'grid',
@@ -464,7 +484,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
 
     const finalY2 = (doc as any).lastAutoTable.finalY + 8;
 
-    // Net Payable Box
     doc.setFillColor(240, 253, 244);
     doc.setDrawColor(34, 197, 94);
     doc.roundedRect(14, finalY2, 182, 18, 3, 3, 'FD');
@@ -474,7 +493,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     doc.text('NET AMOUNT PAYABLE TO WORKER:', 20, finalY2 + 11);
     doc.text(`Rs. ${Math.abs(netPayable).toFixed(2)}`, 185, finalY2 + 11, { align: 'right' });
 
-    // Bank Details (Center) & Signatory (Right)
     let bkY = finalY2 + 30;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
@@ -501,7 +519,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       bkY += 5;
     });
 
-    // Signature Box (Right)
     const sigY = finalY2 + 30;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
@@ -513,7 +530,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     doc.setTextColor(71, 85, 105);
     doc.text('Authorized Signatory', 150, sigY + 20);
 
-    // Notes Section
     let notesY = bkY + 10;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
@@ -535,7 +551,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       notesY += 4.5;
     });
 
-    // Footer
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
     doc.text('99 CARE HOME HEALTHCARE SERVICE • 104, FORCHUN MALL, GALAXY CIRCAL, PAL ADAJAN, SURAT • +91 9016116564', 14, 285);
@@ -543,25 +558,21 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     return doc;
   };
 
+  // Save slice to DB
   const savePayslipToDB = async (opts?: { whatsappSent?: boolean; markAsPaid?: boolean }) => {
-    await supabase.from('worker_assignments').update({
-      payslip_generated: true,
-      advance_paid: advanceDeduction,
-    }).eq('id', assignment.id);
-
     const isPaid = opts?.whatsappSent || opts?.markAsPaid || netPayable <= 0;
     const status = isPaid ? 'Paid' : 'Pending Payment';
 
     const genStart = format(safeStartDate, 'yyyy-MM-dd');
-    const genEnd = format(endDate, 'yyyy-MM-dd');
-    const monthLabel = format(safeStartDate, 'MMMM yyyy');
+    const genEnd = format(safeEndDate, 'yyyy-MM-dd');
+    const monthLabel = `${format(safeStartDate, 'dd MMM')} – ${format(safeEndDate, 'dd MMM yyyy')}`;
 
     let existingQuery = supabase
       .from('payroll')
       .select('id, period_start, period_end, status')
       .eq('worker_id', assignment.employee_id)
-      .eq('assignment_id', assignment.id)
-      .eq('period_start', genStart);
+      .eq('period_start', genStart)
+      .eq('period_end', genEnd);
 
     const { data: existingRows } = await existingQuery;
     const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
@@ -598,17 +609,32 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       const { error } = await supabase.from('payroll').update(row).eq('id', existing.id);
       if (error) throw error;
     }
+
+    await supabase.from('worker_assignments').update({
+      payslip_generated: true,
+      advance_paid: advanceDeduction,
+    }).eq('id', assignment.id);
   };
 
+  // Mark slice as Paid
   const handleMarkAsPaid = async () => {
     if (!attendanceSummary) { toast.error('Load attendance first'); return; }
     setIsMarkingPaid(true);
     try {
       await savePayslipToDB({ markAsPaid: true });
-      const periodLabel = selectedCycle?.fullLabel || `${format(safeStartDate, 'dd MMM')} – ${format(endDate, 'dd MMM yyyy')}`;
-      toast.success(`Payslip for ${periodLabel} marked as PAID (₹${Math.abs(netPayable).toLocaleString('en-IN')})! ✅`);
-      await fetchPastPayrolls();
+      const currentPeriodLabel = `${format(safeStartDate, 'dd MMM yyyy')} – ${format(safeEndDate, 'dd MMM yyyy')}`;
+      toast.success(`Period ${currentPeriodLabel} marked as PAID (₹${Math.abs(netPayable).toLocaleString('en-IN')})! ✅`);
+      
+      const updatedRows = await fetchPastPayrolls();
       onGenerated();
+
+      // Automatically advance startDateStr to the day after this paid slice's end date!
+      const [ey, em, ed] = format(safeEndDate, 'yyyy-MM-dd').split('-').map(Number);
+      const nextDay = new Date(ey, em - 1, ed + 1);
+      const nextStartStr = format(nextDay, 'yyyy-MM-dd');
+      setStartDateStr(nextStartStr);
+      setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'));
+      toast.info(`Next unpaid period ready: ${format(nextDay, 'dd MMM yyyy')} to Present.`);
     } catch (err: any) {
       toast.error('Failed to mark as paid: ' + err.message);
     } finally {
@@ -616,6 +642,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     }
   };
 
+  // Download PDF
   const handleGeneratePayslip = async () => {
     if (!attendanceSummary) { toast.error('Load attendance first'); return; }
     setIsGenerating(true);
@@ -623,7 +650,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       const doc = await generatePayslipPDF();
       if (!doc) return;
       const startStr = format(safeStartDate, 'yyyyMMdd');
-      const endStr = format(endDate, 'yyyyMMdd');
+      const endStr = format(safeEndDate, 'yyyyMMdd');
       doc.save(`Payslip_${emp?.full_name?.replace(/\s+/g, '_')}_${startStr}_to_${endStr}.pdf`);
       await savePayslipToDB();
       toast.success('Worker payslip generated and saved!');
@@ -636,6 +663,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     }
   };
 
+  // Send via WhatsApp
   const handleSendWhatsApp = async () => {
     if (!attendanceSummary) { toast.error('Load attendance first'); return; }
     let phone = emp?.phone || '';
@@ -677,21 +705,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       await savePayslipToDB({ whatsappSent: true });
       toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });
       await fetchPastPayrolls();
-      
-      if (autoCloseAssignmentOnGenerate) {
-        const { error: closeError } = await supabase.from('worker_assignments')
-          .update({ assignment_status: 'completed' })
-          .eq('id', assignment.id);
-        
-        if (!closeError) {
-          await supabase.from('employees')
-            .update({ status: 'available', assigned_client: null })
-            .eq('id', assignment.employee_id);
-          toast.success('Worker duty marked as completed and closed!');
-        } else {
-          console.error('Failed to close assignment:', closeError);
-        }
-      }
       onGenerated();
     } catch (err: any) {
       toast.error('Failed to dispatch: ' + err.message, { id: toastId });
@@ -700,9 +713,23 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     }
   };
 
+  // Delete / Undo slice
+  const handleDeleteSlice = async (payrollId: string, label: string) => {
+    if (!confirm(`Are you sure you want to delete the billing record for ${label}?`)) return;
+    try {
+      const { error } = await supabase.from('payroll').delete().eq('id', payrollId);
+      if (error) throw error;
+      toast.success(`Removed billing slice for ${label}`);
+      await fetchPastPayrolls();
+      onGenerated();
+    } catch (e: any) {
+      toast.error('Failed to delete: ' + e.message);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="p-5 border-b border-slate-100 bg-slate-900 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
@@ -719,115 +746,156 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
           </button>
         </div>
 
-        <div className="p-5 space-y-5 overflow-y-auto flex-1">
-          {/* Period Selector Card */}
-          <div className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-800">
-            <div className="flex items-center justify-between mb-2.5">
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {/* Historical Settled / Paid Slices Timeline */}
+          {pastPayrolls.length > 0 && (
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
+                  <BookmarkCheck className="w-4 h-4 text-emerald-600" /> Previous Billing & Paid Periods
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {pastPayrolls.length} recorded {pastPayrolls.length === 1 ? 'period' : 'periods'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {pastPayrolls.map(p => {
+                  const pStart = p.period_start ? format(parseISO(p.period_start.split('T')[0]), 'dd MMM yyyy') : 'Start';
+                  const pEnd = p.period_end ? format(parseISO(p.period_end.split('T')[0]), 'dd MMM yyyy') : 'End';
+                  const isPaid = p.status === 'Paid';
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/70 text-xs shadow-2xs hover:border-slate-300 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${isPaid ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                        <span className="font-bold text-slate-800">{pStart} <span className="text-slate-400">→</span> {pEnd}</span>
+                        <span className="text-[11px] text-slate-500">({p.days_worked || 0} days)</span>
+                      </div>
+
+                      <div className="flex items-center gap-2.5">
+                        <span className={`font-bold ${isPaid ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-amber-700 bg-amber-50 border border-amber-200'} px-2 py-0.5 rounded text-[10px]`}>
+                          {isPaid ? `Paid ₹${Number(p.paid_amount || p.total_amount).toLocaleString('en-IN')}` : `Pending ₹${Number(p.net_balance || p.total_amount).toLocaleString('en-IN')}`}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSlice(p.id, `${pStart} – ${pEnd}`)}
+                          className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 rounded transition-colors"
+                          title="Delete / Undo this recorded slice"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Date Range & Period Slicing Selector */}
+          <div className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">Select Billing Cycle / Period</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Select Custom Period to Bill / Pay
+                </span>
               </div>
-              <span className="text-xs text-slate-400 font-medium">
-                {selectedCycle?.fullLabel || `${format(safeStartDate, 'dd MMM yyyy')} – ${format(endDate, 'dd MMM yyyy')}`}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleSetRemainingUnpaid}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1"
+                  title="Automatically select remaining unbilled dates to Present"
+                >
+                  <RefreshCw className="w-3 h-3" /> Remaining Unpaid
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSetFullPeriod}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-[11px] font-bold border border-slate-700 transition-colors"
+                  title="Select all days from assignment start to present"
+                >
+                  Full Assignment
+                </button>
+              </div>
             </div>
 
-            {/* Cycle Chips */}
-            <div className="flex items-center gap-2 flex-wrap pt-1">
-              {cycleOptions.map(opt => {
-                const isSelected = selectedCycleId === opt.id;
-                const pastPay = getCyclePayrollStatus(opt);
-                const isPaid = pastPay?.status === 'Paid';
-                const isPending = pastPay?.status === 'Pending Payment';
+            {/* Custom From & To Pickers */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="bg-slate-800/90 border border-slate-700/80 rounded-lg p-2.5 flex items-center justify-between">
+                <span className="text-xs text-slate-300 font-semibold uppercase tracking-wider">Start Date:</span>
+                <input
+                  type="date"
+                  value={startDateStr}
+                  onChange={(e) => setStartDateStr(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 text-white text-xs font-bold rounded-md px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
 
-                return (
+              <div className="bg-slate-800/90 border border-slate-700/80 rounded-lg p-2.5 flex items-center justify-between">
+                <span className="text-xs text-slate-300 font-semibold uppercase tracking-wider">End Date:</span>
+                <input
+                  type="date"
+                  value={endDateStr}
+                  onChange={(e) => setEndDateStr(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 text-white text-xs font-bold rounded-md px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Quick Month Shortcuts */}
+            {monthPills.length > 0 && (
+              <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">Quick Months:</span>
+                {monthPills.map(m => (
                   <button
-                    key={opt.id}
+                    key={m.label}
                     type="button"
-                    onClick={() => setSelectedCycleId(opt.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                      isSelected
-                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm scale-102 ring-2 ring-emerald-500/30'
-                        : 'bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80 hover:border-slate-600'
-                    }`}
+                    onClick={() => handleSetMonthPreset(m.year, m.month)}
+                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 text-[10px] font-semibold transition-colors"
                   >
-                    <span>{opt.label}</span>
-                    {isPaid && (
-                      <span className="text-[9px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5">
-                        <Check className="w-2.5 h-2.5" /> Paid
-                      </span>
-                    )}
-                    {isPending && (
-                      <span className="text-[9px] bg-amber-500/30 text-amber-200 border border-amber-400/40 px-1.5 py-0.5 rounded font-semibold">
-                        Pending
-                      </span>
-                    )}
+                    {m.label}
                   </button>
-                );
-              })}
-
-              {/* Custom Range Chip */}
-              <button
-                type="button"
-                onClick={() => setSelectedCycleId('custom')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                  selectedCycleId === 'custom'
-                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm scale-102 ring-2 ring-emerald-500/30'
-                    : 'bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80 hover:border-slate-600'
-                }`}
-              >
-                <span>Custom Range</span>
-              </button>
-            </div>
-
-            {/* Custom Range Inputs */}
-            {selectedCycleId === 'custom' && (
-              <div className="mt-3 pt-3 border-t border-slate-800 flex items-center gap-4 flex-wrap animate-in fade-in duration-200">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-300 font-medium">From:</span>
-                  <input
-                    type="date"
-                    value={customStartDate}
-                    onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-300 font-medium">To:</span>
-                  <input
-                    type="date"
-                    value={customEndDate}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Existing Paid Status Banner */}
-          {currentPeriodPayroll?.status === 'Paid' && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between text-emerald-900 text-xs">
+          {/* Current Period Matching Status Banner */}
+          {matchingExistingPayroll && (
+            <div className={`border rounded-xl p-3 flex items-center justify-between text-xs ${
+              matchingExistingPayroll.status === 'Paid'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-amber-50 border-amber-200 text-amber-900'
+            }`}>
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <CheckCircle2 className={`w-4 h-4 shrink-0 ${matchingExistingPayroll.status === 'Paid' ? 'text-emerald-600' : 'text-amber-600'}`} />
                 <span>
-                  <strong>{selectedCycle?.label || 'This period'}</strong> is already recorded as <strong>PAID</strong> (Net: ₹{Number(currentPeriodPayroll.paid_amount || currentPeriodPayroll.total_amount || netPayable).toLocaleString('en-IN')}).
+                  This exact slice (<strong>{format(safeStartDate, 'dd MMM yyyy')} – {format(safeEndDate, 'dd MMM yyyy')}</strong>) is currently saved as <strong>{matchingExistingPayroll.status.toUpperCase()}</strong>.
                 </span>
               </div>
-              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300 px-2 py-0.5 rounded-full uppercase tracking-wide">
-                Paid
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide border ${
+                matchingExistingPayroll.status === 'Paid' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-amber-100 text-amber-700 border-amber-300'
+              }`}>
+                {matchingExistingPayroll.status}
               </span>
             </div>
           )}
 
-          {/* Period Details Cards */}
+          {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Start Date', value: format(safeStartDate, 'dd MMM yyyy') },
-              { label: 'End Date', value: format(endDate, 'dd MMM yyyy') },
+              { label: 'Slice Start', value: format(safeStartDate, 'dd MMM yyyy') },
+              { label: 'Slice End', value: format(safeEndDate, 'dd MMM yyyy') },
               { label: 'Period (Days)', value: `${totalPeriodDays} days` },
               {
-                label: emp?.preferred_payment_type === 'monthly' ? 'Implied Daily (÷ period)' : 'Staff Rate/Day',
+                label: emp?.preferred_payment_type === 'monthly' ? 'Implied Daily' : 'Staff Rate/Day',
                 value: `₹${Math.round(dailyRate).toLocaleString('en-IN')}`,
               },
             ].map(({ label, value }) => (
@@ -858,7 +926,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
                       ? 'bg-slate-900 text-white border-slate-900'
                       : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 hover:border-slate-300'
                   }`}
-                  title="Preview mini attendance record for each date"
+                  title="Preview mini attendance record for each date in this period"
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
                   <span>{showDailyPreview ? 'Hide Dates' : 'Preview Dates'}</span>
@@ -878,9 +946,9 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
             ) : attendanceSummary ? (
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: 'Full Days Present', value: attendanceSummary.days_full ?? Math.max(0, attendanceSummary.days_present - (attendanceSummary.days_half || 0) * 0.5), color: 'text-emerald-600' },
-                  { label: 'Half Days (0.5d)', value: attendanceSummary.days_half, color: 'text-amber-600' },
-                  { label: 'Days Absent', value: attendanceSummary.days_absent, color: 'text-red-500' },
+                  { label: 'Full Days Present', value: attendanceSummary.days_full ?? 0, color: 'text-emerald-600' },
+                  { label: 'Half Days (0.5d)', value: attendanceSummary.days_half ?? 0, color: 'text-amber-600' },
+                  { label: 'Days Absent', value: attendanceSummary.days_absent ?? 0, color: 'text-red-500' },
                   { label: 'Effective Days', value: daysWorked, color: 'text-primary font-bold' },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="text-center bg-white/70 rounded-lg py-2 border border-slate-200/60">
@@ -949,10 +1017,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
                   </span>
                 </div>
 
-                <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 shadow-inner">
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 shadow-inner">
                   {filteredDailyRecords.length === 0 ? (
                     <div className="p-4 text-center text-xs text-slate-400 font-medium">
-                      No dates match the selected filter.
+                      No dates match the selected filter in this range.
                     </div>
                   ) : (
                     filteredDailyRecords.map((d) => (
@@ -1004,7 +1072,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
           {/* Deduction Input */}
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Advance Paid to Worker for this Period (₹)</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Advance Deducted for this Period (₹)</label>
               <input
                 type="number"
                 min="0"
@@ -1020,15 +1088,12 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
           <div className="grid grid-cols-1 gap-4">
             <div className="border border-slate-200 rounded-xl p-4 space-y-2">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Worker Payslip ({selectedCycle?.label || 'Custom Period'})
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Worker Payslip ({format(safeStartDate, 'dd MMM')} – {format(safeEndDate, 'dd MMM yyyy')})
               </h3>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between text-slate-600"><span>Assigned Client</span><span className="font-semibold text-slate-800">{client?.client_name || 'N/A'}</span></div>
                 {hoursPerDay != null && hoursPerDay > 0 && (
                   <div className="flex justify-between text-slate-600"><span>Shift Hours (assignment)</span><span className="font-semibold text-slate-800">{hoursPerDay} hours/day</span></div>
-                )}
-                {hourlyMissingHours && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">Hourly worker: set shift hours on the assignment before generating.</p>
                 )}
                 <div className="flex justify-between text-slate-600"><span>{payCalc.schemeLabel}</span><span className="text-xs text-slate-500">{payCalc.earningsLine}</span></div>
                 <div className="flex justify-between font-medium text-slate-800"><span>Gross</span><span>₹{totalEarning.toFixed(2)}</span></div>
@@ -1053,14 +1118,14 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
             onClick={handleMarkAsPaid}
             disabled={isMarkingPaid || isGenerating || !attendanceSummary}
             className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 ${
-              currentPeriodPayroll?.status === 'Paid'
+              matchingExistingPayroll?.status === 'Paid'
                 ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'
             }`}
-            title="Mark this selected billing period as Paid in the system"
+            title="Mark this selected date range as Paid and advance remaining starting date"
           >
             {isMarkingPaid ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            <span>{currentPeriodPayroll?.status === 'Paid' ? 'Paid ✓ (Update)' : 'Mark as Paid'}</span>
+            <span>{matchingExistingPayroll?.status === 'Paid' ? 'Paid ✓ (Update)' : 'Mark as Paid'}</span>
           </button>
 
           {/* Download Action */}
@@ -1069,7 +1134,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
             onClick={handleGeneratePayslip}
             disabled={isGenerating || isMarkingPaid || !attendanceSummary}
             className="flex-1 py-2.5 bg-slate-900 text-white rounded-xl font-semibold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-            title="Download PDF payslip for this period"
+            title="Download PDF payslip for this date range"
           >
             {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Download
