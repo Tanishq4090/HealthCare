@@ -363,7 +363,7 @@ export default function HR() {
                     if (!a.employee_id) return false;
 
                     const hasMatchingDbPayroll = (payrollData || []).some((p: any) => {
-                        const isSettledPaid = p.type === 'final' || p.status === 'Paid' || p.status === 'Settled' || !!p.paid_through_date;
+                        const isSettledPaid = p.type === 'final' || p.type === 'slice' || p.status === 'Paid' || p.status === 'Settled' || !!p.paid_through_date;
                         if (p.assignment_id === a.id) {
                             if (a.assignment_status === 'active' && isSettledPaid) return false;
                             return true;
@@ -641,8 +641,9 @@ export default function HR() {
                     service_details: matchedService || null,
                 };
 
-                const isOngoingActive = asgnStatus === 'active' || p.type !== 'final';
-                const isUnsettled = p.status === 'Pending Payment' || p.status === 'Pending' || p.status === 'Partially Paid';
+                const isPaidOrSettled = p.status === 'Paid' || p.status === 'Settled' || p.type === 'slice' || !!p.paid_through_date;
+                const isOngoingActive = !isPaidOrSettled && (asgnStatus === 'active' || p.type !== 'final');
+                const isUnsettled = !isPaidOrSettled && (p.status === 'Pending Payment' || p.status === 'Pending' || p.status === 'Partially Paid');
 
                 if (isOngoingActive || isUnsettled) {
                     if (empId) {
@@ -2429,8 +2430,9 @@ export default function HR() {
                             const isPayrollItemActive = (item: any) => {
                                 const asgnStatus = item.worker_assignments?.assignment_status || item.assignment_status;
                                 if (asgnStatus === 'completed' || asgnStatus === 'cancelled') return false;
-                                if (item.type === 'final') return false;
-                                if (item.status === 'Paid' && !item._isSynthetic) return false;
+                                if (item.type === 'final' || item.type === 'slice') return false;
+                                if ((item.status === 'Paid' || item.status === 'Settled') && !item._isSynthetic) return false;
+                                if (item.paid_through_date && !item._isSynthetic) return false;
                                 if (asgnStatus === 'active') {
                                     if (item.end_date) {
                                         const endMs = new Date(item.end_date).getTime();
@@ -2865,9 +2867,18 @@ export default function HR() {
                                                                 return false;
                                                             }
 
-                                                            const eStart = existing.start_date?.split('T')[0] || existing.period_start?.split('T')[0];
-                                                            const iStart = item.start_date?.split('T')[0] || item.period_start?.split('T')[0];
-                                                            return !eStart || !iStart || eStart === iStart;
+                                                            const eStart = existing.start_date?.split('T')[0] || existing.period_start?.split('T')[0] || '';
+                                                            const iStart = item.start_date?.split('T')[0] || item.period_start?.split('T')[0] || '';
+                                                            const eEnd = existing.end_date?.split('T')[0] || existing.period_end?.split('T')[0] || '';
+                                                            const iEnd = item.end_date?.split('T')[0] || item.period_end?.split('T')[0] || '';
+
+                                                            if (eStart && iStart && eEnd && iEnd) {
+                                                                return eStart === iStart && eEnd === iEnd;
+                                                            }
+                                                            if (eStart && iStart) {
+                                                                return eStart === iStart;
+                                                            }
+                                                            return false;
                                                         });
 
                                                         if (existingIdx >= 0) {

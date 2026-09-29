@@ -574,6 +574,10 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       .eq('period_start', genStart)
       .eq('period_end', genEnd);
 
+    if (assignment.id) {
+      existingQuery = existingQuery.eq('assignment_id', assignment.id);
+    }
+
     const { data: existingRows } = await existingQuery;
     const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
@@ -586,7 +590,8 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       net_balance: isPaid ? 0 : netPayable,
       paid_through_date: isPaid ? genEnd : null,
       status,
-      month: monthLabel,
+      service_month: monthLabel,
+      type: 'slice',
       worker_phone: emp?.phone || '',
       period_start: genStart,
       period_end: genEnd,
