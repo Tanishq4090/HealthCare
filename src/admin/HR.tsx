@@ -81,6 +81,7 @@ export default function HR() {
     const [billingAssignment, setBillingAssignment] = useState<any>(null);
     const [autoCloseAssignmentOnGenerate, setAutoCloseAssignmentOnGenerate] = useState(false);
     const [collapsedClients, setCollapsedClients] = useState<Record<string, boolean>>({});
+    const [clientConsents, setClientConsents] = useState<any[]>([]);
 
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
@@ -302,6 +303,12 @@ export default function HR() {
                 .select('id, name, phone, pipeline_stage, estimated_value_monthly, notes, assigned_worker_role')
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
+
+            const { data: consentsData } = await supabase
+                .from('client_consents')
+                .select('id, lead_id, service_category, patient_name, relative_name, created_at')
+                .order('created_at', { ascending: false });
+            if (consentsData) setClientConsents(consentsData);
 
             // Fetch Attendance Stats for all employees
             const { data: monthStats } = await supabase
@@ -2276,13 +2283,18 @@ export default function HR() {
                                                         const s = v.trim().toLowerCase();
                                                         return s === 'date_range' || s === 'open_ended' || s === 'one_day' || s.includes('superseded');
                                                     };
-                                                    const leadObj = (pipelineLeads || []).find((l: any) => l.id === (assignment.client_id || assignment.clients?.id));
+                                                    const clientId = assignment.client_id || assignment.clients?.id;
+                                                    const consentObj = (clientConsents || []).find((c: any) => c.lead_id === clientId);
+                                                    const consentService = consentObj?.service_category;
+
+                                                    const leadObj = (pipelineLeads || []).find((l: any) => l.id === clientId);
                                                     const leadNotes = leadObj?.notes || '';
                                                     const sMatch = leadNotes.match(/^Service:\s*(.+)$/im);
                                                     const leadService = sMatch ? sMatch[1].trim() : null;
 
                                                     const resolvedService = (!isInvalidSvc(assignment.notes) ? assignment.notes : null)
                                                         || (!isInvalidSvc(matchingSvc?.service_type) ? matchingSvc?.service_type : null)
+                                                        || (!isInvalidSvc(consentService) ? consentService : null)
                                                         || (!isInvalidSvc(leadService) ? leadService : null)
                                                         || (!isInvalidSvc(leadObj?.assigned_worker_role) ? leadObj?.assigned_worker_role : null)
                                                         || (!isInvalidSvc(assignment.employees?.job_title) ? assignment.employees?.job_title : null)

@@ -1354,9 +1354,15 @@ export default function CRM() {
                     }
                 }
 
-                // If service_category, sync crm_leads service_interest
+                // If service_category, sync crm_leads service_interest, active services, and active worker_assignments
                 if (field === 'service_category') {
                     await supabase.from('crm_leads').update({ service_interest: newValue }).eq('id', leadId);
+                    try {
+                        await supabase.from('services').update({ service_type: newValue }).eq('client_id', leadId).eq('status', 'active');
+                        await supabase.from('worker_assignments').update({ notes: newValue }).eq('client_id', leadId).eq('assignment_status', 'active');
+                    } catch (syncErr) {
+                        console.warn('Error syncing service_category across services/assignments:', syncErr);
+                    }
                 }
 
                 // If offered_time, sync crm_leads shift_type
