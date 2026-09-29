@@ -1405,7 +1405,7 @@ export default function HR() {
                 hoursPerDay: item.hours_per_day ?? hoursPerDay,
             });
             const totalEarning = item.total_amount != null ? Number(item.total_amount) : pay.gross;
-            const advance = item.advance_amount || 0;
+            const advance = Number(item.advance_amount ?? item.advance_paid ?? item.worker_assignments?.advance_paid ?? 0);
             const netBalance = totalEarning - advance;
             const earningsLabel = pay.earningsLine.replace(/₹/g, 'Rs. ');
 
@@ -3709,7 +3709,14 @@ export default function HR() {
                 />
             )}
 
-            {previewPayslip && (
+            {previewPayslip && (() => {
+                const previewGross = previewPayslip.total_amount != null 
+                    ? Number(previewPayslip.total_amount) 
+                    : ((previewPayslip.days_worked || 0) * (previewPayslip.daily_rate || 0));
+                const previewAdvance = Number(previewPayslip.advance_amount ?? previewPayslip.advance_paid ?? previewPayslip.worker_assignments?.advance_paid ?? 0);
+                const previewNetPayable = Math.max(0, previewGross - previewAdvance);
+
+                return (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
                     <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 my-8">
                         {/* Header */}
@@ -3784,13 +3791,13 @@ export default function HR() {
                                             <td className="p-3 text-center text-slate-600">{previewPayslip.days_worked || 0}</td>
                                             <td className="p-3 text-right text-slate-600 font-mono">Rs. {previewPayslip.daily_rate?.toFixed(2)}</td>
                                             <td className="p-3 text-right font-bold text-slate-900 font-mono">
-                                                Rs. {((previewPayslip.days_worked || 0) * (previewPayslip.daily_rate || 0)).toFixed(2)}
+                                                Rs. {previewGross.toFixed(2)}
                                             </td>
                                         </tr>
                                         {/* Advance deduction if any */}
                                         <tr className="bg-slate-50/50">
                                             <td colSpan={3} className="p-3 text-right font-medium text-slate-500">Less: Security / Advance Paid</td>
-                                            <td className="p-3 text-right font-bold text-rose-500 font-mono">-Rs. {(previewPayslip.advance_paid || 0).toFixed(2)}</td>
+                                            <td className="p-3 text-right font-bold text-rose-500 font-mono">-Rs. {previewAdvance.toFixed(2)}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -3804,7 +3811,7 @@ export default function HR() {
                                 </div>
                                 <div className="text-right">
                                     <p className="text-2xl font-extrabold text-[#1AA6A8] font-mono">
-                                        Rs. {Math.max(0, ((previewPayslip.days_worked || 0) * (previewPayslip.daily_rate || 0)) - (previewPayslip.advance_paid || 0)).toFixed(2)}
+                                        Rs. {previewNetPayable.toFixed(2)}
                                     </p>
                                 </div>
                             </div>
@@ -3858,7 +3865,8 @@ export default function HR() {
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
             {requestDeleteWorker && (
                 <RequestDeletionModal
                     isOpen={Boolean(requestDeleteWorker)}
