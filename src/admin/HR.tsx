@@ -425,7 +425,7 @@ export default function HR() {
                     const emp = a.employees;
                     const clientObj = a.clients;
 
-                    // Check for prior paid/settled payroll records for this assignment or worker+client
+                    // Check for prior paid/settled payroll records for this assignment (e.g. monthly slices)
                     const paidEntries = (payrollData || []).filter((p: any) => {
                         const matchAsgnId = p.assignment_id && p.assignment_id === a.id;
                         const matchWorker = (p.worker_id && p.worker_id === a.employee_id) ||
@@ -434,8 +434,14 @@ export default function HR() {
                         const pClientMatch = (p.client_name || p.client || '').trim().toLowerCase();
                         const matchClient = pClientMatch && clientNameMatch && pClientMatch === clientNameMatch;
 
-                        const isPaidOrSettled = p.status === 'Paid' || p.status === 'Settled' || !!p.paid_through_date || p.type === 'final';
-                        return (matchAsgnId || (matchWorker && matchClient)) && isPaidOrSettled;
+                        const isPaidOrSettled = p.status === 'Paid' || p.status === 'Settled' || !!p.paid_through_date;
+                        if (matchAsgnId && isPaidOrSettled) return true;
+                        if (matchWorker && matchClient && isPaidOrSettled && p.type !== 'final') {
+                            const pEnd = p.paid_through_date || p.period_end?.split('T')[0];
+                            const aStart = a.start_date?.split('T')[0];
+                            if (pEnd && aStart && pEnd >= aStart) return true;
+                        }
+                        return false;
                     });
 
                     let effectiveStartDateStr = a.start_date?.split('T')[0];
@@ -655,7 +661,11 @@ export default function HR() {
                         const eStr = matchedAsgn?.end_date ? matchedAsgn.end_date.split('T')[0] : (p.period_end ? p.period_end.split('T')[0] : '');
 
                         // If attendance exists on or after eStr (e.g. today when released), ensure effective end date includes it
-                        const maxAttForWorker = (monthStats || []).filter(s => s.worker_id === empId).reduce((max, s) => (s.duty_date && s.duty_date > max ? s.duty_date : max), '');
+                        const maxAttForWorker = (monthStats || []).filter(s => {
+                            if (s.worker_id !== empId) return false;
+                            if (targetAsgnIds.size > 0 && s.assignment_id && !targetAsgnIds.has(s.assignment_id)) return false;
+                            return true;
+                        }).reduce((max, s) => (s.duty_date && s.duty_date > max ? s.duty_date : max), '');
                         const effectiveEStr = (maxAttForWorker && eStr && maxAttForWorker > eStr) ? maxAttForWorker : eStr;
 
                         const workerAttendance = (monthStats || []).filter(s => {

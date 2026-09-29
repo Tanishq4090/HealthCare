@@ -37,7 +37,8 @@ export function periodDaysInclusive(start: Date, end: Date): number {
     // Normalize to midnight so intra-day time offsets don't inflate the count
     const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-    const diffDays = Math.round(Math.abs(e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+    if (e.getTime() < s.getTime()) return 0;
+    const diffDays = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
     return diffDays + 1;   // inclusive of both start and end day
 }
 
