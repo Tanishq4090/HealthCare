@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { 
   FileText, X, Loader2, Download, Send, CalendarDays, 
   ChevronDown, ChevronUp, CheckCircle2, Clock, XCircle, 
-  Trash2, ArrowRight, RefreshCw, BookmarkCheck
+  Trash2, ArrowRight, RefreshCw, BookmarkCheck, Lock
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -62,11 +62,19 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
         .eq('worker_id', assignment.employee_id)
         .order('period_start', { ascending: true });
       
+      const seenPeriods = new Set<string>();
       const related = (data || []).filter((p: any) => {
-        if (p.assignment_id === assignment.id) return true;
-        const pClient = (p.client_name || '').trim().toLowerCase();
-        const aClient = (client?.client_name || '').trim().toLowerCase();
-        return pClient && aClient && pClient === aClient;
+        if (p.assignment_id !== assignment.id) {
+          const pClient = (p.client_name || '').trim().toLowerCase();
+          const aClient = (client?.client_name || '').trim().toLowerCase();
+          if (!pClient || !aClient || pClient !== aClient) return false;
+        }
+        const pStart = p.period_start?.split('T')[0] || '';
+        const pEnd = p.period_end?.split('T')[0] || '';
+        const key = `${pStart}_${pEnd}`;
+        if (seenPeriods.has(key)) return false;
+        seenPeriods.add(key);
+        return true;
       });
 
       setPastPayrolls(related);
@@ -661,6 +669,14 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       toast.success('Worker payslip generated and saved!');
       await fetchPastPayrolls();
       onGenerated();
+
+      // Automatically advance startDateStr to the day after this slice's end date
+      const [ey, em, ed] = format(safeEndDate, 'yyyy-MM-dd').split('-').map(Number);
+      const nextDay = new Date(ey, em - 1, ed + 1);
+      const nextStartStr = format(nextDay, 'yyyy-MM-dd');
+      setStartDateStr(nextStartStr);
+      setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'));
+      toast.info(`Next unpaid period ready: ${format(nextDay, 'dd MMM yyyy')} to Present.`);
     } catch (err: any) {
       toast.error('Failed: ' + err.message);
     } finally {
@@ -711,6 +727,14 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       toast.success('Payslip dispatched via WhatsApp successfully! ✅', { id: toastId });
       await fetchPastPayrolls();
       onGenerated();
+
+      // Automatically advance startDateStr to the day after this slice's end date
+      const [ey, em, ed] = format(safeEndDate, 'yyyy-MM-dd').split('-').map(Number);
+      const nextDay = new Date(ey, em - 1, ed + 1);
+      const nextStartStr = format(nextDay, 'yyyy-MM-dd');
+      setStartDateStr(nextStartStr);
+      setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'));
+      toast.info(`Next unpaid period ready: ${format(nextDay, 'dd MMM yyyy')} to Present.`);
     } catch (err: any) {
       toast.error('Failed to dispatch: ' + err.message, { id: toastId });
     } finally {
@@ -802,74 +826,70 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
             </div>
           )}
 
-          {/* Interactive Date Range & Period Slicing Selector */}
-          <div className="bg-slate-900 text-white rounded-xl p-4 shadow-sm border border-slate-800 space-y-3">
+          {/* Clean Pay Period Selector: Start Date is fixed, End Date is editable */}
+          <div className="bg-gradient-to-r from-slate-50 to-teal-50/20 border border-slate-200 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <CalendarDays className="w-4 h-4 text-[#1AA6A8]" />
+                  Pay Period Slicing
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Start date is fixed to the next unpaid day. Adjust the end date below to slice pay.
+                </p>
+              </div>
               <div className="flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                  Select Custom Period to Bill / Pay
+                <span className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">
+                  Rate: ₹{Math.round(dailyRate).toLocaleString('en-IN')}/day
+                </span>
+                <span className="text-[11px] font-bold text-[#1AA6A8] bg-[#EAFBFB] border border-[#1AA6A8]/30 px-2.5 py-1 rounded-lg">
+                  {totalPeriodDays} {totalPeriodDays === 1 ? 'day' : 'days'} selected
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleSetRemainingUnpaid}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1"
-                  title="Automatically select remaining unbilled dates to Present"
-                >
-                  <RefreshCw className="w-3 h-3" /> Remaining Unpaid
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSetFullPeriod}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-[11px] font-bold border border-slate-700 transition-colors"
-                  title="Select all days from assignment start to present"
-                >
-                  Full Assignment
-                </button>
-              </div>
             </div>
 
-            {/* Custom From & To Pickers */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div className="bg-slate-800/90 border border-slate-700/80 rounded-lg p-2.5 flex items-center justify-between">
-                <span className="text-xs text-slate-300 font-semibold uppercase tracking-wider">Start Date:</span>
-                <input
-                  type="date"
-                  value={startDateStr}
-                  onChange={(e) => setStartDateStr(e.target.value)}
-                  className="bg-slate-900 border border-slate-600 text-white text-xs font-bold rounded-md px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
-                />
+              {/* Start Date (Locked) */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-slate-400" /> Start Date (Locked)
+                  </p>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">
+                    {format(safeStartDate, 'dd MMM yyyy')}
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                  Unpaid Day 1
+                </span>
               </div>
 
-              <div className="bg-slate-800/90 border border-slate-700/80 rounded-lg p-2.5 flex items-center justify-between">
-                <span className="text-xs text-slate-300 font-semibold uppercase tracking-wider">End Date:</span>
-                <input
-                  type="date"
-                  value={endDateStr}
-                  onChange={(e) => setEndDateStr(e.target.value)}
-                  className="bg-slate-900 border border-slate-600 text-white text-xs font-bold rounded-md px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
-                />
+              {/* End Date (Editable) */}
+              <div className="bg-white border-2 border-[#1AA6A8]/60 hover:border-[#1AA6A8] focus-within:border-[#1AA6A8] rounded-xl p-3 flex items-center justify-between shadow-2xs transition-all">
+                <div className="flex-1 mr-2">
+                  <label className="text-[10px] font-bold text-[#1AA6A8] uppercase tracking-wider block">
+                    Pay Through (End Date)
+                  </label>
+                  <input
+                    type="date"
+                    value={endDateStr}
+                    min={startDateStr}
+                    onChange={(e) => setEndDateStr(e.target.value)}
+                    className="w-full text-sm font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer mt-0.5"
+                  />
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'))}
+                    className="text-[10px] font-bold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                    title="Set End Date to Today"
+                  >
+                    Today
+                  </button>
+                </div>
               </div>
             </div>
-
-            {/* Quick Month Shortcuts */}
-            {monthPills.length > 0 && (
-              <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">Quick Months:</span>
-                {monthPills.map(m => (
-                  <button
-                    key={m.label}
-                    type="button"
-                    onClick={() => handleSetMonthPreset(m.year, m.month)}
-                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 text-[10px] font-semibold transition-colors"
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Current Period Matching Status Banner */}
@@ -892,24 +912,6 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
               </span>
             </div>
           )}
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: 'Slice Start', value: format(safeStartDate, 'dd MMM yyyy') },
-              { label: 'Slice End', value: format(safeEndDate, 'dd MMM yyyy') },
-              { label: 'Period (Days)', value: `${totalPeriodDays} days` },
-              {
-                label: emp?.preferred_payment_type === 'monthly' ? 'Implied Daily' : 'Staff Rate/Day',
-                value: `₹${Math.round(dailyRate).toLocaleString('en-IN')}`,
-              },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide">{label}</p>
-                <p className="text-sm font-bold text-slate-800 mt-1">{value}</p>
-              </div>
-            ))}
-          </div>
 
           {/* Attendance Summary */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
