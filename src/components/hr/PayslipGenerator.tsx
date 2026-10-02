@@ -89,7 +89,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
 
   // Determine latest paid-through date
   const latestPaidThroughDate = useMemo(() => {
-    const paidList = pastPayrolls.filter(p => p.status === 'Paid' || p.paid_through_date || p.type === 'final');
+    const paidList = pastPayrolls.filter(p => p.status === 'Paid' || !!p.paid_through_date || p.status === 'Settled');
     if (paidList.length === 0) return null;
     return paidList.reduce((max: string, p: any) => {
       const d = p.paid_through_date || p.period_end?.split('T')[0] || '';
@@ -115,7 +115,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
   // Update starting date when pastPayrolls finishes initial load if user hasn't changed it
   useEffect(() => {
     fetchPastPayrolls().then((rows) => {
-      const paidList = (rows || []).filter((p: any) => p.status === 'Paid' || p.paid_through_date || p.type === 'final');
+      const paidList = (rows || []).filter((p: any) => p.status === 'Paid' || !!p.paid_through_date || p.status === 'Settled');
       if (paidList.length > 0) {
         const latestPaid = paidList.reduce((max: string, p: any) => {
           const d = p.paid_through_date || p.period_end?.split('T')[0] || '';
@@ -327,22 +327,17 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
     setEndDateStr(format(assignmentEndDate, 'yyyy-MM-dd'));
   };
 
-  const handleSetMonthPreset = (year: number, monthZeroIndex: number) => {
-    const mStart = new Date(year, monthZeroIndex, 1);
-    const mEnd = new Date(year, monthZeroIndex + 1, 0);
-
-    const effStart = isAfter(safeAssignmentStartDate, mStart) ? safeAssignmentStartDate : mStart;
-    const effEnd = isAfter(mEnd, assignmentEndDate) ? assignmentEndDate : mEnd;
-
-    setStartDateStr(format(effStart, 'yyyy-MM-dd'));
-    setEndDateStr(format(effEnd, 'yyyy-MM-dd'));
+  const handleSelectMonthEnd = (year: number, monthZeroIndex: number) => {
+    const lastDayOfMonth = new Date(year, monthZeroIndex + 1, 0);
+    const targetEnd = isAfter(lastDayOfMonth, assignmentEndDate) ? assignmentEndDate : lastDayOfMonth;
+    setEndDateStr(format(targetEnd, 'yyyy-MM-dd'));
   };
 
-  // Generate calendar months list for quick pills
+  // Generate calendar months list for quick pills (from safeStartDate's month to assignmentEndDate's month)
   const monthPills = useMemo(() => {
     const list: { label: string; year: number; month: number }[] = [];
-    const sy = safeAssignmentStartDate.getFullYear();
-    const sm = safeAssignmentStartDate.getMonth();
+    const sy = safeStartDate.getFullYear();
+    const sm = safeStartDate.getMonth();
     const ey = assignmentEndDate.getFullYear();
     const em = assignmentEndDate.getMonth();
 
@@ -358,7 +353,7 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
       }
     }
     return list;
-  }, [safeAssignmentStartDate, assignmentEndDate]);
+  }, [safeStartDate, assignmentEndDate]);
 
   // PDF Generation
   const getLogo = (): Promise<string | null> => {
@@ -890,6 +885,37 @@ export default function PayslipGenerator({ assignment, onClose, onGenerated, aut
                 </div>
               </div>
             </div>
+
+            {/* Quick Month Badges to set Pay Through to end of that month */}
+            {monthPills.length > 0 && (
+              <div className="pt-2 border-t border-slate-200/90 flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-1">
+                  Pay Through End Of:
+                </span>
+                {monthPills.map(m => {
+                  const lastDay = new Date(m.year, m.month + 1, 0);
+                  const targetEnd = isAfter(lastDay, assignmentEndDate) ? assignmentEndDate : lastDay;
+                  const targetEndStr = format(targetEnd, 'yyyy-MM-dd');
+                  const isSelected = endDateStr === targetEndStr;
+
+                  return (
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={() => handleSelectMonthEnd(m.year, m.month)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 border shadow-2xs ${
+                        isSelected
+                          ? 'bg-[#1AA6A8] text-white border-[#1AA6A8] shadow-xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border-slate-200 hover:border-slate-300'
+                      }`}
+                      title={`Set Pay Through date to end of ${m.label}`}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Current Period Matching Status Banner */}
