@@ -6,7 +6,6 @@ import { useAuth, type AccessModule } from '../contexts/AuthContext';
 import { AdminDeletionRequestsModal } from './components/AdminDeletionRequestsModal';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { generateMonthlyBilling } from '../services/serviceLifecycle';
 
 const ATTENTION_EVENT_TYPES = new Set([
     'lead_created',
@@ -365,21 +364,12 @@ export default function AdminLayout() {
 
                     const billsCount = existingBills?.length || 0;
 
-                    // If not generated, run generateMonthlyBilling automatically
-                    if (billsCount === 0) {
-                        try {
-                            await generateMonthlyBilling(monthStart, monthEnd);
-                        } catch (bErr) {
-                            console.warn('Auto month-end billing generation error:', bErr);
-                        }
-                    }
-
-                    // Register in global alerts bell list (without pop toast)
+                    // We notify the admin to review and generate, instead of silently running in background
                     const alertKey = `month_end_billing:${monthEnd}`;
                     const monthEndAlert = {
                         id: alertKey,
-                        title: `📅 Month-End Billing Active: ${monthName}`,
-                        body: `Today is the last day of the month (${now.getDate()} ${format(now, 'MMM')}). Monthly client invoices & staff payout ledgers have been generated.`,
+                        title: `📅 Month-End Billing Due: ${monthName}`,
+                        body: `Today is the last day of the month (${now.getDate()} ${format(now, 'MMM')}). Click here to review and generate monthly client invoices & staff payslips.`,
                         route: '/admin/billing?tab=monthly',
                         severity: 'attention' as const,
                         created_at: new Date().toISOString(),
