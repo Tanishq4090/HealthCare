@@ -977,16 +977,27 @@ export async function endService(
         console.error('Failed to sync worker payroll dates on service end:', paySyncErr);
     }
 
-    // 7. Ensure legacy worker_assignments are marked completed
+    // 7. Ensure legacy worker_assignments for this service's workers are marked completed
     try {
-        await supabase
-            .from('worker_assignments')
-            .update({
-                assignment_status: 'completed',
-                end_date: effectiveEndDate
-            })
-            .eq('client_id', service.client_id)
-            .eq('assignment_status', 'active');
+        if (workerIds.length > 0) {
+            await supabase
+                .from('worker_assignments')
+                .update({
+                    assignment_status: 'completed',
+                    end_date: effectiveEndDate
+                })
+                .eq('client_id', service.client_id)
+                .in('employee_id', workerIds)
+                .eq('assignment_status', 'active');
+        } else if ((service as any).legacy_assignment_id) {
+            await supabase
+                .from('worker_assignments')
+                .update({
+                    assignment_status: 'completed',
+                    end_date: effectiveEndDate
+                })
+                .eq('id', (service as any).legacy_assignment_id);
+        }
     } catch (legacyAsgnErr) {
         console.warn('Failed to complete legacy worker_assignments on service end:', legacyAsgnErr);
     }
@@ -1006,34 +1017,60 @@ export async function endService(
         console.warn('Failed to update service deposit_status to settled in endService:', svcUpdateErr);
     }
 
-    // 8. Move client lead in crm_leads to 'Closed Won'
+    // 8. Move client lead in crm_leads to 'Closed Won' ONLY IF no other active services remain
     try {
         const leadId = (service as any).lead_id || service.client_id;
         if (leadId) {
-            await supabase
-                .from('crm_leads')
-                .update({
-                    pipeline_stage: 'Closed Won',
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', leadId);
+            // Check if client has any other active services
+            const { data: remainingServices } = await supabase
+                .from('services')
+                .select('id')
+                .eq('client_id', service.client_id)
+                .eq('status', 'active')
+                .neq('id', serviceId);
 
-            await supabase.from('crm_lead_activity').insert([{
-                lead_id: leadId,
-                event_type: 'stage_changed',
-                description: `Service ended & deposit settled — moved to "Closed Won"`,
-                metadata: {
-                    to: 'Closed Won',
-                    from: 'Active Client',
-                    service_id: serviceId,
-                    settlement_amount: settlement,
-                    deposit_settled: depositAmount,
-                    total_days: verifiedDays
-                }
-            }]);
+            const hasOtherActiveServices = (remainingServices && remainingServices.length > 0);
+
+            if (hasOtherActiveServices) {
+                // Client still has other active services ongoing — log activity but DO NOT close the client
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: leadId,
+                    event_type: 'service_ended',
+                    description: `Service "${service.service_type || 'Care Service'}" ended & settled (${remainingServices.length} other service(s) still active)`,
+                    metadata: {
+                        service_id: serviceId,
+                        settlement_amount: settlement,
+                        deposit_settled: depositAmount,
+                        total_days: verifiedDays
+                    }
+                }]);
+            } else {
+                // All services for this client are now ended — move to Closed Won
+                await supabase
+                    .from('crm_leads')
+                    .update({
+                        pipeline_stage: 'Closed Won',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', leadId);
+
+                await supabase.from('crm_lead_activity').insert([{
+                    lead_id: leadId,
+                    event_type: 'stage_changed',
+                    description: `All services ended & deposit settled — moved to "Closed Won"`,
+                    metadata: {
+                        to: 'Closed Won',
+                        from: 'Active Client',
+                        service_id: serviceId,
+                        settlement_amount: settlement,
+                        deposit_settled: depositAmount,
+                        total_days: verifiedDays
+                    }
+                }]);
+            }
         }
     } catch (crmSyncErr) {
-        console.warn('Failed to update lead stage to Closed Won on service end:', crmSyncErr);
+        console.warn('Failed to update lead stage on service end:', crmSyncErr);
     }
 
     return {
@@ -1242,6 +1279,36 @@ export interface RecordServiceInvoiceParams {
 
 export async function recordServiceInvoice(params: RecordServiceInvoiceParams): Promise<ServiceBill | null> {
     try {
+        let validServiceId = params.serviceId;
+
+        // Verify validServiceId exists in public.services
+        const { data: svcCheck } = await supabase
+            .from('services')
+            .select('id')
+            .eq('id', validServiceId)
+            .maybeSingle();
+
+        if (!svcCheck && params.clientId) {
+            // Find active service for client or find by legacy assignment
+            const { data: fallbackSvc } = await supabase
+                .from('services')
+                .select('id')
+                .or(`client_id.eq.${params.clientId},lead_id.eq.${params.clientId},legacy_assignment_id.eq.${params.serviceId}`)
+                .eq('status', 'active')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (fallbackSvc?.id) {
+                validServiceId = fallbackSvc.id;
+            }
+        }
+
+        if (!validServiceId) {
+            console.warn(`recordServiceInvoice: Cannot record invoice, no valid service found for ID ${params.serviceId}`);
+            return null;
+        }
+
         const metadata = {
             invoice_number: params.invoiceNumber,
             invoice_pdf_url: params.invoicePdfUrl,
@@ -1253,7 +1320,7 @@ export async function recordServiceInvoice(params: RecordServiceInvoiceParams): 
         const { data: existingBills } = await supabase
             .from('service_bills')
             .select('id, notes, amount, total_days')
-            .eq('service_id', params.serviceId)
+            .eq('service_id', validServiceId)
             .eq('period_start', params.periodStart)
             .eq('period_end', params.periodEnd)
             .limit(1);
@@ -1291,7 +1358,7 @@ export async function recordServiceInvoice(params: RecordServiceInvoiceParams): 
             const { data: insertedBill, error: billError } = await supabase
                 .from('service_bills')
                 .insert({
-                    service_id: params.serviceId,
+                    service_id: validServiceId,
                     period_start: params.periodStart,
                     period_end: params.periodEnd,
                     total_days: params.totalDays,

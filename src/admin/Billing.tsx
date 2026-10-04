@@ -464,7 +464,7 @@ export default function Billing() {
                 for (const [cId, clientSvcs] of Object.entries(svcsByClient)) {
                     processedClientIds.add(cId);
                     const clientAsgns = asgnsByClient[cId] || [];
-                    const activeSvc = clientSvcs.find(s => s.status === 'active');
+                    const activeSvcs = clientSvcs.filter(s => s.status === 'active');
                     const endedSvcs = clientSvcs.filter(s => s.status !== 'active');
 
                     // Build previous deposits list for this client - only including cycles that had an actual deposit
@@ -488,8 +488,9 @@ export default function Billing() {
                             };
                         });
 
-                    if (activeSvc) {
-                        const matchingAsgn = clientAsgns.find(a => a.assignment_status === 'active' && a.invoice_pdf_url)
+                    for (const activeSvc of activeSvcs) {
+                        const matchingAsgn = clientAsgns.find(a => a.service_id === activeSvc.id)
+                            || clientAsgns.find(a => a.assignment_status === 'active' && a.invoice_pdf_url)
                             || clientAsgns.find(a => a.assignment_status === 'active')
                             || clientAsgns[0];
                         const leadMeta = leadsMetaMap[cId];
@@ -1581,7 +1582,18 @@ export default function Billing() {
             const waData = await waResp.json();
             if (!waData.success) throw new Error(waData.error || 'WhatsApp dispatch failed');
             // 3. Persist to unified service_bills ledger
-            const targetServiceId = agentTargetBill.rawAssignment?.id || agentTargetBill.id;
+            let targetServiceId = agentTargetBill.rawAssignment?.service_id || agentTargetBill.service_id;
+            if (!targetServiceId && agentTargetBill.client_id) {
+                const { data: svcRow } = await supabase
+                    .from('services')
+                    .select('id')
+                    .or(`client_id.eq.${agentTargetBill.client_id},lead_id.eq.${agentTargetBill.client_id}`)
+                    .eq('status', 'active')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                targetServiceId = svcRow?.id;
+            }
             if (targetServiceId) {
                 await recordServiceInvoice({
                     serviceId: targetServiceId,
