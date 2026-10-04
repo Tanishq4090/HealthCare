@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download, Loader2, Bot, ShieldCheck, Copy } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Building, Send, Edit3, X, Globe, QrCode, History, Search, Download, Loader2, Bot, ShieldCheck, Copy, Calendar } from 'lucide-react';
 
 const RupeeIcon = ({ className }: { className?: string }) => (
     <span className={`font-bold leading-none flex items-center justify-center ${className || ''}`} style={{ fontFamily: 'system-ui, sans-serif' }}>₹</span>
@@ -133,6 +133,7 @@ export default function Billing() {
     const [deposits, setDeposits] = useState<any[]>([]);
     const [depositFilter, setDepositFilter] = useState<'all' | 'held' | 'pending' | 'settled'>('all');
     const [depositSearch, setDepositSearch] = useState('');
+    const [depositMonthFilter, setDepositMonthFilter] = useState<string>('all');
     const [monthlyBills, setMonthlyBills] = useState<any[]>([]);
 
     // Deposit Collect Modal State
@@ -517,6 +518,7 @@ export default function Billing() {
                                 numeric_amount: Number(depositAmt) || 0,
                                 status: depStatus,
                                 is_active_cycle: true,
+                                raw_date: activeSvc.start_date || activeSvc.created_at || matchingAsgn?.assigned_at || new Date().toISOString(),
                                 date: new Date(activeSvc.start_date || activeSvc.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                                 invoice_no: "",
                                 invoice_pdf_url: matchingAsgn?.invoice_pdf_url || null,
@@ -550,6 +552,7 @@ export default function Billing() {
                                 numeric_amount: Number(depositAmt) || 0,
                                 status: s.deposit_status === 'settled' ? 'Settled' : 'Paid',
                                 is_active_cycle: false,
+                                raw_date: s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date().toISOString(),
                                 date: new Date(s.start_date || s.created_at || matchingAsgn?.assigned_at || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                                 invoice_no: "",
                                 invoice_pdf_url: matchingAsgn?.invoice_pdf_url || (matchingAsgn as any)?.final_invoice_url || null,
@@ -590,6 +593,7 @@ export default function Billing() {
                             numeric_amount: Number(depositAmt) || 0,
                             status: depStatus,
                             is_active_cycle: asgn.assignment_status === 'active',
+                            raw_date: asgn.assigned_at || asgn.start_date || new Date().toISOString(),
                             date: new Date(asgn.assigned_at || asgn.start_date || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                             invoice_no: "",
                             invoice_pdf_url: asgn.invoice_pdf_url || null,
@@ -617,6 +621,7 @@ export default function Billing() {
                             numeric_amount: depositAmt,
                             status: 'Settled',
                             is_active_cycle: false,
+                            raw_date: info['start date'] || lead.created_at || new Date().toISOString(),
                             date: new Date(info['start date'] || lead.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                             invoice_no: info['invoice no'] || '',
                             invoice_pdf_url: info['invoice pdf'] || null,
@@ -629,7 +634,9 @@ export default function Billing() {
                 mappedDeposits.sort((a, b) => {
                     if (a.is_active_cycle && !b.is_active_cycle) return -1;
                     if (!a.is_active_cycle && b.is_active_cycle) return 1;
-                    return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+                    const timeA = new Date(a.raw_date || a.date || 0).getTime();
+                    const timeB = new Date(b.raw_date || b.date || 0).getTime();
+                    return timeB - timeA;
                 });
 
                 setDeposits(mappedDeposits);
@@ -2191,6 +2198,20 @@ export default function Billing() {
     const settledDeposits = deposits.filter(d => d.status === 'Settled' || !d.is_active_cycle);
     const totalSettledAmount = settledDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
 
+    const depositMonths = useMemo(() => {
+        const monthsSet = new Set<string>();
+        deposits.forEach(dep => {
+            const raw = dep.raw_date || dep.date;
+            if (raw) {
+                const d = new Date(raw);
+                if (!isNaN(d.getTime())) {
+                    monthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                }
+            }
+        });
+        return Array.from(monthsSet).sort().reverse();
+    }, [deposits]);
+
     const filteredDeposits = deposits.filter(dep => {
         const q = depositSearch.trim().toLowerCase();
         if (q) {
@@ -2198,6 +2219,16 @@ export default function Billing() {
             const serviceMatch = dep.service_name?.toLowerCase().includes(q);
             const amountMatch = dep.amount?.toLowerCase().includes(q);
             if (!clientMatch && !serviceMatch && !amountMatch) return false;
+        }
+        if (depositMonthFilter !== 'all') {
+            const raw = dep.raw_date || dep.date;
+            if (raw) {
+                const d = new Date(raw);
+                if (!isNaN(d.getTime())) {
+                    const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    if (mKey !== depositMonthFilter) return false;
+                }
+            }
         }
         if (depositFilter === 'held') {
             return dep.status === 'Paid' && dep.is_active_cycle;
@@ -2341,16 +2372,32 @@ export default function Billing() {
                                     </button>
                                 </div>
 
-                                {/* Search Bar */}
-                                <div className="relative min-w-[220px]">
-                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search client or service..."
-                                        value={depositSearch}
-                                        onChange={(e) => setDepositSearch(e.target.value)}
-                                        className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                                    />
+                                {/* Search and Month Filter */}
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={depositMonthFilter}
+                                        onChange={(e) => setDepositMonthFilter(e.target.value)}
+                                        className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-medium"
+                                    >
+                                        <option value="all">All Months</option>
+                                        {depositMonths.map((m: string) => {
+                                            const [year, month] = m.split('-');
+                                            const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                                            const label = date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+                                            return <option key={m} value={m}>{label}</option>;
+                                        })}
+                                    </select>
+
+                                    {/* Search Bar */}
+                                    <div className="relative min-w-[200px]">
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search client or service..."
+                                            value={depositSearch}
+                                            onChange={(e) => setDepositSearch(e.target.value)}
+                                            className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                                        />
                                     {depositSearch && (
                                         <button
                                             onClick={() => setDepositSearch('')}
@@ -2359,6 +2406,7 @@ export default function Billing() {
                                             ✕
                                         </button>
                                     )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
