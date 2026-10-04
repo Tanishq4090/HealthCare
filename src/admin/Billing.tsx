@@ -2189,15 +2189,6 @@ export default function Billing() {
         setIsInvoiceOpen(true);
     };
 
-    const heldDeposits = deposits.filter(d => d.status === 'Paid' && d.is_active_cycle);
-    const totalHeldAmount = heldDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
-
-    const pendingDeposits = deposits.filter(d => d.status === 'Pending Invoice' || d.status === 'Invoice Sent');
-    const totalPendingAmount = pendingDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
-
-    const settledDeposits = deposits.filter(d => d.status === 'Settled' || !d.is_active_cycle);
-    const totalSettledAmount = settledDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
-
     const depositMonths = useMemo(() => {
         const monthsSet = new Set<string>();
         deposits.forEach(dep => {
@@ -2212,23 +2203,37 @@ export default function Billing() {
         return Array.from(monthsSet).sort().reverse();
     }, [deposits]);
 
-    const filteredDeposits = deposits.filter(dep => {
+    const monthFilteredDeposits = useMemo(() => {
+        if (depositMonthFilter === 'all') return deposits;
+        return deposits.filter(dep => {
+            const raw = dep.raw_date || dep.date;
+            if (raw) {
+                const d = new Date(raw);
+                if (!isNaN(d.getTime())) {
+                    const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    return mKey === depositMonthFilter;
+                }
+            }
+            return false;
+        });
+    }, [deposits, depositMonthFilter]);
+
+    const heldDeposits = monthFilteredDeposits.filter(d => d.status === 'Paid' && d.is_active_cycle);
+    const totalHeldAmount = heldDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
+
+    const pendingDeposits = monthFilteredDeposits.filter(d => d.status === 'Pending Invoice' || d.status === 'Invoice Sent');
+    const totalPendingAmount = pendingDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
+
+    const settledDeposits = monthFilteredDeposits.filter(d => d.status === 'Settled' || !d.is_active_cycle);
+    const totalSettledAmount = settledDeposits.reduce((sum, d) => sum + (d.numeric_amount || parseFloat(String(d.amount).replace(/[^\d.-]/g, '') || '0') || 0), 0);
+
+    const filteredDeposits = monthFilteredDeposits.filter(dep => {
         const q = depositSearch.trim().toLowerCase();
         if (q) {
             const clientMatch = dep.client?.toLowerCase().includes(q);
             const serviceMatch = dep.service_name?.toLowerCase().includes(q);
             const amountMatch = dep.amount?.toLowerCase().includes(q);
             if (!clientMatch && !serviceMatch && !amountMatch) return false;
-        }
-        if (depositMonthFilter !== 'all') {
-            const raw = dep.raw_date || dep.date;
-            if (raw) {
-                const d = new Date(raw);
-                if (!isNaN(d.getTime())) {
-                    const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                    if (mKey !== depositMonthFilter) return false;
-                }
-            }
         }
         if (depositFilter === 'held') {
             return dep.status === 'Paid' && dep.is_active_cycle;
@@ -2338,7 +2343,7 @@ export default function Billing() {
                                                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                                         }`}
                                     >
-                                        All Deposits ({deposits.length})
+                                        All Deposits ({monthFilteredDeposits.length})
                                     </button>
                                     <button
                                         onClick={() => setDepositFilter('held')}
