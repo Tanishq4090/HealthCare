@@ -133,6 +133,15 @@ serve(async (req) => {
     }
 
     try {
+        const ELEVENLABS_WEBHOOK_SECRET = Deno.env.get('ELEVENLABS_WEBHOOK_SECRET');
+        if (ELEVENLABS_WEBHOOK_SECRET) {
+            const authHeader = req.headers.get('x-elevenlabs-signature') || req.headers.get('Authorization') || req.headers.get('x-webhook-secret');
+            if (authHeader !== ELEVENLABS_WEBHOOK_SECRET && authHeader !== `Bearer ${ELEVENLABS_WEBHOOK_SECRET}`) {
+                console.warn('[ElevenLabs Webhook] Unauthorized request received');
+                return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+            }
+        }
+
         const payload = await req.json();
         console.log('[ElevenLabs Webhook] Received:', JSON.stringify(payload).slice(0, 300));
 

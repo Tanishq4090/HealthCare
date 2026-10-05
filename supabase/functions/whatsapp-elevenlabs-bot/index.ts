@@ -1129,9 +1129,9 @@ Respond ONLY as valid JSON: {"replyToUser": "string or null", "pipelineStageUpda
                     return new Response('EVENT_RECEIVED', { status: 200 });
                 }
                 if (parsed.replyToUser?.trim()) aiReplyMsg = parsed.replyToUser;
-                if (parsed.pipelineStageUpdate) {
-                    await supabase.from('crm_leads').update({ pipeline_stage: parsed.pipelineStageUpdate })
-                        .or(`phone.ilike.%${last10}%,whatsapp_number.ilike.%${last10}%`);
+                const ALLOWED_BOT_STAGES = ['In Discussion'];
+                if (parsed.pipelineStageUpdate && ALLOWED_BOT_STAGES.includes(parsed.pipelineStageUpdate) && earlyLead?.id) {
+                    await supabase.from('crm_leads').update({ pipeline_stage: parsed.pipelineStageUpdate }).eq('id', earlyLead.id);
                 }
             } catch (pErr) {
                 console.error("[Parse Error]:", pErr);
