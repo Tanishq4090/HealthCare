@@ -2284,15 +2284,23 @@ export default function HR() {
                                             {/* Worker Cards nested inside Client Container */}
                                             <div className="p-4 sm:p-5 space-y-4 bg-slate-50/30">
                                                 {group.assignments.map(assignment => {
-                                                    const matchingSvc = (servicesList || []).find((s: any) =>
-                                                        s.legacy_assignment_id === assignment.id ||
-                                                        s.client_id === (assignment.client_id || assignment.clients?.id) ||
-                                                        s.service_worker_assignments?.some((sw: any) => sw.employee_id === assignment.employee_id)
+                                                    const activeSvc = (servicesList || []).find((s: any) =>
+                                                        (s.status === 'active' || s.status === 'pending') && (
+                                                            s.legacy_assignment_id === assignment.id ||
+                                                            s.service_worker_assignments?.some((sw: any) => sw.employee_id === assignment.employee_id && !sw.end_date) ||
+                                                            s.client_id === (assignment.client_id || assignment.clients?.id)
+                                                        )
                                                     );
+                                                    const fallbackSvc = (servicesList || []).find((s: any) =>
+                                                        s.legacy_assignment_id === assignment.id ||
+                                                        s.service_worker_assignments?.some((sw: any) => sw.employee_id === assignment.employee_id) ||
+                                                        s.client_id === (assignment.client_id || assignment.clients?.id)
+                                                    );
+                                                    const matchingSvc = activeSvc || fallbackSvc;
                                                     const isInvalidSvc = (v?: string | null) => {
                                                         if (!v) return true;
                                                         const s = v.trim().toLowerCase();
-                                                        return s === 'date_range' || s === 'open_ended' || s === 'one_day' || s.includes('superseded');
+                                                        return s === 'date_range' || s === 'open_ended' || s === 'one_day' || s.includes('superseded') || s === 'staff';
                                                     };
                                                     const clientId = assignment.client_id || assignment.clients?.id;
                                                     const consentObj = (clientConsents || []).find((c: any) => c.lead_id === clientId);
@@ -2305,10 +2313,9 @@ export default function HR() {
 
                                                     const resolvedService = (!isInvalidSvc(assignment.notes) ? assignment.notes : null)
                                                         || (!isInvalidSvc(matchingSvc?.service_type) ? matchingSvc?.service_type : null)
-                                                        || (!isInvalidSvc(consentService) ? consentService : null)
                                                         || (!isInvalidSvc(leadService) ? leadService : null)
+                                                        || (!isInvalidSvc(consentService) ? consentService : null)
                                                         || (!isInvalidSvc(leadObj?.assigned_worker_role) ? leadObj?.assigned_worker_role : null)
-                                                        || (!isInvalidSvc(assignment.employees?.job_title) ? assignment.employees?.job_title : null)
                                                         || null;
 
                                                     const enriched = {
