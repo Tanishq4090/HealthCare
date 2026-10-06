@@ -5638,45 +5638,48 @@ export default function CRM() {
                                     return (
                                         <div key={idx} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-300 ${isExpanded ? 'flex-col sm:flex-row sm:items-stretch' : 'flex-col'}`}>
                                             <div
-                                                className={`p-3.5 sm:p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[220px] lg:w-[240px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
+                                                className={`p-3 sm:p-3.5 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[230px] lg:w-[250px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
                                                 onClick={() => toggleStage(col.title)}
                                             >
                                                 {/* Stage Header w/ Edit toggle */}
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`transition-transform duration-200 ${isExpanded ? '-rotate-90' : 'rotate-0'}`}>
-                                                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                                                <div className="flex items-center justify-between w-full">
+                                                    <div className={`flex items-center ${isExpanded ? 'justify-between' : 'gap-2.5'} gap-2 flex-1 min-w-0`}>
+                                                        <div className={`flex items-center gap-2 min-w-0 ${isExpanded ? 'flex-1' : ''}`}>
+                                                            <div className={`transition-transform duration-200 shrink-0 ${isExpanded ? '-rotate-90' : 'rotate-0'}`}>
+                                                                <ChevronDown className="w-4 h-4 text-slate-400" />
+                                                            </div>
+                                                            {editingStageIdx === idx ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingStageName}
+                                                                    onChange={(e) => setEditingStageName(e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') handleRenameStage(col.title, idx);
+                                                                        if (e.key === 'Escape') setEditingStageIdx(null);
+                                                                    }}
+                                                                    onBlur={() => handleRenameStage(col.title, idx)}
+                                                                    autoFocus
+                                                                    className={`font-semibold text-slate-900 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded outline-none ring-2 ring-primary/20 text-xs sm:text-sm min-w-0 ${isExpanded ? 'w-full flex-1' : 'w-[160px] sm:w-[180px]'}`}
+                                                                />
+                                                            ) : (
+                                                                <h3
+                                                                    className={`font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate text-xs sm:text-sm ${isExpanded ? 'min-w-0 flex-1' : ''}`}
+                                                                    onDoubleClick={() => {
+                                                                        if (!PROTECTED_STAGES.includes(col.title)) {
+                                                                            setEditingStageIdx(idx);
+                                                                            setEditingStageName(col.title);
+                                                                        } else {
+                                                                            toast.info("Protected stages cannot be renamed.");
+                                                                        }
+                                                                    }}
+                                                                    title={PROTECTED_STAGES.includes(col.title) ? "Protected Stage" : `${col.title} (Double-click to rename)`}
+                                                                >
+                                                                    {col.title}
+                                                                </h3>
+                                                            )}
                                                         </div>
-                                                        {editingStageIdx === idx ? (
-                                                            <input
-                                                                type="text"
-                                                                value={editingStageName}
-                                                                onChange={(e) => setEditingStageName(e.target.value)}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') handleRenameStage(col.title, idx);
-                                                                    if (e.key === 'Escape') setEditingStageIdx(null);
-                                                                }}
-                                                                onBlur={() => handleRenameStage(col.title, idx)}
-                                                                autoFocus
-                                                                className="font-semibold text-slate-900 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded outline-none ring-2 ring-primary/20 w-[180px] text-sm"
-                                                            />
-                                                        ) : (
-                                                            <h3
-                                                                className="font-semibold text-slate-900 cursor-text hover:text-primary transition-colors truncate pr-2 w-[150px]"
-                                                                onDoubleClick={() => {
-                                                                    if (!PROTECTED_STAGES.includes(col.title)) {
-                                                                        setEditingStageIdx(idx);
-                                                                        setEditingStageName(col.title);
-                                                                    } else {
-                                                                        toast.info("Protected stages cannot be renamed.");
-                                                                    }
-                                                                }}
-                                                                title={PROTECTED_STAGES.includes(col.title) ? "Protected Stage" : "Double-click to rename"}
-                                                            >
-                                                                {col.title}
-                                                            </h3>
-                                                        )}
-                                                        <span className={`min-w-[2rem] h-8 px-2 rounded-full flex items-center justify-center text-sm font-extrabold transition-all shadow-sm ${col.count > 0 ? 'bg-gradient-to-br from-[#1AA6A8] to-[#0E7C7E] text-white ring-2 ring-[#1AA6A8]/30 scale-105' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+
+                                                        <span className={`shrink-0 min-w-[1.75rem] h-6 sm:h-7 px-1.5 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-xs ${col.count > 0 ? 'bg-gradient-to-br from-[#1AA6A8] to-[#0E7C7E] text-white ring-1.5 ring-[#1AA6A8]/30' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
                                                             {col.count}
                                                         </span>
                                                     </div>
