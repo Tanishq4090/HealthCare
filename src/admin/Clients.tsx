@@ -1293,13 +1293,6 @@ export default function Clients() {
                                                         : <UserMinus className="w-4 h-4" />
                                                     }
                                                 </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeleteClientClick(client); }}
-                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                                    title="Delete permanently"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
                                             </>
                                         )}
                                     </div>
