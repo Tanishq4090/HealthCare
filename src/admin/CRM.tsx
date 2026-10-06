@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -1497,6 +1497,25 @@ export default function CRM() {
     const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
     const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
 
+    // Badges visibility state: hidden by default
+    const [showBadges, setShowBadges] = useState<boolean>(false);
+    const [cardBadgesOverrides, setCardBadgesOverrides] = useState<Record<string, boolean>>({});
+
+    const toggleShowBadges = () => {
+        setShowBadges(prev => {
+            const next = !prev;
+            setCardBadgesOverrides({});
+            return next;
+        });
+    };
+
+    const toggleCardBadges = (leadId: string) => {
+        setCardBadgesOverrides(prev => ({
+            ...prev,
+            [leadId]: prev[leadId] !== undefined ? !prev[leadId] : !showBadges,
+        }));
+    };
+
     // Stages start closed by default (empty expandedStages object means false)
 
     const toggleStage = (stageName: string) => {
@@ -1504,7 +1523,7 @@ export default function CRM() {
     };
 
     const loadMoreInStage = (stageName: string) => {
-        setStageLimits(prev => ({ ...prev, [stageName]: (prev[stageName] || 4) + 4 }));
+        setStageLimits(prev => ({ ...prev, [stageName]: (prev[stageName] || 8) + 8 }));
     }; const [workflows, setWorkflows] = useState({
         greeting: true
     });
@@ -5542,6 +5561,32 @@ export default function CRM() {
                                     </>
                                 )}
                             </div>
+
+                            {/* Badges Visibility Toggle */}
+                            {activeTab === 'pipeline' && (
+                                <button
+                                    type="button"
+                                    onClick={toggleShowBadges}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                        showBadges
+                                            ? 'bg-teal-50 border-teal-300 text-teal-700 ring-2 ring-teal-200/50'
+                                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                    title={showBadges ? "Hide all badges across lead cards" : "Show all badges across lead cards"}
+                                >
+                                    {showBadges ? (
+                                        <>
+                                            <EyeOff className="w-3.5 h-3.5 text-teal-600" />
+                                            <span>Hide Badges</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                            <span>Show Badges</span>
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
 
                         {/* Action buttons (Add Lead/Client & Export CSV) */}
@@ -5586,14 +5631,14 @@ export default function CRM() {
                             <>
                                 {columns.map((col, idx) => {
                                     const isExpanded = expandedStages[col.title] === true;
-                                    const limit = stageLimits[col.title] || 4;
+                                    const limit = stageLimits[col.title] || 8;
                                     const displayedItems = col.items.slice(0, limit);
                                     const hasMore = col.items.length > limit;
 
                                     return (
                                         <div key={idx} className={`flex bg-slate-50 rounded-xl border border-slate-200 shadow-sm transition-all duration-300 ${isExpanded ? 'flex-col sm:flex-row sm:items-stretch' : 'flex-col'}`}>
                                             <div
-                                                className={`p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[280px] lg:w-[320px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
+                                                className={`p-3.5 sm:p-4 bg-white relative group/header cursor-pointer select-none transition-colors hover:bg-slate-50 flex-shrink-0 flex flex-col ${isExpanded ? 'sm:w-[220px] lg:w-[240px] rounded-t-xl sm:rounded-t-none sm:rounded-l-xl border-b sm:border-b-0 sm:border-r border-slate-200' : 'rounded-xl'}`}
                                                 onClick={() => toggleStage(col.title)}
                                             >
                                                 {/* Stage Header w/ Edit toggle */}
@@ -5668,11 +5713,11 @@ export default function CRM() {
                                             </div>
 
                                             {isExpanded && (
-                                                <div className="p-2.5 sm:p-5 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
+                                                <div className="p-2 sm:p-3.5 flex-1 overflow-x-auto min-w-0 custom-scrollbar bg-slate-50/50">
                                                     {col.items.length === 0 ? (
                                                         <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                                     ) : (
-                                                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 min-w-0 sm:min-w-min">
+                                                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-2.5 min-w-0 sm:min-w-min">
                                                             {displayedItems.map((item) => {
                                                                 const priorityMeta = item.priority === 'hot'
                                                                     ? { label: 'Hot', cls: 'bg-red-100 text-red-700 border-red-200' }
@@ -5728,13 +5773,93 @@ export default function CRM() {
                                                                 if (activeWorkers.length === 0 && item.assigned_worker_name) {
                                                                     activeWorkers = [item.assigned_worker_name];
                                                                 }
+                                                                const isCardBadgesVisible = cardBadgesOverrides[item.id] !== undefined
+                                                                    ? cardBadgesOverrides[item.id]
+                                                                    : showBadges;
+
                                                                 return (
-                                                                    <div key={item.id} className={`relative w-full sm:w-[280px] shrink-0 bg-white rounded-xl sm:rounded-2xl shadow-2xs sm:shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
+                                                                    <div key={item.id} className={`relative w-full ${isCardBadgesVisible ? 'sm:w-[260px]' : 'sm:w-[215px]'} shrink-0 bg-white rounded-xl shadow-2xs sm:shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                                         {item.needs_attention && (
                                                                             <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
                                                                         )}
 
-                                                                        {/* ── PHONE VIEW COMPACT CARD (< sm) ── */}
+                                                                        {!isCardBadgesVisible ? (
+                                                                            /* ── COMPACT CARD (Badges Hidden: Name, Number, View Details) ── */
+                                                                            <div className="flex flex-col flex-1">
+                                                                                <div className="p-2.5 sm:p-3 flex flex-col gap-2 flex-1">
+                                                                                    {/* Row 1: Avatar + Name + Actions (Quick Edit & Unhide Badges) */}
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${getAvatarColor(item.name)}`}>
+                                                                                            {getInitials(item.name)}
+                                                                                        </div>
+                                                                                        <p className="text-xs sm:text-sm font-bold text-slate-900 truncate leading-tight flex-1" title={item.name}>
+                                                                                            {item.name}
+                                                                                        </p>
+                                                                                        <div className="flex items-center gap-0.5 shrink-0">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    openQuickEdit(item);
+                                                                                                }}
+                                                                                                className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer"
+                                                                                                title="Quick edit lead info & rates"
+                                                                                            >
+                                                                                                <Edit3 className="w-3 h-3" />
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    toggleCardBadges(item.id);
+                                                                                                }}
+                                                                                                className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer"
+                                                                                                title="Show badges for this lead"
+                                                                                            >
+                                                                                                <Eye className="w-3 h-3" />
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Row 2: Phone number + WhatsApp */}
+                                                                                    <div className="flex items-center justify-between gap-1 text-[11px] text-slate-600">
+                                                                                        <span className="truncate flex items-center gap-1 font-medium">
+                                                                                            <Phone className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
+                                                                                        </span>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            title="Chat on WhatsApp"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                fetchWhatsappChat(item);
+                                                                                            }}
+                                                                                            className="p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors shrink-0 cursor-pointer"
+                                                                                        >
+                                                                                            <MessageCircle className="w-3 h-3" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* View Details */}
+                                                                                <button
+                                                                                    onClick={async (e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setSelectedInspectorLead(item);
+                                                                                        fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                                        if (item.needs_attention) {
+                                                                                            setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                            await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="w-full py-1.5 border-t border-slate-100 text-slate-500 hover:text-primary hover:bg-slate-50 text-[11px] font-semibold rounded-b-xl transition-all flex items-center justify-center gap-1 group mt-auto cursor-pointer"
+                                                                                >
+                                                                                    View Details <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <>
+                                                                                {/* ── PHONE VIEW COMPACT CARD (< sm) ── */}
                                                                         <div
                                                                             onClick={async () => {
                                                                                 setSelectedInspectorLead(item);
@@ -5783,7 +5908,20 @@ export default function CRM() {
                                                                                         </span>
                                                                                     )}
                                                                                 </div>
-                                                                                <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                                                <div className="flex items-center gap-1 shrink-0">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            toggleCardBadges(item.id);
+                                                                                        }}
+                                                                                        className="p-1 rounded text-slate-400 hover:text-primary transition-colors cursor-pointer"
+                                                                                        title="Hide badges for this lead"
+                                                                                    >
+                                                                                        <EyeOff className="w-3.5 h-3.5 text-primary" />
+                                                                                    </button>
+                                                                                    <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+                                                                                </div>
                                                                             </div>
 
                                                                             {/* Row 2: Phone Number + Time */}
@@ -5845,10 +5983,10 @@ export default function CRM() {
 
                                                                         {/* ── DESKTOP FULL CARD (sm+) ── */}
                                                                         <div className="hidden sm:flex flex-col flex-1">
-                                                                            <div className="p-4 flex flex-col gap-3 flex-1">
+                                                                            <div className="p-3.5 flex flex-col gap-2.5 flex-1">
                                                                                 {/* Row 1: Avatar + Name + Priority + Quick Edit */}
-                                                                                <div className="flex items-start gap-3">
-                                                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold ${getAvatarColor(item.name)}`}>
+                                                                                <div className="flex items-start gap-2.5">
+                                                                                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${getAvatarColor(item.name)}`}>
                                                                                         {getInitials(item.name)}
                                                                                     </div>
                                                                                     <div className="flex-1 min-w-0">
@@ -5856,17 +5994,30 @@ export default function CRM() {
                                                                                             <p className="text-sm font-bold text-slate-900 truncate leading-tight">
                                                                                                 {item.name}
                                                                                             </p>
-                                                                                            <button
-                                                                                                type="button"
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    openQuickEdit(item);
-                                                                                                }}
-                                                                                                className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
-                                                                                                title="Quick edit lead info & rates"
-                                                                                            >
-                                                                                                <Edit3 className="w-3.5 h-3.5" />
-                                                                                            </button>
+                                                                                            <div className="flex items-center gap-0.5 shrink-0">
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        openQuickEdit(item);
+                                                                                                    }}
+                                                                                                    className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                                                                                                    title="Quick edit lead info & rates"
+                                                                                                >
+                                                                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                                                                </button>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        toggleCardBadges(item.id);
+                                                                                                    }}
+                                                                                                    className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                                                                                                    title="Hide badges for this lead"
+                                                                                                >
+                                                                                                    <EyeOff className="w-3.5 h-3.5 text-primary" />
+                                                                                                </button>
+                                                                                            </div>
                                                                                         </div>
                                                                                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                                                                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
@@ -6056,18 +6207,20 @@ export default function CRM() {
                                                                                 View Details <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                                                                             </button>
                                                                         </div>
-                                                                    </div>
-                                                                );
-                                                            })}
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                             {hasMore && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
-                                                                    className="w-full sm:w-[300px] shrink-0 flex items-center sm:flex-col justify-center gap-2 sm:gap-3 py-2 px-3 sm:p-0 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[40px] sm:min-h-[150px]"
+                                                                    className={`w-full ${showBadges ? 'sm:w-[260px]' : 'sm:w-[215px]'} shrink-0 flex items-center sm:flex-col justify-center gap-1.5 sm:gap-2 py-2 px-3 sm:p-2 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[40px] sm:min-h-[85px] cursor-pointer`}
                                                                 >
-                                                                    <div className="w-6 h-6 sm:w-10 sm:h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
-                                                                        <Plus className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-primary" />
+                                                                    <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-white flex items-center justify-center shadow-xs">
+                                                                        <Plus className="w-3 h-3 sm:w-4 sm:h-4 text-primary" />
                                                                     </div>
-                                                                    <span className="font-semibold text-xs sm:text-sm">Load More ({col.items.length - limit} left)</span>
+                                                                    <span className="font-semibold text-xs">Load More ({col.items.length - limit} left)</span>
                                                                 </button>
                                                             )}
                                                         </div>
