@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
-  ChevronDown, Building2, Shield, Trash2, RotateCcw,
+  ChevronDown, ChevronUp, MoreVertical, Building2, Shield, Trash2, RotateCcw,
   Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle, Coins, Clock, Lock,
 } from 'lucide-react';
 
@@ -134,15 +134,18 @@ function CopyButton({ text }: { text: string }) {
 
 function WorkerCardSkeleton() {
   return (
-    <div className="bg-white border border-slate-100 rounded-2xl p-5 flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <Skeleton className="w-12 h-12 rounded-full" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-3 w-20" />
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2.5 justify-between">
+      <div className="flex items-center gap-2.5">
+        <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+        <div className="flex-1 space-y-1.5 min-w-0">
+          <Skeleton className="h-3.5 w-24" />
+          <Skeleton className="h-2.5 w-16" />
         </div>
       </div>
-      <Skeleton className="h-8 w-full rounded-lg" />
+      <div className="flex gap-2 pt-1">
+        <Skeleton className="h-8 flex-1 rounded-lg" />
+        <Skeleton className="h-8 flex-1 rounded-lg" />
+      </div>
     </div>
   );
 }
@@ -1331,7 +1334,16 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [expandedWorkerIds, setExpandedWorkerIds] = useState<Record<string, boolean>>({});
   const debouncedSearch = useDebounce(search);
+
+  const toggleWorkerExpanded = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setExpandedWorkerIds(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1380,19 +1392,47 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
   return (
     <>
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input className="pl-9" placeholder="Search by name, role, or ID..." value={search} onChange={e => setSearch(e.target.value)} />
+          <Input className="pl-9 h-9 sm:h-10 text-xs sm:text-sm" placeholder="Search by name, role, or ID..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <Button variant="outline" size="icon" onClick={load} title="Refresh">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const allExpanded = filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]);
+            if (allExpanded) {
+              setExpandedWorkerIds({});
+            } else {
+              const next: Record<string, boolean> = {};
+              filtered.forEach(e => { next[e.id] = true; });
+              setExpandedWorkerIds(next);
+            }
+          }}
+          className="h-9 sm:h-10 px-2.5 sm:px-3 text-xs font-semibold gap-1.5 border-slate-200 text-slate-600 hover:text-primary hover:border-primary/30 shrink-0 cursor-pointer"
+          title={filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]) ? "Collapse details for all workers" : "Show details for all workers"}
+        >
+          {filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]) ? (
+            <>
+              <ChevronUp className="w-3.5 h-3.5 text-primary" />
+              <span className="hidden sm:inline">Collapse All</span>
+            </>
+          ) : (
+            <>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden sm:inline">Expand All</span>
+            </>
+          )}
+        </Button>
+        <Button variant="outline" size="icon" onClick={load} title="Refresh" className="h-9 sm:h-10 w-9 sm:w-10 shrink-0 cursor-pointer">
           <RefreshCw className="w-4 h-4" />
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <WorkerCardSkeleton key={i} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-3.5">
+          {Array.from({ length: 12 }).map((_, i) => <WorkerCardSkeleton key={i} />)}
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
@@ -1400,88 +1440,148 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
           <p className="font-medium">No available workers{search ? ' matching your search' : ''}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filtered.map(emp => (
-            <div key={emp.id} className="group bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:border-primary/20 transition-all duration-300 flex flex-col gap-5 relative overflow-hidden">
-              {/* Top Accent Gradient (subtle) */}
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/40 via-brand-teal/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              
-              <div className="flex items-start justify-between min-w-0">
-                <div className="flex items-center gap-4 cursor-pointer flex-1 min-w-0 pr-2" onClick={() => onViewDetails(emp)}>
-                  <Avatar className="w-14 h-14 ring-4 ring-slate-50 group-hover:ring-primary/10 transition-all duration-500 shrink-0">
-                    {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
-                    <AvatarFallback className="bg-gradient-to-br from-primary to-[#063b3c] text-white font-bold text-lg">
-                      {getInitials(emp.full_name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-slate-800 text-[15px] truncate group-hover:text-primary transition-colors">{emp.full_name}</h3>
-                    <p className="text-xs text-slate-500 font-medium truncate mt-0.5">{emp.job_title}</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Available</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-3.5">
+          {filtered.map(emp => {
+            const isExpanded = !!expandedWorkerIds[emp.id];
+            return (
+              <div
+                key={emp.id}
+                className="group bg-white border border-slate-200/80 rounded-2xl p-3 sm:p-3.5 shadow-2xs hover:shadow-md hover:border-primary/30 transition-all duration-200 flex flex-col justify-between relative overflow-hidden"
+              >
+                {/* Top Accent Gradient */}
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary/50 via-teal-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                {/* Card Top: Avatar + Name/Role + Expand & Options */}
+                <div className="flex items-start justify-between gap-1.5 min-w-0">
+                  <div
+                    className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0"
+                    onClick={() => onViewDetails(emp)}
+                    title="Click to view full profile"
+                  >
+                    <Avatar className="w-10 h-10 ring-2 ring-slate-100 group-hover:ring-primary/20 transition-all shrink-0">
+                      {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
+                      <AvatarFallback className="bg-gradient-to-br from-primary to-[#063b3c] text-white font-bold text-xs">
+                        {getInitials(emp.full_name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-slate-800 text-xs sm:text-sm truncate group-hover:text-primary transition-colors leading-tight" title={emp.full_name}>
+                        {emp.full_name}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 leading-tight" title={emp.job_title}>
+                        {emp.job_title}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider">Available</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-all">
-                      <ChevronDown className="w-4 h-4" />
+
+                  {/* Actions: Expand Arrow + More Dropdown */}
+                  <div className="flex items-center gap-0.5 shrink-0 -mt-0.5">
+                    <button
+                      type="button"
+                      onClick={(e) => toggleWorkerExpanded(emp.id, e)}
+                      className="p-1 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-md transition-all cursor-pointer"
+                      title={isExpanded ? "Hide skills, contact & joined" : "Show skills, contact & joined"}
+                    >
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-primary' : 'text-slate-400'}`} />
                     </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuItem onClick={() => onViewDetails(emp)} className="gap-2 text-xs">
-                      <Shield className="w-3.5 h-3.5" /> Full Profile
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onPreview(emp)} className="gap-2 text-xs">
-                      <FileText className="w-3.5 h-3.5" /> Preview ID Card
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setEditEmployee(emp)} className="gap-2 text-xs text-primary focus:text-primary">
-                      <Edit2 className="w-3.5 h-3.5" /> Edit Employee
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDelete(emp)} className="gap-2 text-xs text-red-500 focus:text-red-600">
-                      <Trash2 className="w-3.5 h-3.5" /> Delete Member
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
 
-              <div className="flex flex-col gap-2.5 py-4 border-y border-slate-50/80">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400 font-medium flex items-center gap-1.5">
-                    <Building2 className="w-3 h-3" /> Skills
-                  </span>
-                  <span className="text-slate-700 font-semibold truncate max-w-[120px]">
-                    {emp.services && emp.services.length > 0 ? emp.services[0] + (emp.services.length > 1 ? '...' : '') : 'General'}
-                  </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-all cursor-pointer"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onClick={() => onViewDetails(emp)} className="gap-2 text-xs">
+                          <Shield className="w-3.5 h-3.5" /> Full Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onPreview(emp)} className="gap-2 text-xs">
+                          <FileText className="w-3.5 h-3.5" /> Preview ID Card
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setEditEmployee(emp)} className="gap-2 text-xs text-primary focus:text-primary">
+                          <Edit2 className="w-3.5 h-3.5" /> Edit Employee
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(emp)} className="gap-2 text-xs text-red-500 focus:text-red-600">
+                          <Trash2 className="w-3.5 h-3.5" /> Delete Member
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400 font-medium flex items-center gap-1.5">
-                    <Phone className="w-3 h-3" /> Contact
-                  </span>
-                  <span className="text-slate-700 font-semibold">{emp.phone || 'No Phone'}</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400 font-medium flex items-center gap-1.5">
-                    <Calendar className="w-3 h-3" /> joined
-                  </span>
-                  <span className="text-slate-700 font-semibold">{new Date(emp.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
-                </div>
-              </div>
 
-              <div className="flex gap-2.5 pt-1">
-                <Button variant="outline" size="sm" className="flex-1 h-10 border-slate-200 text-slate-600 hover:border-primary/30 hover:bg-primary/5 hover:text-primary transition-all rounded-xl text-xs font-semibold"
-                  onClick={() => onPreview(emp)}>
-                  ID Card
-                </Button>
-                <Button size="sm" className="flex-1 h-10 bg-primary hover:bg-primary/90 text-white gap-2 rounded-xl text-xs font-bold shadow-lg shadow-primary/10 transition-all active:scale-95"
-                  onClick={() => onAssign(emp)}>
-                  <Briefcase className="w-3.5 h-3.5" /> Assign
-                </Button>
+                {/* Expandable Section: Skills, Contact, Joined */}
+                {isExpanded && (
+                  <div className="flex flex-col gap-1.5 py-2 my-2 border-y border-slate-100 text-[11px] animate-in fade-in-50 duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium flex items-center gap-1.5 shrink-0">
+                        <Building2 className="w-3 h-3 text-slate-400" /> Skills
+                      </span>
+                      <span className="text-slate-700 font-semibold truncate max-w-[120px] text-right" title={emp.services?.join(', ')}>
+                        {emp.services && emp.services.length > 0 ? emp.services[0] + (emp.services.length > 1 ? ` (+${emp.services.length - 1})` : '') : 'General'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium flex items-center gap-1.5 shrink-0">
+                        <Phone className="w-3 h-3 text-slate-400" /> Contact
+                      </span>
+                      {emp.phone ? (
+                        <a
+                          href={`tel:${emp.phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-slate-700 hover:text-primary font-semibold transition-colors truncate"
+                        >
+                          {emp.phone}
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 font-medium">No Phone</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium flex items-center gap-1.5 shrink-0">
+                        <Calendar className="w-3 h-3 text-slate-400" /> Joined
+                      </span>
+                      <span className="text-slate-700 font-semibold">
+                        {new Date(emp.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className={`flex gap-2 ${isExpanded ? 'pt-1' : 'pt-2.5'} mt-auto`}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-8 border-slate-200 text-slate-600 hover:border-primary/30 hover:bg-primary/5 hover:text-primary transition-all rounded-lg text-[11px] font-semibold px-2 cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPreview(emp);
+                    }}
+                  >
+                    ID Card
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 h-8 bg-primary hover:bg-primary/90 text-white gap-1 rounded-lg text-[11px] font-bold shadow-sm shadow-primary/10 transition-all active:scale-95 px-2 cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAssign(emp);
+                    }}
+                  >
+                    <Briefcase className="w-3 h-3 shrink-0" /> Assign
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
