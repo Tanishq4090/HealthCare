@@ -56,6 +56,8 @@ export default function HR() {
     const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
     const [inlineMarkingId, setInlineMarkingId] = useState<string | null>(null);
     const [activeAssignments, setActiveAssignments] = useState<any[]>([]);
+    const [rosterSearch, setRosterSearch] = useState('');
+    const [rosterStatusFilter, setRosterStatusFilter] = useState<'all' | 'unmarked' | 'present' | 'absent'>('all');
 
     // Initial data fetch
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -847,25 +849,32 @@ export default function HR() {
     const fetchLiveAttendance = useCallback(async () => {
         setAttendanceLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('worker_assignments')
-                .select(`
-                    *,
-                    employees(*),
-                    clients(client_name)
-                `)
-                .eq('assignment_status', 'active')
-                .order('assigned_at', { ascending: false });
+            const [asgRes, attRes] = await Promise.all([
+                supabase
+                    .from('worker_assignments')
+                    .select(`
+                        *,
+                        employees(*),
+                        clients(client_name)
+                    `)
+                    .eq('assignment_status', 'active')
+                    .order('assigned_at', { ascending: false }),
+                supabase
+                    .from('attendance')
+                    .select('*')
+                    .eq('duty_date', selectedAttendanceDate)
+            ]);
 
-            if (error) throw error;
-            setActiveAssignments(data || []);
+            if (asgRes.error) throw asgRes.error;
+            setActiveAssignments(asgRes.data || []);
+            setAttendanceLogs(attRes.data || []);
         } catch (err: any) {
             console.error('Error fetching active assignments:', err);
             toast.error('Failed to load active assignments');
         } finally {
             setAttendanceLoading(false);
         }
-    }, []);
+    }, [selectedAttendanceDate]);
 
     // Initial data load on mount only
     useEffect(() => { fetchData(); }, [fetchData]);
@@ -930,6 +939,48 @@ export default function HR() {
         const matchStatus = workerStatusFilter === 'All' || w.status === workerStatusFilter;
         return matchSearch && matchStatus;
     });
+
+    // Derived: quick attendance stats for the active roster date
+    const rosterStats = useMemo(() => {
+        let totalClients = 0;
+        let totalWorkers = 0;
+        let presentWorkers = 0;
+        let absentWorkers = 0;
+        let unmarkedWorkers = 0;
+
+        const clientSet = new Set<string>();
+        const seenWorkerIds = new Set<string>();
+
+        activeAssignments.forEach((asgn: any) => {
+            const cId = asgn.client_id || asgn.clients?.id || asgn.clients?.client_name || 'unassigned';
+            clientSet.add(cId);
+
+            const wId = asgn.employee_id;
+            if (wId && !seenWorkerIds.has(wId)) {
+                seenWorkerIds.add(wId);
+                totalWorkers++;
+
+                const log = attendanceLogs.find((l: any) => l.worker_id === wId);
+                if (!log || log.status === 'Pending') {
+                    unmarkedWorkers++;
+                } else if (log.status === 'Absent' || log.status === 'absent' || log.is_absent) {
+                    absentWorkers++;
+                } else {
+                    presentWorkers++;
+                }
+            }
+        });
+
+        totalClients = clientSet.size;
+
+        return {
+            totalClients,
+            totalWorkers,
+            presentWorkers,
+            absentWorkers,
+            unmarkedWorkers
+        };
+    }, [activeAssignments, attendanceLogs]);
 
     const location = useLocation();
 
@@ -2212,6 +2263,104 @@ export default function HR() {
                         </div>
                     </div>
 
+                    {/* Instant Client & Worker Search Bar + Quick Stats Filter */}
+                    <div className="px-4 py-3 sm:px-5 sm:py-3.5 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        {/* Instant Search Bar */}
+                        <div className="relative flex-1 max-w-md">
+                            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search client, worker, or service..."
+                                value={rosterSearch}
+                                onChange={(e) => setRosterSearch(e.target.value)}
+                                className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/20 focus:border-[#1AA6A8] font-medium text-slate-800 placeholder:text-slate-400 transition-all"
+                            />
+                            {rosterSearch && (
+                                <button
+                                    onClick={() => setRosterSearch('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
+                                    title="Clear search"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Quick Stats Filter Pills */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                                onClick={() => setRosterStatusFilter('all')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    rosterStatusFilter === 'all'
+                                        ? 'bg-slate-900 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70 border border-transparent'
+                                }`}
+                            >
+                                <Users className="w-3.5 h-3.5" />
+                                <span>All Clients</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                    rosterStatusFilter === 'all' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                    {rosterStats.totalClients}
+                                </span>
+                            </button>
+
+                            <button
+                                onClick={() => setRosterStatusFilter('unmarked')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    rosterStatusFilter === 'unmarked'
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/80'
+                                }`}
+                                title="Show clients with workers pending attendance mark for this date"
+                            >
+                                <span className={`w-2 h-2 rounded-full ${rosterStatusFilter === 'unmarked' ? 'bg-white' : 'bg-amber-500'} ${rosterStats.unmarkedWorkers > 0 ? 'animate-pulse' : ''}`} />
+                                <span>Unmarked</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                    rosterStatusFilter === 'unmarked' ? 'bg-amber-600 text-white' : 'bg-amber-200 text-amber-900'
+                                }`}>
+                                    {rosterStats.unmarkedWorkers}
+                                </span>
+                            </button>
+
+                            <button
+                                onClick={() => setRosterStatusFilter('present')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    rosterStatusFilter === 'present'
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/80'
+                                }`}
+                                title="Show clients with workers marked present for this date"
+                            >
+                                <CheckCircle2 className={`w-3.5 h-3.5 ${rosterStatusFilter === 'present' ? 'text-white' : 'text-emerald-500'}`} />
+                                <span>Present</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                    rosterStatusFilter === 'present' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-900'
+                                }`}>
+                                    {rosterStats.presentWorkers}
+                                </span>
+                            </button>
+
+                            <button
+                                onClick={() => setRosterStatusFilter('absent')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    rosterStatusFilter === 'absent'
+                                        ? 'bg-rose-600 text-white shadow-xs'
+                                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200/80'
+                                }`}
+                                title="Show clients with workers marked absent for this date"
+                            >
+                                <X className={`w-3.5 h-3.5 ${rosterStatusFilter === 'absent' ? 'text-white' : 'text-rose-500'}`} />
+                                <span>Absent</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                    rosterStatusFilter === 'absent' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'
+                                }`}>
+                                    {rosterStats.absentWorkers}
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
                     {attendanceLoading ? (
                         <div className="flex-1 flex flex-col items-center justify-center py-20">
                             <Loader2 className="w-8 h-8 text-[#1AA6A8] animate-spin mb-4" />
@@ -2256,7 +2405,62 @@ export default function HR() {
                                     // Sort client groups so the newest active client (e.g. Tanishq) always appears at the TOP
                                     const sortedGroups = Array.from(map.values()).sort((a, b) => b.latestAssignedAt - a.latestAssignedAt);
 
-                                    return sortedGroups.map((group) => (
+                                    // Apply instant search and quick attendance status filters
+                                    const filteredGroups = sortedGroups.filter((group) => {
+                                        // 1. Text Search (Client Name, Worker Name, Job Title / Service)
+                                        if (rosterSearch.trim()) {
+                                            const query = rosterSearch.trim().toLowerCase();
+                                            const clientMatches = group.clientName.toLowerCase().includes(query);
+                                            const workerMatches = group.assignments.some((asgn: any) => {
+                                                const workerName = (asgn.employees?.full_name || asgn.employees?.name || asgn.employee_name || '').toLowerCase();
+                                                const jobTitle = (asgn.employees?.job_title || asgn.notes || asgn.service_name || '').toLowerCase();
+                                                return workerName.includes(query) || jobTitle.includes(query);
+                                            });
+                                            if (!clientMatches && !workerMatches) return false;
+                                        }
+
+                                        // 2. Quick Status Filter (All / Unmarked / Present / Absent for this date)
+                                        if (rosterStatusFilter !== 'all') {
+                                            const hasMatchingWorkerStatus = group.assignments.some((asgn: any) => {
+                                                const log = attendanceLogs.find((l: any) => l.worker_id === asgn.employee_id);
+                                                if (rosterStatusFilter === 'unmarked') {
+                                                    return !log || log.status === 'Pending';
+                                                }
+                                                if (rosterStatusFilter === 'present') {
+                                                    return log && (log.status === 'Present' || log.status === 'present' || log.status === 'On Duty' || log.status === 'Half Day');
+                                                }
+                                                if (rosterStatusFilter === 'absent') {
+                                                    return log && (log.status === 'Absent' || log.status === 'absent' || log.is_absent);
+                                                }
+                                                return true;
+                                            });
+                                            if (!hasMatchingWorkerStatus) return false;
+                                        }
+
+                                        return true;
+                                    });
+
+                                    if (sortedGroups.length > 0 && filteredGroups.length === 0) {
+                                        return (
+                                            <div className="py-12 px-6 text-center bg-white rounded-2xl border border-slate-200 shadow-xs">
+                                                <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-3 border border-slate-100">
+                                                    <Search className="w-5 h-5 text-slate-400" />
+                                                </div>
+                                                <h4 className="font-bold text-slate-800 text-sm">No clients or workers match your search or filter</h4>
+                                                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                                                    Try typing a different name or switching the filter above to "All Clients".
+                                                </p>
+                                                <button
+                                                    onClick={() => { setRosterSearch(''); setRosterStatusFilter('all'); }}
+                                                    className="mt-3.5 px-3.5 py-1.5 text-xs font-bold text-[#1AA6A8] hover:text-[#148B8D] bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors cursor-pointer"
+                                                >
+                                                    Reset Filters
+                                                </button>
+                                            </div>
+                                        );
+                                    }
+
+                                    return filteredGroups.map((group) => (
                                         <div
                                             key={group.clientId}
                                             className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"
@@ -2328,6 +2532,7 @@ export default function HR() {
                                                             assignment={enriched}
                                                             onSummaryChange={() => {
                                                                 fetchData();
+                                                                fetchLiveAttendance();
                                                             }}
                                                             onAssignmentCompleted={async () => {
                                                                 await fetchData();
