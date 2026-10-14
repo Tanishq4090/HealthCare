@@ -2136,15 +2136,30 @@ export default function Billing() {
         const days = Number(bill.total_days) || Number(noteData.days) || 1;
         const rate = Number(bill.daily_rate_used) || Number(noteData.rate_per_day) || Number(service.complete_month_daily_rate) || 800;
         const gross = Number(noteData.gross_amount) || (days * rate);
+        const previouslyBilled = Number(noteData.previously_billed) || 0;
         const deposit = Number(bill.deposit_applied) !== undefined && !isNaN(Number(bill.deposit_applied))
             ? Number(bill.deposit_applied)
             : (Number(noteData.deposit) || 0);
-        const net = Number(bill.amount) !== undefined && !isNaN(Number(bill.amount))
-            ? Number(bill.amount)
-            : (Number(noteData.net_amount) || Math.max(0, gross - deposit));
+
+        const isFinalOrSettled = bill.type === 'final' || bill.deposit_settled === true || noteData.type === 'final_settlement';
+        
+        let settlement = 0;
+        if (bill.settlement_amount !== undefined && bill.settlement_amount !== null && !isNaN(Number(bill.settlement_amount))) {
+            settlement = Number(bill.settlement_amount);
+        } else if (noteData.settlement_amount !== undefined && !isNaN(Number(noteData.settlement_amount))) {
+            settlement = Number(noteData.settlement_amount);
+        } else {
+            settlement = gross - previouslyBilled - (bill.deposit_settled ? deposit : 0);
+        }
+
+        const isRefund = isFinalOrSettled ? settlement < 0 : (deposit > gross && bill.deposit_settled);
+        const refundAmount = Math.abs(settlement);
+        const net = isFinalOrSettled
+            ? Math.max(0, settlement)
+            : (Number(bill.amount) !== undefined && !isNaN(Number(bill.amount))
+                ? Number(bill.amount)
+                : Math.max(0, gross - deposit));
         const invNo = bill.invoice_number || noteData.invoice_number || `INV-${Math.floor(1000 + Math.random() * 9000)}`;
-        const isRefund = net <= 0 && deposit > gross;
-        const refundAmount = Math.max(0, deposit - gross);
 
         const sDate = bill.period_start ? bill.period_start.split('T')[0] : (service.start_date?.split('T')[0] || '');
         const eDate = bill.period_end ? bill.period_end.split('T')[0] : (service.end_date?.split('T')[0] || '');
@@ -2164,8 +2179,10 @@ export default function Billing() {
             client_phone: clientPhone,
             client_address: noteData.client_address || '',
             invoice_no: invNo,
-            amount: isRefund ? `₹${refundAmount} (Refund)` : net.toString(),
+            amount: isRefund ? `₹${refundAmount} (Refund)` : `₹${net.toLocaleString('en-IN')}`,
             totalAmount: isRefund ? 0 : net,
+            grossAmount: gross,
+            previouslyBilled: previouslyBilled,
             depositCollected: deposit,
             days: days,
             rate: rate,
@@ -2182,6 +2199,8 @@ export default function Billing() {
             phone: clientPhone,
             address: noteData.client_address || '',
             service: itemDescription,
+            grossAmount: gross,
+            previouslyBilled: previouslyBilled,
             amount: isRefund ? 0 : net,
             totalAmount: isRefund ? 0 : net,
             depositCollected: deposit,
@@ -2197,7 +2216,7 @@ export default function Billing() {
             refundAmount: refundAmount,
         });
         setAgentDraftText(generateWhatsappDraft(targetBill, agentDraftLang));
-        setInvoiceDepositAmount(net.toString());
+        setInvoiceDepositAmount((isRefund ? 0 : net).toString());
         setIsInvoiceOpen(true);
     };
 
@@ -2587,11 +2606,19 @@ export default function Billing() {
                             let clientServiceName = service.service_type || 'Old Age Care';
                             let clientShift = '24-Hour Shift';
 
+                            let leadRes: any = { data: null };
+                            let consentRes: any = { data: null };
+                            let quoteRes: any = { data: null };
+
                             try {
-                                const [leadRes, consentRes] = await Promise.all([
+                                const [lRes, cRes, qRes] = await Promise.all([
                                     supabase.from('crm_leads').select('*').eq('id', service.client_id).maybeSingle(),
                                     supabase.from('client_consents').select('*').eq('lead_id', service.client_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+                                    supabase.from('crm_quotations').select('*').eq('lead_id', service.client_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
                                 ]);
+                                leadRes = lRes;
+                                consentRes = cRes;
+                                quoteRes = qRes;
                                 if (consentRes.data?.address) {
                                     clientAddress = consentRes.data.address;
                                 } else if (leadRes.data?.notes) {
@@ -2628,12 +2655,30 @@ export default function Billing() {
                                 ? Math.round((sEndDt.getTime() - sStartDt.getTime()) / (1000 * 60 * 60 * 24)) + 1
                                 : (bill?.total_days || 0);
 
-                            const isLessThan30 = isEndedEarly && lifetimeDays > 0 && lifetimeDays < 30;
-                            const applicableDefaultRate = isLessThan30
-                                ? (service.incomplete_month_daily_rate || (service.complete_month_daily_rate ? service.complete_month_daily_rate * 2 : 1000))
-                                : (service.complete_month_daily_rate || 500);
+                            const configuredFullMonthRate = Number(leadRes.data?.complete_month_daily_rate)
+                                || Number(quoteRes.data?.complete_month_rate)
+                                || Number(service.complete_month_daily_rate)
+                                || (leadRes.data?.estimated_value_monthly ? Math.round(Number(leadRes.data.estimated_value_monthly) / 30) : 0)
+                                || 800;
 
-                            const billRate = bill?.daily_rate_used || applicableDefaultRate;
+                            const configuredShortTermRate = Number(leadRes.data?.incomplete_month_daily_rate)
+                                || Number(quoteRes.data?.incomplete_month_rate)
+                                || Number(service.incomplete_month_daily_rate)
+                                || (configuredFullMonthRate > 0 ? (configuredFullMonthRate < 1000 ? configuredFullMonthRate * 2 : Math.round(configuredFullMonthRate * 1.5)) : 1500)
+                                || 1500;
+
+                            const isLessThan30 = isEndedEarly && lifetimeDays > 0 && lifetimeDays < 30;
+                            const applicableDefaultRate = isLessThan30 ? configuredShortTermRate : configuredFullMonthRate;
+
+                            let billRate = applicableDefaultRate;
+                            if (bill?.daily_rate_used && bill.daily_rate_used > 0) {
+                                if (bill.daily_rate_used === 500 && configuredFullMonthRate > 500) {
+                                    billRate = configuredFullMonthRate;
+                                } else {
+                                    billRate = bill.daily_rate_used;
+                                }
+                            }
+
                             const billObj = {
                                 id: service.id,
                                 client_id: service.client_id,
@@ -2653,8 +2698,8 @@ export default function Billing() {
                                     employee_id: activeWorker?.employee_id,
                                     service_name: clientServiceName,
                                     client_billing_rate: billRate,
-                                    complete_month_daily_rate: service.complete_month_daily_rate || 500,
-                                    incomplete_month_daily_rate: service.incomplete_month_daily_rate || 1000,
+                                    complete_month_daily_rate: configuredFullMonthRate,
+                                    incomplete_month_daily_rate: configuredShortTermRate,
                                     deposit_amount: service.deposit_amount || 0,
                                     start_date: bill?.period_start ? bill.period_start.split('T')[0] : (service.start_date || ''),
                                     end_date: bill?.period_end ? bill.period_end.split('T')[0] : (service.end_date || ''),
@@ -2667,14 +2712,9 @@ export default function Billing() {
                             setCiRate(billRate);
                             setCiDeposit(depositAmt);
 
-                            let hasDepositDeducted = false;
-                            if (bill?.deposit_applied && Number(bill.deposit_applied) > 0) {
-                                hasDepositDeducted = true;
-                            } else if (noteData.deposit && Number(noteData.deposit) > 0) {
-                                hasDepositDeducted = true;
-                            }
-                            setCiSettleDeposit(hasDepositDeducted);
-                            setCiEndService(bill?.deposit_settled === true || service.status === 'ended');
+                            // Routine monthly bills keep deposit held safely; no settling from Prepare Invoice
+                            setCiSettleDeposit(false);
+                            setCiEndService(false);
 
                             // 1. Determine start date:
                             let startStr = '';
@@ -2716,7 +2756,13 @@ export default function Billing() {
                         }}
                         onRecordCollection={(service: any, bill?: any) => {
                             const clientName = service.clients?.client_name || 'Client';
-                            const billAmount = bill?.amount || (service.complete_month_daily_rate || 500) * (bill?.total_days || 1);
+                            const isFinalSettled = bill?.type === 'final' || bill?.deposit_settled;
+                            const settleAmt = bill?.settlement_amount !== undefined && bill?.settlement_amount !== null
+                                ? Number(bill.settlement_amount)
+                                : null;
+                            const billAmount = (isFinalSettled && settleAmt !== null)
+                                ? Math.max(0, settleAmt)
+                                : (Number(bill?.amount) || (service.complete_month_daily_rate || 500) * (bill?.total_days || 1));
                             
                             let invNo = 'Invoice';
                             if (bill?.invoice_number) {
@@ -3450,7 +3496,7 @@ export default function Billing() {
                                         <td className="py-2 px-3 text-left">1</td>
                                         <td className="py-2 px-3 font-bold text-slate-800 uppercase">{invoiceData.service}</td>
                                         <td className="py-2 px-3 text-center text-slate-500">-</td>
-                                        <td className="py-2 px-3 text-right font-semibold">{invoiceData.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                        <td className="py-2 px-3 text-right font-semibold">{(invoiceData.grossAmount || (invoiceData.days * invoiceData.rate) || invoiceData.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -3461,7 +3507,13 @@ export default function Billing() {
                                     {invoiceData.days > 0 && invoiceData.rate > 0 && (
                                         <div className="flex justify-between items-center py-1 text-xs text-slate-600">
                                             <span>Rate Breakdown ({invoiceData.days} day{invoiceData.days !== 1 ? 's' : ''} × ₹{invoiceData.rate?.toLocaleString('en-IN')}/day)</span>
-                                            <span className="font-semibold text-slate-800">₹{(invoiceData.days * invoiceData.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                            <span className="font-semibold text-slate-800">₹{(invoiceData.grossAmount || (invoiceData.days * invoiceData.rate)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                    )}
+                                    {invoiceData.previouslyBilled > 0 && (
+                                        <div className="flex justify-between items-center py-1 text-xs text-slate-600">
+                                            <span>Collected Earlier (Previous Invoice)</span>
+                                            <span className="font-semibold text-slate-700">− ₹{invoiceData.previouslyBilled.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                         </div>
                                     )}
                                     {invoiceData.depositCollected > 0 && (
@@ -3470,18 +3522,18 @@ export default function Billing() {
                                             <span className="font-semibold text-emerald-600">− ₹{invoiceData.depositCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                         </div>
                                     )}
-                                    {invoiceData.isRefund || (invoiceData.depositCollected > (invoiceData.days * invoiceData.rate)) ? (
+                                    {invoiceData.isRefund ? (
                                         <>
                                             <div className="flex justify-between items-center py-2 border-t border-slate-300">
                                                 <span className="font-bold text-lg text-amber-800">Refund Due to Client</span>
-                                                <span className="font-bold text-xl text-amber-600">₹{(invoiceData.refundAmount || (invoiceData.depositCollected - (invoiceData.days * invoiceData.rate))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                                <span className="font-bold text-xl text-amber-600">₹{(invoiceData.refundAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                             </div>
                                             <div className="flex justify-between items-center py-2 text-sm bg-amber-50 px-2 mt-1 rounded border border-amber-200">
                                                 <span className="font-semibold text-amber-800">Amount to Return:</span>
-                                                <span className="font-bold text-amber-700">₹{(invoiceData.refundAmount || (invoiceData.depositCollected - (invoiceData.days * invoiceData.rate))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                                <span className="font-bold text-amber-700">₹{(invoiceData.refundAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                             </div>
                                             <p className="text-[11px] text-slate-600 mt-2 text-right">
-                                                Refund amount (in words): <span className="font-medium text-slate-800">INR {numberToWordsINR(invoiceData.refundAmount || (invoiceData.depositCollected - (invoiceData.days * invoiceData.rate)))} Rupees Refund Due to Client.</span>
+                                                Refund amount (in words): <span className="font-medium text-slate-800">INR {numberToWordsINR(invoiceData.refundAmount || 0)} Rupees Refund Due to Client.</span>
                                             </p>
                                         </>
                                     ) : (
@@ -4085,7 +4137,12 @@ export default function Billing() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Client Rate / Day (₹)</label>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Client Rate / Day (₹)</label>
+                                            <span className="text-[10px] text-slate-400 font-semibold">
+                                                Configured: ₹{(clientInvoiceBill?.rawAssignment?.complete_month_daily_rate || 800).toLocaleString('en-IN')}/day
+                                            </span>
+                                        </div>
                                         <input
                                             type="number"
                                             min="0"
@@ -4105,43 +4162,12 @@ export default function Billing() {
                                 </div>
 
                                 {ciDeposit > 0 && (
-                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
-                                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                                            <input
-                                                type="checkbox"
-                                                checked={ciSettleDeposit}
-                                                onChange={e => {
-                                                    const checked = e.target.checked;
-                                                    setCiSettleDeposit(checked);
-                                                    if (!checked) setCiEndService(false);
-                                                }}
-                                                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-                                            />
-                                            <div>
-                                                <span className="text-xs font-bold text-slate-800">
-                                                    Settle Security Deposit (₹{ciDeposit.toLocaleString('en-IN')}) on this invoice
-                                                </span>
-                                                <p className="text-[11px] text-slate-500">
-                                                    {ciSettleDeposit 
-                                                        ? `Deducting ₹${ciDeposit.toLocaleString('en-IN')} deposit from this invoice.` 
-                                                        : `Deposit is held in client account. Leave unchecked for regular monthly bill.`}
-                                                </p>
-                                            </div>
-                                        </label>
-
-                                        {ciSettleDeposit && (
-                                            <label className="flex items-center gap-2.5 cursor-pointer select-none pl-6 border-t border-slate-200/60 pt-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={ciEndService}
-                                                    onChange={e => setCiEndService(e.target.checked)}
-                                                    className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
-                                                />
-                                                <span className="text-xs font-semibold text-slate-700">
-                                                    Mark service as ended and finalize settlement
-                                                </span>
-                                            </label>
-                                        )}
+                                    <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                        <div className="flex items-center gap-2 text-slate-600">
+                                            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                                            <span>Security Deposit: <strong className="text-slate-800">₹{ciDeposit.toLocaleString('en-IN')}</strong> (Held in Client Account)</span>
+                                        </div>
+                                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Settled on End Service</span>
                                     </div>
                                 )}
 
@@ -4150,38 +4176,19 @@ export default function Billing() {
                                         <span className="text-slate-500">{ciDays} day{ciDays !== 1 ? 's' : ''} × ₹{ciRate.toLocaleString('en-IN')}/day</span>
                                         <span className="font-semibold text-slate-800">₹{total.toLocaleString('en-IN')}</span>
                                     </div>
-                                    {ciSettleDeposit ? (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-slate-500 flex items-center gap-1.5">
-                                                Deposit Deducted <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700 uppercase">Settled</span>
+                                    {ciDeposit > 0 && (
+                                        <div className="flex justify-between text-xs text-slate-500 pt-1 border-t border-slate-200/60">
+                                            <span className="flex items-center gap-1.5">
+                                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                                Security Deposit Held
                                             </span>
-                                            <span className="font-semibold text-emerald-600">− ₹{ciDeposit.toLocaleString('en-IN')}</span>
-                                        </div>
-                                    ) : ciDeposit > 0 ? (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-slate-500 flex items-center gap-1.5">
-                                                Deposit Held <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 uppercase">Active</span>
-                                            </span>
-                                            <span className="font-semibold text-slate-500">₹{ciDeposit.toLocaleString('en-IN')} (not deducted)</span>
-                                        </div>
-                                    ) : null}
-
-                                    {isRefund ? (
-                                        <div className="border-t border-amber-200 pt-2 mt-1 space-y-1">
-                                            <div className="flex justify-between text-base font-bold">
-                                                <span className="text-amber-800 flex items-center gap-1.5">
-                                                    Refund Due to Client <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 uppercase tracking-wide">To Return</span>
-                                                </span>
-                                                <span className="text-amber-600 font-black text-lg">₹{refundAmount.toLocaleString('en-IN')}</span>
-                                            </div>
-                                            <p className="text-[11px] font-medium text-amber-700">Deposit collected (₹{ciDeposit.toLocaleString('en-IN')}) exceeds total charges by ₹{refundAmount.toLocaleString('en-IN')}.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
-                                            <span className="text-slate-800">Amount Payable</span>
-                                            <span className="text-primary font-black">₹{payable.toLocaleString('en-IN')}</span>
+                                            <span className="font-medium text-slate-600">₹{ciDeposit.toLocaleString('en-IN')} (Active)</span>
                                         </div>
                                     )}
+                                    <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2 mt-1">
+                                        <span className="text-slate-800">Amount Payable</span>
+                                        <span className="text-primary font-black">₹{total.toLocaleString('en-IN')}</span>
+                                    </div>
                                 </div>
                             </div>
                             <div className="p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-3 rounded-b-2xl">

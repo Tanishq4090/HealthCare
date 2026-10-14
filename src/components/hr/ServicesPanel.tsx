@@ -778,7 +778,25 @@ export default function ServicesPanel({
                                                                         {formatCurrency(bill.daily_rate_used || 0)}/day
                                                                     </td>
                                                                     <td className="px-3 py-2.5 font-bold text-slate-900">
-                                                                        {formatCurrency(bill.amount || 0)}
+                                                                        <div className="flex flex-col">
+                                                                            <span>
+                                                                                {(() => {
+                                                                                    const isFinalSettled = bill.type === 'final' || bill.deposit_settled;
+                                                                                    const settleAmt = bill.settlement_amount !== undefined && bill.settlement_amount !== null
+                                                                                        ? Number(bill.settlement_amount)
+                                                                                        : (noteData.settlement_amount !== undefined ? Number(noteData.settlement_amount) : null);
+                                                                                    if (isFinalSettled && settleAmt !== null) {
+                                                                                        return formatCurrency(Math.max(0, settleAmt));
+                                                                                    }
+                                                                                    return formatCurrency(bill.amount || 0);
+                                                                                })()}
+                                                                            </span>
+                                                                            {bill.deposit_settled && Number(bill.deposit_applied) > 0 && (
+                                                                                <span className="text-[10px] text-emerald-600 font-medium">
+                                                                                    (₹{Number(bill.deposit_applied).toLocaleString('en-IN')} dep. settled)
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </td>
                                                                     <td className="px-3 py-2.5">
                                                                         {isPaid ? (

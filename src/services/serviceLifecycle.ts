@@ -893,7 +893,7 @@ export async function endService(
     }
 
     // 5. Update or insert the final bill record in service_bills with invoice info
-    const netFinalBillAmount = Math.max(0, trueCost - previouslyBilled);
+    const netFinalBillAmount = Math.max(0, settlement);
     const finalBillNotes = JSON.stringify({
         invoice_number: invoiceNumber || `INV-F${Math.floor(1000 + Math.random() * 9000)}`,
         invoice_pdf_url: invoicePdfUrl,
