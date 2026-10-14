@@ -29,9 +29,10 @@ interface AssignmentAttendancePanelProps {
   };
   onSummaryChange?: (summary: { daysPresent: number; daysAbsent: number; daysHalf: number }) => void;
   onAssignmentCompleted?: (assignment: any) => void;
+  onAttendanceMarked?: () => void;
 }
 
-export default function AssignmentAttendancePanel({ assignment, onSummaryChange, onAssignmentCompleted }: AssignmentAttendancePanelProps) {
+export default function AssignmentAttendancePanel({ assignment, onSummaryChange, onAssignmentCompleted, onAttendanceMarked }: AssignmentAttendancePanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [days, setDays] = useState<AttendanceDay[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -320,6 +321,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
       const prevMarked = days.filter(d => d.status !== null && !d.isBlocked).length;
       if (status !== null && !isOpenEnded && prevMarked + 1 >= markableAllDays.length) setShowCompletionPopup(true);
+      onAttendanceMarked?.();
     } catch (err: any) {
       toast.error('Failed to update attendance: ' + err.message);
     } finally {
@@ -370,6 +372,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         { id: 'bulk-assign' }
       );
       await fetchAttendance();
+      onAttendanceMarked?.();
       const prevMarked = days.filter(d => d.status !== null).length;
       if (!isOpenEnded && prevMarked + unmarkedPast.length >= allDays.length) {
         setShowCompletionPopup(true);

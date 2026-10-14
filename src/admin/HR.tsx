@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Phone, UserCheck, CheckCircle2, FileText, Upload, Bot, Edit3, X, Globe, Send, Users, Clock, Building, Loader2, RefreshCw, History, Search, Trash2, AlertTriangle, Plus, MessageSquare, Download, Eye, ChevronDown } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -846,7 +846,11 @@ export default function HR() {
         }
     };
 
+    const isFetchingAttendanceRef = useRef(false);
+
     const fetchLiveAttendance = useCallback(async () => {
+        if (isFetchingAttendanceRef.current) return;
+        isFetchingAttendanceRef.current = true;
         setAttendanceLoading(true);
         try {
             const [asgRes, attRes] = await Promise.all([
@@ -872,9 +876,20 @@ export default function HR() {
             console.error('Error fetching active assignments:', err);
             toast.error('Failed to load active assignments');
         } finally {
+            isFetchingAttendanceRef.current = false;
             setAttendanceLoading(false);
         }
     }, [selectedAttendanceDate]);
+
+    const fetchLiveAttendanceRef = useRef(fetchLiveAttendance);
+    useEffect(() => {
+        fetchLiveAttendanceRef.current = fetchLiveAttendance;
+    });
+
+    const activeTabRef = useRef(activeTab);
+    useEffect(() => {
+        activeTabRef.current = activeTab;
+    });
 
     // Initial data load on mount only
     useEffect(() => { fetchData(); }, [fetchData]);
@@ -905,7 +920,9 @@ export default function HR() {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll' }, debouncedFetch)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
                 debouncedFetch();
-                if (activeTab === 'attendance') fetchLiveAttendance();
+                if (activeTabRef.current === 'attendance') {
+                    fetchLiveAttendanceRef.current();
+                }
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'service_worker_assignments' }, debouncedFetch)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, debouncedFetch)
@@ -915,7 +932,7 @@ export default function HR() {
             clearTimeout(timer);
             supabase.removeChannel(channel);
         };
-    }, [fetchData, fetchLiveAttendance, activeTab]);
+    }, [fetchData]);
 
     // Handle direct worker link via URL param
     useEffect(() => {
@@ -2530,10 +2547,7 @@ export default function HR() {
                                                         <AssignmentAttendancePanel
                                                             key={assignment.id}
                                                             assignment={enriched}
-                                                            onSummaryChange={() => {
-                                                                fetchData();
-                                                                fetchLiveAttendance();
-                                                            }}
+                                                            onAttendanceMarked={fetchLiveAttendance}
                                                             onAssignmentCompleted={async () => {
                                                                 await fetchData();
                                                                 setActiveTab('payroll');
