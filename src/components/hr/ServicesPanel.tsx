@@ -551,11 +551,26 @@ export default function ServicesPanel({
                                 }
                                 const finalPdfUrl = noteData.invoice_pdf_url;
 
+                                const isFinalSettled = finalBill.type === 'final' || finalBill.deposit_settled;
+                                const settleAmt = finalBill.settlement_amount !== undefined && finalBill.settlement_amount !== null
+                                    ? Number(finalBill.settlement_amount)
+                                    : (noteData.settlement_amount !== undefined ? Number(noteData.settlement_amount) : null);
+                                const netDue = (isFinalSettled && settleAmt !== null)
+                                    ? Math.max(0, settleAmt)
+                                    : Number(finalBill.amount || 0);
+                                const isFinalPaid = noteData.status === 'paid' || (isFinalSettled && netDue <= 0);
+
                                 return (
                                     <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Settled
-                                        </span>
+                                        {isFinalPaid ? (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Settled
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                                <Clock className="w-3.5 h-3.5 text-amber-600" /> Payment Pending (₹{netDue.toLocaleString('en-IN')})
+                                            </span>
+                                        )}
                                         {finalPdfUrl ? (
                                             <a
                                                 href={finalPdfUrl}
@@ -750,7 +765,15 @@ export default function ServicesPanel({
                                                             } catch {
                                                                 noteData = {};
                                                             }
-                                                            const isPaid = noteData.status === 'paid' || bill.deposit_settled === true;
+                                                            const isFinalSettled = bill.type === 'final' || bill.deposit_settled;
+                                                            const settleAmt = bill.settlement_amount !== undefined && bill.settlement_amount !== null
+                                                                ? Number(bill.settlement_amount)
+                                                                : (noteData.settlement_amount !== undefined ? Number(noteData.settlement_amount) : null);
+                                                            const netDue = (isFinalSettled && settleAmt !== null)
+                                                                ? Math.max(0, settleAmt)
+                                                                : Number(bill.amount || 0);
+
+                                                            const isPaid = noteData.status === 'paid' || (isFinalSettled && netDue <= 0);
                                                             const pdfUrl = noteData.invoice_pdf_url;
                                                             const invNo = noteData.invoice_number || (bill.type === 'final' ? 'FINAL-SETTLEMENT' : `INV-M${bIdx + 1}`);
 
@@ -780,16 +803,7 @@ export default function ServicesPanel({
                                                                     <td className="px-3 py-2.5 font-bold text-slate-900">
                                                                         <div className="flex flex-col">
                                                                             <span>
-                                                                                {(() => {
-                                                                                    const isFinalSettled = bill.type === 'final' || bill.deposit_settled;
-                                                                                    const settleAmt = bill.settlement_amount !== undefined && bill.settlement_amount !== null
-                                                                                        ? Number(bill.settlement_amount)
-                                                                                        : (noteData.settlement_amount !== undefined ? Number(noteData.settlement_amount) : null);
-                                                                                    if (isFinalSettled && settleAmt !== null) {
-                                                                                        return formatCurrency(Math.max(0, settleAmt));
-                                                                                    }
-                                                                                    return formatCurrency(bill.amount || 0);
-                                                                                })()}
+                                                                                {formatCurrency(netDue)}
                                                                             </span>
                                                                             {bill.deposit_settled && Number(bill.deposit_applied) > 0 && (
                                                                                 <span className="text-[10px] text-emerald-600 font-medium">
@@ -1247,6 +1261,30 @@ export default function ServicesPanel({
                                 )}
                             </button>
 
+                            {(endResult.settlement || 0) > 0 && onRecordCollection && (
+                                <button
+                                    onClick={() => {
+                                        const targetService = services.find(s => s.id === endResult.service_id);
+                                        const finalBill = targetService?.service_bills?.find(b => b.type === 'final') || {
+                                            type: 'final',
+                                            amount: endResult.settlement,
+                                            settlement_amount: endResult.settlement,
+                                            deposit_settled: true,
+                                            invoice_number: endResult.invoice_number,
+                                        };
+                                        setEndResult(null);
+                                        setHasSentFinalWhatsApp(false);
+                                        if (targetService) {
+                                            onRecordCollection(targetService, finalBill);
+                                        }
+                                    }}
+                                    className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                                >
+                                    <IndianRupee className="w-4 h-4 text-emerald-400" />
+                                    <span>Record Collection Now (₹{(endResult.settlement || 0).toLocaleString('en-IN')})</span>
+                                </button>
+                            )}
+
                             <div className="flex gap-2">
                                 {endResult.invoice_pdf_url && (
                                     <a
@@ -1376,7 +1414,7 @@ export default function ServicesPanel({
                                                 try {
                                                     noteData = existingBill?.notes ? JSON.parse(existingBill.notes) : {};
                                                 } catch {}
-                                                const isPaid = noteData.status === 'paid' || existingBill?.deposit_settled === true;
+                                                const isPaid = noteData.status === 'paid' || (existingBill?.deposit_settled === true && Number(existingBill?.settlement_amount ?? existingBill?.amount ?? 0) <= 0);
 
                                                 const calculatedBill = {
                                                     client: clientName,
