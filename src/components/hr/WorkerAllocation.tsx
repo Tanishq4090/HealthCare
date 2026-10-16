@@ -4,6 +4,7 @@ import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
   ChevronDown, ChevronUp, MoreVertical, Building2, Shield, Trash2, RotateCcw,
   Calendar, FileText, Phone, MapPin, Search, X, Upload, Loader2, RefreshCw, Link2, MessageCircle, Edit2, AlertTriangle, Coins, Clock, Lock,
+  LayoutList, LayoutGrid,
 } from 'lucide-react';
 
 // shadcn/ui
@@ -1334,6 +1335,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [expandedWorkerIds, setExpandedWorkerIds] = useState<Record<string, boolean>>({});
   const debouncedSearch = useDebounce(search);
 
@@ -1392,52 +1394,255 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
   return (
     <>
     <div className="space-y-4">
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input className="pl-9 h-9 sm:h-10 text-xs sm:text-sm" placeholder="Search by name, role, or ID..." value={search} onChange={e => setSearch(e.target.value)} />
+          <Input className="pl-9 h-9 sm:h-10 text-xs sm:text-sm bg-white" placeholder="Search by name, role, or ID..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            const allExpanded = filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]);
-            if (allExpanded) {
-              setExpandedWorkerIds({});
-            } else {
-              const next: Record<string, boolean> = {};
-              filtered.forEach(e => { next[e.id] = true; });
-              setExpandedWorkerIds(next);
-            }
-          }}
-          className="h-9 sm:h-10 px-2.5 sm:px-3 text-xs font-semibold gap-1.5 border-slate-200 text-slate-600 hover:text-primary hover:border-primary/30 shrink-0 cursor-pointer"
-          title={filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]) ? "Collapse details for all workers" : "Show details for all workers"}
-        >
-          {filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]) ? (
-            <>
-              <ChevronUp className="w-3.5 h-3.5 text-primary" />
-              <span className="hidden sm:inline">Collapse All</span>
-            </>
-          ) : (
-            <>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden sm:inline">Expand All</span>
-            </>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {/* View Mode Toggle: Table (default) / Grid */}
+          <div className="flex items-center p-0.5 sm:p-1 bg-slate-100 rounded-xl border border-slate-200/60 shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === 'table' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Table View (Row & Column)"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === 'grid' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Grid View (Cards)"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Grid</span>
+            </button>
+          </div>
+
+          {viewMode === 'grid' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const allExpanded = filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]);
+                if (allExpanded) {
+                  setExpandedWorkerIds({});
+                } else {
+                  const next: Record<string, boolean> = {};
+                  filtered.forEach(e => { next[e.id] = true; });
+                  setExpandedWorkerIds(next);
+                }
+              }}
+              className="h-9 sm:h-10 px-2.5 sm:px-3 text-xs font-semibold gap-1.5 border-slate-200 text-slate-600 hover:text-primary hover:border-primary/30 shrink-0 cursor-pointer"
+              title={filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]) ? "Collapse details for all workers" : "Show details for all workers"}
+            >
+              {filtered.length > 0 && filtered.every(e => expandedWorkerIds[e.id]) ? (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-primary" />
+                  <span className="hidden sm:inline">Collapse All</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden sm:inline">Expand All</span>
+                </>
+              )}
+            </Button>
           )}
-        </Button>
-        <Button variant="outline" size="icon" onClick={load} title="Refresh" className="h-9 sm:h-10 w-9 sm:w-10 shrink-0 cursor-pointer">
-          <RefreshCw className="w-4 h-4" />
-        </Button>
+
+          <Button variant="outline" size="icon" onClick={load} title="Refresh" className="h-9 sm:h-10 w-9 sm:w-10 shrink-0 cursor-pointer">
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-3.5">
-          {Array.from({ length: 12 }).map((_, i) => <WorkerCardSkeleton key={i} />)}
-        </div>
+        viewMode === 'table' ? (
+          <div className="bg-white border border-slate-100/80 rounded-[2rem] overflow-hidden shadow-sm shadow-slate-200/50">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50/50 border-b border-slate-100">
+                  <tr>
+                    {['Sr No.', 'ID No.', 'Staff Member', 'Skills & Services', 'Contact & Joined', 'Status', 'Actions'].map(h => (
+                      <th key={h} className={`px-5 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap ${h === 'Actions' ? 'text-right pr-6' : ''}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50/80">
+                  {Array.from({ length: 6 }).map((_, i) => <TableRowSkeleton key={i} cols={7} />)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-3.5">
+            {Array.from({ length: 12 }).map((_, i) => <WorkerCardSkeleton key={i} />)}
+          </div>
+        )
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Users className="w-10 h-10 mx-auto mb-3 opacity-40" />
           <p className="font-medium">No available workers{search ? ' matching your search' : ''}</p>
+        </div>
+      ) : viewMode === 'table' ? (
+        <div className="bg-white border border-slate-100/80 rounded-[2rem] overflow-hidden shadow-sm shadow-slate-200/50">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/50 border-b border-slate-100">
+                <tr>
+                  {['Sr No.', 'ID No.', 'Staff Member', 'Skills & Services', 'Contact & Joined', 'Status', 'Actions'].map(h => (
+                    <th key={h} className={`px-5 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap ${h === 'Actions' ? 'text-right pr-6' : ''}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50/80">
+                {filtered.map((emp, idx) => (
+                  <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors group/row">
+                    <td className="px-5 py-4 whitespace-nowrap w-16">
+                      <span className="font-mono font-bold text-xs text-slate-700">
+                        {idx + 1}.
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <span className="font-mono text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-md border border-slate-200">
+                        {emp.employee_id || '—'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div
+                        className="flex items-center gap-3.5 cursor-pointer group/staff"
+                        onClick={() => onViewDetails(emp)}
+                        title="Click to view full profile"
+                      >
+                        <Avatar className="w-10 h-10 ring-2 ring-slate-100 group-hover/staff:ring-primary/20 transition-all duration-300 shrink-0">
+                          {emp.photo_url && <AvatarImage src={emp.photo_url} alt={emp.full_name} className="object-cover" />}
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-[#063b3c] text-white text-xs font-bold">
+                            {getInitials(emp.full_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-bold text-slate-800 group-hover/staff:text-primary transition-colors">{emp.full_name}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{emp.job_title || 'Staff'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-1.5 flex-wrap max-w-[220px]">
+                        {emp.services && emp.services.length > 0 ? (
+                          <>
+                            {emp.services.slice(0, 2).map((s: string) => (
+                              <span key={s} className="text-[10px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200/80 truncate max-w-[130px]">
+                                {s}
+                              </span>
+                            ))}
+                            {emp.services.length > 2 && (
+                              <span
+                                className="text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200"
+                                title={emp.services.slice(2).join(', ')}
+                              >
+                                +{emp.services.length - 2}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400">General Care</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <div className="flex flex-col gap-1 text-xs">
+                        {emp.phone ? (
+                          <a
+                            href={`tel:${emp.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-1.5"
+                          >
+                            <Phone className="w-3.5 h-3.5 text-slate-400" />
+                            {emp.phone}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-slate-300" /> No Phone
+                          </span>
+                        )}
+                        {emp.created_at && (
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-400" />
+                            Joined {new Date(emp.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        Available
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-2 pr-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-3 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold gap-1.5 rounded-xl border border-emerald-100 cursor-pointer shadow-2xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPreview(emp);
+                          }}
+                        >
+                          <Shield className="w-3.5 h-3.5" /> ID Card
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-8 px-3.5 text-xs bg-primary hover:bg-primary/90 text-white font-bold gap-1.5 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAssign(emp);
+                          }}
+                        >
+                          <Briefcase className="w-3.5 h-3.5" /> Assign
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                              title="More options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onClick={() => onViewDetails(emp)} className="gap-2 text-xs">
+                              <Shield className="w-3.5 h-3.5" /> Full Profile
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onPreview(emp)} className="gap-2 text-xs">
+                              <FileText className="w-3.5 h-3.5" /> Preview ID Card
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setEditEmployee(emp)} className="gap-2 text-xs text-primary focus:text-primary">
+                              <Edit2 className="w-3.5 h-3.5" /> Edit Employee
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDelete(emp)} className="gap-2 text-xs text-red-500 focus:text-red-600">
+                              <Trash2 className="w-3.5 h-3.5" /> Delete Member
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5">
@@ -1795,18 +2000,18 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
           <table className="w-full text-sm">
             <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {['Staff Member', 'ID No.', 'Client Name', 'Deployment Date', 'Auth Link', 'Deployment Actions'].map(h => (
+                {['Sr No.', 'ID No.', 'Staff Member', 'Client Name', 'Deployment Date', 'Auth Link', 'Deployment Actions'].map(h => (
                   <th key={h} className="px-5 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50/80">
               {isLoading
-                ? Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} cols={6} />)
+                ? Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} cols={7} />)
                 : assignments.length === 0
                   ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-20 text-center text-slate-400">
+                      <td colSpan={7} className="px-4 py-20 text-center text-slate-400">
                         <div className="w-16 h-16 rounded-full bg-slate-50 mx-auto mb-4 flex items-center justify-center opacity-40">
                           <Briefcase className="w-8 h-8 text-slate-300" />
                         </div>
@@ -1816,6 +2021,16 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                   )
                   : assignments.map((a, idx) => (
                     <tr key={a.id} className="hover:bg-slate-50/50 transition-colors group/row">
+                      <td className="px-5 py-4 whitespace-nowrap w-16">
+                        <span className="font-mono font-bold text-xs text-slate-700">
+                          {idx + 1}.
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="font-mono text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-md border border-slate-200">
+                          {a.employee.employee_id}
+                        </span>
+                      </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3.5">
                           <Avatar className="w-10 h-10 ring-2 ring-slate-100 group-hover/row:ring-primary/20 transition-all duration-300">
@@ -1825,20 +2040,10 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-flex items-center justify-center min-w-[1.35rem] h-4.5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${idx + 1}`}>
-                                #{idx + 1}
-                              </span>
-                              <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors">{a.employee.full_name}</p>
-                            </div>
+                            <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors">{a.employee.full_name}</p>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{a.employee.job_title}</p>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="font-mono text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-md border border-slate-200">
-                          {a.employee.employee_id}
-                        </span>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-col">
@@ -2024,7 +2229,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
           <table className="w-full text-sm">
             <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {['Worker info', 'Services & Payment', 'Status', 'Quick Actions'].map(h => (
+                {['Sr No.', 'Worker info', 'Services & Payment', 'Status', 'Quick Actions'].map(h => (
                    <th key={h} className={`px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap ${h === 'Quick Actions' ? 'text-right' : ''}`}>
                     {h}
                    </th>
@@ -2033,11 +2238,11 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
             </thead>
             <tbody className="divide-y divide-slate-50/80">
               {isLoading
-                ? Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={4} />)
+                ? Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={5} />)
                 : filtered.length === 0
                   ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-24 text-center text-slate-400">
+                      <td colSpan={5} className="px-6 py-24 text-center text-slate-400">
                         <div className="w-16 h-16 rounded-full bg-slate-50 mx-auto mb-4 flex items-center justify-center opacity-40">
                           <Users className="w-8 h-8 text-slate-300" />
                         </div>
@@ -2047,6 +2252,11 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                   )
                   : filtered.map((emp, idx) => (
                     <tr key={emp.id} className="hover:bg-slate-50/50 transition-all group/row cursor-pointer" onClick={() => onViewDetails(emp)}>
+                      <td className="px-6 py-5 whitespace-nowrap w-16">
+                        <span className="font-mono font-bold text-xs text-slate-700">
+                          {idx + 1}.
+                        </span>
+                      </td>
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
                           <div className="relative">
@@ -2061,12 +2271,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                             />
                           </div>
                           <div>
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${idx + 1}`}>
-                                #{idx + 1}
-                              </span>
-                              <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors text-base tracking-tight">{emp.full_name}</p>
-                            </div>
+                            <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors text-base tracking-tight">{emp.full_name}</p>
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
                                 {emp.employee_id}
@@ -2278,18 +2483,18 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                {['Staff Member', 'Job Title', 'Last Status', 'Deleted On', 'Actions'].map(h => (
+                {['Sr No.', 'Staff Member', 'Job Title', 'Last Status', 'Deleted On', 'Actions'].map(h => (
                    <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50/80">
               {isLoading
-                ? Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} cols={5} />)
+                ? Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} cols={6} />)
                 : employees.length === 0
                   ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-20 text-center text-slate-400">
+                      <td colSpan={6} className="px-6 py-20 text-center text-slate-400">
                         <div className="w-16 h-16 rounded-full bg-slate-50 mx-auto mb-4 flex items-center justify-center opacity-40">
                           <Trash2 className="w-8 h-8 text-slate-300" />
                         </div>
@@ -2299,6 +2504,11 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
                   )
                   : employees.map((emp, idx) => (
                     <tr key={emp.id} className="hover:bg-slate-50/50 transition-all group/row">
+                      <td className="px-6 py-4 whitespace-nowrap w-16">
+                        <span className="font-mono font-bold text-xs text-slate-700">
+                          {idx + 1}.
+                        </span>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3.5">
                           <Avatar className="w-10 h-10 ring-2 ring-slate-100 transition-all duration-300">
@@ -2308,12 +2518,7 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-flex items-center justify-center min-w-[1.35rem] h-4.5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${idx + 1}`}>
-                                #{idx + 1}
-                              </span>
-                              <p className="font-bold text-slate-700">{emp.full_name}</p>
-                            </div>
+                            <p className="font-bold text-slate-700">{emp.full_name}</p>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{emp.employee_id}</p>
                           </div>
                         </div>
