@@ -648,7 +648,7 @@ export default function HR() {
                     ...p,
                     assignment_status: asgnStatus,
                     worker_assignments: { assignment_status: asgnStatus },
-                    end_date: matchedAsgn ? matchedAsgn.end_date : (p.type === 'final' ? (p.period_end || p.end_date) : null),
+                    end_date: p.period_end || p.end_date || (matchedAsgn ? matchedAsgn.end_date : null),
                     service_id: matchedService?.id || null,
                     service_details: matchedService || null,
                 };
@@ -2995,9 +2995,10 @@ export default function HR() {
                                         </div>
                                     ) : (
                                         groups.map(group => {
-                                            const isCollapsed = !payrollSearch.trim()
-                                                ? !!collapsedClients[group.clientId]
-                                                : (collapsedClients[group.clientId] === true);
+                                            const isFilteringActive = payrollSearch.trim().length > 0 || payrollStatusFilter !== 'all';
+                                            const isCollapsed = isFilteringActive
+                                                ? collapsedClients[group.clientId] === true
+                                                : !!collapsedClients[group.clientId];
 
                                         return (
                                             <div
@@ -3296,7 +3297,14 @@ export default function HR() {
                                                         }
                                                     });
 
-                                                    group.items.forEach(item => {
+                                                    const itemsToProcess = group.items.filter(item => {
+                                                        if (payrollStatusFilter === 'paid') return computePayrollBalance(item).isFullyPaid;
+                                                        if (payrollStatusFilter === 'pending') return !computePayrollBalance(item).isFullyPaid;
+                                                        if (payrollStatusFilter === 'active') return isPayrollItemActive(item);
+                                                        return true;
+                                                    });
+
+                                                    itemsToProcess.forEach(item => {
                                                         const svc = item.service_details || findServiceForItem(
                                                             { 
                                                                 assignment_id: item.assignment_id, 
@@ -3345,9 +3353,26 @@ export default function HR() {
                                                         
                                                         // Deduplicate: if an item for the same worker and date period is already in this bucket
                                                         const existingIdx = b.items.findIndex(existing => {
+                                                            // If exact same database ID, it's a duplicate
+                                                            if (existing.id && item.id && existing.id === item.id) return true;
+
                                                             const sameWorker = (existing.worker_id && item.worker_id && existing.worker_id === item.worker_id) ||
                                                                                (existing.worker && item.worker && existing.worker.trim().toLowerCase() === item.worker.trim().toLowerCase());
                                                             if (!sameWorker) return false;
+
+                                                            // Two different REAL database records (neither is synthetic) with different IDs
+                                                            // must NEVER drop each other unless both start AND end dates match exactly
+                                                            if (!existing._isSynthetic && !item._isSynthetic && existing.id !== item.id) {
+                                                                const eStart = existing.period_start?.split('T')[0] || existing.start_date?.split('T')[0] || '';
+                                                                const iStart = item.period_start?.split('T')[0] || item.start_date?.split('T')[0] || '';
+                                                                const eEnd = existing.period_end?.split('T')[0] || existing.end_date?.split('T')[0] || '';
+                                                                const iEnd = item.period_end?.split('T')[0] || item.end_date?.split('T')[0] || '';
+
+                                                                if (eStart && iStart && eEnd && iEnd && eStart === iStart && eEnd === iEnd) {
+                                                                    return true;
+                                                                }
+                                                                return false;
+                                                            }
 
                                                             // An active ongoing deployment is NEVER a duplicate of a completed/relieved/settled historical payslip!
                                                             const existingIsActive = isPayrollItemActive(existing);
@@ -3356,15 +3381,15 @@ export default function HR() {
                                                                 return false;
                                                             }
 
-                                                            const eStart = existing.start_date?.split('T')[0] || existing.period_start?.split('T')[0] || '';
-                                                            const iStart = item.start_date?.split('T')[0] || item.period_start?.split('T')[0] || '';
-                                                            const eEnd = existing.end_date?.split('T')[0] || existing.period_end?.split('T')[0] || '';
-                                                            const iEnd = item.end_date?.split('T')[0] || item.period_end?.split('T')[0] || '';
+                                                            const eStart = existing.period_start?.split('T')[0] || existing.start_date?.split('T')[0] || '';
+                                                            const iStart = item.period_start?.split('T')[0] || item.start_date?.split('T')[0] || '';
+                                                            const eEnd = existing.period_end?.split('T')[0] || existing.end_date?.split('T')[0] || '';
+                                                            const iEnd = item.period_end?.split('T')[0] || item.end_date?.split('T')[0] || '';
 
                                                             if (eStart && iStart && eEnd && iEnd) {
                                                                 return eStart === iStart && eEnd === iEnd;
                                                             }
-                                                            if (eStart && iStart) {
+                                                            if (eStart && iStart && !eEnd && !iEnd) {
                                                                 return eStart === iStart;
                                                             }
                                                             return false;
@@ -3391,13 +3416,15 @@ export default function HR() {
                                                         }
                                                     });
 
-                                                    const serviceBuckets = Array.from(serviceBucketsMap.values()).sort((a, b) => {
-                                                        if (a.isActiveCycle && !b.isActiveCycle) return -1;
-                                                        if (!a.isActiveCycle && b.isActiveCycle) return 1;
-                                                        const aDate = a.serviceObj?.start_date || a.items[0]?.start_date || a.items[0]?.period_start || '1970-01-01';
-                                                        const bDate = b.serviceObj?.start_date || b.items[0]?.start_date || b.items[0]?.period_start || '1970-01-01';
-                                                        return new Date(bDate).getTime() - new Date(aDate).getTime();
-                                                    });
+                                                    const serviceBuckets = Array.from(serviceBucketsMap.values())
+                                                        .filter(b => b.items.length > 0 || (payrollStatusFilter === 'all' && b.isActiveCycle))
+                                                        .sort((a, b) => {
+                                                            if (a.isActiveCycle && !b.isActiveCycle) return -1;
+                                                            if (!a.isActiveCycle && b.isActiveCycle) return 1;
+                                                            const aDate = a.serviceObj?.start_date || a.items[0]?.start_date || a.items[0]?.period_start || '1970-01-01';
+                                                            const bDate = b.serviceObj?.start_date || b.items[0]?.start_date || b.items[0]?.period_start || '1970-01-01';
+                                                            return new Date(bDate).getTime() - new Date(aDate).getTime();
+                                                        });
 
                                                     return (
                                                         <div className="divide-y divide-slate-200">
