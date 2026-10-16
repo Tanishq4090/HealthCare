@@ -5721,7 +5721,7 @@ export default function CRM() {
                                                         <div className="text-center text-slate-400 text-sm py-8 h-full flex flex-col justify-center">No leads in this stage</div>
                                                     ) : (
                                                         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-2.5 min-w-0 sm:min-w-min">
-                                                            {displayedItems.map((item) => {
+                                                            {displayedItems.map((item, itemIdx) => {
                                                                 const priorityMeta = item.priority === 'hot'
                                                                     ? { label: 'Hot', cls: 'bg-red-100 text-red-700 border-red-200' }
                                                                     : item.priority === 'cold'
@@ -5790,14 +5790,19 @@ export default function CRM() {
                                                                             /* ── COMPACT CARD (Badges Hidden: Name, Number, View Details) ── */
                                                                             <div className="flex flex-col flex-1">
                                                                                 <div className="p-2.5 sm:p-3 flex flex-col gap-2 flex-1">
-                                                                                    {/* Row 1: Avatar + Name + Actions (Quick Edit & Unhide Badges) */}
+                                                                                    {/* Row 1: Avatar + Serial + Name + Actions (Quick Edit & Unhide Badges) */}
                                                                                     <div className="flex items-center gap-2">
                                                                                         <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${getAvatarColor(item.name)}`}>
                                                                                             {getInitials(item.name)}
                                                                                         </div>
-                                                                                        <p className="text-xs sm:text-sm font-bold text-slate-900 truncate leading-tight flex-1" title={item.name}>
-                                                                                            {item.name}
-                                                                                        </p>
+                                                                                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                                                            <span className="inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${itemIdx + 1} in ${col.title}`}>
+                                                                                                #{itemIdx + 1}
+                                                                                            </span>
+                                                                                            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate leading-tight flex-1" title={item.name}>
+                                                                                                {item.name}
+                                                                                            </p>
+                                                                                        </div>
                                                                                         <div className="flex items-center gap-0.5 shrink-0">
                                                                                             <button
                                                                                                 type="button"
@@ -5874,9 +5879,12 @@ export default function CRM() {
                                                                             }}
                                                                             className="sm:hidden px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer active:bg-slate-50 transition-colors"
                                                                         >
-                                                                            {/* Row 1: Name + Badges + Arrow */}
+                                                                            {/* Row 1: Serial + Name + Badges + Arrow */}
                                                                             <div className="flex items-center justify-between gap-1.5 min-w-0">
                                                                                 <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
+                                                                                    <span className="inline-flex items-center justify-center min-w-[1.25rem] h-4.5 px-1 rounded text-[9px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shrink-0" title={`#${itemIdx + 1} in ${col.title}`}>
+                                                                                        #{itemIdx + 1}
+                                                                                    </span>
                                                                                     <span className="font-bold text-slate-900 text-xs truncate max-w-[140px]">
                                                                                         {item.name}
                                                                                     </span>
@@ -5987,16 +5995,21 @@ export default function CRM() {
                                                                         {/* ── DESKTOP FULL CARD (sm+) ── */}
                                                                         <div className="hidden sm:flex flex-col flex-1">
                                                                             <div className="p-3.5 flex flex-col gap-2.5 flex-1">
-                                                                                {/* Row 1: Avatar + Name + Priority + Quick Edit */}
+                                                                                {/* Row 1: Avatar + Serial + Name + Priority + Quick Edit */}
                                                                                 <div className="flex items-start gap-2.5">
                                                                                     <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${getAvatarColor(item.name)}`}>
                                                                                         {getInitials(item.name)}
                                                                                     </div>
                                                                                     <div className="flex-1 min-w-0">
                                                                                         <div className="flex items-center justify-between gap-1">
-                                                                                            <p className="text-sm font-bold text-slate-900 truncate leading-tight">
-                                                                                                {item.name}
-                                                                                            </p>
+                                                                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                                                                <span className="inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${itemIdx + 1} in ${col.title}`}>
+                                                                                                    #{itemIdx + 1}
+                                                                                                </span>
+                                                                                                <p className="text-sm font-bold text-slate-900 truncate leading-tight" title={item.name}>
+                                                                                                    {item.name}
+                                                                                                </p>
+                                                                                            </div>
                                                                                             <div className="flex items-center gap-0.5 shrink-0">
                                                                                                 <button
                                                                                                     type="button"

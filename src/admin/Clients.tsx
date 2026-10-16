@@ -1127,7 +1127,7 @@ export default function Clients() {
                                     )}
                                 </div>
                             );
-                            return filtered.map(client => (
+                            return filtered.map((client, idx) => (
                             <div key={client.id} onClick={() => setInspectingClient(client)} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-3">
@@ -1136,6 +1136,9 @@ export default function Clients() {
                                         </div>
                                         <div>
                                             <div className="flex items-center gap-2">
+                                                <span className="inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`Client #${idx + 1}`}>
+                                                    #{idx + 1}
+                                                </span>
                                                 <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
                                                 {(() => {
                                                     const city = client.city || extractCity(client);
