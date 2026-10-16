@@ -85,6 +85,10 @@ export default function HR() {
     const [collapsedClients, setCollapsedClients] = useState<Record<string, boolean>>({});
     const [clientConsents, setClientConsents] = useState<any[]>([]);
 
+    // Payroll Tab Search & Filter State
+    const [payrollSearch, setPayrollSearch] = useState('');
+    const [payrollStatusFilter, setPayrollStatusFilter] = useState<'all' | 'pending' | 'paid' | 'active'>('all');
+
     // Invoice Preview State
     const [isInvoicePreviewModalOpen, setIsInvoicePreviewModalOpen] = useState(false);
     const [previewInvoiceItem, setPreviewInvoiceItem] = useState<any>(null);
@@ -2707,16 +2711,7 @@ export default function HR() {
                                 item => item.payroll_type === 'payslip' || item.payroll_type === 'both' || !item.payroll_type
                             );
 
-                            const filtered = rawItems.filter(item => {
-                                if (!workerSearch) return true;
-                                const q = workerSearch.toLowerCase();
-                                return (
-                                    (item.worker || '').toLowerCase().includes(q) ||
-                                    (item.client_name || '').toLowerCase().includes(q)
-                                );
-                            });
-
-                            if (filtered.length === 0) {
+                            if (rawItems.length === 0) {
                                 return (
                                     <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
                                         <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
@@ -2750,8 +2745,8 @@ export default function HR() {
                                 return false;
                             };
 
-                            // Group payslips by client service
-                            const clientGroupsMap = new Map<string, {
+                            // Group all raw items by client first so we have accurate global counts for filter pills
+                            const allClientGroupsMap = new Map<string, {
                                 clientId: string;
                                 clientName: string;
                                 items: any[];
@@ -2761,15 +2756,15 @@ export default function HR() {
                                 activeCount: number;
                             }>();
 
-                            filtered.forEach(item => {
+                            rawItems.forEach(item => {
                                 const rawClient = (item.client_name || item.client || '').trim();
                                 const clientName = (!rawClient || rawClient === 'N/A' || rawClient === 'Unassigned')
                                     ? 'Internal / General Operations'
                                     : rawClient;
                                 const clientKey = clientName.toLowerCase();
 
-                                if (!clientGroupsMap.has(clientKey)) {
-                                    clientGroupsMap.set(clientKey, {
+                                if (!allClientGroupsMap.has(clientKey)) {
+                                    allClientGroupsMap.set(clientKey, {
                                         clientId: clientKey,
                                         clientName,
                                         items: [],
@@ -2780,7 +2775,7 @@ export default function HR() {
                                     });
                                 }
 
-                                const grp = clientGroupsMap.get(clientKey)!;
+                                const grp = allClientGroupsMap.get(clientKey)!;
                                 grp.items.push(item);
                                 const bal = computePayrollBalance(item);
                                 grp.totalPayables += bal.totalGross;
@@ -2794,20 +2789,215 @@ export default function HR() {
                                 }
                             });
 
-                            const groups = Array.from(clientGroupsMap.values()).sort((a, b) => {
-                                const getLatestTimestamp = (grp: typeof a) => {
-                                    return Math.max(...grp.items.map(i => {
-                                        const dateStr = i.start_date || i.created_at || i.period_start || '1970-01-01';
-                                        return new Date(dateStr).getTime();
-                                    }));
-                                };
-                                return getLatestTimestamp(b) - getLatestTimestamp(a);
+                            const totalAllGroups = allClientGroupsMap.size;
+                            let totalPendingGroups = 0;
+                            let totalPaidGroups = 0;
+                            let totalActiveGroups = 0;
+                            allClientGroupsMap.forEach(grp => {
+                                if (grp.pendingCount > 0) totalPendingGroups++;
+                                if (grp.paidCount > 0) totalPaidGroups++;
+                                if (grp.activeCount > 0) totalActiveGroups++;
                             });
+
+                            // Filter items based on search query
+                            const q = payrollSearch.trim().toLowerCase();
+                            const filteredItems = rawItems.filter(item => {
+                                if (!q) return true;
+                                const workerMatches = (item.worker || '').toLowerCase().includes(q);
+                                const clientMatches = (item.client_name || item.client || '').toLowerCase().includes(q);
+                                const serviceMatches = (item.service_type || item.service_name || item.notes || item.role || item.job_title || '').toLowerCase().includes(q);
+                                return workerMatches || clientMatches || serviceMatches;
+                            });
+
+                            // Group filtered items by client
+                            const filteredClientGroupsMap = new Map<string, {
+                                clientId: string;
+                                clientName: string;
+                                items: any[];
+                                totalPayables: number;
+                                paidCount: number;
+                                pendingCount: number;
+                                activeCount: number;
+                            }>();
+
+                            filteredItems.forEach(item => {
+                                const rawClient = (item.client_name || item.client || '').trim();
+                                const clientName = (!rawClient || rawClient === 'N/A' || rawClient === 'Unassigned')
+                                    ? 'Internal / General Operations'
+                                    : rawClient;
+                                const clientKey = clientName.toLowerCase();
+
+                                if (!filteredClientGroupsMap.has(clientKey)) {
+                                    filteredClientGroupsMap.set(clientKey, {
+                                        clientId: clientKey,
+                                        clientName,
+                                        items: [],
+                                        totalPayables: 0,
+                                        paidCount: 0,
+                                        pendingCount: 0,
+                                        activeCount: 0,
+                                    });
+                                }
+
+                                const grp = filteredClientGroupsMap.get(clientKey)!;
+                                grp.items.push(item);
+                                const bal = computePayrollBalance(item);
+                                grp.totalPayables += bal.totalGross;
+                                if (bal.isFullyPaid) {
+                                    grp.paidCount++;
+                                } else {
+                                    grp.pendingCount++;
+                                }
+                                if (isPayrollItemActive(item)) {
+                                    grp.activeCount++;
+                                }
+                            });
+
+                            // Apply status filter pill to groups and sort
+                            const groups = Array.from(filteredClientGroupsMap.values())
+                                .filter(grp => {
+                                    if (payrollStatusFilter === 'pending') return grp.pendingCount > 0;
+                                    if (payrollStatusFilter === 'paid') return grp.paidCount > 0;
+                                    if (payrollStatusFilter === 'active') return grp.activeCount > 0;
+                                    return true;
+                                })
+                                .sort((a, b) => {
+                                    const getLatestTimestamp = (grp: typeof a) => {
+                                        return Math.max(...grp.items.map(i => {
+                                            const dateStr = i.start_date || i.created_at || i.period_start || '1970-01-01';
+                                            return new Date(dateStr).getTime();
+                                        }));
+                                    };
+                                    return getLatestTimestamp(b) - getLatestTimestamp(a);
+                                });
 
                             return (
                                 <div className="space-y-4">
-                                    {groups.map(group => {
-                                        const isCollapsed = !!collapsedClients[group.clientId];
+                                    {/* Instant Client, Worker & Service Search Bar + Quick Status Filters */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                        {/* Instant Search Bar */}
+                                        <div className="relative flex-1">
+                                            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search client, worker, or service..."
+                                                value={payrollSearch}
+                                                onChange={(e) => setPayrollSearch(e.target.value)}
+                                                className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/20 focus:border-[#1AA6A8] font-medium text-slate-800 placeholder:text-slate-400 transition-all"
+                                            />
+                                            {payrollSearch && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPayrollSearch('')}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors cursor-pointer"
+                                                    title="Clear search"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Quick Status Filter Pills */}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <button
+                                                type="button"
+                                                onClick={() => setPayrollStatusFilter('all')}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                    payrollStatusFilter === 'all'
+                                                        ? 'bg-slate-900 text-white shadow-xs'
+                                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70 border border-transparent'
+                                                }`}
+                                            >
+                                                <Users className="w-3.5 h-3.5" />
+                                                <span>All</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                                    payrollStatusFilter === 'all' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
+                                                }`}>
+                                                    {totalAllGroups}
+                                                </span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setPayrollStatusFilter('pending')}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                    payrollStatusFilter === 'pending'
+                                                        ? 'bg-amber-500 text-white shadow-xs'
+                                                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/80'
+                                                }`}
+                                                title="Filter clients with pending payslip dues"
+                                            >
+                                                <span className={`w-2 h-2 rounded-full ${payrollStatusFilter === 'pending' ? 'bg-white' : 'bg-amber-500'} ${totalPendingGroups > 0 ? 'animate-pulse' : ''}`} />
+                                                <span>Pending Dues</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                                    payrollStatusFilter === 'pending' ? 'bg-amber-600 text-white' : 'bg-amber-200 text-amber-900'
+                                                }`}>
+                                                    {totalPendingGroups}
+                                                </span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setPayrollStatusFilter('paid')}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                    payrollStatusFilter === 'paid'
+                                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                                        : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/80'
+                                                }`}
+                                                title="Filter clients with settled/paid payslips"
+                                            >
+                                                <CheckCircle2 className={`w-3.5 h-3.5 ${payrollStatusFilter === 'paid' ? 'text-white' : 'text-emerald-500'}`} />
+                                                <span>Paid</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                                    payrollStatusFilter === 'paid' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-900'
+                                                }`}>
+                                                    {totalPaidGroups}
+                                                </span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setPayrollStatusFilter('active')}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                    payrollStatusFilter === 'active'
+                                                        ? 'bg-[#1AA6A8] text-white shadow-xs'
+                                                        : 'bg-teal-50 text-[#1AA6A8] hover:bg-teal-100 border border-teal-200/80'
+                                                }`}
+                                                title="Filter clients with currently active deployments"
+                                            >
+                                                <span className={`w-1.5 h-1.5 rounded-full ${payrollStatusFilter === 'active' ? 'bg-white' : 'bg-[#1AA6A8]'} animate-pulse`} />
+                                                <span>Active</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                                    payrollStatusFilter === 'active' ? 'bg-teal-700 text-white' : 'bg-teal-200 text-teal-900'
+                                                }`}>
+                                                    {totalActiveGroups}
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Empty State when Search or Filter Yields No Results */}
+                                    {groups.length === 0 ? (
+                                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500">
+                                            <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                            <p className="font-bold text-slate-700">No matching payslips found</p>
+                                            <p className="text-xs text-slate-400 mt-0.5">
+                                                {payrollSearch ? `No results found for "${payrollSearch}".` : 'No records match the selected status filter.'}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setPayrollSearch(''); setPayrollStatusFilter('all'); }}
+                                                className="mt-3 px-3.5 py-1.5 bg-[#EAFBFB] hover:bg-[#1AA6A8] text-[#1AA6A8] hover:text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                                            >
+                                                <RefreshCw className="w-3.5 h-3.5" />
+                                                <span>Reset Filters</span>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        groups.map(group => {
+                                            const isCollapsed = !payrollSearch.trim()
+                                                ? !!collapsedClients[group.clientId]
+                                                : (collapsedClients[group.clientId] === true);
 
                                         return (
                                             <div
@@ -3308,7 +3498,7 @@ export default function HR() {
                                         )}
                                     </div>
                                 );
-                            })}
+                            }))}
                                 </div>
                             );
                         })()}
