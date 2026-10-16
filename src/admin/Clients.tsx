@@ -892,7 +892,7 @@ export default function Clients() {
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                             <input
                                 type="text"
-                                placeholder="Search clients by name, phone..."
+                                placeholder="Search clients by name, phone, or client ID..."
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                                 className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
@@ -1076,11 +1076,27 @@ export default function Clients() {
                                 if (c.status === 'Trash') return false;
 
                                 if (searchQuery.trim()) {
-                                    const q = searchQuery.toLowerCase();
-                                    const nameMatch = (c.name || '').toLowerCase().includes(q);
-                                    const phoneMatch = (c.phone || '').toLowerCase().includes(q);
-                                    const emailMatch = (c.email || '').toLowerCase().includes(q);
-                                    if (!nameMatch && !phoneMatch && !emailMatch) return false;
+                                    const rawQ = searchQuery.trim().toLowerCase();
+                                    const strippedQ = rawQ.replace(/^(client\s*id|id)\s*[:#-]?\s*/i, '').trim();
+                                    const cleanQ = rawQ.replace(/[^a-z0-9]/g, '');
+                                    const cleanStrippedQ = strippedQ.replace(/[^a-z0-9]/g, '');
+
+                                    const clientIdStr = (c.id || '').toLowerCase();
+                                    const cleanClientId = clientIdStr.replace(/[^a-z0-9]/g, '');
+
+                                    // Match full UUID, partial UUID, or UUID without hyphens
+                                    const idMatch = clientIdStr.includes(rawQ) ||
+                                                    (strippedQ.length > 0 && clientIdStr.includes(strippedQ)) ||
+                                                    (cleanQ.length >= 3 && cleanClientId.includes(cleanQ)) ||
+                                                    (cleanStrippedQ.length >= 3 && cleanClientId.includes(cleanStrippedQ));
+
+                                    const nameMatch = (c.name || '').toLowerCase().includes(rawQ) ||
+                                                      (strippedQ.length > 0 && (c.name || '').toLowerCase().includes(strippedQ));
+                                    const phoneMatch = (c.phone || '').toLowerCase().includes(rawQ) ||
+                                                       (cleanQ.length >= 4 && (c.phone || '').replace(/\D/g, '').includes(cleanQ));
+                                    const emailMatch = (c.email || '').toLowerCase().includes(rawQ);
+
+                                    if (!nameMatch && !phoneMatch && !emailMatch && !idMatch) return false;
                                 }
 
                                 if (selectedCity !== 'all') {
@@ -1088,7 +1104,8 @@ export default function Clients() {
                                     if (cCity.toLowerCase() !== selectedCity.toLowerCase()) return false;
                                 }
 
-                                if (viewAllMonths) return true;
+                                // When actively searching, search across all months so clients from any month are found
+                                if (viewAllMonths || searchQuery.trim()) return true;
 
                                 return isClientInMonth(c, selectedMonth);
                             });

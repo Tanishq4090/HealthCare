@@ -219,13 +219,45 @@ export default function AdminLayout() {
 
             try {
                 const [clients, workers, invoices] = await Promise.all([
-                    canSearchClients ? supabase
-                        .from('crm_leads')
-                        .select('id, name, phone, pipeline_stage')
-                        .is('deleted_at', null)
-                        .or(`name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
-                        .limit(5)
-                        .then(({ data }) => data || []) : Promise.resolve([]),
+                    canSearchClients ? (async () => {
+                        const trimmed = searchQuery.trim();
+                        const strippedUuid = trimmed.replace(/^(client\s*id|id)\s*[:#-]?\s*/i, '').trim();
+                        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(strippedUuid);
+
+                        if (isUuid) {
+                            const { data: leadMatch } = await supabase
+                                .from('crm_leads')
+                                .select('id, name, phone, pipeline_stage')
+                                .eq('id', strippedUuid)
+                                .limit(5);
+
+                            if (leadMatch && leadMatch.length > 0) return leadMatch;
+
+                            const { data: clientMatch } = await supabase
+                                .from('clients')
+                                .select('id, client_name, phone_number')
+                                .eq('id', strippedUuid)
+                                .limit(5);
+
+                            if (clientMatch && clientMatch.length > 0) {
+                                return clientMatch.map((c: any) => ({
+                                    id: c.id,
+                                    name: c.client_name,
+                                    phone: c.phone_number,
+                                    pipeline_stage: 'Client'
+                                }));
+                            }
+                        }
+
+                        const { data } = await supabase
+                            .from('crm_leads')
+                            .select('id, name, phone, pipeline_stage')
+                            .is('deleted_at', null)
+                            .or(`name.ilike.%${trimmed}%,phone.ilike.%${trimmed}%`)
+                            .limit(5);
+
+                        return data || [];
+                    })() : Promise.resolve([]),
                     canSearchWorkers ? supabase
                         .from('employees')
                         .select('id, full_name, phone, job_title')
