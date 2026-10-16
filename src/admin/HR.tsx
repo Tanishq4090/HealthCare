@@ -862,7 +862,8 @@ export default function HR() {
                         clients(client_name)
                     `)
                     .eq('assignment_status', 'active')
-                    .order('assigned_at', { ascending: false }),
+                    .order('assigned_at', { ascending: false })
+                    .order('id', { ascending: false }),
                 supabase
                     .from('attendance')
                     .select('*')
@@ -948,6 +949,62 @@ export default function HR() {
     useEffect(() => {
         if (activeTab === 'attendance') fetchLiveAttendance();
     }, [activeTab, selectedAttendanceDate]);
+
+    // Keep track of scroll position in attendance tab and restore on refresh/reload
+    const hasRestoredAttendanceScrollRef = useRef(false);
+
+    useEffect(() => {
+        if (activeTab !== 'attendance') return;
+        
+        const handleScroll = () => {
+            const container = document.getElementById('admin-main-scroll-container') || document.documentElement;
+            const top = container.scrollTop || window.scrollY;
+            if (top > 0) {
+                try {
+                    sessionStorage.setItem('hr_attendance_scroll_top', String(top));
+                } catch (e) {
+                    // ignore
+                }
+            }
+        };
+
+        const target = document.getElementById('admin-main-scroll-container');
+        if (target) {
+            target.addEventListener('scroll', handleScroll, { passive: true });
+        }
+        window.addEventListener('scroll', handleScroll, { passive: true });
+
+        return () => {
+            if (target) target.removeEventListener('scroll', handleScroll);
+            window.removeEventListener('scroll', handleScroll);
+        };
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'attendance' && activeAssignments.length > 0 && !hasRestoredAttendanceScrollRef.current) {
+            const savedScrollTop = sessionStorage.getItem('hr_attendance_scroll_top');
+            const lastClientId = sessionStorage.getItem('hr_last_attendance_client');
+
+            const timer = setTimeout(() => {
+                const scrollContainer = document.getElementById('admin-main-scroll-container');
+                if (lastClientId) {
+                    const clientEl = document.getElementById(`attendance-client-${lastClientId}`);
+                    if (clientEl) {
+                        clientEl.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+                        hasRestoredAttendanceScrollRef.current = true;
+                        return;
+                    }
+                }
+
+                if (savedScrollTop && scrollContainer) {
+                    scrollContainer.scrollTop = parseInt(savedScrollTop, 10);
+                    hasRestoredAttendanceScrollRef.current = true;
+                }
+            }, 80);
+
+            return () => clearTimeout(timer);
+        }
+    }, [activeTab, activeAssignments.length]);
 
     // Derived: filtered + searched worker list for the allocation table
     const filteredWorkers = workers.filter(w => {
@@ -2227,7 +2284,7 @@ export default function HR() {
                         Allocation
                     </button>
                     <button
-                        onClick={() => { setActiveTab('attendance'); setSearchParams({ tab: 'attendance' }); fetchData(); }}
+                        onClick={() => { hasRestoredAttendanceScrollRef.current = false; setActiveTab('attendance'); setSearchParams({ tab: 'attendance' }); fetchData(); }}
                         className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'attendance' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Attendance
@@ -2378,7 +2435,7 @@ export default function HR() {
                         </div>
                     </div>
 
-                    {attendanceLoading ? (
+                    {attendanceLoading && activeAssignments.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center py-20">
                             <Loader2 className="w-8 h-8 text-[#1AA6A8] animate-spin mb-4" />
                             <span className="text-slate-500 font-medium">Fetching roster data...</span>
@@ -2420,7 +2477,12 @@ export default function HR() {
                                     });
 
                                     // Sort client groups so the newest active client (e.g. Tanishq) always appears at the TOP
-                                    const sortedGroups = Array.from(map.values()).sort((a, b) => b.latestAssignedAt - a.latestAssignedAt);
+                                    const sortedGroups = Array.from(map.values()).sort((a, b) => {
+                                        if (b.latestAssignedAt !== a.latestAssignedAt) {
+                                            return b.latestAssignedAt - a.latestAssignedAt;
+                                        }
+                                        return a.clientName.localeCompare(b.clientName);
+                                    });
 
                                     // Apply instant search and quick attendance status filters
                                     const filteredGroups = sortedGroups.filter((group) => {
@@ -2480,6 +2542,7 @@ export default function HR() {
                                     return filteredGroups.map((group) => (
                                         <div
                                             key={group.clientId}
+                                            id={`attendance-client-${group.clientId}`}
                                             className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"
                                         >
                                             {/* Unified Client Box Header */}

@@ -33,7 +33,34 @@ interface AssignmentAttendancePanelProps {
 }
 
 export default function AssignmentAttendancePanel({ assignment, onSummaryChange, onAssignmentCompleted, onAttendanceMarked }: AssignmentAttendancePanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(`hr_att_expanded_${assignment.id}`) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleExpanded = () => {
+    setIsExpanded(prev => {
+      const next = !prev;
+      try {
+        if (next) {
+          sessionStorage.setItem(`hr_att_expanded_${assignment.id}`, 'true');
+          const clientId = assignment.client_id || (assignment.clients as any)?.id || assignment.clients?.client_name;
+          if (clientId) {
+            sessionStorage.setItem('hr_last_attendance_client', String(clientId));
+          }
+        } else {
+          sessionStorage.removeItem(`hr_att_expanded_${assignment.id}`);
+        }
+      } catch (e) {
+        console.warn('sessionStorage error', e);
+      }
+      return next;
+    });
+  };
+
   const [days, setDays] = useState<AttendanceDay[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [markingDate, setMarkingDate] = useState<string | null>(null);
@@ -321,6 +348,20 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
       const prevMarked = days.filter(d => d.status !== null && !d.isBlocked).length;
       if (status !== null && !isOpenEnded && prevMarked + 1 >= markableAllDays.length) setShowCompletionPopup(true);
+      
+      try {
+        const clientId = assignment.client_id || (assignment.clients as any)?.id || assignment.clients?.client_name;
+        if (clientId) {
+          sessionStorage.setItem('hr_last_attendance_client', String(clientId));
+        }
+        const scrollEl = document.getElementById('admin-main-scroll-container');
+        if (scrollEl) {
+          sessionStorage.setItem('hr_attendance_scroll_top', String(scrollEl.scrollTop));
+        }
+      } catch (e) {
+        console.warn('sessionStorage error', e);
+      }
+
       onAttendanceMarked?.();
     } catch (err: any) {
       toast.error('Failed to update attendance: ' + err.message);
@@ -372,6 +413,18 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
         { id: 'bulk-assign' }
       );
       await fetchAttendance();
+      try {
+        const clientId = assignment.client_id || (assignment.clients as any)?.id || assignment.clients?.client_name;
+        if (clientId) {
+          sessionStorage.setItem('hr_last_attendance_client', String(clientId));
+        }
+        const scrollEl = document.getElementById('admin-main-scroll-container');
+        if (scrollEl) {
+          sessionStorage.setItem('hr_attendance_scroll_top', String(scrollEl.scrollTop));
+        }
+      } catch (e) {
+        console.warn('sessionStorage error', e);
+      }
       onAttendanceMarked?.();
       const prevMarked = days.filter(d => d.status !== null).length;
       if (!isOpenEnded && prevMarked + unmarkedPast.length >= allDays.length) {
@@ -500,7 +553,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
 
       {/* Header */}
       <button
-        onClick={() => setIsExpanded(prev => !prev)}
+        onClick={toggleExpanded}
         className="w-full p-4 bg-white flex items-center justify-between hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-3">
@@ -609,7 +662,7 @@ export default function AssignmentAttendancePanel({ assignment, onSummaryChange,
             </div>
           </div>
 
-          {isLoading ? (
+          {isLoading && days.length === 0 ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
           ) : (
             <div className="space-y-3">

@@ -1032,7 +1032,7 @@ export default function AdminLayout() {
                 </header>
 
                 {/* Dynamic Page Content */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-16 lg:pb-8">
+                <div id="admin-main-scroll-container" className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-16 lg:pb-8">
                     <Outlet />
                 </div>
 
