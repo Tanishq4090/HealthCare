@@ -1136,9 +1136,6 @@ export default function Clients() {
                                         </div>
                                         <div>
                                             <div className="flex items-center gap-2">
-                                                <span className="inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`Client #${idx + 1}`}>
-                                                    #{idx + 1}
-                                                </span>
                                                 <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
                                                 {(() => {
                                                     const city = client.city || extractCity(client);
@@ -1299,6 +1296,40 @@ export default function Clients() {
                                             </>
                                         )}
                                     </div>
+                                </div>
+
+                                {/* Card Footer: Bottom Left 1.) Serial Number & Quick Reference */}
+                                <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200/90 shadow-2xs" title={`Client #${idx + 1} in current view`}>
+                                            {idx + 1}.)
+                                        </span>
+                                        {client.id && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(client.id);
+                                                    toast.success(`Copied ID for ${client.name}!`);
+                                                }}
+                                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-teal-700 hover:bg-teal-50 px-2 py-0.5 rounded-md border border-slate-200/80 hover:border-teal-300 transition-all cursor-pointer group"
+                                                title={`Full Client ID: ${client.id}\nClick to copy`}
+                                            >
+                                                <span className="text-slate-400 group-hover:text-teal-600 text-[10px]">ID:</span>
+                                                <span className="font-semibold text-slate-700 group-hover:text-teal-900">{client.id.substring(0, 8)}...</span>
+                                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-teal-600 shrink-0" />
+                                            </button>
+                                        )}
+                                        <span className="text-slate-300">•</span>
+                                        <span className="text-[11px] text-slate-500 font-medium">
+                                            {idx + 1} of {filtered.length} clients
+                                        </span>
+                                    </div>
+                                    {client.created_at && (
+                                        <span className="text-[10px] text-slate-400 hidden sm:inline-block">
+                                            Added {new Date(client.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         ));
