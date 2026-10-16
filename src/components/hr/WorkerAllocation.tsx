@@ -1441,7 +1441,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-3.5">
-          {filtered.map(emp => {
+          {filtered.map((emp, idx) => {
             const isExpanded = !!expandedWorkerIds[emp.id];
             return (
               <div
@@ -1465,9 +1465,14 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-slate-800 text-xs sm:text-sm truncate group-hover:text-primary transition-colors leading-tight" title={emp.full_name}>
-                        {emp.full_name}
-                      </h3>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="inline-flex items-center justify-center min-w-[1.35rem] h-4.5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`Worker #${idx + 1}`}>
+                          #{idx + 1}
+                        </span>
+                        <h3 className="font-bold text-slate-800 text-xs sm:text-sm truncate group-hover:text-primary transition-colors leading-tight" title={emp.full_name}>
+                          {emp.full_name}
+                        </h3>
+                      </div>
                       <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 leading-tight" title={emp.job_title}>
                         {emp.job_title}
                       </p>
@@ -1790,7 +1795,7 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                       </td>
                     </tr>
                   )
-                  : assignments.map(a => (
+                  : assignments.map((a, idx) => (
                     <tr key={a.id} className="hover:bg-slate-50/50 transition-colors group/row">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3.5">
@@ -1801,7 +1806,12 @@ function ActiveAssignmentsTab({ onPreview }: { onPreview: (emp: Employee) => voi
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors">{a.employee.full_name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center justify-center min-w-[1.35rem] h-4.5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${idx + 1}`}>
+                                #{idx + 1}
+                              </span>
+                              <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors">{a.employee.full_name}</p>
+                            </div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{a.employee.job_title}</p>
                           </div>
                         </div>
@@ -2016,7 +2026,7 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                       </td>
                     </tr>
                   )
-                  : filtered.map(emp => (
+                  : filtered.map((emp, idx) => (
                     <tr key={emp.id} className="hover:bg-slate-50/50 transition-all group/row cursor-pointer" onClick={() => onViewDetails(emp)}>
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
@@ -2032,7 +2042,12 @@ function AllEmployeesTab({ onPreview, onViewDetails, refreshTrigger }: {
                             />
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors text-base tracking-tight">{emp.full_name}</p>
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center justify-center min-w-[1.4rem] h-5 px-1.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${idx + 1}`}>
+                                #{idx + 1}
+                              </span>
+                              <p className="font-bold text-slate-800 group-hover/row:text-primary transition-colors text-base tracking-tight">{emp.full_name}</p>
+                            </div>
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
                                 {emp.employee_id}
@@ -2263,7 +2278,7 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
                       </td>
                     </tr>
                   )
-                  : employees.map(emp => (
+                  : employees.map((emp, idx) => (
                     <tr key={emp.id} className="hover:bg-slate-50/50 transition-all group/row">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3.5">
@@ -2274,7 +2289,12 @@ function RecycleBinTab({ refreshTrigger }: { refreshTrigger: number }) {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-bold text-slate-700">{emp.full_name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center justify-center min-w-[1.35rem] h-4.5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${idx + 1}`}>
+                                #{idx + 1}
+                              </span>
+                              <p className="font-bold text-slate-700">{emp.full_name}</p>
+                            </div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{emp.employee_id}</p>
                           </div>
                         </div>
