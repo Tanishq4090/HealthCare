@@ -1582,27 +1582,25 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
                 </div>
 
                 {/* 4. Action Buttons */}
-                <div className="flex items-center gap-2 pt-3.5 mt-3.5 border-t border-slate-100">
+                <div className="flex items-center gap-2.5 pt-3.5 mt-3.5 border-t border-slate-100">
                   <Button
                     variant="outline"
-                    size="sm"
-                    className="flex-1 h-8.5 border-slate-200 text-slate-700 hover:border-primary/40 hover:bg-teal-50 hover:text-teal-800 transition-all rounded-xl text-xs font-semibold gap-1.5 cursor-pointer shadow-2xs"
+                    className="flex-1 h-11 border-slate-200 text-slate-700 hover:border-primary/40 hover:bg-teal-50 hover:text-teal-800 transition-all rounded-xl text-xs sm:text-sm font-semibold gap-2 cursor-pointer shadow-2xs"
                     onClick={(e) => {
                       e.stopPropagation();
                       onPreview(emp);
                     }}
                   >
-                    <Shield className="w-3.5 h-3.5 text-slate-400" /> ID Card
+                    <Shield className="w-4 h-4 text-slate-400 group-hover:text-teal-600" /> ID Card
                   </Button>
                   <Button
-                    size="sm"
-                    className="flex-1 h-8.5 bg-primary hover:bg-primary/90 text-white gap-1.5 rounded-xl text-xs font-bold shadow-sm shadow-primary/20 transition-all active:scale-95 cursor-pointer"
+                    className="flex-1 h-11 bg-primary hover:bg-primary/90 text-white gap-2 rounded-xl text-xs sm:text-sm font-bold shadow-sm shadow-primary/25 transition-all active:scale-95 cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
                       onAssign(emp);
                     }}
                   >
-                    <Briefcase className="w-3.5 h-3.5 shrink-0" /> Assign
+                    <Briefcase className="w-4 h-4 shrink-0" /> Assign
                   </Button>
                 </div>
               </div>
