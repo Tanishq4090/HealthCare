@@ -1146,43 +1146,79 @@ export default function Clients() {
                             );
                             return filtered.map((client, idx) => (
                             <div key={client.id} onClick={() => setInspectingClient(client)} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
-                                <div className="flex justify-between items-start mb-3">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                            <Building className="w-5 h-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
-                                                {(() => {
-                                                    const city = client.city || extractCity(client);
-                                                    return (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase tracking-wider">
-                                                            <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
-                                                        </span>
-                                                    );
-                                                })()}
-                                            </div>
-                                            <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
-                                                <Users className="w-3.5 h-3.5" /> {client.activeWorkerCount} Active / {client.workerCount} Total Workers
-                                            </p>
-                                        </div>
+                                {/* 1. Card Top Bar: 1.) Serial Number, Client ID & Scope on Left + Added Date & Status on Right */}
+                                <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-100 flex-wrap">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200/90 shadow-2xs" title={`Client #${idx + 1} in current view`}>
+                                            {idx + 1}.)
+                                        </span>
+                                        {client.id && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(client.id);
+                                                    toast.success(`Copied ID for ${client.name}!`);
+                                                }}
+                                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-teal-700 hover:bg-teal-50 px-2 py-0.5 rounded-md border border-slate-200/80 hover:border-teal-300 transition-all cursor-pointer group"
+                                                title={`Full Client ID: ${client.id}\nClick to copy`}
+                                            >
+                                                <span className="text-slate-400 group-hover:text-teal-600 text-[10px]">ID:</span>
+                                                <span className="font-semibold text-slate-700 group-hover:text-teal-900">{client.id.substring(0, 8)}...</span>
+                                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-teal-600 shrink-0" />
+                                            </button>
+                                        )}
+                                        <span className="text-slate-300">•</span>
+                                        <span className="text-[11px] text-slate-500 font-medium">
+                                            {idx + 1} of {filtered.length} clients
+                                        </span>
                                     </div>
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                                        client.status === 'Closed Won' ? 'bg-emerald-100 text-emerald-700' :
-                                        client.status === 'Monthly Billing' ? 'bg-blue-100 text-blue-700' :
-                                        client.status === 'Active Client' ? 'bg-teal-100 text-teal-700' :
-                                        client.status === 'Archived' ? 'bg-slate-100 text-slate-500' :
-                                        client.status === 'Trash' ? 'bg-red-100 text-red-600' :
-                                        'bg-slate-100 text-slate-600'
-                                    }`}>
-                                        {client.status === 'Closed Won' ? 'Closed' :
-                                         client.status === 'Monthly Billing' ? 'Billing' :
-                                         client.status === 'Active Client' ? 'Active' :
-                                         client.status === 'Archived' ? 'Archived' :
-                                         client.status === 'Trash' ? 'Trash' :
-                                         client.status}
-                                    </span>
+
+                                    <div className="flex items-center gap-2.5">
+                                        {client.created_at && (
+                                            <span className="text-[10px] text-slate-400 hidden sm:inline-block">
+                                                Added {new Date(client.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </span>
+                                        )}
+                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                            client.status === 'Closed Won' ? 'bg-emerald-100 text-emerald-700' :
+                                            client.status === 'Monthly Billing' ? 'bg-blue-100 text-blue-700' :
+                                            client.status === 'Active Client' ? 'bg-teal-100 text-teal-700' :
+                                            client.status === 'Archived' ? 'bg-slate-100 text-slate-500' :
+                                            client.status === 'Trash' ? 'bg-red-100 text-red-600' :
+                                            'bg-slate-100 text-slate-600'
+                                        }`}>
+                                            {client.status === 'Closed Won' ? 'Closed' :
+                                             client.status === 'Monthly Billing' ? 'Billing' :
+                                             client.status === 'Active Client' ? 'Active' :
+                                             client.status === 'Archived' ? 'Archived' :
+                                             client.status === 'Trash' ? 'Trash' :
+                                             client.status}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* 2. Client Main Header: Building Icon + Name + City + Workers */}
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                                        <Building className="w-5 h-5 text-primary" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors">{client.name}</h3>
+                                            {(() => {
+                                                const city = client.city || extractCity(client);
+                                                return (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase tracking-wider">
+                                                        <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                        <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
+                                            <Users className="w-3.5 h-3.5" /> {client.activeWorkerCount} Active / {client.workerCount} Total Workers
+                                        </p>
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4 pt-4 border-t border-slate-100">
                                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col justify-center">
@@ -1313,40 +1349,6 @@ export default function Clients() {
                                             </>
                                         )}
                                     </div>
-                                </div>
-
-                                {/* Card Footer: Bottom Left 1.) Serial Number & Quick Reference */}
-                                <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200/90 shadow-2xs" title={`Client #${idx + 1} in current view`}>
-                                            {idx + 1}.)
-                                        </span>
-                                        {client.id && (
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigator.clipboard.writeText(client.id);
-                                                    toast.success(`Copied ID for ${client.name}!`);
-                                                }}
-                                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-teal-700 hover:bg-teal-50 px-2 py-0.5 rounded-md border border-slate-200/80 hover:border-teal-300 transition-all cursor-pointer group"
-                                                title={`Full Client ID: ${client.id}\nClick to copy`}
-                                            >
-                                                <span className="text-slate-400 group-hover:text-teal-600 text-[10px]">ID:</span>
-                                                <span className="font-semibold text-slate-700 group-hover:text-teal-900">{client.id.substring(0, 8)}...</span>
-                                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-teal-600 shrink-0" />
-                                            </button>
-                                        )}
-                                        <span className="text-slate-300">•</span>
-                                        <span className="text-[11px] text-slate-500 font-medium">
-                                            {idx + 1} of {filtered.length} clients
-                                        </span>
-                                    </div>
-                                    {client.created_at && (
-                                        <span className="text-[10px] text-slate-400 hidden sm:inline-block">
-                                            Added {new Date(client.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                        </span>
-                                    )}
                                 </div>
                             </div>
                         ));
