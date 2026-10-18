@@ -5780,29 +5780,41 @@ export default function CRM() {
                                                                     ? cardBadgesOverrides[item.id]
                                                                     : showBadges;
 
+                                                                const lQuote = item.crm_quotations?.[0];
+                                                                const cRate = item.complete_month_daily_rate || lQuote?.complete_month_rate || item.services?.[0]?.complete_month_daily_rate;
+                                                                const incRate = item.incomplete_month_daily_rate || lQuote?.incomplete_month_rate || item.services?.[0]?.incomplete_month_daily_rate;
+
                                                                 return (
-                                                                    <div key={item.id} className={`relative w-full ${isCardBadgesVisible ? 'sm:w-[260px]' : 'sm:w-[215px]'} shrink-0 bg-white rounded-xl shadow-2xs sm:shadow-sm border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
+                                                                    <div key={item.id} className={`relative w-full sm:w-[260px] shrink-0 bg-white rounded-xl shadow-2xs sm:shadow-xs border hover:shadow-md transition-all cursor-default flex flex-col ${item.needs_attention ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200 hover:border-slate-300'}`}>
                                                                         {item.needs_attention && (
                                                                             <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-red-500 rounded-full border-2 border-white shadow-sm z-10 animate-pulse"></div>
                                                                         )}
 
                                                                         {!isCardBadgesVisible ? (
-                                                                            /* ── COMPACT CARD (Badges Hidden: Name, Number, View Details) ── */
+                                                                            /* ── SIMPLE LEAD CARD (Sr No, Full Name, Priority, Phone, Actions, Rates) ── */
                                                                             <div className="flex flex-col flex-1">
-                                                                                <div className="p-2.5 sm:p-3 flex flex-col gap-2 flex-1">
-                                                                                    {/* Row 1: Avatar + Serial + Name + Actions (Quick Edit & Unhide Badges) */}
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${getAvatarColor(item.name)}`}>
-                                                                                            {getInitials(item.name)}
-                                                                                        </div>
-                                                                                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                                                                            <span className="inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${itemIdx + 1} in ${col.title}`}>
-                                                                                                #{itemIdx + 1}
+                                                                                <div className="p-3 flex flex-col gap-2.5 flex-1">
+                                                                                    {/* Row 1: Sr No. + Full Name + Priority Badge */}
+                                                                                    <div className="flex items-start justify-between gap-2">
+                                                                                        <div className="flex items-baseline gap-1.5 min-w-0 flex-1">
+                                                                                            <span className="text-xs font-bold text-slate-400 font-mono shrink-0 select-none">
+                                                                                                {itemIdx + 1}.
                                                                                             </span>
-                                                                                            <p className="text-xs sm:text-sm font-bold text-slate-900 truncate leading-tight flex-1" title={item.name}>
+                                                                                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug break-words flex-1 min-w-0" title={item.name}>
                                                                                                 {item.name}
-                                                                                            </p>
+                                                                                            </h4>
                                                                                         </div>
+                                                                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider shrink-0 ${priorityMeta.cls}`}>
+                                                                                            {priorityMeta.label}
+                                                                                        </span>
+                                                                                    </div>
+
+                                                                                    {/* Row 2: Phone number + Actions (Edit, Full View Eye, Chat) */}
+                                                                                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
+                                                                                        <span className="truncate flex items-center gap-1 font-medium text-slate-600">
+                                                                                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
+                                                                                        </span>
                                                                                         <div className="flex items-center gap-0.5 shrink-0">
                                                                                             <button
                                                                                                 type="button"
@@ -5813,39 +5825,74 @@ export default function CRM() {
                                                                                                 className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer"
                                                                                                 title="Quick edit lead info & rates"
                                                                                             >
-                                                                                                <Edit3 className="w-3 h-3" />
+                                                                                                <Edit3 className="w-3.5 h-3.5" />
                                                                                             </button>
                                                                                             <button
                                                                                                 type="button"
-                                                                                                onClick={(e) => {
+                                                                                                onClick={async (e) => {
                                                                                                     e.stopPropagation();
-                                                                                                    toggleCardBadges(item.id);
+                                                                                                    setSelectedInspectorLead(item);
+                                                                                                    fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                                                    if (item.needs_attention) {
+                                                                                                        setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                                        await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                                                    }
                                                                                                 }}
                                                                                                 className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer"
-                                                                                                title="Show badges for this lead"
+                                                                                                title="Full view lead details"
                                                                                             >
-                                                                                                <Eye className="w-3 h-3" />
+                                                                                                <Eye className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                title="Chat on WhatsApp"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    fetchWhatsappChat(item);
+                                                                                                }}
+                                                                                                className="p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                                                            >
+                                                                                                <MessageCircle className="w-3.5 h-3.5" />
                                                                                             </button>
                                                                                         </div>
                                                                                     </div>
 
-                                                                                    {/* Row 2: Phone number + WhatsApp */}
-                                                                                    <div className="flex items-center justify-between gap-1 text-[11px] text-slate-600">
-                                                                                        <span className="truncate flex items-center gap-1 font-medium">
-                                                                                            <Phone className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                                                                            {formatPhoneNumber(item.whatsapp_number || item.phone) || 'No phone'}
-                                                                                        </span>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            title="Chat on WhatsApp"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                fetchWhatsappChat(item);
-                                                                                            }}
-                                                                                            className="p-1 rounded-md text-slate-400 hover:text-[#1AA6A8] hover:bg-emerald-50 transition-colors shrink-0 cursor-pointer"
-                                                                                        >
-                                                                                            <MessageCircle className="w-3 h-3" />
-                                                                                        </button>
+                                                                                    {/* Row 3: Rates & Service Tag */}
+                                                                                    <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-slate-100 text-[10px]">
+                                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                            {cRate ? (
+                                                                                                <span
+                                                                                                    onClick={(e) => { e.stopPropagation(); openQuickEdit(item); }}
+                                                                                                    title="Full Month Rate (Click to edit)"
+                                                                                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-pointer hover:bg-emerald-100 transition-colors"
+                                                                                                >
+                                                                                                    Full: ₹{Number(cRate).toLocaleString('en-IN')}/d
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                            {incRate ? (
+                                                                                                <span
+                                                                                                    onClick={(e) => { e.stopPropagation(); openQuickEdit(item); }}
+                                                                                                    title="Partial Month Rate (Click to edit)"
+                                                                                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors"
+                                                                                                >
+                                                                                                    Part: ₹{Number(incRate).toLocaleString('en-IN')}/d
+                                                                                                </span>
+                                                                                            ) : null}
+                                                                                            {!cRate && !incRate && (
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => { e.stopPropagation(); openQuickEdit(item); }}
+                                                                                                    className="text-[10px] text-slate-400 hover:text-primary font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                                                                                                >
+                                                                                                    <Plus className="w-2.5 h-2.5" /> Set Rates
+                                                                                                </button>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        {serviceName && (
+                                                                                            <span className="text-[9px] font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 truncate max-w-[95px]" title={serviceName}>
+                                                                                                {serviceName}
+                                                                                            </span>
+                                                                                        )}
                                                                                     </div>
                                                                                 </div>
 
@@ -5882,10 +5929,10 @@ export default function CRM() {
                                                                             {/* Row 1: Serial + Name + Badges + Arrow */}
                                                                             <div className="flex items-center justify-between gap-1.5 min-w-0">
                                                                                 <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
-                                                                                    <span className="inline-flex items-center justify-center min-w-[1.25rem] h-4.5 px-1 rounded text-[9px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shrink-0" title={`#${itemIdx + 1} in ${col.title}`}>
-                                                                                        #{itemIdx + 1}
+                                                                                    <span className="text-xs font-bold text-slate-400 font-mono shrink-0 select-none">
+                                                                                        {itemIdx + 1}.
                                                                                     </span>
-                                                                                    <span className="font-bold text-slate-900 text-xs truncate max-w-[140px]">
+                                                                                    <span className="font-bold text-slate-900 text-xs break-words">
                                                                                         {item.name}
                                                                                     </span>
                                                                                     <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold border uppercase tracking-wider shrink-0 ${priorityMeta.cls}`}>
@@ -5995,46 +6042,57 @@ export default function CRM() {
                                                                         {/* ── DESKTOP FULL CARD (sm+) ── */}
                                                                         <div className="hidden sm:flex flex-col flex-1">
                                                                             <div className="p-3.5 flex flex-col gap-2.5 flex-1">
-                                                                                {/* Row 1: Avatar + Serial + Name + Priority + Quick Edit */}
-                                                                                <div className="flex items-start gap-2.5">
-                                                                                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${getAvatarColor(item.name)}`}>
-                                                                                        {getInitials(item.name)}
+                                                                                {/* Row 1: Serial + Name + Actions */}
+                                                                                <div className="flex items-start justify-between gap-2">
+                                                                                    <div className="flex items-baseline gap-1.5 min-w-0 flex-1">
+                                                                                        <span className="text-xs font-bold text-slate-400 font-mono shrink-0 select-none">
+                                                                                            {itemIdx + 1}.
+                                                                                        </span>
+                                                                                        <p className="text-sm font-bold text-slate-900 leading-snug break-words flex-1" title={item.name}>
+                                                                                            {item.name}
+                                                                                        </p>
                                                                                     </div>
-                                                                                    <div className="flex-1 min-w-0">
-                                                                                        <div className="flex items-center justify-between gap-1">
-                                                                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                                                                                <span className="inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200/90 shadow-2xs shrink-0" title={`#${itemIdx + 1} in ${col.title}`}>
-                                                                                                    #{itemIdx + 1}
-                                                                                                </span>
-                                                                                                <p className="text-sm font-bold text-slate-900 truncate leading-tight" title={item.name}>
-                                                                                                    {item.name}
-                                                                                                </p>
-                                                                                            </div>
-                                                                                            <div className="flex items-center gap-0.5 shrink-0">
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        openQuickEdit(item);
-                                                                                                    }}
-                                                                                                    className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
-                                                                                                    title="Quick edit lead info & rates"
-                                                                                                >
-                                                                                                    <Edit3 className="w-3.5 h-3.5" />
-                                                                                                </button>
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        toggleCardBadges(item.id);
-                                                                                                    }}
-                                                                                                    className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
-                                                                                                    title="Hide badges for this lead"
-                                                                                                >
-                                                                                                    <EyeOff className="w-3.5 h-3.5 text-primary" />
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        </div>
+                                                                                    <div className="flex items-center gap-0.5 shrink-0">
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                openQuickEdit(item);
+                                                                                            }}
+                                                                                            className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                                                                                            title="Quick edit lead info & rates"
+                                                                                        >
+                                                                                            <Edit3 className="w-3.5 h-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={async (e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setSelectedInspectorLead(item);
+                                                                                                fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                                                if (item.needs_attention) {
+                                                                                                    setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                                    await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                                                                                            title="Full view lead details"
+                                                                                        >
+                                                                                            <Eye className="w-3.5 h-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                toggleCardBadges(item.id);
+                                                                                            }}
+                                                                                            className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                                                                                            title="Hide badges for this lead"
+                                                                                        >
+                                                                                            <EyeOff className="w-3.5 h-3.5 text-primary" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
                                                                                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                                                                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
                                                                                                 {priorityMeta.label}
@@ -6089,10 +6147,8 @@ export default function CRM() {
                                                                                                 </span>
                                                                                             )}
                                                                                         </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                                {/* Service Details Breakdown */}
-                                                                                <div className="flex flex-col gap-1.5">
+                                                                                        {/* Service Details Breakdown */}
+                                                                                        <div className="flex flex-col gap-1.5">
                                                                                     {shiftBubble && (
                                                                                         <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
                                                                                             <Clock className="w-3 h-3 text-primary shrink-0" />
@@ -6231,7 +6287,7 @@ export default function CRM() {
                                                             {hasMore && (
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); loadMoreInStage(col.title); }}
-                                                                    className={`w-full ${showBadges ? 'sm:w-[260px]' : 'sm:w-[215px]'} shrink-0 flex items-center sm:flex-col justify-center gap-1.5 sm:gap-2 py-2 px-3 sm:p-2 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[40px] sm:min-h-[85px] cursor-pointer`}
+                                                                    className="w-full sm:w-[260px] shrink-0 flex items-center sm:flex-col justify-center gap-1.5 sm:gap-2 py-2 px-3 sm:p-2 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:text-primary hover:border-primary/50 transition-colors hover:bg-primary/5 min-h-[40px] sm:min-h-[85px] cursor-pointer"
                                                                 >
                                                                     <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-full bg-white flex items-center justify-center shadow-xs">
                                                                         <Plus className="w-3 h-3 sm:w-4 sm:h-4 text-primary" />
