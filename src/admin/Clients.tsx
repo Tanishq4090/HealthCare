@@ -328,6 +328,43 @@ export default function Clients() {
         return new Date(Number(y), Number(mo) - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
     };
 
+    const formatDateDisplay = (dateStr?: string | null) => {
+        if (!dateStr) return '';
+        try {
+            const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+            const parts = clean.split('-').map(Number);
+            if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+                const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                return dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            }
+            const dateObj = new Date(dateStr);
+            if (!isNaN(dateObj.getTime())) {
+                return dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            }
+            return dateStr;
+        } catch {
+            return dateStr || '';
+        }
+    };
+
+    const getClientDepositBreakdown = (client: any) => {
+        if (!client) return { currentDepositDateStr: '', settledDateStr: '', pastServiceName: 'Previous Service' };
+        const currentService = client.activeService || client.activeAssignment;
+        const currentDepositDate = currentService?.start_date || client.serviceStartDate || client.created_at;
+        const currentDepositDateStr = formatDateDisplay(currentDepositDate);
+
+        const pastCycles = (client.allServiceCycles || []).filter((c: any) => !c.isCurrent);
+        const latestPastCycle = pastCycles[0];
+        const settledDate = latestPastCycle?.endDate || latestPastCycle?.settledDate || currentService?.start_date || latestPastCycle?.startDate || client.created_at;
+        const settledDateStr = formatDateDisplay(settledDate);
+
+        return {
+            currentDepositDateStr,
+            settledDateStr,
+            pastServiceName: latestPastCycle?.serviceType || 'Previous Service',
+        };
+    };
+
     const prevMonth = () => {
         const [y, m] = selectedMonth.split('-').map(Number);
         const d = new Date(y, m - 2, 1);
@@ -813,13 +850,19 @@ export default function Clients() {
                 const allServiceCycles: any[] = [];
                 if (clientServices.length > 0) {
                     const sortedServices = [...clientServices].sort((a, b) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime());
-                    sortedServices.forEach(s => {
+                    sortedServices.forEach((s, sIdx) => {
                         const isCurrent = activeService ? s.id === activeService.id : s.id === latestService?.id;
+                        const nextSvc = sortedServices[sIdx - 1];
+                        const cycleStartDate = s.start_date || s.created_at || c.created_at;
+                        const cycleEndDate = isCurrent ? (s.end_date || null) : (s.end_date || (nextSvc ? (nextSvc.start_date || nextSvc.created_at) : (activeService?.start_date || null)));
+                        const cycleSettledDate = isCurrent ? null : (cycleEndDate || s.end_date || activeService?.start_date || s.created_at || c.created_at);
+
                         allServiceCycles.push({
                             id: s.id,
                             serviceType: formatServiceLabel(s.service_type, s.notes),
-                            startDate: s.start_date,
-                            endDate: s.end_date,
+                            startDate: cycleStartDate,
+                            endDate: cycleEndDate,
+                            settledDate: cycleSettledDate,
                             isCurrent: isCurrent,
                             depositAmount: Number(s.deposit_amount) || 0,
                             depositStatus: isCurrent ? depositStatus : (s.deposit_status || 'settled'),
@@ -837,11 +880,16 @@ export default function Clients() {
                         );
                         if (!alreadyRepresented) {
                             const isCurrent = !activeService && (activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id);
+                            const cycleStartDate = a.start_date || a.assigned_at || c.created_at;
+                            const cycleEndDate = isCurrent ? (a.end_date || null) : (a.end_date || (activeService?.start_date || null));
+                            const cycleSettledDate = isCurrent ? null : (cycleEndDate || a.end_date || a.assigned_at || c.created_at);
+
                             allServiceCycles.push({
                                 id: a.id,
                                 serviceType: formatServiceLabel(a.service_type, a.notes),
-                                startDate: a.start_date,
-                                endDate: a.end_date,
+                                startDate: cycleStartDate,
+                                endDate: cycleEndDate,
+                                settledDate: cycleSettledDate,
                                 isCurrent: isCurrent,
                                 depositAmount: Number(a.deposit_amount) || 0,
                                 depositStatus: isCurrent ? depositStatus : 'settled',
@@ -878,6 +926,7 @@ export default function Clients() {
                     activeService: activeService || latestService,
                     activeAssignment: activeAssignment || latestAssignment,
                     created_at: c.created_at,
+                    serviceStartDate: activeService?.start_date || activeAssignment?.start_date || latestService?.start_date || null,
                     city: extractCity({ ...c, ...leadInfo }),
                     services: clientServices,
                 };
@@ -1271,7 +1320,9 @@ export default function Clients() {
                                 } else if (sortField === 'status') {
                                     comparison = (a.status || '').localeCompare(b.status || '');
                                 } else if (sortField === 'created_at') {
-                                    comparison = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+                                    const timeA = new Date(a.serviceStartDate || a.created_at || 0).getTime();
+                                    const timeB = new Date(b.serviceStartDate || b.created_at || 0).getTime();
+                                    comparison = timeA - timeB;
                                 }
                                 return sortAsc ? comparison : -comparison;
                             });
@@ -1325,9 +1376,9 @@ export default function Clients() {
                                                             {sortField === 'status' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                                                         </div>
                                                     </th>
-                                                    <th onClick={() => handleSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Date Added">
+                                                    <th onClick={() => handleSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Service Start Date & Date Added to CRM">
                                                         <div className="flex items-center gap-1">
-                                                            <span>Date</span>
+                                                            <span>Date (Start / Added)</span>
                                                             {sortField === 'created_at' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                                                         </div>
                                                     </th>
@@ -1390,18 +1441,32 @@ export default function Clients() {
 
                                                             {/* Deposit */}
                                                             <td className="py-2.5 px-2.5 whitespace-nowrap">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <span className={`font-bold text-xs ${client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                                                        ₹{client.securityDeposit.toLocaleString()}
-                                                                    </span>
-                                                                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border ${
-                                                                        client.depositStatus === 'pending'
-                                                                            ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                                                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                                                    }`}>
-                                                                        {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
-                                                                    </span>
-                                                                </div>
+                                                                {(() => {
+                                                                    const { settledDateStr } = getClientDepositBreakdown(client);
+                                                                    return (
+                                                                        <div className="flex flex-col">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <span className={`font-bold text-xs ${client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                                                                    ₹{client.securityDeposit.toLocaleString('en-IN')}
+                                                                                </span>
+                                                                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border ${
+                                                                                    client.depositStatus === 'pending'
+                                                                                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                                                        : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                                                }`}>
+                                                                                    {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                                                                </span>
+                                                                            </div>
+                                                                            {client.pastDepositTotal > 0 && (
+                                                                                <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-0.5" title={`Refunded/Settled: ₹${client.pastDepositTotal.toLocaleString('en-IN')}${settledDateStr ? ` on ${settledDateStr}` : ''}`}>
+                                                                                    <span className="text-slate-400">Settled:</span>
+                                                                                    <span className="font-semibold text-slate-700">₹{client.pastDepositTotal.toLocaleString('en-IN')}</span>
+                                                                                    {settledDateStr && <span className="text-slate-400 text-[9px]">({settledDateStr})</span>}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </td>
 
                                                             {/* Status */}
@@ -1423,9 +1488,29 @@ export default function Clients() {
                                                                 </span>
                                                             </td>
 
-                                                            {/* Date */}
-                                                            <td className="py-2.5 px-2.5 whitespace-nowrap text-xs text-slate-500">
-                                                                {client.created_at ? new Date(client.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                                                            {/* Date (Service Start & Date Added) */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <div className="flex flex-col">
+                                                                    {client.serviceStartDate ? (
+                                                                        <>
+                                                                            <span className="text-xs font-semibold text-slate-800" title={`Service start date: ${formatDateDisplay(client.serviceStartDate)}`}>
+                                                                                {formatDateDisplay(client.serviceStartDate)}
+                                                                            </span>
+                                                                            <span className="text-[10px] text-slate-400" title={`Client added to database: ${formatDateDisplay(client.created_at)}`}>
+                                                                                Added {formatDateDisplay(client.created_at)}
+                                                                            </span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="text-xs font-semibold text-slate-800" title={`Client added to database: ${formatDateDisplay(client.created_at)}`}>
+                                                                                {formatDateDisplay(client.created_at)}
+                                                                            </span>
+                                                                            <span className="text-[10px] text-slate-400">
+                                                                                Date Added
+                                                                            </span>
+                                                                        </>
+                                                                    )}
+                                                                </div>
                                                             </td>
 
                                                             {/* Actions */}
@@ -1581,35 +1666,65 @@ export default function Clients() {
                                             ? 'bg-amber-50/60 border-amber-200'
                                             : 'bg-emerald-50/50 border-emerald-100'
                                     }`}>
-                                        <div>
-                                            <div className="flex items-center justify-between gap-1">
-                                                <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 truncate ${
-                                                    client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-600'
-                                                }`}>
-                                                    <Wallet className="w-3 h-3 shrink-0" /> Security Deposit
-                                                </p>
-                                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border shrink-0 ${
-                                                    client.depositStatus === 'pending'
-                                                        ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                                        : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                                }`}>
-                                                    {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
-                                                </span>
-                                            </div>
-                                            <div className="mt-1">
-                                                <p className={`text-sm font-bold ${
-                                                    client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
-                                                }`}>
-                                                    ₹{client.securityDeposit.toLocaleString()}
-                                                </p>
-                                                {client.pastDepositTotal > 0 && (
-                                                    <p className="text-[10px] text-slate-500 font-medium flex items-center gap-0.5 mt-0.5 truncate" title="Previous service deposit settled upon completion">
-                                                        <HistoryIcon className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                                        Prev: ₹{client.pastDepositTotal.toLocaleString()} (Settled)
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
+                                        {(() => {
+                                            const { currentDepositDateStr, settledDateStr, pastServiceName } = getClientDepositBreakdown(client);
+                                            return (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between gap-1 pb-1 border-b border-slate-200/60">
+                                                        <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 truncate ${
+                                                            client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'
+                                                        }`}>
+                                                            <Wallet className="w-3 h-3 shrink-0" /> Security Deposit
+                                                        </p>
+                                                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border shrink-0 ${
+                                                            client.depositStatus === 'pending'
+                                                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                                : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                        }`}>
+                                                            {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Current Deposit */}
+                                                    <div>
+                                                        <div className="flex items-baseline justify-between gap-1">
+                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                                                                Current Deposit:
+                                                            </span>
+                                                            <span className={`text-xs font-extrabold ${
+                                                                client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
+                                                            }`}>
+                                                                ₹{client.securityDeposit.toLocaleString('en-IN')}
+                                                            </span>
+                                                        </div>
+                                                        {currentDepositDateStr && (
+                                                            <p className="text-[10px] text-slate-400">
+                                                                Since {currentDepositDateStr}
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Refunded / Settled Deposit */}
+                                                    <div className="pt-1 border-t border-slate-200/50">
+                                                        <div className="flex items-baseline justify-between gap-1">
+                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                                                                Refunded / Settled:
+                                                            </span>
+                                                            <span className="text-xs font-bold text-slate-700">
+                                                                {client.pastDepositTotal > 0 ? `₹${client.pastDepositTotal.toLocaleString('en-IN')}` : '₹0'}
+                                                            </span>
+                                                        </div>
+                                                        {client.pastDepositTotal > 0 && settledDateStr && (
+                                                            <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 truncate" title={`Settled on ${settledDateStr} upon completion of ${pastServiceName}`}>
+                                                                <HistoryIcon className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                                                <span>Settled on {settledDateStr}</span>
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
                                         {/* Dedicated Action Row inside box - never overflows card edge */}
                                         <div className="mt-2 pt-1.5 border-t border-slate-200/50">
                                             <button
@@ -2388,13 +2503,13 @@ export default function Clients() {
                             {/* Summary Card */}
                             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                                 <div>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Service</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Service & Deposit</span>
                                     <p className="font-bold text-sm text-slate-800">{depositModal.serviceName}</p>
-                                    <span className="text-xs text-slate-500">Start Date: {depositModal.startDate}</span>
+                                    <span className="text-xs text-slate-500">Start Date: {formatDateDisplay(depositModal.startDate)}</span>
                                 </div>
                                 <div className="text-right">
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
-                                        {depositModal.depositStatus === 'collected' ? 'Collected Deposit' : 'Pending Deposit'}
+                                        {depositModal.depositStatus === 'collected' ? 'Current Deposit (Collected)' : 'Current Deposit (Pending)'}
                                     </span>
                                     <p className={`text-xl font-extrabold ${depositModal.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700'}`}>
                                         ₹{depositModal.depositAmount.toLocaleString('en-IN')}
@@ -2440,7 +2555,11 @@ export default function Clients() {
                                                         )}
                                                     </div>
                                                     <p className="text-[11px] text-slate-500 mt-0.5">
-                                                        {cycle.startDate || 'Start'} {cycle.endDate ? `to ${cycle.endDate}` : 'to Ongoing'}
+                                                        {formatDateDisplay(cycle.startDate) || 'Start'} {cycle.isCurrent 
+                                                            ? (cycle.endDate ? `to ${formatDateDisplay(cycle.endDate)}` : 'to Ongoing') 
+                                                            : (cycle.endDate 
+                                                                ? `to ${formatDateDisplay(cycle.endDate)}` 
+                                                                : (cycle.settledDate ? `to ${formatDateDisplay(cycle.settledDate)}` : '• Ended'))}
                                                     </p>
                                                 </div>
                                                 <div className="text-right">
@@ -2467,12 +2586,22 @@ export default function Clients() {
                                     )}
                                 </div>
 
-                                {depositModal.pastDepositTotal > 0 && (
-                                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
-                                        <span>Previous Service Deposit (Settled):</span>
-                                        <span className="font-bold text-slate-700">₹{depositModal.pastDepositTotal.toLocaleString('en-IN')}</span>
-                                    </div>
-                                )}
+                                {depositModal.pastDepositTotal > 0 && (() => {
+                                    const { settledDateStr } = getClientDepositBreakdown(depositModal.client);
+                                    return (
+                                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-slate-800">Refunded / Settled Deposit:</span>
+                                                <span className="text-[10px] text-slate-500">
+                                                    {settledDateStr ? `Settled on ${settledDateStr} upon service completion` : 'Settled upon service completion'}
+                                                </span>
+                                            </div>
+                                            <span className="font-extrabold text-slate-800 text-sm">
+                                                ₹{depositModal.pastDepositTotal.toLocaleString('en-IN')}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             {/* Section 1: Share Deposit Invoice */}
