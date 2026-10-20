@@ -436,24 +436,25 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                             <button
                                 type="button"
                                 onClick={() => {
-                                    if (clientId) {
-                                        navigator.clipboard.writeText(clientId);
+                                    const idToCopy = client?.displayId || clientId;
+                                    if (idToCopy) {
+                                        navigator.clipboard.writeText(idToCopy);
                                         setCopiedClientId(true);
-                                        toast.success('Full Client ID copied to clipboard!');
+                                        toast.success(`Client ID ${idToCopy} copied to clipboard!`);
                                         setTimeout(() => setCopiedClientId(false), 2000);
                                     }
                                 }}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-teal-50 hover:border-teal-300 border border-slate-200 text-xs font-mono font-medium text-slate-700 hover:text-teal-800 transition-all cursor-pointer group shadow-2xs"
-                                title={`Full Client ID: ${clientId}\nClick to copy`}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-teal-50 hover:bg-teal-100 hover:border-teal-300 border border-teal-200/80 text-xs font-mono font-bold text-teal-900 transition-all cursor-pointer group shadow-2xs"
+                                title={`Client Code: ${client?.displayId || 'CL'}\nFull UUID: ${clientId}\nClick to copy`}
                             >
-                                <span className="text-slate-400 text-[11px] font-sans">Client ID:</span>
-                                <span className="font-semibold text-slate-800 group-hover:text-teal-900 text-[11px] select-all">
-                                    {clientId}
+                                <span className="text-teal-600 text-[11px] font-sans font-medium">Client ID:</span>
+                                <span className="font-bold text-teal-950 text-xs select-all">
+                                    {client?.displayId || clientId}
                                 </span>
                                 {copiedClientId ? (
                                     <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                 ) : (
-                                    <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-teal-600 shrink-0" />
+                                    <Copy className="w-3.5 h-3.5 text-teal-600 group-hover:text-teal-800 shrink-0" />
                                 )}
                             </button>
                         </div>

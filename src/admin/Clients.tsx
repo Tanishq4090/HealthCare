@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -30,6 +30,43 @@ export default function Clients() {
     // Search and View All filters
     const [searchQuery, setSearchQuery] = useState('');
     const [viewAllMonths, setViewAllMonths] = useState(true);
+
+    // View Mode & Sorting State (Issue 1)
+    const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => {
+        try {
+            return (localStorage.getItem('99care_clients_view_mode') as 'table' | 'cards') || 'table';
+        } catch {
+            return 'table';
+        }
+    });
+
+    const toggleViewMode = (mode: 'table' | 'cards') => {
+        setViewMode(mode);
+        try {
+            localStorage.setItem('99care_clients_view_mode', mode);
+        } catch {}
+    };
+
+    const [sortField, setSortField] = useState<'displayId' | 'name' | 'city' | 'phone' | 'workerCount' | 'securityDeposit' | 'status' | 'created_at'>('displayId');
+    const [sortAsc, setSortAsc] = useState<boolean>(true);
+    const [copiedClientIdBadge, setCopiedClientIdBadge] = useState<string | null>(null);
+
+    const handleSort = (field: typeof sortField) => {
+        if (sortField === field) {
+            setSortAsc(!sortAsc);
+        } else {
+            setSortField(field);
+            setSortAsc(true);
+        }
+    };
+
+    const handleCopyClientId = (idToCopy: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(idToCopy);
+        setCopiedClientIdBadge(idToCopy);
+        toast.success(`Copied ID: ${idToCopy}`);
+        setTimeout(() => setCopiedClientIdBadge(null), 2000);
+    };
 
     // City filter state
     const [selectedCity, setSelectedCity] = useState<string>('all');
@@ -715,6 +752,19 @@ export default function Clients() {
                 return true;
             });
 
+            // Deterministic chronological ordering for human-readable Client Code (CL-0001 ... CL-XXXX)
+            const sortedChronologically = [...qualifiedClients].sort((a, b) => {
+                const timeA = new Date(a.created_at || 0).getTime();
+                const timeB = new Date(b.created_at || 0).getTime();
+                if (timeA !== timeB) return timeA - timeB;
+                return (a.id || '').localeCompare(b.id || '');
+            });
+
+            const clientCodeMap = new Map<string, string>();
+            sortedChronologically.forEach((c, index) => {
+                clientCodeMap.set(c.id, `CL-${String(index + 1).padStart(4, '0')}`);
+            });
+
             const enrichedClients = qualifiedClients.map(c => {
                 const clientServices = services.filter(s => s.client_id === c.id);
                 const clientAssignments = assignments.filter(a => a.client_id === c.id);
@@ -812,6 +862,7 @@ export default function Clients() {
 
                 return {
                     id: c.id,
+                    displayId: clientCodeMap.get(c.id) || `CL-${(c.id || '').substring(0, 4).toUpperCase()}`,
                     name: c.client_name,
                     phone: c.phone_number,
                     email: c.email || '-',
@@ -829,7 +880,6 @@ export default function Clients() {
                     created_at: c.created_at,
                     city: extractCity({ ...c, ...leadInfo }),
                     services: clientServices,
-                    assignments: clientAssignments,
                 };
             });
 
@@ -888,15 +938,56 @@ export default function Clients() {
                 {/* Client List */}
                 <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                     <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                        <div className="relative flex-1 min-w-[200px] max-w-sm">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input
-                                type="text"
-                                placeholder="Search clients by name, phone, or client ID..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                            />
+                        <div className="flex items-center gap-2 flex-1 flex-wrap sm:flex-nowrap">
+                            <div className="relative flex-1 min-w-[260px] sm:min-w-[320px] max-w-md">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name, phone, or ID (e.g. CL-0037)..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-slate-400"
+                                    title="Search clients by name, phone, or client ID"
+                                />
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                                        title="Clear search"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleViewMode('table')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                        viewMode === 'table'
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                                    title="Compact table view with sortable columns"
+                                >
+                                    <Table className="w-3.5 h-3.5" />
+                                    <span>Table</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => toggleViewMode('cards')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                        viewMode === 'cards'
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                                    title="Expanded card view"
+                                >
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                    <span>Cards</span>
+                                </button>
+                            </div>
                         </div>
                         {/* View Controls: All Clients vs By Month toggle + ALWAYS-VISIBLE Month Navigator + Trash */}
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1082,13 +1173,16 @@ export default function Clients() {
                                     const cleanStrippedQ = strippedQ.replace(/[^a-z0-9]/g, '');
 
                                     const clientIdStr = (c.id || '').toLowerCase();
+                                    const displayIdStr = (c.displayId || '').toLowerCase();
                                     const cleanClientId = clientIdStr.replace(/[^a-z0-9]/g, '');
+                                    const cleanDisplayId = displayIdStr.replace(/[^a-z0-9]/g, '');
 
-                                    // Match full UUID, partial UUID, or UUID without hyphens
+                                    // Match full UUID, partial UUID, or readable display ID (e.g. CL-0037, 0037, 37)
                                     const idMatch = clientIdStr.includes(rawQ) ||
-                                                    (strippedQ.length > 0 && clientIdStr.includes(strippedQ)) ||
-                                                    (cleanQ.length >= 3 && cleanClientId.includes(cleanQ)) ||
-                                                    (cleanStrippedQ.length >= 3 && cleanClientId.includes(cleanStrippedQ));
+                                                    displayIdStr.includes(rawQ) ||
+                                                    (strippedQ.length > 0 && (clientIdStr.includes(strippedQ) || displayIdStr.includes(strippedQ))) ||
+                                                    (cleanQ.length >= 2 && (cleanClientId.includes(cleanQ) || cleanDisplayId.includes(cleanQ))) ||
+                                                    (cleanStrippedQ.length >= 2 && (cleanClientId.includes(cleanStrippedQ) || cleanDisplayId.includes(cleanStrippedQ)));
 
                                     const nameMatch = (c.name || '').toLowerCase().includes(rawQ) ||
                                                       (strippedQ.length > 0 && (c.name || '').toLowerCase().includes(strippedQ));
@@ -1109,6 +1203,7 @@ export default function Clients() {
 
                                 return isClientInMonth(c, selectedMonth);
                             });
+
                             if (filtered.length === 0) return (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
@@ -1144,33 +1239,272 @@ export default function Clients() {
                                     )}
                                 </div>
                             );
-                            return filtered.map((client, idx) => (
+
+                            // Sortable columns handler (name, city, phone, workers, deposit, status, date, displayId)
+                            const sortedFiltered = [...filtered].sort((a, b) => {
+                                let comparison = 0;
+                                if (sortField === 'displayId') {
+                                    comparison = (a.displayId || '').localeCompare(b.displayId || '');
+                                } else if (sortField === 'name') {
+                                    comparison = (a.name || '').localeCompare(b.name || '');
+                                } else if (sortField === 'city') {
+                                    const cityA = a.city || extractCity(a);
+                                    const cityB = b.city || extractCity(b);
+                                    comparison = cityA.localeCompare(cityB);
+                                } else if (sortField === 'phone') {
+                                    comparison = (a.phone || '').localeCompare(b.phone || '');
+                                } else if (sortField === 'workerCount') {
+                                    comparison = (a.activeWorkerCount || 0) - (b.activeWorkerCount || 0) || (a.workerCount || 0) - (b.workerCount || 0);
+                                } else if (sortField === 'securityDeposit') {
+                                    comparison = (a.securityDeposit || 0) - (b.securityDeposit || 0);
+                                } else if (sortField === 'status') {
+                                    comparison = (a.status || '').localeCompare(b.status || '');
+                                } else if (sortField === 'created_at') {
+                                    comparison = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+                                }
+                                return sortAsc ? comparison : -comparison;
+                            });
+
+                            // 1. Compact Table View (Issue 1)
+                            if (viewMode === 'table') {
+                                return (
+                                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
+                                        <table className="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                                <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-extrabold uppercase tracking-wider text-slate-600 select-none">
+                                                    <th onClick={() => handleSort('displayId')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Client ID">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>ID</span>
+                                                            {sortField === 'displayId' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('name')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Name">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Name</span>
+                                                            {sortField === 'name' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('city')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by City">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>City</span>
+                                                            {sortField === 'city' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('phone')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Phone">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Phone</span>
+                                                            {sortField === 'phone' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('workerCount')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Workers">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Workers</span>
+                                                            {sortField === 'workerCount' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('securityDeposit')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Deposit">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Deposit</span>
+                                                            {sortField === 'securityDeposit' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('status')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Status">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Status</span>
+                                                            {sortField === 'status' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th onClick={() => handleSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Date Added">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>Date</span>
+                                                            {sortField === 'created_at' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 bg-white">
+                                                {sortedFiltered.map((client) => {
+                                                    const city = client.city || extractCity(client);
+                                                    return (
+                                                        <tr
+                                                            key={client.id}
+                                                            onClick={() => setInspectingClient(client)}
+                                                            className="hover:bg-teal-50/30 transition-colors cursor-pointer group"
+                                                        >
+                                                            {/* Client ID (CL-0037 with 1-click copy) */}
+                                                            <td className="py-2.5 px-3 whitespace-nowrap">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
+                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
+                                                                    title={`Click to copy ${client.displayId}\nFull UUID: ${client.id}`}
+                                                                >
+                                                                    <span>{client.displayId || 'CL-0001'}</span>
+                                                                    {copiedClientIdBadge === (client.displayId || client.id) ? (
+                                                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                                    ) : (
+                                                                        <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                                    )}
+                                                                </button>
+                                                            </td>
+
+                                                            {/* Name */}
+                                                            <td className="py-2.5 px-3 whitespace-nowrap">
+                                                                <div className="font-bold text-slate-900 group-hover:text-primary transition-colors">
+                                                                    {client.name}
+                                                                </div>
+                                                            </td>
+
+                                                            {/* City */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase tracking-wider">
+                                                                    <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
+                                                                </span>
+                                                            </td>
+
+                                                            {/* Phone */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap font-mono text-xs text-slate-700">
+                                                                {client.phone || 'N/A'}
+                                                            </td>
+
+                                                            {/* Workers */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <span className="inline-flex items-center gap-1 text-xs text-slate-600">
+                                                                    <Users className="w-3 h-3 text-slate-400" />
+                                                                    <strong className="text-slate-800">{client.activeWorkerCount}</strong>
+                                                                    <span className="text-slate-400">/{client.workerCount}</span>
+                                                                </span>
+                                                            </td>
+
+                                                            {/* Deposit */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className={`font-bold text-xs ${client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                                                        ₹{client.securityDeposit.toLocaleString()}
+                                                                    </span>
+                                                                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border ${
+                                                                        client.depositStatus === 'pending'
+                                                                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                                    }`}>
+                                                                        {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Status */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                                                    client.status === 'Closed Won' ? 'bg-emerald-100 text-emerald-700' :
+                                                                    client.status === 'Monthly Billing' ? 'bg-blue-100 text-blue-700' :
+                                                                    client.status === 'Active Client' ? 'bg-teal-100 text-teal-700' :
+                                                                    client.status === 'Archived' ? 'bg-slate-100 text-slate-500' :
+                                                                    client.status === 'Trash' ? 'bg-red-100 text-red-600' :
+                                                                    'bg-slate-100 text-slate-600'
+                                                                }`}>
+                                                                    {client.status === 'Closed Won' ? 'Closed' :
+                                                                     client.status === 'Monthly Billing' ? 'Billing' :
+                                                                     client.status === 'Active Client' ? 'Active' :
+                                                                     client.status === 'Archived' ? 'Archived' :
+                                                                     client.status === 'Trash' ? 'Trash' :
+                                                                     client.status}
+                                                                </span>
+                                                            </td>
+
+                                                            {/* Date */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap text-xs text-slate-500">
+                                                                {client.created_at ? new Date(client.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                                                            </td>
+
+                                                            {/* Actions */}
+                                                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                                                <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setInspectingClient(client)}
+                                                                        className="p-1 text-slate-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
+                                                                        title="View full client details"
+                                                                    >
+                                                                        <Eye className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openDepositModal(client)}
+                                                                        className="p-1 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                                                        title={client.depositStatus === 'pending' ? 'Collect deposit' : 'Deposit history'}
+                                                                    >
+                                                                        <Receipt className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    {client.status === 'Closed Won' && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openRestartModal(client)}
+                                                                            className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                                                                            title="Restart service"
+                                                                        >
+                                                                            <RotateCcw className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveFromPipeline(client)}
+                                                                        className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                                                            client.status === 'Archived'
+                                                                                ? 'text-emerald-600 hover:bg-emerald-50'
+                                                                                : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+                                                                        }`}
+                                                                        title={client.status === 'Archived' ? 'Reactivate (add back to pipeline)' : 'Archive client (remove from pipeline)'}
+                                                                    >
+                                                                        {client.status === 'Archived' ? (
+                                                                            <Plus className="w-3.5 h-3.5" />
+                                                                        ) : (
+                                                                            <UserMinus className="w-3.5 h-3.5" />
+                                                                        )}
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                        <div className="p-2.5 bg-slate-50/80 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                                            <span>Showing {sortedFiltered.length} client{sortedFiltered.length !== 1 ? 's' : ''}</span>
+                                            <span className="text-[11px] text-slate-400">Click any row to open full client dossier</span>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            // 2. Expanded Card View (Issue 1, with fixes for Issues 2, 4, 5)
+                            return sortedFiltered.map((client, idx) => (
                             <div key={client.id} onClick={() => setInspectingClient(client)} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
-                                {/* 1. Card Top Bar: 1.) Serial Number, Client ID & Scope on Left + Added Date & Status on Right */}
+                                {/* 1. Card Top Bar: # Serial Number, Client ID (CL-0037) & Scope on Left + Added Date & Status on Right */}
                                 <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-100 flex-wrap">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200/90 shadow-2xs" title={`Client #${idx + 1} in current view`}>
-                                            {idx + 1}.)
+                                            #{idx + 1}
                                         </span>
                                         {client.id && (
                                             <button
                                                 type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigator.clipboard.writeText(client.id);
-                                                    toast.success(`Copied ID for ${client.name}!`);
-                                                }}
-                                                className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-teal-700 hover:bg-teal-50 px-2 py-0.5 rounded-md border border-slate-200/80 hover:border-teal-300 transition-all cursor-pointer group"
-                                                title={`Full Client ID: ${client.id}\nClick to copy`}
+                                                onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
+                                                className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 px-2.5 py-0.5 rounded-md border border-teal-200/80 transition-all cursor-pointer group shadow-2xs"
+                                                title={`Full Client UUID: ${client.id}\nClick to copy ${client.displayId || 'Client ID'}`}
                                             >
-                                                <span className="text-slate-400 group-hover:text-teal-600 text-[10px]">ID:</span>
-                                                <span className="font-semibold text-slate-700 group-hover:text-teal-900">{client.id.substring(0, 8)}...</span>
-                                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-teal-600 shrink-0" />
+                                                <span className="text-teal-600 text-[10px] font-sans font-semibold">ID:</span>
+                                                <span className="font-bold text-teal-900">{client.displayId || 'CL-0001'}</span>
+                                                {copiedClientIdBadge === (client.displayId || client.id) ? (
+                                                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                ) : (
+                                                    <Copy className="w-3 h-3 text-teal-500 group-hover:text-teal-700 shrink-0" />
+                                                )}
                                             </button>
                                         )}
                                         <span className="text-slate-300">•</span>
                                         <span className="text-[11px] text-slate-500 font-medium">
-                                            {idx + 1} of {filtered.length} clients
+                                            {idx + 1} of {sortedFiltered.length} clients
                                         </span>
                                     </div>
 
@@ -1220,6 +1554,8 @@ export default function Clients() {
                                         </p>
                                     </div>
                                 </div>
+
+                                {/* 3. Detail Columns */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4 pt-4 border-t border-slate-100">
                                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col justify-center">
                                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
@@ -1227,56 +1563,64 @@ export default function Clients() {
                                         </p>
                                         <p className="text-sm font-bold text-slate-700 truncate">{client.phone || 'N/A'}</p>
                                     </div>
-                                    <div className={`p-2.5 rounded-xl border flex flex-col justify-center transition-all ${
+
+                                    {/* Issue 2 Fix: Deposit Box with dedicated action row to prevent horizontal overflow */}
+                                    <div className={`p-2.5 rounded-xl border flex flex-col justify-between transition-all ${
                                         client.depositStatus === 'pending'
                                             ? 'bg-amber-50/60 border-amber-200'
                                             : 'bg-emerald-50/50 border-emerald-100'
                                     }`}>
-                                        <div className="flex items-center justify-between">
-                                            <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 ${
-                                                client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-600'
-                                            }`}>
-                                                <Wallet className="w-3 h-3" /> Security Deposit
-                                            </p>
-                                            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border ${
-                                                client.depositStatus === 'pending'
-                                                    ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                            }`}>
-                                                {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between mt-0.5">
-                                            <div>
+                                        <div>
+                                            <div className="flex items-center justify-between gap-1">
+                                                <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 truncate ${
+                                                    client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-600'
+                                                }`}>
+                                                    <Wallet className="w-3 h-3 shrink-0" /> Security Deposit
+                                                </p>
+                                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border shrink-0 ${
+                                                    client.depositStatus === 'pending'
+                                                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                        : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                }`}>
+                                                    {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                                </span>
+                                            </div>
+                                            <div className="mt-1">
                                                 <p className={`text-sm font-bold ${
                                                     client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
                                                 }`}>
                                                     ₹{client.securityDeposit.toLocaleString()}
                                                 </p>
                                                 {client.pastDepositTotal > 0 && (
-                                                    <p className="text-[10px] text-slate-500 font-medium flex items-center gap-0.5 mt-0.5" title="Previous service deposit settled upon completion">
-                                                        <HistoryIcon className="w-2.5 h-2.5 text-slate-400" />
+                                                    <p className="text-[10px] text-slate-500 font-medium flex items-center gap-0.5 mt-0.5 truncate" title="Previous service deposit settled upon completion">
+                                                        <HistoryIcon className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                                                         Prev: ₹{client.pastDepositTotal.toLocaleString()} (Settled)
                                                     </p>
                                                 )}
                                             </div>
+                                        </div>
+                                        {/* Dedicated Action Row inside box - never overflows card edge */}
+                                        <div className="mt-2 pt-1.5 border-t border-slate-200/50">
                                             <button
+                                                type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     openDepositModal(client);
                                                 }}
-                                                className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1 transition-colors cursor-pointer ${
+                                                className={`w-full text-[10px] font-bold py-1 px-2 rounded-lg border flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                                                     client.depositStatus === 'pending'
                                                         ? 'text-amber-800 bg-amber-100/90 hover:bg-amber-200 border-amber-300'
-                                                        : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
+                                                        : 'text-slate-700 bg-white/90 hover:bg-white border-slate-200 shadow-2xs'
                                                 }`}
                                                 title="View deposit history, send invoice, or record payment"
                                             >
-                                                <Receipt className="w-2.5 h-2.5" />
-                                                {client.depositStatus === 'pending' ? 'Collect' : 'History'}
+                                                <Receipt className="w-3 h-3" />
+                                                <span>{client.depositStatus === 'pending' ? 'Collect Deposit' : 'Deposit History'}</span>
                                             </button>
                                         </div>
                                     </div>
+
+                                    {/* Action buttons */}
                                     <div className="col-span-1 sm:col-span-2 lg:col-span-2 flex items-center gap-2 flex-wrap">
                                         {client.status === 'Trash' ? (
                                             <>
@@ -1332,19 +1676,28 @@ export default function Clients() {
                                                         <RotateCcw className="w-3.5 h-3.5" /> Restart Service
                                                     </button>
                                                 )}
+                                                {/* Issue 4 Fix: Labeled Button with Tooltip and Confirmation */}
                                                 <button
+                                                    type="button"
                                                     onClick={(e) => { e.stopPropagation(); handleRemoveFromPipeline(client); }}
-                                                    className={`p-2 rounded-xl transition-all border ${
+                                                    className={`px-2.5 py-2 rounded-xl transition-all border text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer ${
                                                         client.status === 'Archived'
-                                                            ? 'text-emerald-600 hover:bg-emerald-50 border-transparent hover:border-emerald-100'
-                                                            : 'text-slate-400 hover:text-red-500 hover:bg-red-50 border-transparent hover:border-red-100'
+                                                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+                                                            : 'text-slate-600 bg-slate-50 border-slate-200 hover:text-red-600 hover:bg-red-50 hover:border-red-200'
                                                     }`}
-                                                    title={client.status === 'Archived' ? 'Add back to pipeline' : 'Remove from pipeline'}
+                                                    title={client.status === 'Archived' ? 'Reactivate client (return to CRM pipeline)' : 'Archive / Deactivate client from pipeline'}
                                                 >
-                                                    {client.status === 'Archived'
-                                                        ? <Plus className="w-4 h-4" />
-                                                        : <UserMinus className="w-4 h-4" />
-                                                    }
+                                                    {client.status === 'Archived' ? (
+                                                        <>
+                                                            <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                                                            <span>Reactivate</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <UserMinus className="w-3.5 h-3.5 text-slate-500" />
+                                                            <span>Archive</span>
+                                                        </>
+                                                    )}
                                                 </button>
                                             </>
                                         )}
@@ -1924,7 +2277,7 @@ export default function Clients() {
                     </div>
                 </div>
             )}
-            {/* Remove from Pipeline Confirmation Modal */}
+            {/* Remove from Pipeline / Archive Confirmation Modal (Issue 4) */}
             {removeConfirmClient && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -1933,15 +2286,20 @@ export default function Clients() {
                                 <UserMinus className="w-5 h-5 text-red-600" />
                             </div>
                             <div>
-                                <h2 className="text-base font-bold text-slate-900">Remove from Pipeline?</h2>
-                                <p className="text-xs text-slate-500">{removeConfirmClient.name} will stay in Client Master Database</p>
+                                <h2 className="text-base font-bold text-slate-900">Archive Client?</h2>
+                                <p className="text-xs text-slate-500">{removeConfirmClient.displayId ? `${removeConfirmClient.displayId} • ` : ''}{removeConfirmClient.name}</p>
                             </div>
                         </div>
                         <div className="p-5 space-y-3">
-                            <p className="text-sm text-slate-600">This will remove <strong>{removeConfirmClient.name}</strong> from the CRM pipeline. Their record, billing history, and all data will remain in the Client Master Database.</p>
+                            <p className="text-sm text-slate-600">
+                                This will remove <strong>{removeConfirmClient.name}</strong> from the active CRM pipeline and mark them as <strong>Archived</strong>.
+                            </p>
+                            <p className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                ℹ️ Their complete record, client ID ({removeConfirmClient.displayId || 'CL-...'}), billing history, and agreements will remain safely preserved in the Client Master Database.
+                            </p>
                             <div className="flex gap-3 pt-1">
-                                <button onClick={() => setRemoveConfirmClient(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
-                                <button onClick={confirmRemoveFromPipeline} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm">Remove</button>
+                                <button onClick={() => setRemoveConfirmClient(null)} className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer">Cancel</button>
+                                <button onClick={confirmRemoveFromPipeline} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors shadow-sm cursor-pointer">Archive Client</button>
                             </div>
                         </div>
                     </div>
