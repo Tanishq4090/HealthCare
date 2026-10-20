@@ -975,9 +975,7 @@ export default function AdminLayout() {
                             >
                                 <Bell className="w-5 h-5" />
                                 {globalAlerts.length > 0 && (
-                                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 text-[10px] font-extrabold text-white bg-red-500 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-in zoom-in-75 duration-200">
-                                        {globalAlerts.length > 9 ? '9+' : globalAlerts.length}
-                                    </span>
+                                    <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
                                 )}
                             </button>
                             
