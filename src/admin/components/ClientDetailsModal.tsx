@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check } from 'lucide-react';
+import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { endService, releaseWorker } from '../../services/serviceLifecycle';
+import { generateAndUploadInvoicePdf } from '../../utils/generateInvoicePdf';
 import { toast } from 'sonner';
 
 interface ClientDetailsModalProps {
@@ -48,6 +49,101 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
         address: '',
     });
     const [isSavingConsent, setIsSavingConsent] = useState(false);
+
+    // Edit Service-Specific Care Notes & Shift Modal State
+    const [editingServiceCareNotes, setEditingServiceCareNotes] = useState<{
+        id: string;
+        serviceName: string;
+        notes: string;
+        hoursPerDay: number;
+    } | null>(null);
+    const [isSavingServiceNotes, setIsSavingServiceNotes] = useState(false);
+    const [generatingPdfBillId, setGeneratingPdfBillId] = useState<string | null>(null);
+
+    const handleSaveServiceCareNotes = async () => {
+        if (!editingServiceCareNotes) return;
+        setIsSavingServiceNotes(true);
+        try {
+            const { error } = await supabase
+                .from('services')
+                .update({
+                    notes: editingServiceCareNotes.notes,
+                    hours_per_day: Number(editingServiceCareNotes.hoursPerDay) || 10
+                })
+                .eq('id', editingServiceCareNotes.id);
+            if (error) throw error;
+            toast.success('Service care requirements & shift hours updated!');
+            setEditingServiceCareNotes(null);
+            await fetchDetails();
+            onServiceUpdated?.();
+        } catch (err: any) {
+            console.error('Failed to update service care notes:', err);
+            toast.error(`Failed: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingServiceNotes(false);
+        }
+    };
+
+    const handleOpenOrGeneratePdf = async (bill: any, svc: any, invNo: string, bi: number) => {
+        let noteData: any = {};
+        try { noteData = bill.notes ? JSON.parse(bill.notes) : {}; } catch { noteData = {}; }
+
+        // If PDF URL already exists, open it directly
+        if (noteData.invoice_pdf_url) {
+            window.open(noteData.invoice_pdf_url, '_blank');
+            return;
+        }
+
+        const billKey = bill.id || `bill-${bi}`;
+        setGeneratingPdfBillId(billKey);
+        try {
+            const clientName = client?.name || lead?.name || 'Client';
+            const clientPhone = client?.phone || lead?.phone || '';
+            const consent = lead?.client_consents?.[0];
+            const clientAddress = consent?.address || lead?.notes?.match(/Location:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+
+            const invoiceNum = noteData.invoice_number || invNo || `INV-${bi + 1}`;
+            const serviceName = formatServiceLabel(svc?.service_type, svc?.notes);
+            const periodStr = `${formatDate(bill.period_start)} to ${formatDate(bill.period_end)}`;
+
+            const pdfUrl = await generateAndUploadInvoicePdf({
+                clientId,
+                clientName,
+                clientPhone,
+                clientAddress,
+                invoiceNumber: invoiceNum,
+                invoiceDate: bill.created_at || bill.period_end,
+                dueDate: bill.period_end,
+                serviceName,
+                servicePeriod: periodStr,
+                days: Number(bill.total_days) || 1,
+                ratePerDay: Number(bill.daily_rate_used) || (Number(bill.amount) / (Number(bill.total_days) || 1)),
+                grossAmount: Number(bill.amount) || 0,
+                previouslyBilled: Number(noteData.previously_billed) || 0,
+                depositCollected: Number(bill.deposit_applied) || 0,
+                settlementAmount: Number(bill.settlement_amount) || Number(bill.amount) || 0,
+                isFinalSettlement: bill.type === 'final'
+            });
+
+            // Cache URL in bill notes
+            noteData.invoice_number = invoiceNum;
+            noteData.invoice_pdf_url = pdfUrl;
+            if (bill.id) {
+                await supabase.from('service_bills').update({
+                    notes: JSON.stringify(noteData)
+                }).eq('id', bill.id);
+            }
+
+            toast.success(`Invoice PDF for ${invoiceNum} generated!`);
+            window.open(pdfUrl, '_blank');
+            await fetchDetails();
+        } catch (err: any) {
+            console.error('Failed to generate bill PDF:', err);
+            toast.error(`PDF generation failed: ${err.message || 'Unknown error'}`);
+        } finally {
+            setGeneratingPdfBillId(null);
+        }
+    };
 
     const fetchDetails = useCallback(async () => {
         setIsLoading(true);
@@ -654,6 +750,36 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                         </div>
                                     </div>
 
+                                    {/* Patient Care Requirements & Shift Scope (This Active Service) */}
+                                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-start justify-between gap-3">
+                                        <div className="space-y-1">
+                                            <div className="flex items-center gap-1.5">
+                                                <HeartPulse className="w-3.5 h-3.5 text-emerald-700" />
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-950">
+                                                    Patient Care Requirements &amp; Shift Scope (This Active Service)
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">
+                                                {activeService.notes?.trim()
+                                                    ? activeService.notes
+                                                    : `Active ${formatServiceLabel(activeService.service_type, activeService.notes)} service with ${activeService.hours_per_day || 10}-Hour daily shift. Caregiver protocols and patient requirements are managed for this specific cycle.`}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingServiceCareNotes({
+                                                id: activeService.id,
+                                                serviceName: formatServiceLabel(activeService.service_type, activeService.notes),
+                                                notes: activeService.notes || '',
+                                                hoursPerDay: activeService.hours_per_day || 10
+                                            })}
+                                            className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-100/70 border border-emerald-300 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
+                                            title="Edit patient care requirements or shift hours for this service"
+                                        >
+                                            <Pencil className="w-3 h-3 text-emerald-600" /> Edit Details
+                                        </button>
+                                    </div>
+
                                     {/* Monthly Billing Ledger for this active service */}
                                     <div className="pt-3 border-t border-slate-100">
                                         <div className="flex items-center justify-between mb-2">
@@ -679,8 +805,9 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                 {activeService.service_bills.map((bill: any, i: number) => {
                                                     let noteData: any = {};
                                                     try { noteData = bill.notes ? JSON.parse(bill.notes) : {}; } catch { noteData = {}; }
-                                                    const pdfUrl = noteData.invoice_pdf_url;
                                                     const invNo = noteData.invoice_number || `INV-${bill.id?.substring(0, 6)}`;
+                                                    const billKey = bill.id || `active-bill-${i}`;
+                                                    const isGenerating = generatingPdfBillId === billKey;
 
                                                     return (
                                                         <div key={bill.id || i} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
@@ -696,16 +823,20 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                 <span className="font-extrabold text-sm text-slate-900">
                                                                     ₹{Number(bill.amount || 0).toLocaleString('en-IN')}
                                                                 </span>
-                                                                {pdfUrl && (
-                                                                    <a
-                                                                        href={pdfUrl}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="px-2.5 py-1 text-xs font-bold bg-white text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors inline-flex items-center gap-1 shadow-2xs"
-                                                                    >
-                                                                        <FileText className="w-3 h-3" /> PDF
-                                                                    </a>
-                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenOrGeneratePdf(bill, activeService, invNo, i)}
+                                                                    disabled={isGenerating}
+                                                                    className="px-2.5 py-1 text-xs font-bold bg-white text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors inline-flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                                                                    title="View or generate invoice PDF"
+                                                                >
+                                                                    {isGenerating ? (
+                                                                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                                                                    ) : (
+                                                                        <FileText className="w-3 h-3" />
+                                                                    )}
+                                                                    <span>PDF</span>
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     );
@@ -788,9 +919,29 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                 {/* Cycle Details */}
                                                 {isExpanded && (
                                                     <div className="p-3.5 space-y-3 bg-white">
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        {/* Top Overview: Shift Details, Assigned Staff, Billing Rates */}
+                                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                                                             <div>
-                                                                <span className="text-[10px] font-bold uppercase text-slate-400">Staff Assigned for this Cycle:</span>
+                                                                <span className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1">
+                                                                    <Clock className="w-3 h-3 text-teal-600" /> Shift &amp; Working Hours
+                                                                </span>
+                                                                <p className="font-bold text-slate-800 mt-0.5">
+                                                                    {pastSvc.hours_per_day || 10}-Hour Shift ({pastSvc.hours_per_day || 10} hrs/day)
+                                                                </p>
+                                                                <span className="text-[10px] text-slate-500">
+                                                                    {(() => {
+                                                                        if (!pastSvc.start_date || !pastSvc.end_date) return '';
+                                                                        const d1 = new Date(pastSvc.start_date).getTime();
+                                                                        const d2 = new Date(pastSvc.end_date).getTime();
+                                                                        const days = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+                                                                        return `${days} Days Service Window`;
+                                                                    })()}
+                                                                </span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1">
+                                                                    <Users className="w-3 h-3 text-teal-600" /> Staff Assigned
+                                                                </span>
                                                                 <p className="font-semibold text-slate-700 mt-0.5">
                                                                     {pastStaff.length > 0
                                                                         ? Array.from(new Set(pastStaff.map((s: any) => `${s.name} (${s.role})`))).join(', ')
@@ -798,11 +949,46 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                 </p>
                                                             </div>
                                                             <div>
-                                                                <span className="text-[10px] font-bold uppercase text-slate-400">Billing Terms Used:</span>
-                                                                <p className="font-semibold text-slate-700 mt-0.5">
-                                                                    ₹{pastSvc.complete_month_daily_rate || 800}/day full • ₹{pastSvc.incomplete_month_daily_rate || 1500}/day partial
+                                                                <span className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1">
+                                                                    <Wallet className="w-3 h-3 text-teal-600" /> Billing Terms Used
+                                                                </span>
+                                                                <p className="font-bold text-slate-800 mt-0.5">
+                                                                    ₹{pastSvc.complete_month_daily_rate || 800}/day full
+                                                                </p>
+                                                                <span className="text-[10px] text-slate-500">
+                                                                    ₹{pastSvc.incomplete_month_daily_rate || 1500}/day partial
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Patient Care Requirements & Specifics for this specific cycle */}
+                                                        <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-100 flex items-start justify-between gap-3">
+                                                            <div className="space-y-1">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <HeartPulse className="w-3.5 h-3.5 text-teal-700" />
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-900">
+                                                                        Patient Care Requirements &amp; Shift Scope (This Service)
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-xs text-slate-700 whitespace-pre-wrap">
+                                                                    {pastSvc.notes?.trim()
+                                                                        ? pastSvc.notes
+                                                                        : `Specialized ${formatServiceLabel(pastSvc.service_type, pastSvc.notes)} service with ${pastSvc.hours_per_day || 10}-Hour daily shift. Caregiver protocols and patient requirements were managed specifically for this service cycle.`}
                                                                 </p>
                                                             </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setEditingServiceCareNotes({
+                                                                    id: pastSvc.id,
+                                                                    serviceName: formatServiceLabel(pastSvc.service_type, pastSvc.notes),
+                                                                    notes: pastSvc.notes || '',
+                                                                    hoursPerDay: pastSvc.hours_per_day || 10
+                                                                })}
+                                                                className="px-2.5 py-1 text-xs font-semibold text-teal-800 bg-white hover:bg-teal-100/70 border border-teal-200 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
+                                                                title="Edit patient care requirements or shift hours for this service"
+                                                            >
+                                                                <Pencil className="w-3 h-3 text-teal-600" /> Edit Details
+                                                            </button>
                                                         </div>
 
                                                         {/* Invoices & Settlement Bills for this cycle */}
@@ -816,8 +1002,9 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                 bills.map((bill: any, bi: number) => {
                                                                     let noteData: any = {};
                                                                     try { noteData = bill.notes ? JSON.parse(bill.notes) : {}; } catch { noteData = {}; }
-                                                                    const pdfUrl = noteData.invoice_pdf_url;
                                                                     const invNo = noteData.invoice_number || (bill.type === 'final' ? 'FINAL-SETTLEMENT' : `INV-${bi + 1}`);
+                                                                    const billKey = bill.id || `past-bill-${bi}`;
+                                                                    const isGenerating = generatingPdfBillId === billKey;
 
                                                                     return (
                                                                         <div key={bill.id || bi} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between gap-3">
@@ -844,16 +1031,20 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                                 <span className="font-extrabold text-slate-900 text-sm">
                                                                                     ₹{Number(bill.amount || 0).toLocaleString('en-IN')}
                                                                                 </span>
-                                                                                {pdfUrl && (
-                                                                                    <a
-                                                                                        href={pdfUrl}
-                                                                                        target="_blank"
-                                                                                        rel="noopener noreferrer"
-                                                                                        className="px-2 py-0.5 text-xs font-bold bg-white text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors inline-flex items-center gap-1 shadow-2xs"
-                                                                                    >
-                                                                                        <FileText className="w-3 h-3" /> PDF
-                                                                                    </a>
-                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleOpenOrGeneratePdf(bill, pastSvc, invNo, bi)}
+                                                                                    disabled={isGenerating}
+                                                                                    className="px-2 py-0.5 text-xs font-bold bg-white text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors inline-flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                                                                                    title="View or generate invoice PDF"
+                                                                                >
+                                                                                    {isGenerating ? (
+                                                                                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                                                                                    ) : (
+                                                                                        <FileText className="w-3 h-3" />
+                                                                                    )}
+                                                                                    <span>PDF</span>
+                                                                                </button>
                                                                             </div>
                                                                         </div>
                                                                     );
@@ -870,96 +1061,112 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                         )}
 
                         {/* ========================================================================= */}
-                        {/* SECTION 3: INTAKE PROFILE & PATIENT CARE DETAILS                         */}
+                        {/* SECTION 3: MASTER CLIENT PROFILE & PRIMARY PATIENT CONSENT               */}
                         {/* ========================================================================= */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Service Requirements (Initial Intake) */}
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
-                                        <ClipboardList className="w-4 h-4 text-primary" /> Initial Inquiry Requirements
-                                    </h3>
-                                    <button
-                                        onClick={handleOpenEditReq}
-                                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200 transition-colors shadow-2xs"
-                                        title="Edit inquiry requirements"
-                                    >
-                                        <Pencil className="w-3 h-3" /> Edit
-                                    </button>
-                                </div>
-                                <div className="space-y-3">
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Original Service</span>
-                                        <span className="text-sm font-medium text-slate-800">{displayService}</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Shift Preference</span>
-                                        <span className="text-sm font-medium text-slate-800">{displayShift}</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Care For</span>
-                                        <span className="text-sm font-medium text-slate-800">{displayCareFor}</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
-                                        <span className="text-sm font-medium text-slate-800 flex items-start gap-1">
-                                            <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                                            {displayLocation}
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-col pt-2 border-t border-slate-100 space-y-2.5">
-                                        <div>
-                                            <span className="text-xs font-semibold text-slate-400 uppercase">Client Code (Short ID)</span>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <code className="text-xs font-mono bg-teal-50 text-teal-900 border border-teal-200/80 px-2 py-0.5 rounded font-bold">
-                                                    {client?.displayId || '—'}
-                                                </code>
-                                                <span className="text-[11px] text-slate-400">Quick code for tables, staff &amp; invoices</span>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <span className="text-xs font-semibold text-slate-400 uppercase">Database System UUID</span>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <code className="text-xs font-mono bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 select-all font-semibold break-all">
-                                                    {clientId || '—'}
-                                                </code>
-                                                {clientId && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            navigator.clipboard.writeText(clientId);
-                                                            setCopiedClientId(true);
-                                                            toast.success('Database UUID copied to clipboard!');
-                                                            setTimeout(() => setCopiedClientId(false), 2000);
-                                                        }}
-                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
-                                                        title="Copy Database UUID"
-                                                    >
-                                                        {copiedClientId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] text-slate-400">Internal primary key in Supabase database</span>
-                                        </div>
-                                    </div>
-                                </div>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                    Client Master Profile &amp; Emergency Consent
+                                </span>
+                                <span className="text-[10px] text-slate-400 italic">
+                                    * Specific patient care tasks, shift hours &amp; staff are tracked per service cycle above
+                                </span>
                             </div>
 
-                            {/* Patient & Care Details (from consent) */}
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
-                                        <User className="w-4 h-4 text-primary" /> Patient Care Details (Consent)
-                                    </h3>
-                                    <button
-                                        onClick={handleOpenEditConsent}
-                                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200 transition-colors shadow-2xs"
-                                        title="Edit patient care details"
-                                    >
-                                        <Pencil className="w-3 h-3" /> {latestConsent ? 'Edit' : 'Add'}
-                                    </button>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Service Requirements (Initial Intake) */}
+                                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                                                <ClipboardList className="w-4 h-4 text-primary" /> Client Profile &amp; First Inquiry
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">Original client registration &amp; intake details</p>
+                                        </div>
+                                        <button
+                                            onClick={handleOpenEditReq}
+                                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200 transition-colors shadow-2xs"
+                                            title="Edit inquiry requirements"
+                                        >
+                                            <Pencil className="w-3 h-3" /> Edit
+                                        </button>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Original Service</span>
+                                            <span className="text-sm font-medium text-slate-800">{displayService}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Shift Preference</span>
+                                            <span className="text-sm font-medium text-slate-800">{displayShift}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Care For</span>
+                                            <span className="text-sm font-medium text-slate-800">{displayCareFor}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
+                                            <span className="text-sm font-medium text-slate-800 flex items-start gap-1">
+                                                <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                                                {displayLocation}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-col pt-2 border-t border-slate-100 space-y-2.5">
+                                            <div>
+                                                <span className="text-xs font-semibold text-slate-400 uppercase">Client Code (Short ID)</span>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <code className="text-xs font-mono bg-teal-50 text-teal-900 border border-teal-200/80 px-2 py-0.5 rounded font-bold">
+                                                        {client?.displayId || '—'}
+                                                    </code>
+                                                    <span className="text-[11px] text-slate-400">Quick code for tables, staff &amp; invoices</span>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <span className="text-xs font-semibold text-slate-400 uppercase">Database System UUID</span>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <code className="text-xs font-mono bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 select-all font-semibold break-all">
+                                                        {clientId || '—'}
+                                                    </code>
+                                                    {clientId && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(clientId);
+                                                                setCopiedClientId(true);
+                                                                toast.success('Database UUID copied to clipboard!');
+                                                                setTimeout(() => setCopiedClientId(false), 2000);
+                                                            }}
+                                                            className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                                                            title="Copy Database UUID"
+                                                        >
+                                                            {copiedClientId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <span className="text-[10px] text-slate-400">Internal primary key in Supabase database</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
+
+                                {/* Patient & Care Details (from consent) */}
+                                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                                                <User className="w-4 h-4 text-primary" /> Primary Patient Consent &amp; Emergency
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">Master legal declaration &amp; family contact</p>
+                                        </div>
+                                        <button
+                                            onClick={handleOpenEditConsent}
+                                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#1AA6A8] hover:text-[#148B8D] hover:bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200 transition-colors shadow-2xs"
+                                            title="Edit patient care details"
+                                        >
+                                            <Pencil className="w-3 h-3" /> {latestConsent ? 'Edit' : 'Add'}
+                                        </button>
+                                    </div>
                                 {latestConsent ? (
                                     <div className="space-y-3">
                                         <div className="flex flex-col">
@@ -996,6 +1203,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                 )}
                             </div>
                         </div>
+                    </div>
 
                         {/* All Notes & Requirements */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
@@ -1251,6 +1459,78 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                             >
                                 {isSavingConsent ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                 Save Patient Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Service Care Requirements & Shift Hours Modal */}
+            {editingServiceCareNotes && (
+                <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setEditingServiceCareNotes(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <HeartPulse className="w-5 h-5 text-teal-600" />
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900">
+                                        Edit Service Care Details &amp; Shift
+                                    </h3>
+                                    <p className="text-xs text-slate-500 font-medium">{editingServiceCareNotes.serviceName}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setEditingServiceCareNotes(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="space-y-3 text-sm">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                    Shift Working Hours (Hours/Day)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="24"
+                                    value={editingServiceCareNotes.hoursPerDay}
+                                    onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, hoursPerDay: Number(e.target.value) })}
+                                    placeholder="e.g. 10, 12, 24"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">Specify how many hours per day were agreed for this service cycle.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                    Patient Care Requirements &amp; Instructions (This Cycle)
+                                </label>
+                                <textarea
+                                    rows={5}
+                                    value={editingServiceCareNotes.notes}
+                                    onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, notes: e.target.value })}
+                                    placeholder="e.g. Patient: Newborn baby and mother. Tasks: baby massage, hygiene, formula feeding, night support..."
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">
+                                    Details entered here apply specifically to this service cycle and will not overwrite other services or master consent.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setEditingServiceCareNotes(null)}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveServiceCareNotes}
+                                disabled={isSavingServiceNotes}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm"
+                            >
+                                {isSavingServiceNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                Save Service Details
                             </button>
                         </div>
                     </div>
