@@ -371,6 +371,20 @@ export interface RestartClientServiceInput {
     workerPayoutRate?: number;
     workers?: RestartWorkerAssignment[];
     notes?: string;
+    careScope?: {
+        patientName?: string;
+        age?: string;
+        ageUnit?: string;
+        weight?: string;
+        relativeName?: string;
+        contactNumber?: string;
+        alternateContactNumber?: string;
+        address?: string;
+        medicalCondition?: string;
+        formType?: 'baby_care_form' | 'patient_care_form';
+        duties?: string[];
+        instructions?: string;
+    };
 }
 
 export async function restartClientService(input: RestartClientServiceInput): Promise<{
@@ -456,6 +470,26 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
         }
 
         // 1. Create new service record in services table
+        let serviceNotes = input.notes || undefined;
+        if (input.careScope) {
+            serviceNotes = JSON.stringify({
+                patient_name: input.careScope.patientName || input.clientName,
+                age: input.careScope.age || '',
+                age_unit: input.careScope.ageUnit || 'Years',
+                weight: input.careScope.weight || '',
+                relative_name: input.careScope.relativeName || input.clientName,
+                contact_number: input.careScope.contactNumber || '',
+                alternate_contact_number: input.careScope.alternateContactNumber || '',
+                address: input.careScope.address || '',
+                medical_condition: input.careScope.medicalCondition || '',
+                form_type: input.careScope.formType || 'patient_care_form',
+                duties: input.careScope.duties || [],
+                instructions: input.careScope.instructions || input.notes || '',
+                other_work: input.careScope.instructions || input.notes || '',
+                updated_at: new Date().toISOString()
+            });
+        }
+
         const service = await createService({
             client_id: input.clientId,
             service_type: input.serviceType,
@@ -466,7 +500,7 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
             incomplete_month_daily_rate: input.incompleteMonthDailyRate,
             deposit_amount: input.depositAmount,
             deposit_status: input.depositStatus === 'collected' ? 'collected' : 'pending',
-            notes: input.notes,
+            notes: serviceNotes,
         });
 
         // 2. Assign workers to service (multi-worker support)
@@ -582,6 +616,59 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
         if (assignedWorkerNames.length > 0) {
             leadUpdatePayload.assigned_worker_name = assignedWorkerNames.join(', ');
         }
+
+        // Synchronize careScope with CRM lead & client_consents
+        if (input.careScope) {
+            if (input.careScope.address) {
+                leadUpdatePayload.location = input.careScope.address;
+            }
+            if (input.careScope.duties || input.careScope.formType) {
+                const workFormPayload = {
+                    form_type: input.careScope.formType || 'patient_care_form',
+                    patient_name: input.careScope.patientName || input.clientName,
+                    duties: input.careScope.duties || [],
+                    other_work: input.careScope.instructions || input.notes || '',
+                    address: input.careScope.address || undefined,
+                    updated_at: new Date().toISOString()
+                };
+                leadUpdatePayload.work_form_data = workFormPayload;
+                try {
+                    await supabase.from('client_work_forms').insert([{
+                        lead_id: input.clientId,
+                        form_type: input.careScope.formType || 'patient_care_form',
+                        patient_name: input.careScope.patientName || input.clientName,
+                        duties: input.careScope.duties || [],
+                        other_work: input.careScope.instructions || input.notes || ''
+                    }]);
+                } catch (e) {
+                    console.warn('Could not mirror to client_work_forms', e);
+                }
+            }
+
+            // Sync client_consents table for repeat service
+            try {
+                await supabase.from('client_consents').insert([{
+                    lead_id: input.clientId,
+                    phone: input.careScope.contactNumber || undefined,
+                    patient_name: input.careScope.patientName || input.clientName,
+                    age: input.careScope.age || null,
+                    age_unit: input.careScope.ageUnit || 'Years',
+                    weight: input.careScope.weight || null,
+                    relative_name: input.careScope.relativeName || input.clientName,
+                    contact_number: input.careScope.contactNumber || null,
+                    alternate_contact_number: input.careScope.alternateContactNumber || null,
+                    address: input.careScope.address || null,
+                    other_details: input.careScope.medicalCondition || null,
+                    service_category: input.serviceType,
+                    service_start_date: input.startDate,
+                    offered_time: input.hoursPerDay === 24 ? '24 Hours (Live-in)' : '10 Hours',
+                    terms_accepted: true,
+                }]);
+            } catch (cErr) {
+                console.warn('Non-fatal error creating client_consent on restart:', cErr);
+            }
+        }
+
         const { error: leadUpdateError } = await supabase
             .from('crm_leads')
             .update(leadUpdatePayload)

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -9,6 +9,39 @@ import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
 import { extractCity } from '../utils/crm';
 import { useAuth } from '../contexts/AuthContext';
 import RequestDeletionModal from '../components/common/RequestDeletionModal';
+import { buildConsentFlowActionData, buildBabyCareFlowActionData, buildPatientCareFlowActionData } from '../utils/consentFlow';
+
+const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
+    sponge_bath: 'Sponge Bath',
+    bed_ridden: 'Bed Ridden Patient',
+    exercise: 'Exercise Assistance',
+    walking: 'Walking Assistance',
+    diaper_change: 'Diaper Change',
+    patient_cleanliness: 'Patient Cleanliness',
+    feeding: 'Patient Feeding',
+    bp_check: 'BP & Vital Check',
+    sugar_check: 'Sugar Check',
+    nebulization: 'Nebulization',
+    feeding_tube: 'Feeding Tube Care',
+    urine_bag_change: 'Urine Bag Change',
+    regular_checkup: 'Regular Checkups',
+    other: 'Other Patient Care',
+};
+
+const BABY_CARE_DUTY_LABELS: Record<string, string> = {
+    baby_massage: 'Baby Massage',
+    baby_bath: 'Baby Bath',
+    diaper_change: 'Diaper Change',
+    baby_feeding: 'Baby Feeding & Burping',
+    baby_clothes_wash: 'Baby Clothes Washing',
+    baby_clothes_iron: 'Baby Clothes Ironing',
+    baby_vessels_wash: 'Baby Vessels Sterilizing',
+    baby_room_clean: 'Baby Room Cleaning',
+    mother_care: 'Mother Care Assistance',
+    mother_food_prep: 'Mother Food Preparation',
+    mother_clothes_wash: 'Mother Clothes Washing',
+    other: 'Other Baby Care Work',
+};
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
 const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=${GOOGLE_PLACE_ID}`;
@@ -95,6 +128,39 @@ export default function Clients() {
     const [restartSelectedWorkers, setRestartSelectedWorkers] = useState<any[]>([]);
     const [restartNotes, setRestartNotes] = useState('');
     const [isRestartSubmitting, setIsRestartSubmitting] = useState(false);
+
+    // Patient Care & Work Form Scope state for Restart Service
+    const [restartLeadFull, setRestartLeadFull] = useState<any>(null);
+    const [restartPatientName, setRestartPatientName] = useState('');
+    const [restartAge, setRestartAge] = useState('');
+    const [restartAgeUnit, setRestartAgeUnit] = useState<'Years' | 'Months'>('Years');
+    const [restartWeight, setRestartWeight] = useState('');
+    const [restartRelativeName, setRestartRelativeName] = useState('');
+    const [restartContactNumber, setRestartContactNumber] = useState('');
+    const [restartAltContactNumber, setRestartAltContactNumber] = useState('');
+    const [restartAddress, setRestartAddress] = useState('');
+    const [restartMedicalCondition, setRestartMedicalCondition] = useState('');
+    const [restartFormType, setRestartFormType] = useState<'baby_care_form' | 'patient_care_form'>('patient_care_form');
+    const [restartDuties, setRestartDuties] = useState<string[]>([]);
+    const [restartCareInstructions, setRestartCareInstructions] = useState('');
+    const [isManualCareExpanded, setIsManualCareExpanded] = useState(false);
+    const [isSendingConsent, setIsSendingConsent] = useState(false);
+    const [isSendingWorkForm, setIsSendingWorkForm] = useState(false);
+
+    const toggleRestartDuty = (dutyKey: string) => {
+        setRestartDuties(prev =>
+            prev.includes(dutyKey) ? prev.filter(k => k !== dutyKey) : [...prev, dutyKey]
+        );
+    };
+
+    const selectAllRestartDuties = () => {
+        const dict = restartFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+        setRestartDuties(Object.keys(dict));
+    };
+
+    const clearAllRestartDuties = () => {
+        setRestartDuties([]);
+    };
 
     const toggleRestartWorker = (w: any) => {
         setRestartSelectedWorkers(prev => {
@@ -513,17 +579,21 @@ export default function Clients() {
 
         let leadInterest = '';
         let leadQuotedRate = 0;
+        let leadFull: any = null;
         try {
             const { data: leadData } = await supabase
                 .from('crm_leads')
-                .select('service_interest, quoted_monthly_rate')
+                .select('*, client_consents(*)')
                 .eq('id', client.id)
                 .maybeSingle();
             if (leadData) {
+                leadFull = leadData;
                 leadInterest = leadData.service_interest || '';
                 leadQuotedRate = leadData.quoted_monthly_rate || 0;
             }
-        } catch {}
+        } catch (e) {
+            console.warn('Could not fetch lead details for restart:', e);
+        }
 
         const initialService = lastService?.service_type || leadInterest || 'Old Age Care';
         const rawHours = lastService?.hours_per_day || 10;
@@ -531,6 +601,49 @@ export default function Clients() {
         const initialComplete = lastService?.complete_month_daily_rate || (leadQuotedRate ? Math.round(leadQuotedRate / 30) : 800);
         const initialIncomplete = lastService?.incomplete_month_daily_rate || 1500;
         const todayStr = new Date().toISOString().split('T')[0];
+
+        // Parse last service notes JSON if available
+        let lastNotesParsed: any = null;
+        if (lastService?.notes) {
+            try {
+                const trimmed = String(lastService.notes).trim();
+                if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                    lastNotesParsed = JSON.parse(trimmed);
+                }
+            } catch {}
+        }
+
+        const consents = (leadFull?.client_consents || []).sort(
+            (a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        );
+        const latestConsent = consents[0] || null;
+        const workFormData = leadFull?.work_form_data || null;
+
+        const sType = initialService.toLowerCase();
+        const isBaby = /baby|maternity|jhapa|japa|infant|child/.test(sType);
+        const initialFormType: 'baby_care_form' | 'patient_care_form' = 
+            lastNotesParsed?.form_type || workFormData?.form_type || (isBaby ? 'baby_care_form' : 'patient_care_form');
+
+        // Extract patient care fields with fallbacks
+        const pName = lastNotesParsed?.patient_name || latestConsent?.patient_name || workFormData?.patient_name || client.name || '';
+        const pAge = lastNotesParsed?.age || (latestConsent?.age != null ? String(latestConsent.age) : '');
+        const pAgeUnit = (lastNotesParsed?.age_unit || latestConsent?.age_unit || (isBaby ? 'Months' : 'Years')) === 'Months' ? 'Months' : 'Years';
+        const pWeight = lastNotesParsed?.weight || (latestConsent?.weight != null ? String(latestConsent.weight) : '');
+        const pRelative = lastNotesParsed?.relative_name || latestConsent?.relative_name || client.name || '';
+        const pContact = lastNotesParsed?.contact_number || latestConsent?.contact_number || client.phone || '';
+        const pAltContact = lastNotesParsed?.alternate_contact_number || latestConsent?.alternate_contact_number || '';
+        const pAddress = lastNotesParsed?.address || latestConsent?.address || client.address || leadFull?.location || '';
+        const pMedical = lastNotesParsed?.medical_condition || latestConsent?.other_details || '';
+
+        // Extract duties
+        let initialDuties: string[] = [];
+        if (Array.isArray(lastNotesParsed?.duties) && lastNotesParsed.duties.length > 0) {
+            initialDuties = lastNotesParsed.duties;
+        } else if (Array.isArray(workFormData?.duties) && workFormData.duties.length > 0) {
+            initialDuties = workFormData.duties;
+        }
+
+        const initialCareInstructions = lastNotesParsed?.instructions || lastNotesParsed?.other_work || workFormData?.other_work || '';
 
         setRestartServiceType(initialService);
         setRestartShiftHours(initialHours);
@@ -546,12 +659,186 @@ export default function Clients() {
         setRestartSelectedWorkers([]);
         setRestartNotes('');
 
+        setRestartLeadFull(leadFull);
+        setRestartPatientName(pName);
+        setRestartAge(pAge);
+        setRestartAgeUnit(pAgeUnit);
+        setRestartWeight(pWeight);
+        setRestartRelativeName(pRelative);
+        setRestartContactNumber(pContact);
+        setRestartAltContactNumber(pAltContact);
+        setRestartAddress(pAddress);
+        setRestartMedicalCondition(pMedical);
+        setRestartFormType(initialFormType);
+        setRestartDuties(initialDuties);
+        setRestartCareInstructions(initialCareInstructions);
+        setIsManualCareExpanded(false);
+
         // Fetch workers with their stored 10hr and 24hr daily payout rates
         const { data } = await supabase
             .from('employees')
             .select('id, full_name, job_title, status, photo_url, rate_10hr, rate_24hr, assigned_client')
             .order('full_name');
         setRestartWorkers(data || []);
+    };
+
+    const handleSelectRestartServiceCategory = (cat: string) => {
+        setRestartServiceType(cat);
+        const isBaby = /baby|maternity|jhapa|japa|infant|child/.test(cat.toLowerCase());
+        const newFormType: 'baby_care_form' | 'patient_care_form' = isBaby ? 'baby_care_form' : 'patient_care_form';
+        if (newFormType !== restartFormType) {
+            setRestartFormType(newFormType);
+            const targetDict = newFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+            const valid = restartDuties.filter(d => d in targetDict);
+            setRestartDuties(valid);
+            if (newFormType === 'baby_care_form' && restartAgeUnit === 'Years') {
+                setRestartAgeUnit('Months');
+            } else if (newFormType === 'patient_care_form' && restartAgeUnit === 'Months') {
+                setRestartAgeUnit('Years');
+            }
+        }
+    };
+
+    const handleSendConsentWhatsApp = async () => {
+        if (!restartModal) return;
+        const rawPhone = (restartContactNumber || restartModal.phone || '').replace(/\D/g, '');
+        const cleanPhone = rawPhone.startsWith('91') ? rawPhone : `91${rawPhone}`;
+        if (!cleanPhone || cleanPhone.length < 10) {
+            return toast.error('No valid phone number found for this client.');
+        }
+
+        setIsSendingConsent(true);
+        const toastId = toast.loading('Sending Consent Form via WhatsApp...');
+        try {
+            const firstName = (restartModal.name || '').split(' ')[0] || 'there';
+            const leadPayload = restartLeadFull || {
+                id: restartModal.id,
+                name: restartModal.name,
+                phone: cleanPhone,
+                whatsapp_number: cleanPhone,
+                client_consents: [{
+                    patient_name: restartPatientName || restartModal.name,
+                    age: restartAge,
+                    age_unit: restartAgeUnit,
+                    weight: restartWeight,
+                    relative_name: restartRelativeName || restartModal.name,
+                    contact_number: restartContactNumber || cleanPhone,
+                    alternate_contact_number: restartAltContactNumber,
+                    address: restartAddress,
+                    other_details: restartMedicalCondition,
+                    service_category: restartServiceType,
+                    service_start_date: restartStartDate,
+                    offered_time: restartShiftHours === 24 ? '24 Hours (Live-in)' : '10 Hours',
+                }]
+            };
+
+            const flowData = buildConsentFlowActionData(leadPayload, {
+                extra: {
+                    patient_name: restartPatientName || '',
+                    age: restartAge || '',
+                    weight: restartWeight || '',
+                    relative_name: restartRelativeName || restartModal.name || '',
+                    contact_number: restartContactNumber || cleanPhone,
+                    alternate_contact_number: restartAltContactNumber || '',
+                    address: restartAddress || '',
+                    service_category: restartServiceType || '',
+                    service_start_date: restartStartDate || '',
+                    other_details: restartMedicalCondition || '',
+                }
+            });
+
+            const { data, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                body: {
+                    phone: cleanPhone,
+                    leadId: restartModal.id,
+                    leadName: firstName,
+                    leadFullName: restartModal.name,
+                    useTemplate: true,
+                    templateName: 'consent_form',
+                    flowData
+                }
+            });
+
+            if (error || data?.success === false) {
+                console.warn('Direct Meta API dispatch failed, opening WhatsApp fallback:', error || data?.error);
+                const fallbackText = `Namaste ${restartModal.name} ji! 🙏\n\nHum aapki nayi *${restartServiceType}* service (${restartStartDate} se) ke liye patient care aur consent details confirm karna chahte hain:\n\n👤 *Patient Name*: ${restartPatientName || 'N/A'}\n🎂 *Age / Weight*: ${restartAge ? `${restartAge} ${restartAgeUnit}` : 'N/A'}${restartWeight ? ` • ${restartWeight} kg` : ''}\n👨‍👩‍👧 *Guardian*: ${restartRelativeName || restartModal.name}\n📍 *Service Address*: ${restartAddress || 'N/A'}\n🏥 *Condition / Notes*: ${restartMedicalCondition || 'None'}\n\nKripya confirm karein ya koi badlav ho toh batayein.\n\nDhanyawad,\n99 Care Team`;
+                window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(fallbackText)}`, '_blank');
+                toast.info('Opened WhatsApp chat with consent details for client verification.', { id: toastId });
+            } else {
+                toast.success('✅ Consent form dispatched to client WhatsApp!', { id: toastId });
+            }
+        } catch (err: any) {
+            console.error('Consent dispatch error:', err);
+            toast.error(`Dispatch failed: ${err.message || 'Check connection'}`, { id: toastId });
+        } finally {
+            setIsSendingConsent(false);
+        }
+    };
+
+    const handleSendWorkFormWhatsApp = async () => {
+        if (!restartModal) return;
+        const rawPhone = (restartContactNumber || restartModal.phone || '').replace(/\D/g, '');
+        const cleanPhone = rawPhone.startsWith('91') ? rawPhone : `91${rawPhone}`;
+        if (!cleanPhone || cleanPhone.length < 10) {
+            return toast.error('No valid phone number found for this client.');
+        }
+
+        setIsSendingWorkForm(true);
+        const toastId = toast.loading('Sending Caregiver Work Form via WhatsApp...');
+        try {
+            const firstName = (restartModal.name || '').split(' ')[0] || 'there';
+            const isBaby = restartFormType === 'baby_care_form';
+            const templateName = isBaby ? 'baby_care_form' : 'patient_care_form';
+
+            const leadPayload = restartLeadFull || {
+                id: restartModal.id,
+                name: restartModal.name,
+                phone: cleanPhone,
+                whatsapp_number: cleanPhone,
+            };
+
+            const flowData = isBaby
+                ? buildBabyCareFlowActionData(leadPayload, {
+                    extra: {
+                        baby_name: restartPatientName || '',
+                        date: restartStartDate || '',
+                    }
+                })
+                : buildPatientCareFlowActionData(leadPayload, {
+                    extra: {
+                        full_name: restartPatientName || restartModal.name || '',
+                    }
+                });
+
+            const { data, error } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                body: {
+                    phone: cleanPhone,
+                    leadId: restartModal.id,
+                    leadName: firstName,
+                    useTemplate: true,
+                    templateName,
+                    flowData,
+                }
+            });
+
+            if (error || data?.success === false) {
+                console.warn('Direct Meta API dispatch failed, opening WhatsApp fallback:', error || data?.error);
+                const dict = isBaby ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                const dutyNames = restartDuties.length > 0 
+                    ? restartDuties.map(d => dict[d] || d).join('\n• ') 
+                    : 'All standard caregiving duties';
+                const fallbackText = `Namaste ${restartModal.name} ji! 🙏\n\nHum aapki ${restartServiceType} care service ke liye caregiver duties checklist confirm karna chahte hain:\n\n*Form Type*: ${isBaby ? 'Newborn Baby Care' : 'Patient Care'}\n*Patient / Baby*: ${restartPatientName || restartModal.name}\n\n*Selected Care Duties:*\n• ${dutyNames}\n${restartCareInstructions ? `\n*Special Instructions:*\n${restartCareInstructions}\n` : ''}\nKripya batayein agar koi aur vishesh kaam shamil karna ho.\n\nDhanyawad,\n99 Care Support`;
+                window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(fallbackText)}`, '_blank');
+                toast.info('Opened WhatsApp chat with caregiver duties for client verification.', { id: toastId });
+            } else {
+                toast.success(`✅ ${isBaby ? 'Baby Care' : 'Patient Care'} work form dispatched to client!`, { id: toastId });
+            }
+        } catch (err: any) {
+            console.error('Work form dispatch error:', err);
+            toast.error(`Dispatch failed: ${err.message || 'Check connection'}`, { id: toastId });
+        } finally {
+            setIsSendingWorkForm(false);
+        }
     };
 
     const handleRestartService = async () => {
@@ -585,6 +872,20 @@ export default function Clients() {
                 depositPaymentMethod: restartDepositMethod,
                 workers: workersPayload,
                 notes: restartNotes.trim() || undefined,
+                careScope: {
+                    patientName: restartPatientName.trim() || restartModal.name,
+                    age: restartAge.trim(),
+                    ageUnit: restartAgeUnit,
+                    weight: restartWeight.trim(),
+                    relativeName: restartRelativeName.trim() || restartModal.name,
+                    contactNumber: restartContactNumber.trim() || (restartModal.phone || '').replace(/\D/g, ''),
+                    alternateContactNumber: restartAltContactNumber.trim(),
+                    address: restartAddress.trim(),
+                    medicalCondition: restartMedicalCondition.trim(),
+                    formType: restartFormType,
+                    duties: restartDuties,
+                    instructions: restartCareInstructions.trim() || restartNotes.trim(),
+                }
             });
 
             if (!result.success) throw new Error(result.error);
@@ -2028,7 +2329,7 @@ export default function Clients() {
                                             <button
                                                 key={cat}
                                                 type="button"
-                                                onClick={() => setRestartServiceType(cat)}
+                                                onClick={() => handleSelectRestartServiceCategory(cat)}
                                                 className={`px-2.5 py-1 text-xs rounded-lg font-semibold border transition-all ${
                                                     restartServiceType === cat
                                                         ? 'bg-teal-500 text-white border-teal-500 shadow-xs'
@@ -2042,7 +2343,7 @@ export default function Clients() {
                                     <input
                                         type="text"
                                         value={restartServiceType}
-                                        onChange={e => setRestartServiceType(e.target.value)}
+                                        onChange={e => handleSelectRestartServiceCategory(e.target.value)}
                                         placeholder="Or type custom service name..."
                                         className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8]"
                                     />
@@ -2254,12 +2555,379 @@ export default function Clients() {
                                 )}
                             </div>
 
-                            {/* 4. Staff Member Assignment (Multi-Worker Support) */}
+                            {/* 4. Patient Care Requirements & Work Form Scope */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                        <HeartPulse className="w-4 h-4 text-rose-500" />
+                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">4. Patient Care &amp; Work Form Details</h3>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                            restartFormType === 'baby_care_form'
+                                                ? 'bg-pink-50 text-pink-700 border-pink-200'
+                                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                                        }`}>
+                                            {restartFormType === 'baby_care_form' ? '🍼 Baby Care' : '🩺 Patient Care'}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                                            {restartDuties.length} {restartDuties.length === 1 ? 'duty' : 'duties'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Direct WhatsApp Form Dispatch Buttons */}
+                                <div className="p-3 bg-gradient-to-r from-emerald-50/80 via-teal-50/50 to-slate-50 rounded-xl border border-emerald-200/80 space-y-2">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div>
+                                            <p className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                                                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                                                Send Forms Directly to Client via WhatsApp
+                                            </p>
+                                            <p className="text-[11px] text-emerald-700/90 font-medium">
+                                                Dispatches prefilled interactive WhatsApp forms directly to <strong>{restartContactNumber || restartModal.phone || 'client'}</strong>
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={handleSendConsentWhatsApp}
+                                                disabled={isSendingConsent}
+                                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all disabled:opacity-50"
+                                                title="Send interactive Consent & Intake form via WhatsApp"
+                                            >
+                                                {isSendingConsent ? <RotateCcw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                                                Send Consent Form
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleSendWorkFormWhatsApp}
+                                                disabled={isSendingWorkForm}
+                                                className="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all disabled:opacity-50"
+                                                title="Send caregiver duties checklist form via WhatsApp"
+                                            >
+                                                {isSendingWorkForm ? <RotateCcw className="w-3 h-3 animate-spin" /> : <ClipboardList className="w-3 h-3" />}
+                                                Send Work Form
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Care Summary & Preview Card */}
+                                <div className="bg-slate-50/80 rounded-xl border border-slate-200/80 p-3 space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                            Current Care Scope Preview
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsManualCareExpanded(prev => !prev)}
+                                            className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 bg-white border border-teal-200 hover:border-teal-300 px-2.5 py-1 rounded-lg shadow-2xs transition-all"
+                                        >
+                                            {isManualCareExpanded ? (
+                                                <>
+                                                    <ChevronUp className="w-3.5 h-3.5" />
+                                                    Hide Manual Edit
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                                                    Add / Edit Details Manually
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    {/* Compact Grid Summary */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Patient / Baby</span>
+                                            <span className="font-bold text-slate-800 truncate block">{restartPatientName || restartModal.name}</span>
+                                        </div>
+                                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Age &amp; Weight</span>
+                                            <span className="font-bold text-slate-800 block">
+                                                {restartAge ? `${restartAge} ${restartAgeUnit}` : 'Age: N/A'}{restartWeight ? ` • ${restartWeight}kg` : ''}
+                                            </span>
+                                        </div>
+                                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Guardian</span>
+                                            <span className="font-bold text-slate-800 truncate block">{restartRelativeName || restartModal.name}</span>
+                                        </div>
+                                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Contact</span>
+                                            <span className="font-bold text-slate-800 truncate block">{restartContactNumber || restartModal.phone || 'N/A'}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Address & Medical Condition preview */}
+                                    <div className="space-y-1 text-xs">
+                                        {restartAddress && (
+                                            <div className="flex items-start gap-1.5 text-slate-600 bg-white p-2 rounded-lg border border-slate-200/60">
+                                                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                                <span className="line-clamp-1 font-medium">{restartAddress}</span>
+                                            </div>
+                                        )}
+                                        {restartMedicalCondition && (
+                                            <div className="flex items-start gap-1.5 text-rose-700 bg-rose-50/60 p-2 rounded-lg border border-rose-100">
+                                                <Info className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                                                <span className="line-clamp-1 font-medium">Condition: {restartMedicalCondition}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Selected duties pills */}
+                                    <div className="pt-1">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                                            Caregiver Work Duties ({restartDuties.length}):
+                                        </span>
+                                        {restartDuties.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                                {restartDuties.map(dKey => {
+                                                    const dict = restartFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                                                    return (
+                                                        <span
+                                                            key={dKey}
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded-md shadow-2xs"
+                                                        >
+                                                            <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                            {dict[dKey] || dKey}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="text-[11px] text-amber-700 bg-amber-50/80 border border-amber-200 rounded-lg p-2 font-medium">
+                                                ⚠️ No specific duties recorded yet for this service. Click <strong>"Add / Edit Details Manually"</strong> above to select the caregiver duty scope.
+                                            </p>
+                                        )}
+                                        {restartCareInstructions && (
+                                            <p className="text-[11px] text-slate-600 mt-1.5 bg-white p-2 rounded-lg border border-slate-200/60 italic">
+                                                Note: "{restartCareInstructions}"
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Expandable Manual Form */}
+                                {isManualCareExpanded && (
+                                    <div className="p-4 bg-white rounded-xl border-2 border-teal-200 space-y-4 shadow-sm animate-in slide-in-from-top-2 duration-150">
+                                        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                                                Manual Patient Care &amp; Duty Configuration
+                                            </span>
+                                            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRestartFormType('patient_care_form');
+                                                        if (restartAgeUnit === 'Months') setRestartAgeUnit('Years');
+                                                    }}
+                                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                        restartFormType === 'patient_care_form'
+                                                            ? 'bg-white text-slate-900 shadow-2xs'
+                                                            : 'text-slate-500 hover:text-slate-700'
+                                                    }`}
+                                                >
+                                                    Patient Care
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRestartFormType('baby_care_form');
+                                                        if (restartAgeUnit === 'Years') setRestartAgeUnit('Months');
+                                                    }}
+                                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                        restartFormType === 'baby_care_form'
+                                                            ? 'bg-white text-pink-700 shadow-2xs'
+                                                            : 'text-slate-500 hover:text-slate-700'
+                                                    }`}
+                                                >
+                                                    Baby Care
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Patient & Consent Info Fields */}
+                                        <div className="space-y-2.5">
+                                            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                                A. Patient &amp; Consent Information
+                                            </h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                                        {restartFormType === 'baby_care_form' ? "Baby's Name" : "Patient's Name"} *
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={restartPatientName}
+                                                        onChange={e => setRestartPatientName(e.target.value)}
+                                                        placeholder="e.g. Ramesh Bhai / Baby of Tina"
+                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Age</label>
+                                                    <div className="flex gap-1">
+                                                        <input
+                                                            type="text"
+                                                            value={restartAge}
+                                                            onChange={e => setRestartAge(e.target.value)}
+                                                            placeholder={restartFormType === 'baby_care_form' ? "e.g. 3" : "e.g. 68"}
+                                                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                        />
+                                                        <select
+                                                            value={restartAgeUnit}
+                                                            onChange={e => setRestartAgeUnit(e.target.value as 'Years' | 'Months')}
+                                                            className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold bg-slate-50"
+                                                        >
+                                                            <option value="Years">Yrs</option>
+                                                            <option value="Months">Mo</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Weight (kg)</label>
+                                                    <input
+                                                        type="text"
+                                                        value={restartWeight}
+                                                        onChange={e => setRestartWeight(e.target.value)}
+                                                        placeholder="e.g. 55 kg or 4.5 kg"
+                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Relative / Guardian Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={restartRelativeName}
+                                                        onChange={e => setRestartRelativeName(e.target.value)}
+                                                        placeholder="e.g. Tina Kachiwala (Daughter)"
+                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Primary Contact Phone</label>
+                                                    <input
+                                                        type="tel"
+                                                        value={restartContactNumber}
+                                                        onChange={e => setRestartContactNumber(e.target.value)}
+                                                        placeholder="e.g. 9876543210"
+                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Alternate Contact (Optional)</label>
+                                                    <input
+                                                        type="tel"
+                                                        value={restartAltContactNumber}
+                                                        onChange={e => setRestartAltContactNumber(e.target.value)}
+                                                        placeholder="e.g. 9123456780"
+                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Service Address / Location</label>
+                                                <input
+                                                    type="text"
+                                                    value={restartAddress}
+                                                    onChange={e => setRestartAddress(e.target.value)}
+                                                    placeholder="Flat no., building, street address, city..."
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Medical Condition &amp; Health Details</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={restartMedicalCondition}
+                                                    onChange={e => setRestartMedicalCondition(e.target.value)}
+                                                    placeholder="Bedridden, paralysis, diabetic, post-surgery precautions..."
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Duties Checklist */}
+                                        <div className="space-y-2 pt-2 border-t border-slate-100">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                                    B. Caregiver Work Form Checklist ({restartFormType === 'baby_care_form' ? 'Baby Care' : 'Patient Care'})
+                                                </h4>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={selectAllRestartDuties}
+                                                        className="text-[10px] font-bold text-teal-700 hover:text-teal-900"
+                                                    >
+                                                        Select All
+                                                    </button>
+                                                    <span className="text-slate-300">•</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={clearAllRestartDuties}
+                                                        className="text-[10px] font-bold text-slate-500 hover:text-red-600"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                                {Object.entries(restartFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS).map(([dKey, dLabel]) => {
+                                                    const isChecked = restartDuties.includes(dKey);
+                                                    return (
+                                                        <button
+                                                            key={dKey}
+                                                            type="button"
+                                                            onClick={() => toggleRestartDuty(dKey)}
+                                                            className={`p-2 rounded-lg border text-left text-xs font-medium flex items-center gap-2 transition-all ${
+                                                                isChecked
+                                                                    ? 'bg-teal-50 border-teal-500 text-teal-900 font-bold shadow-2xs'
+                                                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 text-[10px] ${
+                                                                isChecked ? 'bg-teal-600 text-white' : 'border border-slate-300'
+                                                            }`}>
+                                                                {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                                            </div>
+                                                            <span className="truncate">{dLabel}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="pt-1">
+                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                                    Other Work / Special Instructions for Caregiver
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={restartCareInstructions}
+                                                    onChange={e => setRestartCareInstructions(e.target.value)}
+                                                    placeholder="e.g. Needs assistance with walker, giving medicine at 8 PM..."
+                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 5. Staff Member Assignment (Multi-Worker Support) */}
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                                     <div className="flex items-center gap-2">
                                         <Users className="w-4 h-4 text-purple-600" />
-                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">4. Assign Staff Member(s) *</h3>
+                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">5. Assign Staff Member(s) *</h3>
                                     </div>
                                     <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
                                         {restartSelectedWorkers.length} selected • {restartWorkers.filter(w => w.status === 'available').length} available
@@ -2380,9 +3048,9 @@ export default function Clients() {
                                 )}
                             </div>
 
-                            {/* 5. Additional Notes */}
+                            {/* 6. Additional Notes & Special Instructions */}
                             <div>
-                                <label className="block text-xs font-semibold text-slate-600 mb-1">Care Notes &amp; Special Instructions (Optional)</label>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1">6. Care Notes &amp; Special Instructions (Optional)</label>
                                 <textarea
                                     rows={2}
                                     value={restartNotes}
