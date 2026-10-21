@@ -318,14 +318,42 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     // Collect past services from services table
     const dbPastServices = services.filter(s => s.status !== 'active');
     
-    // Check if any completed assignments in worker_assignments aren't covered by dbPastServices
-    const unrepresentedPastAssignments = (assignments || []).filter((a: any) => 
-        a.assignment_status !== 'active' &&
-        !dbPastServices.some(ps => 
-            ps.id === a.id || 
-            (a.start_date && ps.start_date && a.start_date.split('T')[0] === ps.start_date.split('T')[0])
-        )
-    );
+    // Check if any completed assignments in worker_assignments aren't covered by existing services
+    const unrepresentedPastAssignments = (assignments || []).filter((a: any) => {
+        if (a.assignment_status === 'active' || a.assignment_status === 'cancelled') return false;
+        if (a.notes?.toLowerCase().includes('superseded')) return false;
+
+        const aStart = a.start_date ? a.start_date.split('T')[0] : '';
+        const aEnd = a.end_date ? a.end_date.split('T')[0] : '';
+
+        // Covered if it matches or overlaps with ANY service (active or past) in the services table
+        const isCovered = (services || []).some((svc: any) => {
+            if (svc.id === a.id) return true;
+            const sStart = svc.start_date ? svc.start_date.split('T')[0] : '';
+            const sEnd = svc.end_date ? svc.end_date.split('T')[0] : sStart;
+
+            // Direct start date match
+            if (aStart && sStart && aStart === sStart) return true;
+
+            // Assignment dates fall within service start and end dates
+            if (aStart && sStart && sEnd && aStart >= sStart && aStart <= sEnd) return true;
+
+            // Check if service_worker_assignments under this service matches employee or assignment ID
+            if (svc.service_worker_assignments?.some((swa: any) => 
+                swa.id === a.id || 
+                (swa.employee_id === a.employee_id && (
+                    swa.start_date?.split('T')[0] === aStart || 
+                    swa.end_date?.split('T')[0] === aEnd
+                ))
+            )) {
+                return true;
+            }
+
+            return false;
+        });
+
+        return !isCovered;
+    });
 
     const syntheticPastServices = unrepresentedPastAssignments.map((a: any) => ({
         id: a.id,
@@ -765,7 +793,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                 <span className="text-[10px] font-bold uppercase text-slate-400">Staff Assigned for this Cycle:</span>
                                                                 <p className="font-semibold text-slate-700 mt-0.5">
                                                                     {pastStaff.length > 0
-                                                                        ? pastStaff.map((s: any) => `${s.name} (${s.role})`).join(', ')
+                                                                        ? Array.from(new Set(pastStaff.map((s: any) => `${s.name} (${s.role})`))).join(', ')
                                                                         : 'Past staff record archived'}
                                                                 </p>
                                                             </div>
