@@ -919,6 +919,16 @@ export default function CRM() {
     const [selectedInspectorLead, setSelectedInspectorLead] = useState<any | null>(null);
     const [releasedAssignment, setReleasedAssignment] = useState<any | null>(null);
     const [showWorkFormModal, setShowWorkFormModal] = useState<any | null>(null);
+    const [manualWorkFormModal, setManualWorkFormModal] = useState<{
+        isOpen: boolean;
+        lead: any;
+        formType: 'baby_care_form' | 'patient_care_form';
+        patientName: string;
+        duties: string[];
+        otherWork: string;
+        isSaving: boolean;
+    } | null>(null);
+    const [isDispatchingWorkForm, setIsDispatchingWorkForm] = useState(false);
     const [detailsModalClient, setDetailsModalClient] = useState<any | null>(null);
     const [isEndingLeadService, setIsEndingLeadService] = useState(false);
 
@@ -3272,7 +3282,7 @@ export default function CRM() {
             return;
         }
 
-        await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/meta-whatsapp-outbound`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
             body: JSON.stringify({
@@ -3284,7 +3294,133 @@ export default function CRM() {
                 flowData,
             })
         });
+
+        const resData = await res.json().catch(() => ({}));
+        if (!res.ok || resData.success === false) {
+            throw new Error(resData.error || `Dispatch failed with status ${res.status}`);
+        }
+
         toast.success(`Work Form dispatched to ${lead.name}!`);
+    };
+
+    const handleOpenManualWorkForm = (lead: any) => {
+        if (!lead) return;
+        const existing = lead.work_form_data;
+
+        // Auto-detect form type from service or existing form
+        let initialType: 'baby_care_form' | 'patient_care_form' = 'patient_care_form';
+        if (existing?.form_type === 'baby_care_form') {
+            initialType = 'baby_care_form';
+        } else if (existing?.form_type === 'patient_care_form') {
+            initialType = 'patient_care_form';
+        } else {
+            const s = String(
+                lead.crm_quotations?.[0]?.service_category ||
+                lead.crm_quotations?.[0]?.service_name ||
+                lead.client_consents?.[0]?.service_category ||
+                lead.service_category ||
+                lead.notes ||
+                ''
+            ).toLowerCase();
+            if (/baby|maternity|jhapa|japa|infant|child/.test(s)) {
+                initialType = 'baby_care_form';
+            }
+        }
+
+        const patientName = existing?.patient_name || lead.client_consents?.[0]?.patient_name || lead.name || '';
+        const duties = Array.isArray(existing?.duties) ? [...existing.duties] : [];
+        const otherWork = existing?.other_work || '';
+
+        setManualWorkFormModal({
+            isOpen: true,
+            lead,
+            formType: initialType,
+            patientName,
+            duties,
+            otherWork,
+            isSaving: false
+        });
+    };
+
+    const toggleManualDuty = (dutyKey: string) => {
+        if (!manualWorkFormModal) return;
+        const current = manualWorkFormModal.duties;
+        const next = current.includes(dutyKey)
+            ? current.filter(k => k !== dutyKey)
+            : [...current, dutyKey];
+        setManualWorkFormModal({
+            ...manualWorkFormModal,
+            duties: next
+        });
+    };
+
+    const handleSaveManualWorkForm = async () => {
+        if (!manualWorkFormModal || !manualWorkFormModal.lead) return;
+        const { lead, formType, patientName, duties, otherWork } = manualWorkFormModal;
+
+        setManualWorkFormModal(prev => prev ? { ...prev, isSaving: true } : null);
+        const toastId = toast.loading('Saving work duties checklist...');
+        try {
+            const payload = {
+                form_type: formType,
+                patient_name: patientName.trim(),
+                duties,
+                other_work: otherWork.trim(),
+                updated_at: new Date().toISOString()
+            };
+
+            const { error: leadErr } = await supabase
+                .from('crm_leads')
+                .update({ work_form_data: payload })
+                .eq('id', lead.id);
+
+            if (leadErr) throw leadErr;
+
+            // Mirror to client_work_forms for redundancy
+            try {
+                await supabase.from('client_work_forms').insert([{
+                    lead_id: lead.id,
+                    form_type: formType,
+                    patient_name: patientName.trim(),
+                    duties: duties,
+                    other_work: otherWork.trim()
+                }]);
+            } catch (e) {
+                console.warn('Could not mirror to client_work_forms', e);
+            }
+
+            // Log activity
+            await logActivity(
+                lead.id,
+                'form_filled',
+                `Work duties checklist saved manually (${formType === 'baby_care_form' ? 'Baby Care' : 'Patient Care'}: ${duties.length} duties)`,
+                { duties_count: duties.length, form_type: formType }
+            );
+
+            // Update local state
+            setSelectedInspectorLead((prev: any) => prev && prev.id === lead.id ? { ...prev, work_form_data: payload } : prev);
+            setLeads((prev: any[]) => prev.map(l => l.id === lead.id ? { ...l, work_form_data: payload } : l));
+
+            toast.success('✅ Work duties recorded successfully!', { id: toastId });
+            setManualWorkFormModal(null);
+        } catch (err: any) {
+            console.error('Failed to save manual work form:', err);
+            toast.error(`Failed to save: ${err.message || 'Unknown error'}`, { id: toastId });
+            setManualWorkFormModal(prev => prev ? { ...prev, isSaving: false } : null);
+        }
+    };
+
+    const handleDispatchWorkFormFromDrawer = async (lead: any) => {
+        setIsDispatchingWorkForm(true);
+        const toastId = toast.loading('Dispatching Work Form via WhatsApp...');
+        try {
+            await dispatchWorkFormForLead(lead);
+        } catch (err: any) {
+            console.error('Failed to dispatch work form:', err);
+            toast.error(`Dispatch failed: ${err.message || 'Unknown error'}`, { id: toastId });
+        } finally {
+            setIsDispatchingWorkForm(false);
+        }
     };
 
 
@@ -8420,40 +8556,103 @@ export default function CRM() {
                         })()}
 
                         {/* ── Work Form Details ──────────────────────────── */}
-                        {selectedInspectorLead.work_form_data && (() => {
+                        {(() => {
                             const workForm = selectedInspectorLead.work_form_data;
+                            const hasWorkForm = !!workForm && Array.isArray(workForm.duties) && (workForm.form_type === 'baby_care_form' || workForm.form_type === 'patient_care_form');
                             const dutiesCount = workForm?.duties?.length || 0;
                             const title = workForm?.form_type === 'baby_care_form' ? 'Baby Care Work Form' : 'Patient Care Work Form';
                             
                             return (
                                 <div className="mt-4">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Work Form Details</p>
-                                    <button 
-                                        onClick={() => setShowWorkFormModal(workForm)}
-                                        className="w-full bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl border border-slate-200 p-4 flex flex-col items-start gap-2 group text-left"
-                                    >
-                                        <div className="flex items-center justify-between w-full">
-                                            <span className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                                                <ListChecks className="w-4 h-4 text-primary" /> {title}
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Work Form Details</p>
+                                        {hasWorkForm ? (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                Recorded ✓
                                             </span>
-                                            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
-                                        </div>
-                                        {workForm?.updated_at && (
-                                            <span className="text-[10px] text-slate-500 font-medium">
-                                                Last updated: {new Date(workForm.updated_at).toLocaleString()}
+                                        ) : (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                                Not Recorded
                                             </span>
                                         )}
-                                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                                            <CheckSquare className="w-3.5 h-3.5" />
-                                            <span>{dutiesCount} duties specified</span>
-                                        </div>
-                                        {workForm?.patient_name && (
-                                            <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                <User className="w-3.5 h-3.5" />
-                                                <span>Patient: {workForm.patient_name}</span>
+                                    </div>
+
+                                    {hasWorkForm ? (
+                                        <div className="bg-slate-50 rounded-xl border border-slate-200 p-3.5 space-y-3">
+                                            <button 
+                                                onClick={() => setShowWorkFormModal(workForm)}
+                                                className="w-full flex flex-col items-start gap-1.5 group text-left cursor-pointer"
+                                            >
+                                                <div className="flex items-center justify-between w-full">
+                                                    <span className="text-sm font-semibold text-slate-800 flex items-center gap-2 group-hover:text-primary transition-colors">
+                                                        <ListChecks className="w-4 h-4 text-primary" /> {title}
+                                                    </span>
+                                                    <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
+                                                </div>
+                                                {workForm?.updated_at && (
+                                                    <span className="text-[10px] text-slate-400 font-medium">
+                                                        Last updated: {new Date(workForm.updated_at).toLocaleString()}
+                                                    </span>
+                                                )}
+                                                <div className="flex items-center gap-2 text-xs text-slate-600 mt-0.5">
+                                                    <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                                                    <span className="font-semibold">{dutiesCount} duties specified</span>
+                                                </div>
+                                                {workForm?.patient_name && (
+                                                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                        <User className="w-3.5 h-3.5" />
+                                                        <span>Patient: {workForm.patient_name}</span>
+                                                    </div>
+                                                )}
+                                            </button>
+
+                                            <div className="pt-2 border-t border-slate-200/70 flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleOpenManualWorkForm(selectedInspectorLead)}
+                                                    className="flex-1 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold py-1.5 px-2.5 rounded-lg border border-slate-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                                >
+                                                    <Edit3 className="w-3 h-3 text-slate-500" /> Edit Duties
+                                                </button>
+                                                <button
+                                                    disabled={isDispatchingWorkForm}
+                                                    onClick={() => handleDispatchWorkFormFromDrawer(selectedInspectorLead)}
+                                                    className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold py-1.5 px-2.5 rounded-lg border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                                    title="Resend duties form via WhatsApp"
+                                                >
+                                                    <Send className="w-3 h-3" /> Resend Form
+                                                </button>
                                             </div>
-                                        )}
-                                    </button>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-amber-50/50 rounded-xl border border-amber-200/70 p-3.5 space-y-3">
+                                            <div>
+                                                <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                                                    <ListChecks className="w-4 h-4 text-amber-600 shrink-0" />
+                                                    <span>No Work Duties Checklist</span>
+                                                </div>
+                                                <p className="text-[11px] text-amber-700/90 mt-1 leading-relaxed">
+                                                    Caregiver duties checklist has not been recorded for this lead yet.
+                                                </p>
+                                            </div>
+
+                                            <div className="flex flex-col sm:flex-row items-stretch gap-2 pt-1">
+                                                <button
+                                                    onClick={() => handleOpenManualWorkForm(selectedInspectorLead)}
+                                                    className="flex-1 bg-primary hover:bg-primary/90 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" /> Record Duties Manually
+                                                </button>
+                                                <button
+                                                    disabled={isDispatchingWorkForm}
+                                                    onClick={() => handleDispatchWorkFormFromDrawer(selectedInspectorLead)}
+                                                    className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-lg border border-slate-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                                    title="Send WhatsApp flow to client"
+                                                >
+                                                    <Send className="w-3.5 h-3.5 text-emerald-600" /> WhatsApp Flow
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })()}
@@ -9061,12 +9260,200 @@ export default function CRM() {
                                     </div>
                                 )}
                             </div>
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex items-center justify-end gap-2.5">
+                                <button
+                                    onClick={() => {
+                                        const currentLead = selectedInspectorLead;
+                                        setShowWorkFormModal(null);
+                                        if (currentLead) handleOpenManualWorkForm(currentLead);
+                                    }}
+                                    className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" /> Edit Duties
+                                </button>
                                 <button
                                     onClick={() => setShowWorkFormModal(null)}
-                                    className="w-full bg-white border border-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
                                 >
                                     Close Details
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+            {/* Manual Work Form / Duties Checklist Modal */}
+            {manualWorkFormModal && manualWorkFormModal.isOpen &&
+                createPortal(
+                    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={() => !manualWorkFormModal.isSaving && setManualWorkFormModal(null)}>
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl border border-slate-200 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 overflow-hidden" onClick={e => e.stopPropagation()}>
+                            {/* Header */}
+                            <div className="p-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-10">
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                                        <ListChecks className="w-5 h-5 text-primary" />
+                                        {manualWorkFormModal.lead?.work_form_data?.duties?.length ? 'Edit Caregiver Duties' : 'Record Caregiver Duties'}
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Client: <span className="font-semibold text-slate-700">{manualWorkFormModal.lead?.name}</span>
+                                        {manualWorkFormModal.lead?.phone ? ` • ${manualWorkFormModal.lead?.phone}` : ''}
+                                    </p>
+                                </div>
+                                <button
+                                    disabled={manualWorkFormModal.isSaving}
+                                    onClick={() => setManualWorkFormModal(null)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Body */}
+                            <div className="p-5 overflow-y-auto space-y-5">
+                                {/* Form Type Selector */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                                        Service / Form Type
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setManualWorkFormModal({ ...manualWorkFormModal, formType: 'baby_care_form' })}
+                                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${manualWorkFormModal.formType === 'baby_care_form' ? 'bg-[#E6F7F7] border-primary text-primary font-bold shadow-xs ring-1 ring-primary' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                                        >
+                                            <span className="text-xl">👶</span>
+                                            <div>
+                                                <div className="text-sm">Baby Care Form</div>
+                                                <div className="text-[11px] font-normal opacity-75">New born &amp; maternity care</div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setManualWorkFormModal({ ...manualWorkFormModal, formType: 'patient_care_form' })}
+                                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${manualWorkFormModal.formType === 'patient_care_form' ? 'bg-[#E6F7F7] border-primary text-primary font-bold shadow-xs ring-1 ring-primary' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                                        >
+                                            <span className="text-xl">🩺</span>
+                                            <div>
+                                                <div className="text-sm">Patient Care Form</div>
+                                                <div className="text-[11px] font-normal opacity-75">Old age &amp; bedside nursing</div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Patient / Baby Name */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                        {manualWorkFormModal.formType === 'baby_care_form' ? "Baby's Name / Care Recipient" : "Patient's Full Name"}
+                                    </label>
+                                    <div className="relative">
+                                        <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input
+                                            type="text"
+                                            value={manualWorkFormModal.patientName}
+                                            onChange={e => setManualWorkFormModal({ ...manualWorkFormModal, patientName: e.target.value })}
+                                            placeholder={manualWorkFormModal.formType === 'baby_care_form' ? "e.g. Baby of Tina" : "e.g. Tina Kachiwala"}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Duties Checklist */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                                Caregiver Duties Checklist
+                                            </label>
+                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                                {manualWorkFormModal.duties.length} selected
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const dict = manualWorkFormModal.formType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                                                const allKeys = Object.keys(dict);
+                                                const isAllSelected = allKeys.every(k => manualWorkFormModal.duties.includes(k));
+                                                setManualWorkFormModal({
+                                                    ...manualWorkFormModal,
+                                                    duties: isAllSelected ? [] : allKeys
+                                                });
+                                            }}
+                                            className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                                        >
+                                            {(() => {
+                                                const dict = manualWorkFormModal.formType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                                                const allKeys = Object.keys(dict);
+                                                return allKeys.every(k => manualWorkFormModal.duties.includes(k)) ? 'Deselect All' : 'Select All';
+                                            })()}
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[260px] overflow-y-auto pr-1">
+                                        {(() => {
+                                            const dict = manualWorkFormModal.formType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                                            return Object.entries(dict).map(([key, label]) => {
+                                                const isChecked = manualWorkFormModal.duties.includes(key);
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        key={key}
+                                                        onClick={() => toggleManualDuty(key)}
+                                                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 ${isChecked ? 'bg-emerald-50/70 border-emerald-300 text-slate-900 shadow-xs' : 'bg-slate-50/80 border-slate-200/80 text-slate-600 hover:bg-slate-100/70'}`}
+                                                    >
+                                                        <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-all ${isChecked ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'}`}>
+                                                            {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                                        </div>
+                                                        <span className="text-xs font-medium leading-tight">{label}</span>
+                                                    </button>
+                                                );
+                                            });
+                                        })()}
+                                    </div>
+                                </div>
+
+                                {/* Other Instructions */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                        Special Instructions / Other Work
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        value={manualWorkFormModal.otherWork}
+                                        onChange={e => setManualWorkFormModal({ ...manualWorkFormModal, otherWork: e.target.value })}
+                                        placeholder="e.g. Baby feeds every 2 hours, strictly sterilize feeder bottles, oil massage before 10 AM, etc."
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex items-center justify-end gap-2.5">
+                                <button
+                                    type="button"
+                                    disabled={manualWorkFormModal.isSaving}
+                                    onClick={() => setManualWorkFormModal(null)}
+                                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={manualWorkFormModal.isSaving}
+                                    onClick={handleSaveManualWorkForm}
+                                    className="px-5 py-2 bg-primary hover:bg-primary/90 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                    {manualWorkFormModal.isSaving ? (
+                                        <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-3.5 h-3.5 stroke-[3]" /> Save Duties Checklist
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </div>
