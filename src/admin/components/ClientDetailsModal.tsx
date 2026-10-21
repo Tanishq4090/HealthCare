@@ -47,14 +47,54 @@ const getDutyLabel = (dutyId: string, formType?: string): string => {
     return map[dutyId] || dutyId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 };
 
-const resolveServiceCareScope = (svc: any, leadWorkForm: any, consent: any) => {
+const formatAgeDisplay = (ageStr?: string, unit?: string) => {
+    if (!ageStr) return '—';
+    const trimmed = ageStr.trim();
+    if (/\b(yrs|years|months|month|age|kgs|kg)\b/i.test(trimmed)) {
+        return trimmed;
+    }
+    return `${trimmed} ${unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}`;
+};
+
+const resolveServiceCareScope = (svc: any, leadWorkForm: any, allConsents: any, lead: any) => {
+    const consentsList: any[] = Array.isArray(allConsents)
+        ? allConsents
+        : (allConsents ? [allConsents] : []);
+
+    const sType = String(svc?.service_type || svc?.notes || '').toLowerCase();
+    const isBabySvc = /baby|maternity|jhapa|japa|infant|child/.test(sType);
+    const isPatientSvc = /old age|patient|bedside|elderly|nursing/.test(sType);
+
+    // 1. Match consent by category or start_date or fallback to first
+    let matchingConsent = null;
+    if (consentsList.length > 0) {
+        matchingConsent = consentsList.find((c: any) => {
+            const cat = String(c?.service_category || '').toLowerCase();
+            if (isBabySvc && /baby|maternity|jhapa|japa|infant|child/.test(cat)) return true;
+            if (isPatientSvc && /old age|patient|bedside|elderly|nursing/.test(cat)) return true;
+            return false;
+        });
+        if (!matchingConsent && svc?.start_date) {
+            matchingConsent = consentsList.find((c: any) => c?.service_start_date === svc.start_date);
+        }
+        if (!matchingConsent) {
+            matchingConsent = consentsList[0];
+        }
+    }
+
     let duties: string[] = [];
     let instructions = '';
-    let patientName = consent?.patient_name || '';
-    const sType = String(svc?.service_type || svc?.notes || '').toLowerCase();
-    let formType: 'baby_care_form' | 'patient_care_form' = /baby|maternity|jhapa|japa|infant|child/.test(sType)
-        ? 'baby_care_form'
-        : 'patient_care_form';
+    let patientName = matchingConsent?.patient_name || lead?.name || '';
+    let age = matchingConsent?.age || '';
+    let ageUnit = matchingConsent?.age_unit || '';
+    let weight = matchingConsent?.weight || '';
+    let relativeName = matchingConsent?.relative_name || '';
+    let contactNumber = matchingConsent?.contact_number || lead?.phone || lead?.whatsapp_number || '';
+    let altContactNumber = matchingConsent?.alternate_contact_number || '';
+    let address = matchingConsent?.address || '';
+    let medicalCondition = matchingConsent?.other_details || '';
+
+    let formType: 'baby_care_form' | 'patient_care_form' = isBabySvc ? 'baby_care_form' : 'patient_care_form';
 
     // 1. Try parsing JSON from svc.notes
     if (svc?.notes && typeof svc.notes === 'string') {
@@ -62,35 +102,64 @@ const resolveServiceCareScope = (svc: any, leadWorkForm: any, consent: any) => {
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
             try {
                 const parsed = JSON.parse(trimmed);
-                if (Array.isArray(parsed.duties)) {
-                    duties = parsed.duties;
-                    instructions = parsed.instructions || parsed.other_work || '';
-                    if (parsed.patient_name || parsed.patientName) patientName = parsed.patient_name || parsed.patientName;
-                    if (parsed.form_type) formType = parsed.form_type;
-                    return { duties, instructions, patientName, formType, isCustom: true };
-                }
+                if (Array.isArray(parsed.duties)) duties = parsed.duties;
+                if (parsed.instructions || parsed.other_work) instructions = parsed.instructions || parsed.other_work;
+                if (parsed.patient_name || parsed.patientName) patientName = parsed.patient_name || parsed.patientName;
+                if (parsed.age) age = parsed.age;
+                if (parsed.age_unit) ageUnit = parsed.age_unit;
+                if (parsed.weight) weight = parsed.weight;
+                if (parsed.relative_name) relativeName = parsed.relative_name;
+                if (parsed.contact_number) contactNumber = parsed.contact_number;
+                if (parsed.alternate_contact_number) altContactNumber = parsed.alternate_contact_number;
+                if (parsed.address) address = parsed.address;
+                if (parsed.medical_condition) medicalCondition = parsed.medical_condition;
+                if (parsed.form_type) formType = parsed.form_type;
             } catch (e) {}
         } else {
             instructions = trimmed;
         }
     }
 
-    // 2. Match with leadWorkForm if form_type aligns with service
-    if (leadWorkForm && Array.isArray(leadWorkForm.duties) && leadWorkForm.duties.length > 0) {
-        const isBabySvc = /baby|maternity|jhapa|japa|infant|child/.test(sType);
-        const isPatientSvc = /old age|patient|bedside|elderly|nursing/.test(sType);
-
+    // 2. Match with leadWorkForm if duties not in svc.notes
+    if (duties.length === 0 && leadWorkForm && Array.isArray(leadWorkForm.duties) && leadWorkForm.duties.length > 0) {
         if ((isBabySvc && leadWorkForm.form_type === 'baby_care_form') ||
             (isPatientSvc && leadWorkForm.form_type === 'patient_care_form')) {
             duties = leadWorkForm.duties;
             if (!instructions) instructions = leadWorkForm.other_work || '';
-            if (leadWorkForm.patient_name) patientName = leadWorkForm.patient_name;
+            if (leadWorkForm.patient_name && !patientName) patientName = leadWorkForm.patient_name;
             formType = leadWorkForm.form_type;
-            return { duties, instructions, patientName, formType, isMasterForm: true };
         }
     }
 
-    return { duties, instructions, patientName, formType, isFallback: true };
+    // 3. Fallback extraction from lead.notes if still missing fields
+    if (!relativeName && lead?.notes) {
+        const matchGuardian = lead.notes.match(/guardian:\s*([^\n\)\;]+)/i);
+        if (matchGuardian) relativeName = matchGuardian[1].trim();
+    }
+    if (!address && lead?.notes) {
+        const matchLoc = lead.notes.match(/location:\s*([^\n]+)/i);
+        if (matchLoc) address = matchLoc[1].trim();
+    }
+    if (!patientName && lead?.notes) {
+        const matchCare = lead.notes.match(/care for:\s*([^(\n]+)/i);
+        if (matchCare) patientName = matchCare[1].trim();
+    }
+
+    return {
+        duties,
+        instructions,
+        patientName,
+        age,
+        ageUnit,
+        weight,
+        relativeName,
+        contactNumber,
+        altContactNumber,
+        address,
+        medicalCondition,
+        formType,
+        matchingConsent
+    };
 };
 
 interface ClientDetailsModalProps {
@@ -138,73 +207,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     });
     const [isSavingConsent, setIsSavingConsent] = useState(false);
 
-    // Edit Service-Specific Care Notes & Shift Modal State
-    const [editingServiceCareNotes, setEditingServiceCareNotes] = useState<{
-        id: string;
-        serviceName: string;
-        notes: string;
-        hoursPerDay: number;
-        duties: string[];
-        formType: 'baby_care_form' | 'patient_care_form';
-        patientName: string;
-    } | null>(null);
-    const [isSavingServiceNotes, setIsSavingServiceNotes] = useState(false);
     const [generatingPdfBillId, setGeneratingPdfBillId] = useState<string | null>(null);
-
-    const handleSaveServiceCareNotes = async () => {
-        if (!editingServiceCareNotes) return;
-        setIsSavingServiceNotes(true);
-        try {
-            const hasDuties = editingServiceCareNotes.duties && editingServiceCareNotes.duties.length > 0;
-            const payloadToStore = hasDuties
-                ? JSON.stringify({
-                    duties: editingServiceCareNotes.duties,
-                    instructions: editingServiceCareNotes.notes.trim(),
-                    form_type: editingServiceCareNotes.formType,
-                    patient_name: editingServiceCareNotes.patientName.trim()
-                })
-                : editingServiceCareNotes.notes.trim();
-
-            const { error } = await supabase
-                .from('services')
-                .update({
-                    notes: payloadToStore,
-                    hours_per_day: Number(editingServiceCareNotes.hoursPerDay) || 10
-                })
-                .eq('id', editingServiceCareNotes.id);
-            if (error) throw error;
-
-            // Also mirror to crm_leads.work_form_data if duties are specified
-            if (hasDuties) {
-                try {
-                    await supabase
-                        .from('crm_leads')
-                        .update({
-                            work_form_data: {
-                                form_type: editingServiceCareNotes.formType,
-                                patient_name: editingServiceCareNotes.patientName.trim(),
-                                duties: editingServiceCareNotes.duties,
-                                other_work: editingServiceCareNotes.notes.trim(),
-                                updated_at: new Date().toISOString()
-                            }
-                        })
-                        .eq('id', clientId);
-                } catch (e) {
-                    console.warn('Could not mirror to crm_leads.work_form_data', e);
-                }
-            }
-
-            toast.success('Service care requirements & shift hours updated!');
-            setEditingServiceCareNotes(null);
-            await fetchDetails();
-            onServiceUpdated?.();
-        } catch (err: any) {
-            console.error('Failed to update service care notes:', err);
-            toast.error(`Failed: ${err.message || 'Unknown error'}`);
-        } finally {
-            setIsSavingServiceNotes(false);
-        }
-    };
 
     const handleOpenOrGeneratePdf = async (bill: any, svc: any, invNo: string, bi: number) => {
         let noteData: any = {};
@@ -874,10 +877,11 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
 
                                     {/* Patient Care Requirements & Shift Scope (This Active Service) */}
                                     {(() => {
-                                        const scope = resolveServiceCareScope(activeService, lead?.work_form_data, latestConsent);
+                                        const scope = resolveServiceCareScope(activeService, lead?.work_form_data, lead?.client_consents, lead);
                                         return (
-                                            <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 space-y-2.5">
-                                                <div className="flex items-center justify-between gap-3">
+                                            <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80 space-y-3">
+                                                {/* Header */}
+                                                <div className="flex items-center justify-between gap-3 border-b border-emerald-200/60 pb-2.5">
                                                     <div className="flex items-center gap-2 flex-wrap">
                                                         <HeartPulse className="w-4 h-4 text-emerald-700 shrink-0" />
                                                         <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-950">
@@ -888,37 +892,76 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                             {scope.duties.length > 0 ? ` • ${scope.duties.length} Duties` : ''}
                                                         </span>
                                                     </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setEditingServiceCareNotes({
-                                                            id: activeService.id,
-                                                            serviceName: formatServiceLabel(activeService.service_type, activeService.notes),
-                                                            notes: scope.instructions,
-                                                            hoursPerDay: activeService.hours_per_day || 10,
-                                                            duties: [...scope.duties],
-                                                            formType: scope.formType,
-                                                            patientName: scope.patientName || latestConsent?.patient_name || lead?.name || ''
-                                                        })}
-                                                        className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-100/70 border border-emerald-300 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
-                                                        title="Edit patient care requirements or shift hours for this service"
-                                                    >
-                                                        <Pencil className="w-3 h-3 text-emerald-600" /> Edit Details
-                                                    </button>
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-white/90 px-2 py-0.5 rounded border border-emerald-200 shadow-2xs">
+                                                        Read-Only
+                                                    </span>
                                                 </div>
 
-                                                {scope.patientName && (
-                                                    <div className="text-xs text-slate-700">
-                                                        <span className="font-semibold text-slate-500">Care Recipient / Patient: </span>
-                                                        <span className="font-bold text-slate-800">{scope.patientName}</span>
+                                                {/* Patient Care Profile Details Grid */}
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                                                    {/* 1. Patient Name */}
+                                                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                            <User className="w-3 h-3 text-emerald-600" /> Care Recipient / Patient
+                                                        </span>
+                                                        <span className="font-bold text-slate-800 text-sm">{scope.patientName || '—'}</span>
+                                                    </div>
+
+                                                    {/* 2. Age & Weight */}
+                                                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                            <Activity className="w-3 h-3 text-emerald-600" /> Age &amp; Weight
+                                                        </span>
+                                                        <span className="font-semibold text-slate-800">
+                                                            {scope.age ? formatAgeDisplay(scope.age, scope.ageUnit) : '—'}
+                                                            {!String(scope.age || '').toLowerCase().includes('kg') && scope.weight ? `, ${scope.weight} kg` : ''}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* 3. Guardian / Relative */}
+                                                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                            <Users className="w-3 h-3 text-emerald-600" /> Relative / Guardian
+                                                        </span>
+                                                        <span className="font-semibold text-slate-800">{scope.relativeName || '—'}</span>
+                                                    </div>
+
+                                                    {/* 4. Contact Phone */}
+                                                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                            <Phone className="w-3 h-3 text-emerald-600" /> Contact Number
+                                                        </span>
+                                                        <span className="font-semibold text-slate-800">
+                                                            {scope.contactNumber || '—'}
+                                                            {scope.altContactNumber ? ` / ${scope.altContactNumber}` : ''}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* 5. Care Location / Address */}
+                                                    <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100 shadow-2xs sm:col-span-2">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                            <MapPin className="w-3 h-3 text-emerald-600" /> Patient Care Location
+                                                        </span>
+                                                        <span className="font-medium text-slate-800 line-clamp-2">{scope.address || '—'}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Medical Condition / Health Notes if present */}
+                                                {scope.medicalCondition && (
+                                                    <div className="p-2.5 bg-white/80 rounded-lg border border-emerald-100 text-xs text-slate-700">
+                                                        <span className="font-bold text-emerald-950 block mb-0.5 text-[10px] uppercase flex items-center gap-1">
+                                                            <AlertCircle className="w-3 h-3 text-emerald-600" /> Medical Condition / Health Notes:
+                                                        </span>
+                                                        {scope.medicalCondition}
                                                     </div>
                                                 )}
 
-                                                {/* Duties checklist chips */}
-                                                {scope.duties.length > 0 ? (
-                                                    <div className="space-y-1.5">
-                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1">
-                                                            <CheckSquare className="w-3 h-3 text-emerald-600" /> Agreed Caregiver Duties:
-                                                        </span>
+                                                {/* Agreed Caregiver Duties */}
+                                                <div className="space-y-1.5 pt-1 border-t border-emerald-200/50">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-950 flex items-center gap-1">
+                                                        <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> Agreed Caregiver Duties ({scope.duties.length}):
+                                                    </span>
+                                                    {scope.duties.length > 0 ? (
                                                         <div className="flex flex-wrap gap-1.5">
                                                             {scope.duties.map((duty: string) => (
                                                                 <span key={duty} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white text-emerald-900 border border-emerald-200/90 px-2 py-0.5 rounded-md shadow-2xs">
@@ -927,17 +970,17 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                 </span>
                                                             ))}
                                                         </div>
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-xs text-slate-600 italic">
-                                                        No duties checklist recorded for this service. Click Edit Details to add duties.
-                                                    </p>
-                                                )}
+                                                    ) : (
+                                                        <p className="text-xs text-slate-500 italic">
+                                                            No specific caregiver duties checklist recorded for this service cycle.
+                                                        </p>
+                                                    )}
+                                                </div>
 
                                                 {/* Special Instructions / Notes */}
                                                 {scope.instructions && (
                                                     <div className="p-2.5 bg-white/80 rounded-lg border border-emerald-100 text-xs text-slate-700 whitespace-pre-wrap">
-                                                        <span className="font-bold text-emerald-900 block mb-0.5 text-[10px] uppercase">Special Instructions:</span>
+                                                        <span className="font-bold text-emerald-900 block mb-0.5 text-[10px] uppercase">Special Instructions &amp; Shift Notes:</span>
                                                         {scope.instructions}
                                                     </div>
                                                 )}
@@ -1128,10 +1171,11 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
 
                                                         {/* Patient Care Requirements & Specifics for this specific cycle */}
                                                         {(() => {
-                                                            const scope = resolveServiceCareScope(pastSvc, lead?.work_form_data, latestConsent);
+                                                            const scope = resolveServiceCareScope(pastSvc, lead?.work_form_data, lead?.client_consents, lead);
                                                             return (
-                                                                <div className="p-3.5 rounded-xl bg-teal-50/70 border border-teal-100 space-y-2.5">
-                                                                    <div className="flex items-center justify-between gap-3">
+                                                                <div className="p-4 rounded-xl bg-teal-50/70 border border-teal-100 space-y-3">
+                                                                    {/* Header */}
+                                                                    <div className="flex items-center justify-between gap-3 border-b border-teal-200/60 pb-2.5">
                                                                         <div className="flex items-center gap-2 flex-wrap">
                                                                             <HeartPulse className="w-4 h-4 text-teal-700 shrink-0" />
                                                                             <span className="text-[11px] font-bold uppercase tracking-wider text-teal-900">
@@ -1142,37 +1186,76 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                                 {scope.duties.length > 0 ? ` • ${scope.duties.length} Duties` : ''}
                                                                             </span>
                                                                         </div>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => setEditingServiceCareNotes({
-                                                                                id: pastSvc.id,
-                                                                                serviceName: formatServiceLabel(pastSvc.service_type, pastSvc.notes),
-                                                                                notes: scope.instructions,
-                                                                                hoursPerDay: pastSvc.hours_per_day || 10,
-                                                                                duties: [...scope.duties],
-                                                                                formType: scope.formType,
-                                                                                patientName: scope.patientName || latestConsent?.patient_name || lead?.name || ''
-                                                                            })}
-                                                                            className="px-2.5 py-1 text-xs font-semibold text-teal-800 bg-white hover:bg-teal-100/70 border border-teal-200 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
-                                                                            title="Edit patient care requirements or shift hours for this service"
-                                                                        >
-                                                                            <Pencil className="w-3 h-3 text-teal-600" /> Edit Details
-                                                                        </button>
+                                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-teal-800 bg-white/90 px-2 py-0.5 rounded border border-teal-200 shadow-2xs">
+                                                                            Read-Only
+                                                                        </span>
                                                                     </div>
 
-                                                                    {scope.patientName && (
-                                                                        <div className="text-xs text-slate-700">
-                                                                            <span className="font-semibold text-slate-500">Care Recipient / Patient: </span>
-                                                                            <span className="font-bold text-slate-800">{scope.patientName}</span>
+                                                                    {/* Patient Care Profile Details Grid */}
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                                                                        {/* 1. Patient Name */}
+                                                                        <div className="bg-white/80 p-2.5 rounded-lg border border-teal-100 shadow-2xs">
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                                                <User className="w-3 h-3 text-teal-600" /> Care Recipient / Patient
+                                                                            </span>
+                                                                            <span className="font-bold text-slate-800 text-sm">{scope.patientName || '—'}</span>
+                                                                        </div>
+
+                                                                        {/* 2. Age & Weight */}
+                                                                        <div className="bg-white/80 p-2.5 rounded-lg border border-teal-100 shadow-2xs">
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                                                <Activity className="w-3 h-3 text-teal-600" /> Age &amp; Weight
+                                                                            </span>
+                                                                            <span className="font-semibold text-slate-800">
+                                                                                {scope.age ? formatAgeDisplay(scope.age, scope.ageUnit) : '—'}
+                                                                                {!String(scope.age || '').toLowerCase().includes('kg') && scope.weight ? `, ${scope.weight} kg` : ''}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        {/* 3. Guardian / Relative */}
+                                                                        <div className="bg-white/80 p-2.5 rounded-lg border border-teal-100 shadow-2xs">
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                                                <Users className="w-3 h-3 text-teal-600" /> Relative / Guardian
+                                                                            </span>
+                                                                            <span className="font-semibold text-slate-800">{scope.relativeName || '—'}</span>
+                                                                        </div>
+
+                                                                        {/* 4. Contact Phone */}
+                                                                        <div className="bg-white/80 p-2.5 rounded-lg border border-teal-100 shadow-2xs">
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                                                <Phone className="w-3 h-3 text-teal-600" /> Contact Number
+                                                                            </span>
+                                                                            <span className="font-semibold text-slate-800">
+                                                                                {scope.contactNumber || '—'}
+                                                                                {scope.altContactNumber ? ` / ${scope.altContactNumber}` : ''}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        {/* 5. Care Location / Address */}
+                                                                        <div className="bg-white/80 p-2.5 rounded-lg border border-teal-100 shadow-2xs sm:col-span-2">
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5 flex items-center gap-1">
+                                                                                <MapPin className="w-3 h-3 text-teal-600" /> Patient Care Location
+                                                                            </span>
+                                                                            <span className="font-medium text-slate-800 line-clamp-2">{scope.address || '—'}</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Medical Condition / Health Notes if present */}
+                                                                    {scope.medicalCondition && (
+                                                                        <div className="p-2.5 bg-white/80 rounded-lg border border-teal-100 text-xs text-slate-700">
+                                                                            <span className="font-bold text-teal-950 block mb-0.5 text-[10px] uppercase flex items-center gap-1">
+                                                                                <AlertCircle className="w-3 h-3 text-teal-600" /> Medical Condition / Health Notes:
+                                                                            </span>
+                                                                            {scope.medicalCondition}
                                                                         </div>
                                                                     )}
 
-                                                                    {/* Duties checklist chips */}
-                                                                    {scope.duties.length > 0 ? (
-                                                                        <div className="space-y-1.5">
-                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-teal-950 flex items-center gap-1">
-                                                                                <CheckSquare className="w-3 h-3 text-teal-600" /> Agreed Caregiver Duties:
-                                                                            </span>
+                                                                    {/* Agreed Caregiver Duties */}
+                                                                    <div className="space-y-1.5 pt-1 border-t border-teal-200/50">
+                                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-teal-950 flex items-center gap-1">
+                                                                            <CheckSquare className="w-3.5 h-3.5 text-teal-600" /> Agreed Caregiver Duties ({scope.duties.length}):
+                                                                        </span>
+                                                                        {scope.duties.length > 0 ? (
                                                                             <div className="flex flex-wrap gap-1.5">
                                                                                 {scope.duties.map((duty: string) => (
                                                                                     <span key={duty} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white text-teal-900 border border-teal-200/90 px-2 py-0.5 rounded-md shadow-2xs">
@@ -1181,17 +1264,17 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                                     </span>
                                                                                 ))}
                                                                             </div>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <p className="text-xs text-slate-600 italic">
-                                                                            No duties checklist recorded for this service. Click Edit Details to add duties.
-                                                                        </p>
-                                                                    )}
+                                                                        ) : (
+                                                                            <p className="text-xs text-slate-500 italic">
+                                                                                No specific caregiver duties checklist recorded for this service cycle.
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
 
                                                                     {/* Special Instructions / Notes */}
                                                                     {scope.instructions && (
                                                                         <div className="p-2.5 bg-white/80 rounded-lg border border-teal-100 text-xs text-slate-700 whitespace-pre-wrap">
-                                                                            <span className="font-bold text-teal-900 block mb-0.5 text-[10px] uppercase">Special Instructions:</span>
+                                                                            <span className="font-bold text-teal-900 block mb-0.5 text-[10px] uppercase">Special Instructions &amp; Shift Notes:</span>
                                                                             {scope.instructions}
                                                                         </div>
                                                                     )}
@@ -1738,225 +1821,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                 </div>
             )}
 
-            {/* Edit Service Care Requirements & Shift Hours Modal */}
-            {editingServiceCareNotes && (() => {
-                const isBaby = editingServiceCareNotes.formType === 'baby_care_form';
-                const dutyDict = isBaby ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
-                const dutyEntries = Object.entries(dutyDict);
-                const currentDuties = editingServiceCareNotes.duties || [];
-                const allSelected = dutyEntries.length > 0 && currentDuties.length === dutyEntries.length;
 
-                const toggleDuty = (dutyKey: string) => {
-                    const next = currentDuties.includes(dutyKey)
-                        ? currentDuties.filter(k => k !== dutyKey)
-                        : [...currentDuties, dutyKey];
-                    setEditingServiceCareNotes({
-                        ...editingServiceCareNotes,
-                        duties: next,
-                    });
-                };
-
-                const toggleAll = () => {
-                    setEditingServiceCareNotes({
-                        ...editingServiceCareNotes,
-                        duties: allSelected ? [] : dutyEntries.map(([k]) => k),
-                    });
-                };
-
-                return (
-                    <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setEditingServiceCareNotes(null)}>
-                        <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col p-6 space-y-4" onClick={e => e.stopPropagation()}>
-                            {/* Modal Header */}
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600">
-                                        <HeartPulse className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-base font-bold text-slate-900">
-                                            Edit Service Care Scope &amp; Shift
-                                        </h3>
-                                        <p className="text-xs text-slate-500 font-medium">
-                                            Cycle: <span className="font-semibold text-teal-700">{editingServiceCareNotes.serviceName}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                                <button onClick={() => setEditingServiceCareNotes(null)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors">
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            {/* Modal Body (Scrollable) */}
-                            <div className="space-y-4 text-sm overflow-y-auto pr-1 flex-1">
-                                {/* Service Form Type Selector */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                                        Care Category / Form Type
-                                    </label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setEditingServiceCareNotes({
-                                                ...editingServiceCareNotes,
-                                                formType: 'baby_care_form',
-                                            })}
-                                            className={`p-2.5 rounded-xl border text-left font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer ${
-                                                isBaby
-                                                    ? 'bg-teal-50/80 border-teal-400 text-teal-900 shadow-2xs'
-                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <span className="text-base">👶</span>
-                                            <div>
-                                                <div className="font-bold">Baby Care Form</div>
-                                                <div className="text-[10px] text-slate-400 font-normal">Newborn, mother &amp; infant care duties</div>
-                                            </div>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setEditingServiceCareNotes({
-                                                ...editingServiceCareNotes,
-                                                formType: 'patient_care_form',
-                                            })}
-                                            className={`p-2.5 rounded-xl border text-left font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer ${
-                                                !isBaby
-                                                    ? 'bg-teal-50/80 border-teal-400 text-teal-900 shadow-2xs'
-                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <span className="text-base">🩺</span>
-                                            <div>
-                                                <div className="font-bold">Patient / Old Age Care</div>
-                                                <div className="text-[10px] text-slate-400 font-normal">Elderly, bedside &amp; nursing duties</div>
-                                            </div>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Patient Name & Shift Hours Row */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                            Care Recipient / Patient Name
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={editingServiceCareNotes.patientName}
-                                            onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, patientName: e.target.value })}
-                                            placeholder="e.g. Baby of Tina Kachiwala"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-[#1AA6A8]"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                            Shift Working Hours (Hours/Day)
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="24"
-                                            value={editingServiceCareNotes.hoursPerDay}
-                                            onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, hoursPerDay: Number(e.target.value) })}
-                                            placeholder="e.g. 10, 12, 24"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-[#1AA6A8]"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Agreed Caregiver Duties Checklist */}
-                                <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2.5">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                                <CheckSquare className="w-4 h-4 text-teal-600" /> Agreed Caregiver Duties Checklist
-                                            </label>
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200">
-                                                {currentDuties.length} / {dutyEntries.length} Selected
-                                            </span>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={toggleAll}
-                                            className="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline cursor-pointer"
-                                        >
-                                            {allSelected ? 'Clear All' : 'Select All'}
-                                        </button>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                                        {dutyEntries.map(([key, label]) => {
-                                            const checked = currentDuties.includes(key);
-                                            return (
-                                                <label
-                                                    key={key}
-                                                    onClick={() => toggleDuty(key)}
-                                                    className={`flex items-center gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
-                                                        checked
-                                                            ? 'bg-white border-teal-500 shadow-2xs text-teal-950 font-semibold'
-                                                            : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white'
-                                                    }`}
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={checked}
-                                                        onChange={() => {}} // handled by parent onClick
-                                                        className="w-4 h-4 rounded text-teal-600 border-slate-300 focus:ring-teal-500 cursor-pointer pointer-events-none"
-                                                    />
-                                                    <span className="select-none flex-1 leading-snug">{label}</span>
-                                                </label>
-                                            );
-                                        })}
-                                    </div>
-                                    <p className="text-[11px] text-slate-400">
-                                        Check all daily tasks the caregiver is authorized and agreed to perform for this cycle.
-                                    </p>
-                                </div>
-
-                                {/* Special Instructions / Notes */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                        Special Care Instructions &amp; Shift Notes (This Cycle)
-                                    </label>
-                                    <textarea
-                                        rows={3}
-                                        value={editingServiceCareNotes.notes}
-                                        onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, notes: e.target.value })}
-                                        placeholder="e.g. Needs night shift assistance with burping and infant soothing. Warm water bath only."
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
-                                    />
-                                    <p className="text-[11px] text-slate-400 mt-1">
-                                        Details entered here are locked to this service cycle and won't disrupt past service logs or invoice items.
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Modal Footer */}
-                            <div className="flex items-center justify-between pt-3 border-t border-slate-100 shrink-0">
-                                <span className="text-[11px] text-slate-400 hidden sm:inline">
-                                    Stored per service cycle in database
-                                </span>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditingServiceCareNotes(null)}
-                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg cursor-pointer"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={handleSaveServiceCareNotes}
-                                        disabled={isSavingServiceNotes}
-                                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm cursor-pointer"
-                                    >
-                                        {isSavingServiceNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                        Save Service Scope
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
         </div>
     );
 }
