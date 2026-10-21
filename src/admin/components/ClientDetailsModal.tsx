@@ -1,9 +1,97 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse } from 'lucide-react';
+import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse, ListChecks, CheckSquare } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../../utils/generateInvoicePdf';
 import { toast } from 'sonner';
+
+const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
+    pateint_bath: 'Patient Bath',
+    sponge_bath: 'Sponge Bath',
+    massage: 'Massage',
+    diaper_change: 'Diaper Change',
+    feeding: 'Feeding',
+    medication: 'Medication',
+    exercise: 'Exercise',
+    clean_room: 'Clean Room',
+    cut_nails: 'Grooming (Hair/Nails)',
+    changing_cloths: 'Change/Wash Clothes',
+    change_bedshit: 'Change Bedsheet',
+    take_into_hospital: 'Take to Hospital',
+    take_in_washroom: 'Take to Washroom',
+    urine_bag: 'Urine Bag Care',
+    dressing: 'Wound Dressing',
+    feed_rt_tube: 'RT Tube Feeding',
+};
+
+const BABY_CARE_DUTY_LABELS: Record<string, string> = {
+    sponge_bath: 'Sponge Bath',
+    massage: 'Massage & Oil Care',
+    diaper_change: 'Diaper Change',
+    feeding: 'Feeding & Burping',
+    medication: 'Medication',
+    exercise: 'Exercise & Tummy Time',
+    clean_room: 'Clean Room/Nursery',
+    cut_nails: 'Grooming (Hair/Nails)',
+    changing_cloths: 'Change/Wash Clothes',
+    change_bedshit: 'Change Bedsheet',
+    pateint_bath: 'Baby Bath',
+    take_in_washroom: 'Take to Washroom',
+    urine_bag: 'Urine Bag Care',
+    dressing: 'Wound Dressing',
+    feed_rt_tube: 'RT Tube Feeding',
+};
+
+const getDutyLabel = (dutyId: string, formType?: string): string => {
+    const map = formType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+    return map[dutyId] || dutyId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+const resolveServiceCareScope = (svc: any, leadWorkForm: any, consent: any) => {
+    let duties: string[] = [];
+    let instructions = '';
+    let patientName = consent?.patient_name || '';
+    const sType = String(svc?.service_type || svc?.notes || '').toLowerCase();
+    let formType: 'baby_care_form' | 'patient_care_form' = /baby|maternity|jhapa|japa|infant|child/.test(sType)
+        ? 'baby_care_form'
+        : 'patient_care_form';
+
+    // 1. Try parsing JSON from svc.notes
+    if (svc?.notes && typeof svc.notes === 'string') {
+        const trimmed = svc.notes.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed.duties)) {
+                    duties = parsed.duties;
+                    instructions = parsed.instructions || parsed.other_work || '';
+                    if (parsed.patient_name || parsed.patientName) patientName = parsed.patient_name || parsed.patientName;
+                    if (parsed.form_type) formType = parsed.form_type;
+                    return { duties, instructions, patientName, formType, isCustom: true };
+                }
+            } catch (e) {}
+        } else {
+            instructions = trimmed;
+        }
+    }
+
+    // 2. Match with leadWorkForm if form_type aligns with service
+    if (leadWorkForm && Array.isArray(leadWorkForm.duties) && leadWorkForm.duties.length > 0) {
+        const isBabySvc = /baby|maternity|jhapa|japa|infant|child/.test(sType);
+        const isPatientSvc = /old age|patient|bedside|elderly|nursing/.test(sType);
+
+        if ((isBabySvc && leadWorkForm.form_type === 'baby_care_form') ||
+            (isPatientSvc && leadWorkForm.form_type === 'patient_care_form')) {
+            duties = leadWorkForm.duties;
+            if (!instructions) instructions = leadWorkForm.other_work || '';
+            if (leadWorkForm.patient_name) patientName = leadWorkForm.patient_name;
+            formType = leadWorkForm.form_type;
+            return { duties, instructions, patientName, formType, isMasterForm: true };
+        }
+    }
+
+    return { duties, instructions, patientName, formType, isFallback: true };
+};
 
 interface ClientDetailsModalProps {
     client: any;
@@ -56,6 +144,9 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
         serviceName: string;
         notes: string;
         hoursPerDay: number;
+        duties: string[];
+        formType: 'baby_care_form' | 'patient_care_form';
+        patientName: string;
     } | null>(null);
     const [isSavingServiceNotes, setIsSavingServiceNotes] = useState(false);
     const [generatingPdfBillId, setGeneratingPdfBillId] = useState<string | null>(null);
@@ -64,14 +155,45 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
         if (!editingServiceCareNotes) return;
         setIsSavingServiceNotes(true);
         try {
+            const hasDuties = editingServiceCareNotes.duties && editingServiceCareNotes.duties.length > 0;
+            const payloadToStore = hasDuties
+                ? JSON.stringify({
+                    duties: editingServiceCareNotes.duties,
+                    instructions: editingServiceCareNotes.notes.trim(),
+                    form_type: editingServiceCareNotes.formType,
+                    patient_name: editingServiceCareNotes.patientName.trim()
+                })
+                : editingServiceCareNotes.notes.trim();
+
             const { error } = await supabase
                 .from('services')
                 .update({
-                    notes: editingServiceCareNotes.notes,
+                    notes: payloadToStore,
                     hours_per_day: Number(editingServiceCareNotes.hoursPerDay) || 10
                 })
                 .eq('id', editingServiceCareNotes.id);
             if (error) throw error;
+
+            // Also mirror to crm_leads.work_form_data if duties are specified
+            if (hasDuties) {
+                try {
+                    await supabase
+                        .from('crm_leads')
+                        .update({
+                            work_form_data: {
+                                form_type: editingServiceCareNotes.formType,
+                                patient_name: editingServiceCareNotes.patientName.trim(),
+                                duties: editingServiceCareNotes.duties,
+                                other_work: editingServiceCareNotes.notes.trim(),
+                                updated_at: new Date().toISOString()
+                            }
+                        })
+                        .eq('id', clientId);
+                } catch (e) {
+                    console.warn('Could not mirror to crm_leads.work_form_data', e);
+                }
+            }
+
             toast.success('Service care requirements & shift hours updated!');
             setEditingServiceCareNotes(null);
             await fetchDetails();
@@ -751,34 +873,77 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                     </div>
 
                                     {/* Patient Care Requirements & Shift Scope (This Active Service) */}
-                                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-start justify-between gap-3">
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-1.5">
-                                                <HeartPulse className="w-3.5 h-3.5 text-emerald-700" />
-                                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-950">
-                                                    Patient Care Requirements &amp; Shift Scope (This Active Service)
-                                                </span>
+                                    {(() => {
+                                        const scope = resolveServiceCareScope(activeService, lead?.work_form_data, latestConsent);
+                                        return (
+                                            <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 space-y-2.5">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <HeartPulse className="w-4 h-4 text-emerald-700 shrink-0" />
+                                                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-950">
+                                                            Patient Care Requirements &amp; Shift Scope (This Active Service)
+                                                        </span>
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                            {scope.formType === 'baby_care_form' ? '👶 Baby Care' : '🩺 Patient Care'}
+                                                            {scope.duties.length > 0 ? ` • ${scope.duties.length} Duties` : ''}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditingServiceCareNotes({
+                                                            id: activeService.id,
+                                                            serviceName: formatServiceLabel(activeService.service_type, activeService.notes),
+                                                            notes: scope.instructions,
+                                                            hoursPerDay: activeService.hours_per_day || 10,
+                                                            duties: [...scope.duties],
+                                                            formType: scope.formType,
+                                                            patientName: scope.patientName || latestConsent?.patient_name || lead?.name || ''
+                                                        })}
+                                                        className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-100/70 border border-emerald-300 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
+                                                        title="Edit patient care requirements or shift hours for this service"
+                                                    >
+                                                        <Pencil className="w-3 h-3 text-emerald-600" /> Edit Details
+                                                    </button>
+                                                </div>
+
+                                                {scope.patientName && (
+                                                    <div className="text-xs text-slate-700">
+                                                        <span className="font-semibold text-slate-500">Care Recipient / Patient: </span>
+                                                        <span className="font-bold text-slate-800">{scope.patientName}</span>
+                                                    </div>
+                                                )}
+
+                                                {/* Duties checklist chips */}
+                                                {scope.duties.length > 0 ? (
+                                                    <div className="space-y-1.5">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1">
+                                                            <CheckSquare className="w-3 h-3 text-emerald-600" /> Agreed Caregiver Duties:
+                                                        </span>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {scope.duties.map((duty: string) => (
+                                                                <span key={duty} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white text-emerald-900 border border-emerald-200/90 px-2 py-0.5 rounded-md shadow-2xs">
+                                                                    <Check className="w-3 h-3 text-emerald-600" />
+                                                                    {getDutyLabel(duty, scope.formType)}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-slate-600 italic">
+                                                        No duties checklist recorded for this service. Click Edit Details to add duties.
+                                                    </p>
+                                                )}
+
+                                                {/* Special Instructions / Notes */}
+                                                {scope.instructions && (
+                                                    <div className="p-2.5 bg-white/80 rounded-lg border border-emerald-100 text-xs text-slate-700 whitespace-pre-wrap">
+                                                        <span className="font-bold text-emerald-900 block mb-0.5 text-[10px] uppercase">Special Instructions:</span>
+                                                        {scope.instructions}
+                                                    </div>
+                                                )}
                                             </div>
-                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">
-                                                {activeService.notes?.trim()
-                                                    ? activeService.notes
-                                                    : `Active ${formatServiceLabel(activeService.service_type, activeService.notes)} service with ${activeService.hours_per_day || 10}-Hour daily shift. Caregiver protocols and patient requirements are managed for this specific cycle.`}
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setEditingServiceCareNotes({
-                                                id: activeService.id,
-                                                serviceName: formatServiceLabel(activeService.service_type, activeService.notes),
-                                                notes: activeService.notes || '',
-                                                hoursPerDay: activeService.hours_per_day || 10
-                                            })}
-                                            className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-100/70 border border-emerald-300 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
-                                            title="Edit patient care requirements or shift hours for this service"
-                                        >
-                                            <Pencil className="w-3 h-3 text-emerald-600" /> Edit Details
-                                        </button>
-                                    </div>
+                                        );
+                                    })()}
 
                                     {/* Monthly Billing Ledger for this active service */}
                                     <div className="pt-3 border-t border-slate-100">
@@ -962,34 +1127,77 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                         </div>
 
                                                         {/* Patient Care Requirements & Specifics for this specific cycle */}
-                                                        <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-100 flex items-start justify-between gap-3">
-                                                            <div className="space-y-1">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <HeartPulse className="w-3.5 h-3.5 text-teal-700" />
-                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-900">
-                                                                        Patient Care Requirements &amp; Shift Scope (This Service)
-                                                                    </span>
+                                                        {(() => {
+                                                            const scope = resolveServiceCareScope(pastSvc, lead?.work_form_data, latestConsent);
+                                                            return (
+                                                                <div className="p-3.5 rounded-xl bg-teal-50/70 border border-teal-100 space-y-2.5">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <HeartPulse className="w-4 h-4 text-teal-700 shrink-0" />
+                                                                            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-900">
+                                                                                Patient Care Requirements &amp; Shift Scope (This Service)
+                                                                            </span>
+                                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200">
+                                                                                {scope.formType === 'baby_care_form' ? '👶 Baby Care' : '🩺 Patient Care'}
+                                                                                {scope.duties.length > 0 ? ` • ${scope.duties.length} Duties` : ''}
+                                                                            </span>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setEditingServiceCareNotes({
+                                                                                id: pastSvc.id,
+                                                                                serviceName: formatServiceLabel(pastSvc.service_type, pastSvc.notes),
+                                                                                notes: scope.instructions,
+                                                                                hoursPerDay: pastSvc.hours_per_day || 10,
+                                                                                duties: [...scope.duties],
+                                                                                formType: scope.formType,
+                                                                                patientName: scope.patientName || latestConsent?.patient_name || lead?.name || ''
+                                                                            })}
+                                                                            className="px-2.5 py-1 text-xs font-semibold text-teal-800 bg-white hover:bg-teal-100/70 border border-teal-200 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
+                                                                            title="Edit patient care requirements or shift hours for this service"
+                                                                        >
+                                                                            <Pencil className="w-3 h-3 text-teal-600" /> Edit Details
+                                                                        </button>
+                                                                    </div>
+
+                                                                    {scope.patientName && (
+                                                                        <div className="text-xs text-slate-700">
+                                                                            <span className="font-semibold text-slate-500">Care Recipient / Patient: </span>
+                                                                            <span className="font-bold text-slate-800">{scope.patientName}</span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Duties checklist chips */}
+                                                                    {scope.duties.length > 0 ? (
+                                                                        <div className="space-y-1.5">
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-teal-950 flex items-center gap-1">
+                                                                                <CheckSquare className="w-3 h-3 text-teal-600" /> Agreed Caregiver Duties:
+                                                                            </span>
+                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                {scope.duties.map((duty: string) => (
+                                                                                    <span key={duty} className="inline-flex items-center gap-1 text-[11px] font-medium bg-white text-teal-900 border border-teal-200/90 px-2 py-0.5 rounded-md shadow-2xs">
+                                                                                        <Check className="w-3 h-3 text-teal-600" />
+                                                                                        {getDutyLabel(duty, scope.formType)}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <p className="text-xs text-slate-600 italic">
+                                                                            No duties checklist recorded for this service. Click Edit Details to add duties.
+                                                                        </p>
+                                                                    )}
+
+                                                                    {/* Special Instructions / Notes */}
+                                                                    {scope.instructions && (
+                                                                        <div className="p-2.5 bg-white/80 rounded-lg border border-teal-100 text-xs text-slate-700 whitespace-pre-wrap">
+                                                                            <span className="font-bold text-teal-900 block mb-0.5 text-[10px] uppercase">Special Instructions:</span>
+                                                                            {scope.instructions}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                                <p className="text-xs text-slate-700 whitespace-pre-wrap">
-                                                                    {pastSvc.notes?.trim()
-                                                                        ? pastSvc.notes
-                                                                        : `Specialized ${formatServiceLabel(pastSvc.service_type, pastSvc.notes)} service with ${pastSvc.hours_per_day || 10}-Hour daily shift. Caregiver protocols and patient requirements were managed specifically for this service cycle.`}
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setEditingServiceCareNotes({
-                                                                    id: pastSvc.id,
-                                                                    serviceName: formatServiceLabel(pastSvc.service_type, pastSvc.notes),
-                                                                    notes: pastSvc.notes || '',
-                                                                    hoursPerDay: pastSvc.hours_per_day || 10
-                                                                })}
-                                                                className="px-2.5 py-1 text-xs font-semibold text-teal-800 bg-white hover:bg-teal-100/70 border border-teal-200 rounded-md transition-colors shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
-                                                                title="Edit patient care requirements or shift hours for this service"
-                                                            >
-                                                                <Pencil className="w-3 h-3 text-teal-600" /> Edit Details
-                                                            </button>
-                                                        </div>
+                                                            );
+                                                        })()}
 
                                                         {/* Invoices & Settlement Bills for this cycle */}
                                                         <div className="pt-2 border-t border-slate-100 space-y-2">
@@ -1203,6 +1411,71 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                 )}
                             </div>
                         </div>
+
+                        {/* Caregiver Work Form & Duties Agreement */}
+                        {(() => {
+                            const workForm = lead?.work_form_data;
+                            const hasWf = workForm && Array.isArray(workForm.duties) && workForm.duties.length > 0;
+                            const formTitle = workForm?.form_type === 'baby_care_form' ? 'Baby Care Work Form' : 'Patient Care Work Form';
+
+                            return (
+                                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
+                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                        <div>
+                                            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                                                <ListChecks className="w-4 h-4 text-primary" /> Master Caregiver Duties &amp; Work Form
+                                            </h3>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">Agreed daily checklist and caregiver task protocols</p>
+                                        </div>
+                                        {hasWf ? (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                Recorded ✓ ({workForm.duties.length} Duties)
+                                            </span>
+                                        ) : (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                                Not Recorded
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {hasWf ? (
+                                        <div className="space-y-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                <span className="font-semibold text-slate-700">
+                                                    Form: <span className="font-bold text-slate-900">{formTitle}</span>
+                                                    {workForm.patient_name && ` • Patient: ${workForm.patient_name}`}
+                                                </span>
+                                                {workForm.updated_at && (
+                                                    <span className="text-[10px] text-slate-400">
+                                                        Last updated: {new Date(workForm.updated_at).toLocaleDateString()}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {workForm.duties.map((duty: string) => (
+                                                    <span key={duty} className="inline-flex items-center gap-1 text-[11px] font-medium bg-emerald-50/80 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded-md shadow-2xs">
+                                                        <Check className="w-3 h-3 text-emerald-600" />
+                                                        {getDutyLabel(duty, workForm.form_type)}
+                                                    </span>
+                                                ))}
+                                            </div>
+
+                                            {workForm.other_work && (
+                                                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-700">
+                                                    <span className="font-bold text-slate-900 block mb-0.5 text-[10px] uppercase">Special Instructions / Other Work:</span>
+                                                    {workForm.other_work}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-400 italic">
+                                            No master work duties form recorded for this client. Duties can also be added individually per service cycle above.
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
 
                         {/* All Notes & Requirements */}
@@ -1466,76 +1739,224 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
             )}
 
             {/* Edit Service Care Requirements & Shift Hours Modal */}
-            {editingServiceCareNotes && (
-                <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setEditingServiceCareNotes(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                            <div className="flex items-center gap-2">
-                                <HeartPulse className="w-5 h-5 text-teal-600" />
+            {editingServiceCareNotes && (() => {
+                const isBaby = editingServiceCareNotes.formType === 'baby_care_form';
+                const dutyDict = isBaby ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                const dutyEntries = Object.entries(dutyDict);
+                const currentDuties = editingServiceCareNotes.duties || [];
+                const allSelected = dutyEntries.length > 0 && currentDuties.length === dutyEntries.length;
+
+                const toggleDuty = (dutyKey: string) => {
+                    const next = currentDuties.includes(dutyKey)
+                        ? currentDuties.filter(k => k !== dutyKey)
+                        : [...currentDuties, dutyKey];
+                    setEditingServiceCareNotes({
+                        ...editingServiceCareNotes,
+                        duties: next,
+                    });
+                };
+
+                const toggleAll = () => {
+                    setEditingServiceCareNotes({
+                        ...editingServiceCareNotes,
+                        duties: allSelected ? [] : dutyEntries.map(([k]) => k),
+                    });
+                };
+
+                return (
+                    <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setEditingServiceCareNotes(null)}>
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600">
+                                        <HeartPulse className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-bold text-slate-900">
+                                            Edit Service Care Scope &amp; Shift
+                                        </h3>
+                                        <p className="text-xs text-slate-500 font-medium">
+                                            Cycle: <span className="font-semibold text-teal-700">{editingServiceCareNotes.serviceName}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setEditingServiceCareNotes(null)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Modal Body (Scrollable) */}
+                            <div className="space-y-4 text-sm overflow-y-auto pr-1 flex-1">
+                                {/* Service Form Type Selector */}
                                 <div>
-                                    <h3 className="text-base font-bold text-slate-900">
-                                        Edit Service Care Details &amp; Shift
-                                    </h3>
-                                    <p className="text-xs text-slate-500 font-medium">{editingServiceCareNotes.serviceName}</p>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                        Care Category / Form Type
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingServiceCareNotes({
+                                                ...editingServiceCareNotes,
+                                                formType: 'baby_care_form',
+                                            })}
+                                            className={`p-2.5 rounded-xl border text-left font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+                                                isBaby
+                                                    ? 'bg-teal-50/80 border-teal-400 text-teal-900 shadow-2xs'
+                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <span className="text-base">👶</span>
+                                            <div>
+                                                <div className="font-bold">Baby Care Form</div>
+                                                <div className="text-[10px] text-slate-400 font-normal">Newborn, mother &amp; infant care duties</div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingServiceCareNotes({
+                                                ...editingServiceCareNotes,
+                                                formType: 'patient_care_form',
+                                            })}
+                                            className={`p-2.5 rounded-xl border text-left font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+                                                !isBaby
+                                                    ? 'bg-teal-50/80 border-teal-400 text-teal-900 shadow-2xs'
+                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <span className="text-base">🩺</span>
+                                            <div>
+                                                <div className="font-bold">Patient / Old Age Care</div>
+                                                <div className="text-[10px] text-slate-400 font-normal">Elderly, bedside &amp; nursing duties</div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Patient Name & Shift Hours Row */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                            Care Recipient / Patient Name
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={editingServiceCareNotes.patientName}
+                                            onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, patientName: e.target.value })}
+                                            placeholder="e.g. Baby of Tina Kachiwala"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-[#1AA6A8]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                            Shift Working Hours (Hours/Day)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="24"
+                                            value={editingServiceCareNotes.hoursPerDay}
+                                            onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, hoursPerDay: Number(e.target.value) })}
+                                            placeholder="e.g. 10, 12, 24"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-[#1AA6A8]"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Agreed Caregiver Duties Checklist */}
+                                <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                <CheckSquare className="w-4 h-4 text-teal-600" /> Agreed Caregiver Duties Checklist
+                                            </label>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200">
+                                                {currentDuties.length} / {dutyEntries.length} Selected
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={toggleAll}
+                                            className="text-xs font-semibold text-teal-700 hover:text-teal-900 hover:underline cursor-pointer"
+                                        >
+                                            {allSelected ? 'Clear All' : 'Select All'}
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                                        {dutyEntries.map(([key, label]) => {
+                                            const checked = currentDuties.includes(key);
+                                            return (
+                                                <label
+                                                    key={key}
+                                                    onClick={() => toggleDuty(key)}
+                                                    className={`flex items-center gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                                                        checked
+                                                            ? 'bg-white border-teal-500 shadow-2xs text-teal-950 font-semibold'
+                                                            : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white'
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => {}} // handled by parent onClick
+                                                        className="w-4 h-4 rounded text-teal-600 border-slate-300 focus:ring-teal-500 cursor-pointer pointer-events-none"
+                                                    />
+                                                    <span className="select-none flex-1 leading-snug">{label}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">
+                                        Check all daily tasks the caregiver is authorized and agreed to perform for this cycle.
+                                    </p>
+                                </div>
+
+                                {/* Special Instructions / Notes */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                        Special Care Instructions &amp; Shift Notes (This Cycle)
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        value={editingServiceCareNotes.notes}
+                                        onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, notes: e.target.value })}
+                                        placeholder="e.g. Needs night shift assistance with burping and infant soothing. Warm water bath only."
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
+                                    />
+                                    <p className="text-[11px] text-slate-400 mt-1">
+                                        Details entered here are locked to this service cycle and won't disrupt past service logs or invoice items.
+                                    </p>
                                 </div>
                             </div>
-                            <button onClick={() => setEditingServiceCareNotes(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="space-y-3 text-sm">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                    Shift Working Hours (Hours/Day)
-                                </label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="24"
-                                    value={editingServiceCareNotes.hoursPerDay}
-                                    onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, hoursPerDay: Number(e.target.value) })}
-                                    placeholder="e.g. 10, 12, 24"
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-[#1AA6A8]"
-                                />
-                                <p className="text-[11px] text-slate-400 mt-1">Specify how many hours per day were agreed for this service cycle.</p>
+
+                            {/* Modal Footer */}
+                            <div className="flex items-center justify-between pt-3 border-t border-slate-100 shrink-0">
+                                <span className="text-[11px] text-slate-400 hidden sm:inline">
+                                    Stored per service cycle in database
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditingServiceCareNotes(null)}
+                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg cursor-pointer"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveServiceCareNotes}
+                                        disabled={isSavingServiceNotes}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm cursor-pointer"
+                                    >
+                                        {isSavingServiceNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                        Save Service Scope
+                                    </button>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                    Patient Care Requirements &amp; Instructions (This Cycle)
-                                </label>
-                                <textarea
-                                    rows={5}
-                                    value={editingServiceCareNotes.notes}
-                                    onChange={e => setEditingServiceCareNotes({ ...editingServiceCareNotes, notes: e.target.value })}
-                                    placeholder="e.g. Patient: Newborn baby and mother. Tasks: baby massage, hygiene, formula feeding, night support..."
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1AA6A8]"
-                                />
-                                <p className="text-[11px] text-slate-400 mt-1">
-                                    Details entered here apply specifically to this service cycle and will not overwrite other services or master consent.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                            <button
-                                type="button"
-                                onClick={() => setEditingServiceCareNotes(null)}
-                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleSaveServiceCareNotes}
-                                disabled={isSavingServiceNotes}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#1AA6A8] text-white rounded-lg hover:bg-[#148B8D] disabled:opacity-50 transition-all shadow-sm"
-                            >
-                                {isSavingServiceNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                                Save Service Details
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 }
