@@ -440,14 +440,14 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                     if (idToCopy) {
                                         navigator.clipboard.writeText(idToCopy);
                                         setCopiedClientId(true);
-                                        toast.success(`Client ID ${idToCopy} copied to clipboard!`);
+                                        toast.success(`Client Code ${idToCopy} copied to clipboard!`);
                                         setTimeout(() => setCopiedClientId(false), 2000);
                                     }
                                 }}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-teal-50 hover:bg-teal-100 hover:border-teal-300 border border-teal-200/80 text-xs font-mono font-bold text-teal-900 transition-all cursor-pointer group shadow-2xs"
-                                title={`Client Code: ${client?.displayId || 'CL'}\nFull UUID: ${clientId}\nClick to copy`}
+                                title={`Client Code: ${client?.displayId || 'CL'}\nDatabase UUID: ${clientId}\nClick to copy`}
                             >
-                                <span className="text-teal-600 text-[11px] font-sans font-medium">Client ID:</span>
+                                <span className="text-teal-600 text-[11px] font-sans font-medium">Client Code:</span>
                                 <span className="font-bold text-teal-950 text-xs select-all">
                                     {client?.displayId || clientId}
                                 </span>
@@ -879,27 +879,40 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                             {displayLocation}
                                         </span>
                                     </div>
-                                    <div className="flex flex-col pt-2 border-t border-slate-100">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Full Client ID</span>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <code className="text-xs font-mono bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 text-slate-800 select-all font-semibold break-all">
-                                                {clientId || '—'}
-                                            </code>
-                                            {clientId && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        navigator.clipboard.writeText(clientId);
-                                                        setCopiedClientId(true);
-                                                        toast.success('Full Client ID copied to clipboard!');
-                                                        setTimeout(() => setCopiedClientId(false), 2000);
-                                                    }}
-                                                    className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
-                                                    title="Copy full Client ID"
-                                                >
-                                                    {copiedClientId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                                                </button>
-                                            )}
+                                    <div className="flex flex-col pt-2 border-t border-slate-100 space-y-2.5">
+                                        <div>
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Client Code (Short ID)</span>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <code className="text-xs font-mono bg-teal-50 text-teal-900 border border-teal-200/80 px-2 py-0.5 rounded font-bold">
+                                                    {client?.displayId || '—'}
+                                                </code>
+                                                <span className="text-[11px] text-slate-400">Quick code for tables, staff &amp; invoices</span>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <span className="text-xs font-semibold text-slate-400 uppercase">Database System UUID</span>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <code className="text-xs font-mono bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 select-all font-semibold break-all">
+                                                    {clientId || '—'}
+                                                </code>
+                                                {clientId && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(clientId);
+                                                            setCopiedClientId(true);
+                                                            toast.success('Database UUID copied to clipboard!');
+                                                            setTimeout(() => setCopiedClientId(false), 2000);
+                                                        }}
+                                                        className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                                                        title="Copy Database UUID"
+                                                    >
+                                                        {copiedClientId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <span className="text-[10px] text-slate-400">Internal primary key in Supabase database</span>
                                         </div>
                                     </div>
                                 </div>

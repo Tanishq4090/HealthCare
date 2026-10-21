@@ -120,6 +120,7 @@ export default function Clients() {
         startDate: string;
         allCycles: any[];
         pastDepositTotal: number;
+        hasActiveService?: boolean;
     } | null>(null);
     const [depositPaymentMethod, setDepositPaymentMethod] = useState('UPI');
     const [depositPaymentAmount, setDepositPaymentAmount] = useState<number | ''>(5000);
@@ -140,21 +141,25 @@ export default function Clients() {
     };
 
     const openDepositModal = (client: any) => {
-        const activeSvc = client.activeService || (client.services && client.services[0]);
+        const activeSvc = client.activeService;
         const currentCycle = client.allServiceCycles?.find((c: any) => c.isCurrent);
-        const serviceName = currentCycle?.serviceType || (activeSvc?.service_type && activeSvc.service_type !== 'date_range' && activeSvc.service_type !== 'open_ended' ? activeSvc.service_type : 'Home Care Service');
-        const startDate = activeSvc?.start_date || new Date().toISOString().split('T')[0];
-        const amount = client.securityDeposit || 5000;
+        const latestCycle = client.allServiceCycles?.[0];
+        const hasActiveService = Boolean(activeSvc || client.activeAssignment || currentCycle);
+        const serviceName = currentCycle?.serviceType || (activeSvc?.service_type && activeSvc.service_type !== 'date_range' && activeSvc.service_type !== 'open_ended' ? activeSvc.service_type : (latestCycle?.serviceType || 'Home Care Service'));
+        const startDate = activeSvc?.start_date || currentCycle?.startDate || latestCycle?.startDate || new Date().toISOString().split('T')[0];
+        const amount = hasActiveService ? (client.securityDeposit || currentCycle?.depositAmount || 5000) : 0;
+        const depositStatus = hasActiveService ? (client.depositStatus || 'pending') : 'settled';
         const initialMethod = 'UPI';
 
         setDepositModal({
             client,
             depositAmount: amount,
-            depositStatus: client.depositStatus || 'pending',
+            depositStatus: depositStatus,
             serviceName,
             startDate,
             allCycles: client.allServiceCycles || [],
             pastDepositTotal: client.pastDepositTotal || 0,
+            hasActiveService,
         });
         setDepositPaymentAmount(amount);
         setDepositPaymentMethod(initialMethod);
@@ -697,7 +702,7 @@ export default function Clients() {
                     .eq('payment_type', 'deposit'),
                 supabase
                     .from('services')
-                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes, service_worker_assignments(id, employee_id, start_date, end_date, employees(status, full_name))')
+                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes, legacy_assignment_id, service_worker_assignments(id, employee_id, start_date, end_date, employees(status, full_name))')
             ]);
 
             if (paymentsError) throw paymentsError;
@@ -767,7 +772,7 @@ export default function Clients() {
             // If the same client starts another service after this ends, they should remain in Client Master Database.
             const qualifiedClients = (clientData || []).filter(c => {
                 const clientServices = services.filter(s => s.client_id === c.id);
-                const clientAssignments = assignments.filter(a => a.client_id === c.id);
+                const clientAssignments = assignments.filter(a => a.client_id === c.id && a.assignment_status !== 'cancelled' && !a.notes?.toLowerCase().includes('superseded'));
 
                 // Has this client ever had a deposit collected or settled, or payment recorded?
                 const hasCollectedOrSettledDeposit = clientServices.some(s => s.deposit_status === 'collected' || s.deposit_status === 'settled')
@@ -804,7 +809,7 @@ export default function Clients() {
 
             const enrichedClients = qualifiedClients.map(c => {
                 const clientServices = services.filter(s => s.client_id === c.id);
-                const clientAssignments = assignments.filter(a => a.client_id === c.id);
+                const clientAssignments = assignments.filter(a => a.client_id === c.id && a.assignment_status !== 'cancelled' && !a.notes?.toLowerCase().includes('superseded'));
 
                 const activeService = clientServices.find(s => s.status === 'active');
                 const activeAssignment = clientAssignments.find(a => a.assignment_status === 'active');
@@ -813,19 +818,16 @@ export default function Clients() {
                 const latestAssignment = [...clientAssignments].sort((a, b) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime())[0];
 
                 let depositAmount = 0;
-                let depositStatus: 'collected' | 'pending' | 'settled' = 'collected';
+                let depositStatus: 'collected' | 'pending' | 'settled' = 'settled';
 
                 if (activeService) {
                     depositAmount = Number(activeService.deposit_amount) || 5000;
                     depositStatus = (activeService.deposit_status as 'collected' | 'pending' | 'settled') || 'pending';
-                } else if (latestService) {
-                    depositAmount = Number(latestService.deposit_amount) || 0;
-                    depositStatus = (latestService.deposit_status as 'collected' | 'pending' | 'settled') || 'settled';
                 } else if (activeAssignment) {
                     depositAmount = Number(activeAssignment.deposit_amount) || 0;
                     depositStatus = (Number(activeAssignment.deposit_paid) >= depositAmount && depositAmount > 0) ? 'collected' : 'pending';
                 } else {
-                    depositAmount = paidDepositByClientName[normalizeClientName(c.client_name)] || 0;
+                    depositAmount = 0;
                     depositStatus = 'settled';
                 }
 
@@ -851,7 +853,7 @@ export default function Clients() {
                 if (clientServices.length > 0) {
                     const sortedServices = [...clientServices].sort((a, b) => new Date(b.created_at || b.start_date || 0).getTime() - new Date(a.created_at || a.start_date || 0).getTime());
                     sortedServices.forEach((s, sIdx) => {
-                        const isCurrent = activeService ? s.id === activeService.id : s.id === latestService?.id;
+                        const isCurrent = activeService ? s.id === activeService.id : false;
                         const nextSvc = sortedServices[sIdx - 1];
                         const cycleStartDate = s.start_date || s.created_at || c.created_at;
                         const cycleEndDate = isCurrent ? (s.end_date || null) : (s.end_date || (nextSvc ? (nextSvc.start_date || nextSvc.created_at) : (activeService?.start_date || null)));
@@ -868,33 +870,29 @@ export default function Clients() {
                             depositStatus: isCurrent ? depositStatus : (s.deposit_status || 'settled'),
                         });
                     });
-                }
-                
-                // Also incorporate any historical assignments not already represented in services
-                if (clientAssignments.length > 0) {
-                    const sortedAsgns = [...clientAssignments].sort((a, b) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime());
+                } else if (clientAssignments.length > 0) {
+                    // Fall back to historical assignments ONLY if client has NO records in services table
+                    const validAsgns = clientAssignments.filter(a => 
+                        a.assignment_status !== 'cancelled' && 
+                        !a.notes?.toLowerCase().includes('superseded')
+                    );
+                    const sortedAsgns = [...validAsgns].sort((a, b) => new Date(b.assigned_at || b.start_date || 0).getTime() - new Date(a.assigned_at || a.start_date || 0).getTime());
                     sortedAsgns.forEach(a => {
-                        const alreadyRepresented = allServiceCycles.some(cyc => 
-                            (cyc.id === a.id) || 
-                            (a.start_date && cyc.startDate && a.start_date.split('T')[0] === cyc.startDate.split('T')[0])
-                        );
-                        if (!alreadyRepresented) {
-                            const isCurrent = !activeService && (activeAssignment ? a.id === activeAssignment.id : a.id === latestAssignment?.id);
-                            const cycleStartDate = a.start_date || a.assigned_at || c.created_at;
-                            const cycleEndDate = isCurrent ? (a.end_date || null) : (a.end_date || (activeService?.start_date || null));
-                            const cycleSettledDate = isCurrent ? null : (cycleEndDate || a.end_date || a.assigned_at || c.created_at);
+                        const isCurrent = activeAssignment ? a.id === activeAssignment.id : false;
+                        const cycleStartDate = a.start_date || a.assigned_at || c.created_at;
+                        const cycleEndDate = isCurrent ? (a.end_date || null) : (a.end_date || null);
+                        const cycleSettledDate = isCurrent ? null : (cycleEndDate || a.end_date || a.assigned_at || c.created_at);
 
-                            allServiceCycles.push({
-                                id: a.id,
-                                serviceType: formatServiceLabel(a.service_type, a.notes),
-                                startDate: cycleStartDate,
-                                endDate: cycleEndDate,
-                                settledDate: cycleSettledDate,
-                                isCurrent: isCurrent,
-                                depositAmount: Number(a.deposit_amount) || 0,
-                                depositStatus: isCurrent ? depositStatus : 'settled',
-                            });
-                        }
+                        allServiceCycles.push({
+                            id: a.id,
+                            serviceType: formatServiceLabel(a.service_type, a.notes),
+                            startDate: cycleStartDate,
+                            endDate: cycleEndDate,
+                            settledDate: cycleSettledDate,
+                            isCurrent: isCurrent,
+                            depositAmount: Number(a.deposit_amount) || 0,
+                            depositStatus: isCurrent ? depositStatus : 'settled',
+                        });
                     });
                 }
 
@@ -903,8 +901,11 @@ export default function Clients() {
                     .reduce((sum, cyc) => sum + (Number(cyc.depositAmount) || 0), 0);
 
                 // Fallback: If past cycles didn't explicitly store deposit, but payments ledger has recorded historical deposits
+                // Only valid if client actually had a past completed/ended service or historical assignment
+                const hasHistoricalService = clientServices.some(s => s.status !== 'active')
+                    || clientAssignments.some(a => a.assignment_status === 'completed' || a.assignment_status === 'ended');
                 const totalPaidDeposits = paidDepositByClientName[normalizeClientName(c.client_name)] || 0;
-                if (pastDepositTotal <= 0 && totalPaidDeposits > depositAmount) {
+                if (pastDepositTotal <= 0 && hasHistoricalService && totalPaidDeposits > depositAmount) {
                     pastDepositTotal = totalPaidDeposits - depositAmount;
                 }
 
@@ -1446,15 +1447,21 @@ export default function Clients() {
                                                                     return (
                                                                         <div className="flex flex-col">
                                                                             <div className="flex items-center gap-1.5">
-                                                                                <span className={`font-bold text-xs ${client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                                                                    ₹{client.securityDeposit.toLocaleString('en-IN')}
+                                                                                <span className={`font-bold text-xs ${
+                                                                                    client.depositStatus === 'pending'
+                                                                                        ? 'text-amber-700'
+                                                                                        : (client.depositStatus === 'settled' ? 'text-slate-700' : 'text-emerald-700')
+                                                                                }`}>
+                                                                                    {client.activeService || client.activeAssignment ? `₹${client.securityDeposit.toLocaleString('en-IN')}` : '₹0'}
                                                                                 </span>
                                                                                 <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border ${
                                                                                     client.depositStatus === 'pending'
                                                                                         ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                                                                        : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                                                        : (client.depositStatus === 'settled'
+                                                                                            ? 'bg-slate-200 text-slate-700 border-slate-300'
+                                                                                            : 'bg-emerald-100 text-emerald-800 border-emerald-200')
                                                                                 }`}>
-                                                                                    {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                                                                    {client.depositStatus === 'pending' ? 'Pending' : (client.depositStatus === 'settled' ? 'Settled' : 'Paid')}
                                                                                 </span>
                                                                             </div>
                                                                             {client.pastDepositTotal > 0 && (
@@ -1664,24 +1671,29 @@ export default function Clients() {
                                     <div className={`p-2.5 rounded-xl border flex flex-col justify-between transition-all ${
                                         client.depositStatus === 'pending'
                                             ? 'bg-amber-50/60 border-amber-200'
-                                            : 'bg-emerald-50/50 border-emerald-100'
+                                            : (client.depositStatus === 'settled' ? 'bg-slate-50 border-slate-200' : 'bg-emerald-50/50 border-emerald-100')
                                     }`}>
                                         {(() => {
                                             const { currentDepositDateStr, settledDateStr, pastServiceName } = getClientDepositBreakdown(client);
+                                            const hasActive = Boolean(client.activeService || client.activeAssignment);
                                             return (
                                                 <div className="space-y-1.5">
                                                     <div className="flex items-center justify-between gap-1 pb-1 border-b border-slate-200/60">
                                                         <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 truncate ${
-                                                            client.depositStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'
+                                                            client.depositStatus === 'pending' 
+                                                                ? 'text-amber-700' 
+                                                                : (client.depositStatus === 'settled' ? 'text-slate-700' : 'text-emerald-700')
                                                         }`}>
                                                             <Wallet className="w-3 h-3 shrink-0" /> Security Deposit
                                                         </p>
                                                         <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full border shrink-0 ${
                                                             client.depositStatus === 'pending'
                                                                 ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                                                : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                                : (client.depositStatus === 'settled'
+                                                                    ? 'bg-slate-200 text-slate-700 border-slate-300'
+                                                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200')
                                                         }`}>
-                                                            {client.depositStatus === 'pending' ? 'Pending' : 'Paid'}
+                                                            {client.depositStatus === 'pending' ? 'Pending' : (client.depositStatus === 'settled' ? 'Settled' : 'Paid')}
                                                         </span>
                                                     </div>
 
@@ -1692,14 +1704,22 @@ export default function Clients() {
                                                                 Current Deposit:
                                                             </span>
                                                             <span className={`text-xs font-extrabold ${
-                                                                client.depositStatus === 'pending' ? 'text-amber-800' : 'text-emerald-700'
+                                                                client.depositStatus === 'pending' 
+                                                                    ? 'text-amber-800' 
+                                                                    : (hasActive ? 'text-emerald-700' : 'text-slate-600')
                                                             }`}>
-                                                                ₹{client.securityDeposit.toLocaleString('en-IN')}
+                                                                {hasActive ? `₹${client.securityDeposit.toLocaleString('en-IN')}` : '₹0'}
                                                             </span>
                                                         </div>
-                                                        {currentDepositDateStr && (
+                                                        {hasActive ? (
+                                                            currentDepositDateStr && (
+                                                                <p className="text-[10px] text-slate-400">
+                                                                    Since {currentDepositDateStr}
+                                                                </p>
+                                                            )
+                                                        ) : (
                                                             <p className="text-[10px] text-slate-400">
-                                                                Since {currentDepositDateStr}
+                                                                No active service
                                                             </p>
                                                         )}
                                                     </div>
@@ -2503,16 +2523,32 @@ export default function Clients() {
                             {/* Summary Card */}
                             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                                 <div>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Service & Deposit</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        {depositModal.hasActiveService ? 'Current Service & Deposit' : 'Latest Service (Ended)'}
+                                    </span>
                                     <p className="font-bold text-sm text-slate-800">{depositModal.serviceName}</p>
-                                    <span className="text-xs text-slate-500">Start Date: {formatDateDisplay(depositModal.startDate)}</span>
+                                    <span className="text-xs text-slate-500">
+                                        {depositModal.hasActiveService ? `Start Date: ${formatDateDisplay(depositModal.startDate)}` : `Service Ended • Settled on ${formatDateDisplay(depositModal.startDate)}`}
+                                    </span>
                                 </div>
                                 <div className="text-right">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
-                                        {depositModal.depositStatus === 'collected' ? 'Current Deposit (Collected)' : 'Current Deposit (Pending)'}
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                                        depositModal.hasActiveService
+                                            ? (depositModal.depositStatus === 'collected' ? 'text-emerald-600' : 'text-amber-600')
+                                            : 'text-slate-600'
+                                    }`}>
+                                        {depositModal.hasActiveService
+                                            ? (depositModal.depositStatus === 'collected' ? 'Current Deposit (Collected)' : 'Current Deposit (Pending)')
+                                            : 'Deposit Status'}
                                     </span>
-                                    <p className={`text-xl font-extrabold ${depositModal.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                        ₹{depositModal.depositAmount.toLocaleString('en-IN')}
+                                    <p className={`text-xl font-extrabold ${
+                                        depositModal.hasActiveService
+                                            ? (depositModal.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700')
+                                            : 'text-slate-800'
+                                    }`}>
+                                        {depositModal.hasActiveService
+                                            ? `₹${depositModal.depositAmount.toLocaleString('en-IN')}`
+                                            : 'All Settled'}
                                     </p>
                                 </div>
                             </div>
@@ -2568,11 +2604,11 @@ export default function Clients() {
                                                     </span>
                                                     <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${
                                                         cycle.isCurrent
-                                                            ? (depositModal.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700')
+                                                            ? (depositModal.depositStatus === 'collected' || cycle.depositStatus === 'collected' ? 'text-emerald-700' : 'text-amber-700')
                                                             : 'text-slate-500'
                                                     }`}>
                                                         {cycle.isCurrent
-                                                            ? (depositModal.depositStatus === 'collected' ? '✓ Paid' : '⏳ Pending')
+                                                            ? (depositModal.depositStatus === 'collected' || cycle.depositStatus === 'collected' ? '✓ Paid' : '⏳ Pending')
                                                             : '✓ Settled on End'}
                                                     </p>
                                                 </div>
@@ -2586,7 +2622,7 @@ export default function Clients() {
                                     )}
                                 </div>
 
-                                {depositModal.pastDepositTotal > 0 && (() => {
+                                {depositModal.pastDepositTotal > 0 && !depositModal.allCycles?.some((c: any) => !c.isCurrent && Number(c.depositAmount) > 0) && (() => {
                                     const { settledDateStr } = getClientDepositBreakdown(depositModal.client);
                                     return (
                                         <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
@@ -2604,200 +2640,226 @@ export default function Clients() {
                                 })()}
                             </div>
 
-                            {/* Section 1: Share Deposit Invoice */}
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
-                                    <Send className="w-4 h-4 text-emerald-600" />
-                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">1. Share Deposit Invoice</h3>
-                                </div>
-
-                                <p className="text-xs text-slate-500">
-                                    Send payment request directly to the client via WhatsApp, or generate an official PDF invoice.
-                                </p>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => handleShareDepositWhatsApp(
-                                            depositModal.client,
-                                            depositModal.depositAmount,
-                                            depositModal.serviceName,
-                                            depositModal.startDate,
-                                            generatedInvoiceUrl || undefined
-                                        )}
-                                        className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-                                    >
-                                        <MessageSquare className="w-4 h-4" /> Send on WhatsApp
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={handleGenerateDepositPdf}
-                                        disabled={isGeneratingPdf}
-                                        className="p-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-                                    >
-                                        {isGeneratingPdf ? (
-                                            <RotateCcw className="w-4 h-4 animate-spin text-slate-500" />
-                                        ) : (
-                                            <Download className="w-4 h-4 text-slate-600" />
-                                        )}
-                                        {generatedInvoiceUrl ? 'Regenerate PDF' : 'Generate PDF Invoice'}
-                                    </button>
-                                </div>
-
-                                {generatedInvoiceUrl && (
-                                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
-                                        <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                            <span className="font-semibold text-emerald-900 truncate">Invoice PDF Ready</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(generatedInvoiceUrl);
-                                                    setCopiedInvoiceLink(true);
-                                                    setTimeout(() => setCopiedInvoiceLink(false), 2000);
-                                                }}
-                                                className="px-2.5 py-1 bg-white border border-emerald-300 rounded-lg text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
-                                            >
-                                                {copiedInvoiceLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                                {copiedInvoiceLink ? 'Copied' : 'Copy Link'}
-                                            </button>
-                                            <a
-                                                href={generatedInvoiceUrl}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="px-2.5 py-1 bg-emerald-600 rounded-lg text-[11px] font-bold text-white hover:bg-emerald-700 transition-colors flex items-center gap-1"
-                                            >
-                                                <ExternalLink className="w-3 h-3" /> View
-                                            </a>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Section 2: Record Payment Received (Only if pending / not yet collected) */}
-                            {depositModal.depositStatus === 'collected' ? (
+                            {/* Section 1 & 2 or All Settled Banner */}
+                            {(!depositModal.hasActiveService || depositModal.depositStatus === 'settled') ? (
                                 <div className="pt-2 border-t border-slate-100">
-                                    <div className="p-4 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex items-center justify-between gap-3">
+                                    <div className="p-4 bg-slate-100/90 border border-slate-200/90 rounded-2xl flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                                            <div className="w-10 h-10 rounded-xl bg-slate-700 text-white flex items-center justify-center shadow-xs shrink-0">
                                                 <CheckCircle2 className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900">
-                                                    Security Deposit Already Collected
+                                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                                                    All Service Cycles Ended &amp; Deposits Settled
                                                 </h4>
-                                                <p className="text-xs text-emerald-700 mt-0.5">
-                                                    ₹{depositModal.depositAmount.toLocaleString('en-IN')} has been collected and is securely held in reserve for {depositModal.serviceName}.
+                                                <p className="text-xs text-slate-600 mt-0.5">
+                                                    This client has no active service running. All historical security deposits ({depositModal.pastDepositTotal > 0 ? `₹${depositModal.pastDepositTotal.toLocaleString('en-IN')}` : 'recorded'}) have already been settled upon service completion.
                                                 </p>
                                             </div>
                                         </div>
-                                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase shrink-0">
-                                            ✓ In Reserve
+                                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-200 text-slate-800 border border-slate-300 uppercase shrink-0">
+                                            ✓ All Settled
                                         </span>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="space-y-3 pt-2 border-t border-slate-100">
-                                    <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
-                                        <Wallet className="w-4 h-4 text-blue-600" />
-                                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">2. Record Payment Received</h3>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center justify-between">
-                                                <span>Amount Received (₹) *</span>
-                                                <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-200 uppercase">
-                                                    Fixed Deposit
-                                                </span>
-                                            </label>
-                                            <div className="relative">
-                                                <input
-                                                    type="text"
-                                                    readOnly
-                                                    disabled
-                                                    value={`₹${depositModal.depositAmount.toLocaleString('en-IN')}`}
-                                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 bg-slate-100/80 cursor-not-allowed focus:outline-none"
-                                                />
-                                            </div>
+                                <>
+                                    {/* Section 1: Share Deposit Invoice */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                                            <Send className="w-4 h-4 text-emerald-600" />
+                                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">1. Share Deposit Invoice</h3>
                                         </div>
 
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
-                                            <select
-                                                value={depositPaymentMethod}
-                                                onChange={e => {
-                                                    const m = e.target.value;
-                                                    setDepositPaymentMethod(m);
-                                                    setDepositPaymentRef(generateDepositRef(m));
-                                                }}
-                                                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        <p className="text-xs text-slate-500">
+                                            Send payment request directly to the client via WhatsApp, or generate an official PDF invoice.
+                                        </p>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleShareDepositWhatsApp(
+                                                    depositModal.client,
+                                                    depositModal.depositAmount,
+                                                    depositModal.serviceName,
+                                                    depositModal.startDate,
+                                                    generatedInvoiceUrl || undefined
+                                                )}
+                                                className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
                                             >
-                                                <option value="UPI">UPI / GPay / PhonePe</option>
-                                                <option value="Cash">Cash</option>
-                                                <option value="Bank Transfer">Bank Transfer (IMPS / NEFT)</option>
-                                                <option value="Cheque">Cheque</option>
-                                            </select>
-                                        </div>
-                                    </div>
+                                                <MessageSquare className="w-4 h-4" /> Send on WhatsApp
+                                            </button>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Received Date *</label>
-                                            <div className="relative">
-                                                <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                                <input
-                                                    type="date"
-                                                    required
-                                                    value={depositPaymentDate}
-                                                    onChange={e => setDepositPaymentDate(e.target.value)}
-                                                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
-                                                />
-                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleGenerateDepositPdf}
+                                                disabled={isGeneratingPdf}
+                                                className="p-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                                            >
+                                                {isGeneratingPdf ? (
+                                                    <RotateCcw className="w-4 h-4 animate-spin text-slate-500" />
+                                                ) : (
+                                                    <Download className="w-4 h-4 text-slate-600" />
+                                                )}
+                                                {generatedInvoiceUrl ? 'Regenerate PDF' : 'Generate PDF Invoice'}
+                                            </button>
                                         </div>
 
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <label className="text-xs font-semibold text-slate-600">
-                                                    Transaction Reference ID (Auto-Generated)
-                                                </label>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
-                                                    className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
-                                                    title="Generate new reference code"
-                                                >
-                                                    <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
-                                                </button>
+                                        {generatedInvoiceUrl && (
+                                            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
+                                                <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                                    <span className="font-semibold text-emerald-900 truncate">Invoice PDF Ready</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(generatedInvoiceUrl);
+                                                            setCopiedInvoiceLink(true);
+                                                            setTimeout(() => setCopiedInvoiceLink(false), 2000);
+                                                        }}
+                                                        className="px-2.5 py-1 bg-white border border-emerald-300 rounded-lg text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                                                    >
+                                                        {copiedInvoiceLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                                        {copiedInvoiceLink ? 'Copied' : 'Copy Link'}
+                                                    </button>
+                                                    <a
+                                                        href={generatedInvoiceUrl}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="px-2.5 py-1 bg-emerald-600 rounded-lg text-[11px] font-bold text-white hover:bg-emerald-700 transition-colors flex items-center gap-1"
+                                                    >
+                                                        <ExternalLink className="w-3 h-3" /> View
+                                                    </a>
+                                                </div>
                                             </div>
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={depositPaymentRef}
-                                                    onChange={e => setDepositPaymentRef(e.target.value)}
-                                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        navigator.clipboard.writeText(depositPaymentRef);
-                                                        toast.success('Reference ID copied');
-                                                    }}
-                                                    className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
-                                                    title="Copy Reference ID"
-                                                >
-                                                    <Copy className="w-3.5 h-3.5" />
-                                                </button>
+                                        )}
+                                    </div>
+
+                                    {/* Section 2: Record Payment Received (Only if pending / not yet collected) */}
+                                    {depositModal.depositStatus === 'collected' ? (
+                                        <div className="pt-2 border-t border-slate-100">
+                                            <div className="p-4 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                                                        <CheckCircle2 className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900">
+                                                            Security Deposit Already Collected
+                                                        </h4>
+                                                        <p className="text-xs text-emerald-700 mt-0.5">
+                                                            ₹{depositModal.depositAmount.toLocaleString('en-IN')} has been collected and is securely held in reserve for {depositModal.serviceName}.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase shrink-0">
+                                                    ✓ In Reserve
+                                                </span>
                                             </div>
                                         </div>
-                                    </div>
-                                    <p className="text-[10px] text-slate-400">
-                                        Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
-                                    </p>
-                                </div>
+                                    ) : (
+                                        <div className="space-y-3 pt-2 border-t border-slate-100">
+                                            <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                                                <Wallet className="w-4 h-4 text-blue-600" />
+                                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">2. Record Payment Received</h3>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                                                        <span>Amount Received (₹) *</span>
+                                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-200 uppercase">
+                                                            Fixed Deposit
+                                                        </span>
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            readOnly
+                                                            disabled
+                                                            value={`₹${depositModal.depositAmount.toLocaleString('en-IN')}`}
+                                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 bg-slate-100/80 cursor-not-allowed focus:outline-none"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
+                                                    <select
+                                                        value={depositPaymentMethod}
+                                                        onChange={e => {
+                                                            const m = e.target.value;
+                                                            setDepositPaymentMethod(m);
+                                                            setDepositPaymentRef(generateDepositRef(m));
+                                                        }}
+                                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                                    >
+                                                        <option value="UPI">UPI / GPay / PhonePe</option>
+                                                        <option value="Cash">Cash</option>
+                                                        <option value="Bank Transfer">Bank Transfer (IMPS / NEFT)</option>
+                                                        <option value="Cheque">Cheque</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Received Date *</label>
+                                                    <div className="relative">
+                                                        <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                                        <input
+                                                            type="date"
+                                                            required
+                                                            value={depositPaymentDate}
+                                                            onChange={e => setDepositPaymentDate(e.target.value)}
+                                                            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <label className="text-xs font-semibold text-slate-600">
+                                                            Transaction Reference ID (Auto-Generated)
+                                                        </label>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setDepositPaymentRef(generateDepositRef(depositPaymentMethod))}
+                                                            className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 cursor-pointer"
+                                                            title="Generate new reference code"
+                                                        >
+                                                            <RefreshCw className="w-2.5 h-2.5" /> Re-roll ID
+                                                        </button>
+                                                    </div>
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={depositPaymentRef}
+                                                            onChange={e => setDepositPaymentRef(e.target.value)}
+                                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(depositPaymentRef);
+                                                                toast.success('Reference ID copied');
+                                                            }}
+                                                            className="absolute right-2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors cursor-pointer"
+                                                            title="Copy Reference ID"
+                                                        >
+                                                            <Copy className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400">
+                                                Automatically linked to Payment Ledger, CRM Activity, and Client Billing history.
+                                            </p>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
 
@@ -2811,7 +2873,7 @@ export default function Clients() {
                                 Close
                             </button>
 
-                            {depositModal.depositStatus !== 'collected' && (
+                            {depositModal.hasActiveService && depositModal.depositStatus === 'pending' && (
                                 <button
                                     type="button"
                                     onClick={handleRecordDepositPayment}
