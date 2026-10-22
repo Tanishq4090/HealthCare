@@ -114,6 +114,8 @@ export default function Billing() {
         const tabParam = searchParams.get('tab') as any;
         if (tabParam && ['deposits', 'monthly', 'history'].includes(tabParam) && tabParam !== activeTab) {
             setActiveTab(tabParam);
+        } else if (!tabParam && activeTab !== 'deposits') {
+            setActiveTab('deposits');
         }
         const searchParam = searchParams.get('search');
         if (searchParam !== null) {
@@ -2288,19 +2290,19 @@ export default function Billing() {
 
                 <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0">
                     <button
-                        onClick={() => setActiveTab('deposits')}
+                        onClick={() => { setActiveTab('deposits'); setSearchParams({ tab: 'deposits' }); }}
                         className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'deposits' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Deposit Entries
                     </button>
                     <button
-                        onClick={() => setActiveTab('monthly')}
+                        onClick={() => { setActiveTab('monthly'); setSearchParams({ tab: 'monthly' }); }}
                         className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'monthly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Monthly Billing
                     </button>
                     <button
-                        onClick={() => setActiveTab('history')}
+                        onClick={() => { setActiveTab('history'); setSearchParams({ tab: 'history' }); }}
                         className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                         Collection History

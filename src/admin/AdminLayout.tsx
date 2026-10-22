@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert, AlertCircle, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, CalendarDays, Clock, FileText, Wallet, Banknote, UserPlus, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert, AlertCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, type AccessModule } from '../contexts/AuthContext';
 import { AdminDeletionRequestsModal } from './components/AdminDeletionRequestsModal';
@@ -702,23 +702,122 @@ export default function AdminLayout() {
         ), { duration: 12000 });
     }, [location.pathname]);
 
-    // Navigation items linked to their required module (null means always visible)
-    const navigation = [
-        { name: 'Dashboard',          href: '/admin',                    icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
-        { name: 'AI CRM',             href: '/admin/crm',                icon: Users,           requiredModule: 'crm' as AccessModule },
-        { name: 'Clients',            href: '/admin/clients',            icon: Users,           requiredModule: 'clients' as AccessModule },
-        { name: 'AI HR',              href: '/admin/hr',                 icon: UserCog,         requiredModule: 'hr' as AccessModule },
-        { name: 'Finance',            href: '/admin/billing',            icon: Landmark,        requiredModule: 'finance' as AccessModule },
+    interface NavItem {
+        name: string;
+        href: string;
+        icon: any;
+        requiredModule?: AccessModule | null;
+    }
+
+    interface NavSection {
+        title?: string;
+        items: NavItem[];
+    }
+
+    const navSections: NavSection[] = [
+        {
+            title: 'Overview',
+            items: [
+                { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, requiredModule: 'dashboard' },
+            ],
+        },
+        {
+            title: 'Operations & Care',
+            items: [
+                { name: 'Client Master', href: '/admin/clients', icon: Users, requiredModule: 'clients' },
+                { name: 'Scheduling & Visits', href: '/admin/hr?tab=allocation&subtab=assignments', icon: CalendarDays, requiredModule: 'hr' },
+                { name: 'Live Attendance', href: '/admin/hr?tab=attendance', icon: Clock, requiredModule: 'hr' },
+                { name: 'Caregivers & Staff', href: '/admin/hr?tab=allocation', icon: UserCog, requiredModule: 'hr' },
+            ],
+        },
+        {
+            title: 'Finance & Billing',
+            items: [
+                { name: 'Invoices & Billing', href: '/admin/billing?tab=monthly', icon: FileText, requiredModule: 'finance' },
+                { name: 'Security Deposits', href: '/admin/billing?tab=deposits', icon: Wallet, requiredModule: 'finance' },
+                { name: 'Caregiver Payroll', href: '/admin/hr?tab=payroll', icon: Banknote, requiredModule: 'hr' },
+            ],
+        },
+        {
+            title: 'Growth & Intake',
+            items: [
+                { name: 'Leads & Inquiries', href: '/admin/crm', icon: UserPlus, requiredModule: 'crm' },
+            ],
+        },
     ];
 
-    const filteredNavigation = navigation.filter(item => {
-        if (!item.requiredModule) return true;
-        return hasAccess(item.requiredModule);
-    });
+    const isItemActive = (href: string) => {
+        const [targetPath, targetQueryString] = href.split('?');
+        if (location.pathname !== targetPath) {
+            return false;
+        }
+
+        if (targetPath === '/admin') {
+            return location.pathname === '/admin' && (!location.search || location.search === '');
+        }
+
+        if (!targetQueryString) {
+            return location.pathname === targetPath;
+        }
+
+        const targetParams = new URLSearchParams(targetQueryString);
+        const currentParams = new URLSearchParams(location.search);
+
+        if (targetPath === '/admin/hr') {
+            const currentTab = currentParams.get('tab') || 'allocation';
+            const targetTab = targetParams.get('tab') || 'allocation';
+
+            if (targetTab === 'attendance' || targetTab === 'payroll') {
+                return currentTab === targetTab;
+            }
+
+            if (currentTab !== 'allocation') return false;
+
+            const targetSubtab = targetParams.get('subtab');
+            const currentSubtab = currentParams.get('subtab') || 'available';
+
+            if (targetSubtab === 'assignments') {
+                return currentSubtab === 'assignments';
+            }
+            return currentSubtab !== 'assignments';
+        }
+
+        if (targetPath === '/admin/billing') {
+            const currentTab = currentParams.get('tab') || 'deposits';
+            const targetTab = targetParams.get('tab') || 'deposits';
+            return currentTab === targetTab;
+        }
+
+        for (const [key, value] of targetParams.entries()) {
+            if (currentParams.get(key) !== value) return false;
+        }
+
+        return true;
+    };
+
+    const filteredSections = navSections
+        .map(section => ({
+            ...section,
+            items: section.items.filter(item => {
+                if (!item.requiredModule) return true;
+                return hasAccess(item.requiredModule);
+            }),
+        }))
+        .filter(section => section.items.length > 0);
+
+    const allFilteredItems = filteredSections.flatMap(s => s.items);
+
+    const mobileBottomNavItems = [
+        { name: 'Home', href: '/admin', icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
+        { name: 'Clients', href: '/admin/clients', icon: Users, requiredModule: 'clients' as AccessModule },
+        { name: 'Visits', href: '/admin/hr?tab=allocation&subtab=assignments', icon: CalendarDays, requiredModule: 'hr' as AccessModule },
+        { name: 'Attendance', href: '/admin/hr?tab=attendance', icon: Clock, requiredModule: 'hr' as AccessModule },
+        { name: 'Invoices', href: '/admin/billing?tab=monthly', icon: FileText, requiredModule: 'finance' as AccessModule },
+    ].filter(item => !item.requiredModule || hasAccess(item.requiredModule));
 
     // If user is at /admin but doesn't have dashboard access, redirect to first allowed module
     if (location.pathname === '/admin' && !hasAccess('dashboard')) {
-        const firstAllowed = filteredNavigation.find(item => item.href !== '/admin');
+        const firstAllowed = allFilteredItems.find(item => item.href !== '/admin');
         if (firstAllowed) {
             return <Navigate to={firstAllowed.href} replace />;
         }
@@ -749,28 +848,36 @@ export default function AdminLayout() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 p-4 space-y-1 overflow-y-auto min-h-0">
-                    {filteredNavigation.map((item) => {
-                        const isActive = location.pathname === item.href;
-                        return (
-                            <Link
-                                key={item.name}
-                                to={item.href}
-                                className={`flex items-center justify-between px-3 py-2.5 rounded-lg font-medium transition-colors ${isActive
-                                    ? 'bg-primary/10 text-primary'
-                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                                    }`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
-                                    {item.name}
+                <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto min-h-0">
+                    {filteredSections.map((section, idx) => (
+                        <div key={section.title || idx} className="space-y-1">
+                            {section.title && (
+                                <div className="px-3 pb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                    {section.title}
                                 </div>
-                                {(item as any).status === 'construction' && (
-                                    <span className="text-[9px] font-bold tracking-wider uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md">Coming Soon</span>
-                                )}
-                            </Link>
-                        );
-                    })}
+                            )}
+                            <div className="space-y-0.5">
+                                {section.items.map((item) => {
+                                    const active = isItemActive(item.href);
+                                    return (
+                                        <Link
+                                            key={item.name}
+                                            to={item.href}
+                                            className={`flex items-center justify-between px-3 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all ${active
+                                                ? 'bg-primary/10 text-primary font-bold shadow-xs'
+                                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-2.5">
+                                                <item.icon className={`w-4 h-4 shrink-0 ${active ? 'text-primary' : 'text-slate-400'}`} />
+                                                <span className="truncate">{item.name}</span>
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
                 </nav>
 
                 {/* Settings Link for Admins */}
@@ -918,6 +1025,38 @@ export default function AdminLayout() {
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
+
+                                    {/* Mobile Navigation Sections */}
+                                    <div className="space-y-4 my-2">
+                                        {filteredSections.map((section, idx) => (
+                                            <div key={section.title || idx} className="space-y-1">
+                                                {section.title && (
+                                                    <div className="px-3 pb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                        {section.title}
+                                                    </div>
+                                                )}
+                                                <div className="space-y-0.5">
+                                                    {section.items.map((item) => {
+                                                        const active = isItemActive(item.href);
+                                                        return (
+                                                            <Link
+                                                                key={item.name}
+                                                                to={item.href}
+                                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-xs transition-all ${active
+                                                                    ? 'bg-primary/10 text-primary font-bold'
+                                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                                    }`}
+                                                            >
+                                                                <item.icon className={`w-4 h-4 shrink-0 ${active ? 'text-primary' : 'text-slate-400'}`} />
+                                                                <span className="truncate">{item.name}</span>
+                                                            </Link>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
 
                                     {user?.role === 'admin' && (
@@ -1339,23 +1478,18 @@ export default function AdminLayout() {
 
                 {/* Mobile Bottom Navigation */}
                 <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 pb-safe z-50 h-16 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
-                    {filteredNavigation.map((item) => {
-                        const isActive = location.pathname === item.href || (item.href !== '/admin' && location.pathname.startsWith(item.href));
-                        // Simplify names for mobile space
-                        let mobileName = item.name;
-                        if (mobileName === 'Dashboard') mobileName = 'Home';
-                        else if (mobileName.startsWith('AI ')) mobileName = mobileName.replace('AI ', '');
-
+                    {mobileBottomNavItems.map((item) => {
+                        const active = isItemActive(item.href);
                         return (
                             <Link
                                 key={item.name}
                                 to={item.href}
-                                className={`flex flex-col items-center justify-center flex-1 h-full py-1 ${isActive ? 'text-primary' : 'text-slate-500 hover:text-slate-900'}`}
+                                className={`flex flex-col items-center justify-center flex-1 h-full py-1 ${active ? 'text-primary' : 'text-slate-500 hover:text-slate-900'}`}
                             >
-                                <div className={`p-1.5 rounded-full mb-0.5 transition-colors ${isActive ? 'bg-primary/10' : ''}`}>
-                                    <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
+                                <div className={`p-1.5 rounded-full mb-0.5 transition-colors ${active ? 'bg-primary/10' : ''}`}>
+                                    <item.icon className={`w-5 h-5 ${active ? 'text-primary' : 'text-slate-400'}`} />
                                 </div>
-                                <span className={`text-[10px] truncate w-full text-center transition-all ${isActive ? 'font-bold' : 'font-medium'}`}>{mobileName}</span>
+                                <span className={`text-[10px] truncate w-full text-center transition-all ${active ? 'font-bold' : 'font-medium'}`}>{item.name}</span>
                             </Link>
                         );
                     })}

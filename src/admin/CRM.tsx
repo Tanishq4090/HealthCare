@@ -5617,8 +5617,8 @@ export default function CRM() {
                         <Bot className="w-7 h-7 text-primary" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] tracking-tight">AI CRM Center</h1>
-                        <p className="text-sm text-slate-500 font-medium font-bold">AI-Powered Management</p>
+                        <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans'] tracking-tight">Leads & Inquiries Pipeline</h1>
+                        <p className="text-sm text-slate-500 font-medium">Customer inquiries, voice call recordings, and lead conversion</p>
                     </div>
                 </div>
 

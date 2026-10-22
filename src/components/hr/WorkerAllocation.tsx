@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Users, UserPlus, Briefcase, Copy, Check, ExternalLink,
@@ -2578,6 +2579,36 @@ interface WorkerAllocationProps {
 }
 
 export default function WorkerAllocation({ isEmbedded = false }: WorkerAllocationProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const subtabParam = searchParams.get('subtab');
+  const [activeSubTab, setActiveSubTab] = useState<'available' | 'assignments' | 'all' | 'deleted'>(
+    subtabParam && ['available', 'assignments', 'all', 'deleted'].includes(subtabParam)
+      ? (subtabParam as any)
+      : 'available'
+  );
+
+  useEffect(() => {
+    const param = searchParams.get('subtab') as any;
+    if (param && ['available', 'assignments', 'all', 'deleted'].includes(param)) {
+      setActiveSubTab(param);
+    } else if (!param && activeSubTab !== 'available') {
+      setActiveSubTab('available');
+    }
+  }, [searchParams]);
+
+  const handleSubTabChange = (val: string) => {
+    setActiveSubTab(val as any);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (val === 'available') {
+        next.delete('subtab');
+      } else {
+        next.set('subtab', val);
+      }
+      return next;
+    });
+  };
+
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [assignEmployee, setAssignEmployee] = useState<Employee | null>(null);
   const [previewEmployee, setPreviewEmployee] = useState<Employee | null>(null);
@@ -2643,7 +2674,7 @@ export default function WorkerAllocation({ isEmbedded = false }: WorkerAllocatio
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue="available" className="space-y-6">
+      <Tabs value={activeSubTab} onValueChange={handleSubTabChange} className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="w-full sm:w-auto overflow-x-auto hide-scrollbar">
             <TabsList className="w-full sm:w-fit min-w-full sm:min-w-0 bg-slate-100/80 backdrop-blur-md border border-slate-200/50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl shadow-sm flex items-center justify-between sm:justify-start gap-1 sm:gap-0">

@@ -1075,6 +1075,8 @@ export default function HR() {
         const tabParam = searchParams.get('tab') as any;
         if (tabParam && ['allocation', 'attendance', 'payroll'].includes(tabParam)) {
             setActiveTab(tabParam);
+        } else if (!tabParam && activeTab !== 'allocation') {
+            setActiveTab('allocation');
         }
     }, [searchParams]);
 
@@ -2275,8 +2277,24 @@ export default function HR() {
         <div className="p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">AI HR & Billing</h1>
-                    <p className="text-slate-500 mt-1">Manage worker allocation, automated attendance, and payroll dispatch.</p>
+                    <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">
+                        {activeTab === 'attendance'
+                            ? 'Live Attendance & Duty Roster'
+                            : activeTab === 'payroll'
+                                ? 'Caregiver Payroll & Payslips'
+                                : searchParams.get('subtab') === 'assignments'
+                                    ? 'Scheduling & Patient Deployments'
+                                    : 'Caregivers & Staff Registry'}
+                    </h1>
+                    <p className="text-slate-500 mt-1">
+                        {activeTab === 'attendance'
+                            ? 'Real-time check-in, check-out, and daily duty verification matrix.'
+                            : activeTab === 'payroll'
+                                ? 'Caregiver earnings calculations, automated payslip generator, and WhatsApp dispatch.'
+                                : searchParams.get('subtab') === 'assignments'
+                                    ? 'Active client deployments, shift hours, and caregiver assignments.'
+                                    : 'Caregiver directory, onboarding, KYC documents, and shift rates.'}
+                    </p>
                 </div>
 
                 {/* Module Tabs */}
