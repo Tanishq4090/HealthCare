@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, ChevronUp, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff, HeartPulse, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -574,6 +574,19 @@ export default function CRM() {
     const [isSubmittingAddClient, setIsSubmittingAddClient] = useState(false);
     const [addClientWorkerSearch, setAddClientWorkerSearch] = useState('');
 
+    // Patient Care & Work Form Scope state for Add Client Modal
+    const [addClientPatientName, setAddClientPatientName] = useState('');
+    const [addClientAge, setAddClientAge] = useState('');
+    const [addClientAgeUnit, setAddClientAgeUnit] = useState<'Days' | 'Months' | 'Years'>('Years');
+    const [addClientWeight, setAddClientWeight] = useState('');
+    const [addClientRelativeName, setAddClientRelativeName] = useState('');
+    const [addClientAltPhone, setAddClientAltPhone] = useState('');
+    const [addClientMedicalCondition, setAddClientMedicalCondition] = useState('');
+    const [addClientFormType, setAddClientFormType] = useState<'baby_care_form' | 'patient_care_form'>('patient_care_form');
+    const [addClientDuties, setAddClientDuties] = useState<string[]>([]);
+    const [addClientCareInstructions, setAddClientCareInstructions] = useState('');
+    const [isAddClientCareExpanded, setIsAddClientCareExpanded] = useState(true);
+
     // Client Invoice Generator State (CRM Pipeline)
     const [isClientInvoiceOpen, setIsClientInvoiceOpen] = useState(false);
     const [clientInvoiceLead, setClientInvoiceLead] = useState<any>(null);
@@ -957,6 +970,55 @@ export default function CRM() {
         }
     };
 
+    function parseAgeAndWeight(
+        rawAge?: string | number | null,
+        rawUnit?: string | null,
+        rawWeight?: string | number | null,
+        isBabyDefault: boolean = false
+    ): { age: string; ageUnit: 'Days' | 'Months' | 'Years'; weight: string } {
+        let ageStr = rawAge != null ? String(rawAge).trim() : '';
+        let weightStr = rawWeight != null ? String(rawWeight).trim() : '';
+        let unit: 'Days' | 'Months' | 'Years' = isBabyDefault ? 'Days' : 'Years';
+
+        const unitLower = String(rawUnit || '').trim().toLowerCase();
+        if (unitLower.includes('day') || unitLower === 'd') {
+            unit = 'Days';
+        } else if (unitLower.includes('month') || unitLower === 'mo') {
+            unit = 'Months';
+        } else if (unitLower.includes('year') || unitLower === 'yr') {
+            unit = 'Years';
+        }
+
+        if (ageStr) {
+            const weightMatch = ageStr.match(/(\d+(?:\.\d+)?)\s*(?:kgs?|kilos?|kg\b)/i);
+            if (weightMatch) {
+                if (!weightStr) {
+                    weightStr = weightMatch[1];
+                }
+                ageStr = ageStr.replace(/(?:&|\band\b|,|\/|\+)?\s*\d+(?:\.\d+)?\s*(?:kgs?|kilos?|kg\b)/gi, '').trim();
+            }
+
+            if (/\b(?:days?|d)\b/i.test(ageStr)) {
+                unit = 'Days';
+            } else if (/\b(?:months?|m|mo)\b/i.test(ageStr)) {
+                unit = 'Months';
+            } else if (/\b(?:years?|yrs?|y)\b/i.test(ageStr)) {
+                unit = 'Years';
+            }
+
+            const cleanAgeNum = ageStr.replace(/\b(?:years?|yrs?|months?|mo|days?|d)\b/gi, '').trim();
+            if (cleanAgeNum) {
+                ageStr = cleanAgeNum;
+            }
+        }
+
+        if (weightStr) {
+            weightStr = weightStr.replace(/\s*(?:kgs?|kg|kilos?)\b/gi, '').trim();
+        }
+
+        return { age: ageStr, ageUnit: unit, weight: weightStr };
+    }
+
     const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
         pateint_bath: 'Patient Bath',
         massage: 'Massage',
@@ -977,6 +1039,9 @@ export default function CRM() {
     };
 
     const BABY_CARE_DUTY_LABELS: Record<string, string> = {
+        baby_massage: 'Baby Massage',
+        baby_bath: 'Baby Bath',
+        baby_feeding: 'Baby Feeding',
         sponge_bath: 'Sponge Bath',
         massage: 'Massage',
         diaper_change: 'Diaper Change',
@@ -5185,6 +5250,18 @@ export default function CRM() {
         setAddClientAutoMarkAttendance(true);
         setAddClientAbsentDays(0);
         setAddClientWorkerSearch('');
+        // Care Scope & Work Form resets
+        setAddClientPatientName('');
+        setAddClientAge('');
+        setAddClientAgeUnit('Years');
+        setAddClientWeight('');
+        setAddClientRelativeName('');
+        setAddClientAltPhone('');
+        setAddClientMedicalCondition('');
+        setAddClientFormType('patient_care_form');
+        setAddClientDuties([]);
+        setAddClientCareInstructions('');
+        setIsAddClientCareExpanded(true);
     };
 
     const handleAddManualClient = async () => {
@@ -5214,13 +5291,34 @@ export default function CRM() {
             const estMonthly = cmRate > 0 ? cmRate * 30 : 0;
 
             // 1. Create Lead in crm_leads (Active Client stage)
-            const serviceNote = `Service: ${addClientServiceName}\nShift: ${addClientShiftType}${addClientAddress.trim() ? `\nAddress: ${addClientAddress.trim()}` : ''}`;
+            const patientNameClean = addClientPatientName.trim() || leadName;
+            const workerNames = addClientSelectedWorkers.map(w => w.workerName).join(', ');
+
+            const workFormData = {
+                form_type: addClientFormType,
+                patient_name: patientNameClean,
+                age: addClientAge.trim(),
+                age_unit: addClientAgeUnit,
+                weight: addClientWeight.trim(),
+                relative_name: addClientRelativeName.trim() || leadName,
+                contact_number: leadPhone || null,
+                alternate_contact_number: addClientAltPhone.trim() || null,
+                address: addClientAddress.trim() || null,
+                medical_condition: addClientMedicalCondition.trim() || null,
+                duties: addClientDuties,
+                other_work: addClientCareInstructions.trim() || null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            const serviceNote = `Service: ${addClientServiceName}\nShift: ${addClientShiftType}${addClientAddress.trim() ? `\nAddress: ${addClientAddress.trim()}` : ''}${patientNameClean !== leadName ? `\nPatient: ${patientNameClean}` : ''}${addClientMedicalCondition.trim() ? `\nCondition: ${addClientMedicalCondition.trim()}` : ''}`;
             const { data: newLead, error: leadError } = await supabase
                 .from('crm_leads')
                 .insert([{
                     name: leadName,
                     phone: leadPhone || null,
                     whatsapp_number: standardized || null,
+                    location: addClientAddress.trim() || null,
                     source: 'Manual Client Setup',
                     status: 'Active',
                     pipeline_stage: 'Active Client',
@@ -5229,6 +5327,9 @@ export default function CRM() {
                     estimated_value_monthly: estMonthly,
                     priority: addClientPriority,
                     notes: serviceNote,
+                    work_form_data: workFormData,
+                    assigned_worker_name: workerNames || null,
+                    assigned_worker_role: addClientServiceName || null,
                 }])
                 .select('*')
                 .single();
@@ -5248,6 +5349,25 @@ export default function CRM() {
             if (clientError) console.warn('Clients table upsert warning:', clientError);
 
             // 3. Create Service in services table
+            const serviceCareScopePayload = {
+                type: 'service_start',
+                service_type: addClientServiceName || 'Home Care Service',
+                patient_name: patientNameClean,
+                age: addClientAge.trim(),
+                age_unit: addClientAgeUnit,
+                weight: addClientWeight.trim(),
+                relative_name: addClientRelativeName.trim() || leadName,
+                contact_number: leadPhone || null,
+                alternate_contact_number: addClientAltPhone.trim() || null,
+                address: addClientAddress.trim() || null,
+                medical_condition: addClientMedicalCondition.trim() || null,
+                form_type: addClientFormType,
+                duties: addClientDuties,
+                instructions: addClientCareInstructions.trim(),
+                shift_type: addClientShiftType,
+                setup_notes: `Shift: ${addClientShiftType}. Setup for ongoing client.`,
+            };
+
             const { data: newService, error: serviceError } = await supabase
                 .from('services')
                 .insert([{
@@ -5262,12 +5382,47 @@ export default function CRM() {
                     deposit_status: depAmount > 0 ? 'collected' : 'pending',
                     complete_month_daily_rate: cmRate,
                     incomplete_month_daily_rate: icmRate,
-                    notes: `Shift: ${addClientShiftType}. Setup for ongoing client.`,
+                    notes: JSON.stringify(serviceCareScopePayload),
                 }])
                 .select('*')
                 .single();
 
             if (serviceError) throw serviceError;
+
+            // 3b. Sync client_consents snapshot
+            try {
+                await supabase.from('client_consents').insert([{
+                    lead_id: newLead.id,
+                    patient_name: patientNameClean,
+                    age: addClientAge.trim() || null,
+                    age_unit: addClientAgeUnit,
+                    weight: addClientWeight.trim() || null,
+                    relative_name: addClientRelativeName.trim() || leadName,
+                    contact_number: leadPhone || null,
+                    alternate_contact_number: addClientAltPhone.trim() || null,
+                    address: addClientAddress.trim() || null,
+                    other_details: addClientMedicalCondition.trim() || null,
+                    service_category: addClientServiceName,
+                    service_start_date: addClientStartDate,
+                    offered_time: `${addClientShiftHours} Hours`,
+                    created_at: new Date().toISOString()
+                }]);
+            } catch (e) {
+                console.warn('client_consents insert error in handleAddManualClient:', e);
+            }
+
+            // 3c. Sync client_work_forms
+            try {
+                await supabase.from('client_work_forms').insert([{
+                    lead_id: newLead.id,
+                    form_type: addClientFormType,
+                    patient_name: patientNameClean,
+                    duties: addClientDuties,
+                    other_work: addClientCareInstructions.trim() || null
+                }]);
+            } catch (e) {
+                console.warn('client_work_forms insert error in handleAddManualClient:', e);
+            }
 
             // 4. Record Deposit in payments table (if depAmount > 0)
             if (depAmount > 0) {
@@ -9836,7 +9991,7 @@ export default function CRM() {
             {/* ─── ADD CLIENT MODAL (Comprehensive for Ongoing / Existing Clients) ─── */}
             {isAddClientModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget && !isSubmittingAddClient) setIsAddClientModalOpen(false); }}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
                         {/* Header */}
                         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -9909,7 +10064,18 @@ export default function CRM() {
                                         <label className="block text-xs font-semibold text-slate-700 mb-1">Service Type</label>
                                         <select
                                             value={addClientServiceName}
-                                            onChange={e => setAddClientServiceName(e.target.value)}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setAddClientServiceName(val);
+                                                const isBaby = /baby|maternity|jhapa|japa|infant|child/i.test(val);
+                                                if (isBaby) {
+                                                    setAddClientFormType('baby_care_form');
+                                                    if (addClientAgeUnit === 'Years') setAddClientAgeUnit('Months');
+                                                } else {
+                                                    setAddClientFormType('patient_care_form');
+                                                    if (addClientAgeUnit === 'Months' || addClientAgeUnit === 'Days') setAddClientAgeUnit('Years');
+                                                }
+                                            }}
                                             className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm font-medium text-slate-800"
                                         >
                                             {CARE_SERVICES.map(service => (
@@ -10016,11 +10182,284 @@ export default function CRM() {
                                 </div>
                             </div>
 
-                            {/* Section 3: Security Deposit */}
+                            {/* Section 3: Patient Care & Work Form Scope */}
+                            <div className="bg-teal-50/40 p-4 rounded-2xl border border-teal-200/80 space-y-4">
+                                <div className="flex items-center justify-between pb-2 border-b border-teal-200/60">
+                                    <div className="flex items-center gap-2">
+                                        <HeartPulse className="w-4 h-4 text-teal-600" />
+                                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                                            3. Patient Care &amp; Work Form Scope
+                                        </h3>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-teal-200 shadow-2xs">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setAddClientFormType('patient_care_form');
+                                                    if (addClientAgeUnit === 'Months' || addClientAgeUnit === 'Days') setAddClientAgeUnit('Years');
+                                                }}
+                                                className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                    addClientFormType === 'patient_care_form'
+                                                        ? 'bg-teal-600 text-white shadow-2xs'
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                Patient Care
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setAddClientFormType('baby_care_form');
+                                                    if (addClientAgeUnit === 'Years') setAddClientAgeUnit('Months');
+                                                }}
+                                                className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                    addClientFormType === 'baby_care_form'
+                                                        ? 'bg-pink-600 text-white shadow-2xs'
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                Baby Care
+                                            </button>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsAddClientCareExpanded(!isAddClientCareExpanded)}
+                                            className="text-xs text-teal-700 hover:text-teal-900 font-semibold flex items-center gap-1"
+                                        >
+                                            {isAddClientCareExpanded ? (
+                                                <>
+                                                    <ChevronUp className="w-3.5 h-3.5" />
+                                                    Collapse
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ChevronDown className="w-3.5 h-3.5" />
+                                                    Expand
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!isAddClientCareExpanded && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                        <div className="bg-white p-2 rounded-lg border border-teal-100">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Patient / Baby</span>
+                                            <span className="font-bold text-slate-800 truncate block">{addClientPatientName || addClientName || 'Not specified'}</span>
+                                        </div>
+                                        <div className="bg-white p-2 rounded-lg border border-teal-100">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Age &amp; Weight</span>
+                                            <span className="font-bold text-slate-800 truncate block">
+                                                {addClientAge ? `${addClientAge} ${addClientAgeUnit}` : 'N/A'}
+                                                {addClientWeight ? ` • ${addClientWeight}kg` : ''}
+                                            </span>
+                                        </div>
+                                        <div className="bg-white p-2 rounded-lg border border-teal-100">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Selected Duties</span>
+                                            <span className="font-bold text-slate-800 truncate block">{addClientDuties.length} duties</span>
+                                        </div>
+                                        <div className="bg-white p-2 rounded-lg border border-teal-100">
+                                            <span className="text-[10px] text-slate-400 font-semibold block">Condition</span>
+                                            <span className="font-bold text-slate-800 truncate block">{addClientMedicalCondition || 'None'}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isAddClientCareExpanded && (
+                                    <div className="space-y-4">
+                                        {/* Patient & Health Information */}
+                                        <div className="space-y-2.5">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[11px] font-bold uppercase tracking-wider text-teal-800">
+                                                    A. Patient &amp; Health Information
+                                                </h4>
+                                                {addClientName && !addClientPatientName && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAddClientPatientName(addClientName)}
+                                                        className="text-[11px] text-teal-700 hover:underline font-semibold"
+                                                    >
+                                                        Copy Client Name as Patient
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                        {addClientFormType === 'baby_care_form' ? "Baby's Name" : "Patient's Name"}
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={addClientPatientName}
+                                                        onChange={e => setAddClientPatientName(e.target.value)}
+                                                        placeholder={addClientName ? `Default: ${addClientName}` : 'e.g. Ramesh Patel / Baby of Tina'}
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Age</label>
+                                                    <div className="flex gap-1">
+                                                        <input
+                                                            type="text"
+                                                            value={addClientAge}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                if (/(?:kgs?|kg|kilos?|years?|months?|days?)/i.test(val)) {
+                                                                    const parsed = parseAgeAndWeight(val, addClientAgeUnit, addClientWeight, addClientFormType === 'baby_care_form');
+                                                                    setAddClientAge(parsed.age);
+                                                                    if (parsed.weight && !addClientWeight) setAddClientWeight(parsed.weight);
+                                                                    setAddClientAgeUnit(parsed.ageUnit);
+                                                                } else {
+                                                                    setAddClientAge(val);
+                                                                }
+                                                            }}
+                                                            placeholder={addClientFormType === 'baby_care_form' ? "e.g. 15 or 3" : "e.g. 68"}
+                                                            className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium"
+                                                        />
+                                                        <select
+                                                            value={addClientAgeUnit}
+                                                            onChange={e => setAddClientAgeUnit(e.target.value as 'Days' | 'Months' | 'Years')}
+                                                            className="px-2 py-1.5 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                        >
+                                                            <option value="Days">Days</option>
+                                                            <option value="Months">Months</option>
+                                                            <option value="Years">Years</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Weight (kg)</label>
+                                                    <input
+                                                        type="text"
+                                                        value={addClientWeight}
+                                                        onChange={e => setAddClientWeight(e.target.value.replace(/\s*(?:kgs?|kg|kilos?)\b/gi, '').trim())}
+                                                        placeholder="e.g. 55 or 4.5"
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Guardian / Relative Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={addClientRelativeName}
+                                                        onChange={e => setAddClientRelativeName(e.target.value)}
+                                                        placeholder={addClientName ? `Default: ${addClientName}` : 'e.g. Son, Daughter, Spouse'}
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Alternate Contact Phone (Optional)</label>
+                                                    <input
+                                                        type="tel"
+                                                        value={addClientAltPhone}
+                                                        onChange={e => setAddClientAltPhone(e.target.value)}
+                                                        placeholder="e.g. 9123456789"
+                                                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 mb-1">Medical Condition &amp; Health Details</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={addClientMedicalCondition}
+                                                    onChange={e => setAddClientMedicalCondition(e.target.value)}
+                                                    placeholder="Bedridden, stroke recovery, diabetic, post-surgery precautions..."
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium resize-none"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Caregiver Work Form Checklist */}
+                                        <div className="space-y-2 pt-2 border-t border-teal-200/60">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-teal-800">
+                                                        B. Caregiver Work Form Checklist ({addClientFormType === 'baby_care_form' ? 'Baby Care' : 'Patient Care'})
+                                                    </h4>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                                                        {addClientDuties.length} selected
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const dict = addClientFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+                                                            setAddClientDuties(Object.keys(dict));
+                                                        }}
+                                                        className="font-bold text-teal-700 hover:text-teal-900"
+                                                    >
+                                                        Select All
+                                                    </button>
+                                                    <span className="text-slate-300">•</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAddClientDuties([])}
+                                                        className="font-bold text-slate-500 hover:text-red-600"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
+                                                {Object.entries(addClientFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS).map(([dKey, dLabel]) => {
+                                                    const isChecked = addClientDuties.includes(dKey);
+                                                    return (
+                                                        <button
+                                                            key={dKey}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setAddClientDuties(prev =>
+                                                                    prev.includes(dKey) ? prev.filter(k => k !== dKey) : [...prev, dKey]
+                                                                );
+                                                            }}
+                                                            className={`p-2 rounded-lg border text-left text-xs font-medium flex items-center gap-2 transition-all ${
+                                                                isChecked
+                                                                    ? 'bg-teal-50 border-teal-500 text-teal-900 font-bold shadow-2xs'
+                                                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 text-[10px] ${
+                                                                isChecked ? 'bg-teal-600 text-white' : 'border border-slate-300'
+                                                            }`}>
+                                                                {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                                            </div>
+                                                            <span className="truncate">{dLabel}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="pt-1">
+                                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                    Other Work / Special Instructions for Caregiver
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={addClientCareInstructions}
+                                                    onChange={e => setAddClientCareInstructions(e.target.value)}
+                                                    placeholder="e.g. Assistance with walker, medicines at 8 PM, night feeds every 3 hours..."
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 bg-white text-xs sm:text-sm font-medium"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Section 4: Security Deposit */}
                             <div>
                                 <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
                                     <RupeeIcon className="w-4 h-4 text-emerald-600" />
-                                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">3. Security Deposit</h3>
+                                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">4. Security Deposit</h3>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                                     <div>
@@ -10063,12 +10502,12 @@ export default function CRM() {
                                 </div>
                             </div>
 
-                            {/* Section 4: Assigned Worker(s) */}
+                            {/* Section 5: Assigned Worker(s) */}
                             <div>
                                 <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
                                     <div className="flex items-center gap-2">
                                         <Users className="w-4 h-4 text-purple-600" />
-                                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">4. Assigned Worker(s) <span className="text-red-500">*</span></h3>
+                                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">5. Assigned Worker(s) <span className="text-red-500">*</span></h3>
                                     </div>
                                     <span className="text-[11px] text-slate-400 font-medium">{addClientSelectedWorkers.length} assigned</span>
                                 </div>
@@ -10171,7 +10610,7 @@ export default function CRM() {
                                 )}
                             </div>
 
-                            {/* Section 5: Past Attendance Sync */}
+                            {/* Section 6: Past Attendance Sync */}
                             <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/70 space-y-3">
                                 <div className="flex items-start gap-2.5">
                                     <input
