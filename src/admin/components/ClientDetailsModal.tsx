@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse, ListChecks, CheckSquare } from 'lucide-react';
+import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse, ListChecks, CheckSquare, MessageCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../../utils/generateInvoicePdf';
@@ -195,6 +195,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     const [showEndConfirm, setShowEndConfirm] = useState(false);
     const [releasingWorkerId, setReleasingWorkerId] = useState<string | null>(null);
     const [copiedClientId, setCopiedClientId] = useState(false);
+    const [copiedPhone, setCopiedPhone] = useState(false);
 
     // Edit Requirements Modal State
     const [isEditingReq, setIsEditingReq] = useState(false);
@@ -690,9 +691,57 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                             </span>
                         </div>
                         <div className="text-sm text-slate-500 mt-1.5 flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1 font-medium text-slate-600">
-                                <Phone className="w-3.5 h-3.5 text-slate-400" /> {client?.phone || lead?.phone || 'No phone'}
-                            </span>
+                            {(() => {
+                                const rawPhone = client?.phone || lead?.phone;
+                                if (!rawPhone) {
+                                    return (
+                                        <span className="inline-flex items-center gap-1 font-medium text-slate-400">
+                                            <Phone className="w-3.5 h-3.5" /> No phone
+                                        </span>
+                                    );
+                                }
+                                const cleanDigits = rawPhone.replace(/\D/g, '');
+                                const waDigits = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+                                const telDigits = rawPhone.startsWith('+') ? rawPhone : (cleanDigits.length === 10 ? `+91${cleanDigits}` : `+${cleanDigits}`);
+                                return (
+                                    <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded-lg">
+                                        <a
+                                            href={`tel:${telDigits}`}
+                                            className="inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-800 hover:text-primary hover:underline transition-colors group/call"
+                                            title={`Click to call ${rawPhone}`}
+                                        >
+                                            <Phone className="w-3.5 h-3.5 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
+                                            <span>{rawPhone}</span>
+                                        </a>
+                                        <a
+                                            href={`https://wa.me/${waDigits}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+                                            title={`Chat on WhatsApp (${rawPhone})`}
+                                        >
+                                            <MessageCircle className="w-3.5 h-3.5" />
+                                        </a>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(rawPhone);
+                                                setCopiedPhone(true);
+                                                toast.success(`Copied phone: ${rawPhone}`);
+                                                setTimeout(() => setCopiedPhone(false), 2000);
+                                            }}
+                                            className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                                            title="Copy phone number"
+                                        >
+                                            {copiedPhone ? (
+                                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                            ) : (
+                                                <Copy className="w-3.5 h-3.5" />
+                                            )}
+                                        </button>
+                                    </div>
+                                );
+                            })()}
                             <span className="text-slate-300">•</span>
                             <button
                                 type="button"

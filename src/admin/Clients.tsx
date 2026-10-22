@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp, Save, Loader2 } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp, Save, Loader2, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -168,6 +168,7 @@ export default function Clients() {
     const [sortField, setSortField] = useState<'displayId' | 'name' | 'city' | 'phone' | 'workerCount' | 'securityDeposit' | 'status' | 'created_at'>('displayId');
     const [sortAsc, setSortAsc] = useState<boolean>(true);
     const [copiedClientIdBadge, setCopiedClientIdBadge] = useState<string | null>(null);
+    const [copiedPhoneBadge, setCopiedPhoneBadge] = useState<string | null>(null);
 
     const handleSort = (field: typeof sortField) => {
         if (sortField === field) {
@@ -184,6 +185,15 @@ export default function Clients() {
         setCopiedClientIdBadge(idToCopy);
         toast.success(`Copied ID: ${idToCopy}`);
         setTimeout(() => setCopiedClientIdBadge(null), 2000);
+    };
+
+    const handleCopyPhone = (phoneToCopy: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const clean = phoneToCopy.trim();
+        navigator.clipboard.writeText(clean);
+        setCopiedPhoneBadge(clean);
+        toast.success(`Copied phone: ${clean}`);
+        setTimeout(() => setCopiedPhoneBadge(null), 2000);
     };
 
     // City filter state
@@ -1924,8 +1934,61 @@ export default function Clients() {
                                                             </td>
 
                                                             {/* Phone */}
-                                                            <td className="py-2.5 px-2.5 whitespace-nowrap font-mono text-xs text-slate-700">
-                                                                {client.phone || 'N/A'}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                {(() => {
+                                                                    if (!client.phone) {
+                                                                        return <span className="font-mono text-xs text-slate-400">N/A</span>;
+                                                                    }
+
+                                                                    const rawPhone = client.phone.trim();
+                                                                    const cleanDigits = rawPhone.replace(/\D/g, '');
+                                                                    const waDigits = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+                                                                    const telDigits = rawPhone.startsWith('+') ? rawPhone : (cleanDigits.length === 10 ? `+91${cleanDigits}` : `+${cleanDigits}`);
+                                                                    const isCopied = copiedPhoneBadge === rawPhone;
+
+                                                                    return (
+                                                                        <div className="inline-flex items-center gap-1.5 py-0.5">
+                                                                            {/* Click-to-call link */}
+                                                                            <a
+                                                                                href={`tel:${telDigits}`}
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                className="font-mono text-xs font-semibold text-slate-800 hover:text-primary hover:underline transition-colors inline-flex items-center gap-1 group/call"
+                                                                                title={`Click to call ${rawPhone}`}
+                                                                            >
+                                                                                <Phone className="w-3 h-3 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
+                                                                                <span>{rawPhone}</span>
+                                                                            </a>
+
+                                                                            <div className="inline-flex items-center gap-0.5 shrink-0">
+                                                                                {/* WhatsApp button */}
+                                                                                <a
+                                                                                    href={`https://wa.me/${waDigits}`}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    className="p-1 rounded-md text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                                                    title={`Chat with ${client.name} on WhatsApp (${rawPhone})`}
+                                                                                >
+                                                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                                                </a>
+
+                                                                                {/* Copy phone button */}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => handleCopyPhone(rawPhone, e)}
+                                                                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                                                                    title="Copy phone number"
+                                                                                >
+                                                                                    {isCopied ? (
+                                                                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                                                    ) : (
+                                                                                        <Copy className="w-3.5 h-3.5" />
+                                                                                    )}
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </td>
 
                                                             {/* Workers */}
@@ -2158,10 +2221,52 @@ export default function Clients() {
                                 {/* 3. Detail Columns */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4 pt-4 border-t border-slate-100">
                                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col justify-center">
-                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                                            <Phone className="w-3 h-3" /> Contact
-                                        </p>
-                                        <p className="text-sm font-bold text-slate-700 truncate">{client.phone || 'N/A'}</p>
+                                        <div className="flex items-center justify-between gap-1 mb-1">
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                                <Phone className="w-3 h-3" /> Contact
+                                            </p>
+                                            {client.phone && (
+                                                <div className="flex items-center gap-0.5">
+                                                    {/* WhatsApp button */}
+                                                    <a
+                                                        href={`https://wa.me/${(client.phone.replace(/\D/g, '').length === 10 ? '91' : '') + client.phone.replace(/\D/g, '')}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="p-1 rounded-md text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                        title={`Chat on WhatsApp (${client.phone})`}
+                                                    >
+                                                        <MessageCircle className="w-3.5 h-3.5" />
+                                                    </a>
+                                                    {/* Copy button */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleCopyPhone(client.phone, e)}
+                                                        className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                                                        title="Copy phone number"
+                                                    >
+                                                        {copiedPhoneBadge === client.phone ? (
+                                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                        ) : (
+                                                            <Copy className="w-3.5 h-3.5" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {client.phone ? (
+                                            <a
+                                                href={`tel:${client.phone.startsWith('+') ? client.phone : (client.phone.replace(/\D/g, '').length === 10 ? `+91${client.phone.replace(/\D/g, '')}` : `+${client.phone.replace(/\D/g, '')}`)}`}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="text-sm font-bold text-slate-700 hover:text-primary hover:underline truncate transition-colors font-mono inline-flex items-center gap-1 group/call"
+                                                title={`Click to call ${client.phone}`}
+                                            >
+                                                <Phone className="w-3 h-3 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
+                                                <span>{client.phone}</span>
+                                            </a>
+                                        ) : (
+                                            <p className="text-sm font-bold text-slate-400 truncate">N/A</p>
+                                        )}
                                     </div>
 
                                     {/* Issue 2 Fix: Deposit Box with dedicated action row to prevent horizontal overflow */}
