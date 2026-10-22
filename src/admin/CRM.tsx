@@ -6091,7 +6091,19 @@ export default function CRM() {
                                                                                             <span className="text-xs font-bold text-slate-400 font-mono shrink-0 select-none">
                                                                                                 {itemIdx + 1}.
                                                                                             </span>
-                                                                                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug break-words flex-1 min-w-0" title={item.name}>
+                                                                                            <h4
+                                                                                                onClick={async (e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    setSelectedInspectorLead(item);
+                                                                                                    fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                                                    if (item.needs_attention) {
+                                                                                                        setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                                        await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                                                    }
+                                                                                                }}
+                                                                                                className="text-xs sm:text-sm font-bold text-slate-900 leading-snug break-words flex-1 min-w-0 hover:text-primary cursor-pointer transition-colors"
+                                                                                                title={`View details for ${item.name}`}
+                                                                                            >
                                                                                                 {item.name}
                                                                                             </h4>
                                                                                         </div>
@@ -6100,7 +6112,7 @@ export default function CRM() {
                                                                                         </span>
                                                                                     </div>
 
-                                                                                    {/* Row 2: Phone number + Actions (Edit, Full View Eye, Chat) */}
+                                                                                    {/* Row 2: Phone number + Actions (Edit, Expand Eye, Chat) */}
                                                                                     <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
                                                                                         <span className="truncate flex items-center gap-1 font-medium text-slate-600">
                                                                                             <Phone className="w-3 h-3 text-slate-400 shrink-0" />
@@ -6120,17 +6132,12 @@ export default function CRM() {
                                                                                             </button>
                                                                                             <button
                                                                                                 type="button"
-                                                                                                onClick={async (e) => {
+                                                                                                onClick={(e) => {
                                                                                                     e.stopPropagation();
-                                                                                                    setSelectedInspectorLead(item);
-                                                                                                    fetchLeadActivity(item.id, item.duplicate_of_lead_id);
-                                                                                                    if (item.needs_attention) {
-                                                                                                        setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
-                                                                                                        await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
-                                                                                                    }
+                                                                                                    toggleCardBadges(item.id);
                                                                                                 }}
                                                                                                 className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors cursor-pointer"
-                                                                                                title="Full view lead details"
+                                                                                                title="Expand card & show details"
                                                                                             >
                                                                                                 <Eye className="w-3.5 h-3.5" />
                                                                                             </button>
@@ -6339,7 +6346,19 @@ export default function CRM() {
                                                                                         <span className="text-xs font-bold text-slate-400 font-mono shrink-0 select-none">
                                                                                             {itemIdx + 1}.
                                                                                         </span>
-                                                                                        <p className="text-sm font-bold text-slate-900 leading-snug break-words flex-1" title={item.name}>
+                                                                                        <p
+                                                                                            onClick={async (e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setSelectedInspectorLead(item);
+                                                                                                fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                                                if (item.needs_attention) {
+                                                                                                    setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                                    await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="text-sm font-bold text-slate-900 leading-snug break-words flex-1 hover:text-primary cursor-pointer transition-colors"
+                                                                                            title={`View details for ${item.name}`}
+                                                                                        >
                                                                                             {item.name}
                                                                                         </p>
                                                                                     </div>
@@ -6357,28 +6376,12 @@ export default function CRM() {
                                                                                         </button>
                                                                                         <button
                                                                                             type="button"
-                                                                                            onClick={async (e) => {
-                                                                                                e.stopPropagation();
-                                                                                                setSelectedInspectorLead(item);
-                                                                                                fetchLeadActivity(item.id, item.duplicate_of_lead_id);
-                                                                                                if (item.needs_attention) {
-                                                                                                    setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
-                                                                                                    await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
-                                                                                                }
-                                                                                            }}
-                                                                                            className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
-                                                                                            title="Full view lead details"
-                                                                                        >
-                                                                                            <Eye className="w-3.5 h-3.5" />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
                                                                                                 toggleCardBadges(item.id);
                                                                                             }}
                                                                                             className="p-1 rounded-md text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
-                                                                                            title="Hide badges for this lead"
+                                                                                            title="Collapse card & hide details"
                                                                                         >
                                                                                             <EyeOff className="w-3.5 h-3.5 text-primary" />
                                                                                         </button>
