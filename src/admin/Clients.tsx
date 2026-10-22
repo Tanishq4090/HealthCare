@@ -746,15 +746,25 @@ export default function Clients() {
             'Phone Number',
             'Email',
             'City',
-            'Status',
-            'Active Workers',
-            'Total Workers',
-            'Security Deposit (INR)',
+            'Client Status',
+            'Active Service',
+            'Shift / Hours',
+            'Assigned Caregiver(s)',
+            'Active Workers Count',
+            'Total Workers Count',
+            'Total Service Cycles',
+            'Current Cycle Start Date',
+            'Current Cycle End Date',
+            'Last Cycle Settled Date',
+            'Full Service History',
+            'Daily Rate (Full Month)',
+            'Daily Rate (Partial Month)',
+            'Current Security Deposit (INR)',
             'Deposit Status',
             'Refunded/Settled Deposit (INR)',
-            'Service Start Date',
-            'Date Added',
-            'Active Service',
+            'Total Lifetime Deposits (INR)',
+            'Lead Source',
+            'Registration Date',
             'Client UUID'
         ];
 
@@ -764,29 +774,80 @@ export default function Clients() {
             const excelSafePhone = rawPhone ? `\t${rawPhone}` : '';
             const city = c.city || extractCity(c);
             const depositAmt = (c.activeService || c.activeAssignment) ? Number(c.securityDeposit || 0) : 0;
+            const pastDepositAmt = Number(c.pastDepositTotal || 0);
+            const totalLifetimeDeposit = depositAmt + pastDepositAmt;
+
             const startDate = c.serviceStartDate ? formatDateDisplay(c.serviceStartDate) : 'N/A';
             const addedDate = c.created_at ? formatDateDisplay(c.created_at) : 'N/A';
+
             const currentCycle = c.allServiceCycles?.find((cyc: any) => cyc.isCurrent);
             const latestCycle = c.allServiceCycles?.[0];
             const rawSvc = c.activeService?.service_type || (c.services && c.services[0]?.service_type);
             const cleanSvc = (rawSvc && rawSvc !== 'date_range' && rawSvc !== 'open_ended' && rawSvc !== 'one_day' && rawSvc.trim() !== '') ? rawSvc : null;
             const activeServiceName = currentCycle?.serviceType || cleanSvc || latestCycle?.serviceType || ((c.services && c.services.length > 0) || c.activeAssignment ? 'Home Care Service' : 'None');
 
+            // Shift / Hours
+            const rawHours = c.hoursPerDay || c.activeService?.hours_per_day || c.activeAssignment?.hours_per_day || 10;
+            const shiftLabel = rawHours >= 20 ? '24 hrs (Live-in)' : `${rawHours} hrs/day`;
+
+            // Assigned Caregivers
+            const caregiversList = c.assignedCaregivers && c.assignedCaregivers.length > 0
+                ? c.assignedCaregivers.join(', ')
+                : (c.activeWorkerCount > 0 ? 'Assigned' : 'Unassigned');
+
+            // Service Cycles Tracking
+            const cyclesCount = c.allServiceCycles?.length || (c.activeService ? 1 : 0);
+            const totalCyclesStr = `${cyclesCount} Cycle${cyclesCount !== 1 ? 's' : ''}`;
+            const currentEndDate = currentCycle?.endDate ? formatDateDisplay(currentCycle.endDate) : (c.activeService ? 'Ongoing' : 'N/A');
+
+            // Settled Date from past cycles
+            const { settledDateStr } = getClientDepositBreakdown(c);
+            const lastSettledDate = settledDateStr || 'N/A';
+
+            // Full Service History audit trail
+            let fullServiceHistory = 'No service history recorded';
+            if (c.allServiceCycles && c.allServiceCycles.length > 0) {
+                fullServiceHistory = c.allServiceCycles.map((cyc: any, cIdx: number) => {
+                    const cycleNum = c.allServiceCycles.length - cIdx;
+                    const sDate = cyc.startDate ? formatDateDisplay(cyc.startDate) : 'Unknown';
+                    const eDate = cyc.isCurrent ? 'Ongoing' : (cyc.endDate ? formatDateDisplay(cyc.endDate) : (cyc.settledDate ? formatDateDisplay(cyc.settledDate) : 'Ended'));
+                    const depInfo = cyc.depositAmount ? `₹${cyc.depositAmount.toLocaleString('en-IN')} [${cyc.depositStatus || 'settled'}]` : 'No Deposit';
+                    return `Cycle ${cycleNum}: ${cyc.serviceType || 'Service'} (${sDate} to ${eDate}, Deposit: ${depInfo})`;
+                }).join('; ');
+            }
+
+            // Daily Billing Rates
+            const dailyRateFull = c.completeMonthDailyRate ? `₹${Number(c.completeMonthDailyRate).toLocaleString('en-IN')}/day` : 'N/A';
+            const dailyRatePartial = c.incompleteMonthDailyRate ? `₹${Number(c.incompleteMonthDailyRate).toLocaleString('en-IN')}/day` : 'N/A';
+
+            // Deposit Status Formatted
+            const formattedDepositStatus = c.depositStatus ? (c.depositStatus.charAt(0).toUpperCase() + c.depositStatus.slice(1)) : 'Settled';
+
             return [
                 c.displayId || 'CL-0001',
                 c.name || '',
                 excelSafePhone,
-                c.email || '',
+                c.email && c.email !== '-' ? c.email : '',
                 city,
                 c.status || '',
+                activeServiceName,
+                shiftLabel,
+                caregiversList,
                 c.activeWorkerCount || 0,
                 c.workerCount || 0,
-                depositAmt,
-                c.depositStatus || 'paid',
-                c.pastDepositTotal || 0,
+                totalCyclesStr,
                 startDate,
+                currentEndDate,
+                lastSettledDate,
+                fullServiceHistory,
+                dailyRateFull,
+                dailyRatePartial,
+                depositAmt,
+                formattedDepositStatus,
+                pastDepositAmt,
+                totalLifetimeDeposit,
+                c.leadSource || 'Manual Add',
                 addedDate,
-                activeServiceName,
                 c.id || ''
             ];
         });
@@ -1350,7 +1411,7 @@ export default function Clients() {
             // 1. Fetch leads to map pipeline_stage and service metadata
             // Also fetch all records from the clients table
             const [leadsResult, allClientsRes] = await Promise.all([
-                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role'),
+                supabase.from('crm_leads').select('id, name, phone, whatsapp_number, email, source, created_at, pipeline_stage, notes, assigned_worker_role, assigned_worker_name, complete_month_daily_rate, incomplete_month_daily_rate'),
                 supabase.from('clients').select('*').order('created_at', { ascending: false })
             ]);
 
@@ -1398,7 +1459,7 @@ export default function Clients() {
             // 3. Fetch worker_assignments with employee status & dates
             const { data: allAssignmentsData, error: assignAllError } = await supabase
                 .from('worker_assignments')
-                .select('id, client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, service_type, assigned_at, notes, employees(status, full_name)');
+                .select('id, client_id, assignment_status, employee_id, deposit_amount, deposit_paid, start_date, end_date, service_type, hours_per_day, assigned_at, notes, employees(status, full_name)');
 
             if (assignAllError) throw assignAllError;
 
@@ -1410,7 +1471,7 @@ export default function Clients() {
                     .eq('payment_type', 'deposit'),
                 supabase
                     .from('services')
-                    .select('id, client_id, service_type, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes, legacy_assignment_id, service_worker_assignments(id, employee_id, start_date, end_date, employees(status, full_name))')
+                    .select('id, client_id, service_type, hours_per_day, complete_month_daily_rate, incomplete_month_daily_rate, start_date, end_date, status, deposit_amount, deposit_status, created_at, notes, legacy_assignment_id, service_worker_assignments(id, employee_id, start_date, end_date, employees(status, full_name))')
             ]);
 
             if (paymentsError) throw paymentsError;
@@ -1422,10 +1483,12 @@ export default function Clients() {
             // Build unified workerMap keyed by client_id combining BOTH worker_assignments AND service_worker_assignments
             const allWorkersByClient: Record<string, Set<string>> = {};
             const activeWorkersByClient: Record<string, Set<string>> = {};
+            const activeWorkerNamesByClient: Record<string, Set<string>> = {};
 
             const ensureSets = (clientId: string) => {
                 if (!allWorkersByClient[clientId]) allWorkersByClient[clientId] = new Set();
                 if (!activeWorkersByClient[clientId]) activeWorkersByClient[clientId] = new Set();
+                if (!activeWorkerNamesByClient[clientId]) activeWorkerNamesByClient[clientId] = new Set();
             };
 
             const todayStr = new Date().toISOString().split('T')[0];
@@ -1439,6 +1502,7 @@ export default function Clients() {
                 const isActive = a.assignment_status === 'active' && (!a.end_date || a.end_date >= todayStr) && (empStatus === 'assigned' || empStatus === 'Active' || empStatus === 'available');
                 if (isActive && a.employee_id) {
                     activeWorkersByClient[a.client_id].add(a.employee_id);
+                    if (a.employees?.full_name) activeWorkerNamesByClient[a.client_id].add(a.employees.full_name);
                 }
             });
 
@@ -1452,15 +1516,21 @@ export default function Clients() {
                     const isActive = s.status === 'active' && (!swa.end_date || swa.end_date >= todayStr) && (empStatus === 'assigned' || empStatus === 'Active' || empStatus === 'available');
                     if (isActive && swa.employee_id) {
                         activeWorkersByClient[s.client_id].add(swa.employee_id);
+                        if (swa.employees?.full_name) activeWorkerNamesByClient[s.client_id].add(swa.employees.full_name);
                     }
                 });
             });
 
-            const workerMap: Record<string, { workerCount: number, activeWorkerCount: number }> = {};
+            const workerMap: Record<string, { workerCount: number, activeWorkerCount: number, activeWorkerNames: string[] }> = {};
             Object.keys(allWorkersByClient).forEach(cid => {
+                const namesSet = activeWorkerNamesByClient[cid] || new Set();
+                if (namesSet.size === 0 && leadMap[cid]?.assigned_worker_name) {
+                    namesSet.add(leadMap[cid].assigned_worker_name);
+                }
                 workerMap[cid] = {
                     workerCount: allWorkersByClient[cid].size,
-                    activeWorkerCount: activeWorkersByClient[cid].size
+                    activeWorkerCount: activeWorkersByClient[cid].size,
+                    activeWorkerNames: Array.from(namesSet)
                 };
             });
 
@@ -1627,6 +1697,11 @@ export default function Clients() {
                     status: stageMap[c.id] || 'Active',
                     workerCount: workerMap[c.id]?.workerCount || 0,
                     activeWorkerCount: workerMap[c.id]?.activeWorkerCount || 0,
+                    assignedCaregivers: workerMap[c.id]?.activeWorkerNames || (leadInfo?.assigned_worker_name ? [leadInfo.assigned_worker_name] : []),
+                    hoursPerDay: activeService?.hours_per_day || (activeAssignment as any)?.hours_per_day || latestService?.hours_per_day || 10,
+                    completeMonthDailyRate: activeService?.complete_month_daily_rate || leadInfo?.complete_month_daily_rate || 0,
+                    incompleteMonthDailyRate: activeService?.incomplete_month_daily_rate || leadInfo?.incomplete_month_daily_rate || 0,
+                    leadSource: c.source || leadInfo?.source || 'Manual Add',
                     lifetimeValue: '₹0',
                     securityDeposit: depositAmount,
                     depositStatus: depositStatus,
