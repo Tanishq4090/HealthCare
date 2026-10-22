@@ -18,6 +18,69 @@ const ATTENTION_EVENT_TYPES = new Set([
     'whatsapp_deposit_invoice_alert_failed',
 ]);
 
+const DISMISSED_ALERTS_KEY = '99care_dismissed_alert_ids';
+const ALERTS_CLEARED_AT_KEY = '99care_alerts_cleared_at';
+
+// Module-level in-memory cache to prevent flashing / refetch spikes when switching tabs
+let cachedGlobalAlerts: any[] | null = null;
+
+const getDismissedAlertIds = (): Set<string> => {
+    try {
+        const stored = localStorage.getItem(DISMISSED_ALERTS_KEY);
+        return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+        return new Set();
+    }
+};
+
+const saveDismissedAlertIds = (ids: string[]) => {
+    try {
+        if (!ids || ids.length === 0) return;
+        const set = getDismissedAlertIds();
+        ids.forEach(id => {
+            if (id) set.add(id);
+        });
+        const arr = Array.from(set).slice(-500);
+        localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify(arr));
+    } catch (err) {
+        console.warn('Failed to save dismissed alerts:', err);
+    }
+};
+
+const getAlertsClearedAt = (): number => {
+    try {
+        const val = localStorage.getItem(ALERTS_CLEARED_AT_KEY);
+        if (!val) return 0;
+        const time = new Date(val).getTime();
+        return isNaN(time) ? 0 : time;
+    } catch {
+        return 0;
+    }
+};
+
+const setAlertsClearedAt = (isoString: string) => {
+    try {
+        localStorage.setItem(ALERTS_CLEARED_AT_KEY, isoString);
+    } catch (err) {
+        console.warn('Failed to set alerts cleared at:', err);
+    }
+};
+
+const isAlertDismissed = (alertId: string, createdAt?: string | null): boolean => {
+    if (!alertId) return false;
+    const dismissed = getDismissedAlertIds();
+    if (dismissed.has(alertId)) return true;
+    const clearedAt = getAlertsClearedAt();
+    if (clearedAt > 0) {
+        if (!createdAt) return true;
+        const alertTime = new Date(createdAt).getTime();
+        if (isNaN(alertTime) || alertTime <= clearedAt) {
+            return true;
+        }
+    }
+    return false;
+};
+
 const formatNotificationTime = (createdAt: string) => {
     const date = new Date(createdAt);
     const now = new Date();
@@ -127,7 +190,12 @@ export default function AdminLayout() {
     const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
     const [notificationFilter, setNotificationFilter] = useState<'all' | 'urgent'>('all');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const [globalAlerts, setGlobalAlerts] = useState<any[]>([]);
+    const [globalAlerts, setGlobalAlerts] = useState<any[]>(() => {
+        if (cachedGlobalAlerts !== null) {
+            return cachedGlobalAlerts.filter(a => !isAlertDismissed(a.id, a.created_at));
+        }
+        return [];
+    });
     const [isDeletionModalOpen, setIsDeletionModalOpen] = useState(false);
     const [pendingDeletionCount, setPendingDeletionCount] = useState(0);
 
@@ -191,8 +259,24 @@ export default function AdminLayout() {
         }
     };
 
+    const handleDismissAlert = (alertId: string) => {
+        saveDismissedAlertIds([alertId]);
+        cachedGlobalAlerts = (cachedGlobalAlerts || []).filter(item => item.id !== alertId);
+        setGlobalAlerts(prev => prev.filter(item => item.id !== alertId));
+    };
+
+    const handleClearAllAlerts = () => {
+        const nowIso = new Date().toISOString();
+        setAlertsClearedAt(nowIso);
+        saveDismissedAlertIds(globalAlerts.map(a => a.id));
+        cachedGlobalAlerts = [];
+        setGlobalAlerts([]);
+        setIsGlobalNotificationsOpen(false);
+    };
+
     const pushGlobalAlert = (key: string, title: string, body: string, options?: { route?: string; severity?: 'attention' | 'error' | 'urgent' }) => {
-        if (!key || notifiedAlertIds.current.has(key)) return;
+        const nowIso = new Date().toISOString();
+        if (!key || notifiedAlertIds.current.has(key) || isAlertDismissed(key, nowIso)) return;
         notifiedAlertIds.current.add(key);
 
         const alert = {
@@ -201,10 +285,14 @@ export default function AdminLayout() {
             body,
             route: options?.route || '/admin/crm',
             severity: options?.severity || 'attention',
-            created_at: new Date().toISOString(),
+            created_at: nowIso,
         };
 
-        setGlobalAlerts(prev => [alert, ...prev.filter(item => item.id !== key)].slice(0, 25));
+        setGlobalAlerts(prev => {
+            const next = [alert, ...prev.filter(item => item.id !== key)].slice(0, 25);
+            cachedGlobalAlerts = next;
+            return next;
+        });
         playNotificationSound();
         toast(title, {
             description: body,
@@ -359,7 +447,7 @@ export default function AdminLayout() {
                     .limit(10),
                 supabase
                     .from('crm_leads')
-                    .select('id, name, source, service_interest, pipeline_stage, needs_attention, created_at, deleted_at')
+                    .select('id, name, source, pipeline_stage, needs_attention, created_at, deleted_at, work_form_data')
                     .eq('needs_attention', true)
                     .is('deleted_at', null)
                     .order('created_at', { ascending: false })
@@ -391,18 +479,25 @@ export default function AdminLayout() {
                 };
             });
 
-            const leadAlerts = (attentionLeadsResult.data || []).map((lead: any) => ({
-                id: `lead_attention:${lead.id}`,
-                title: 'Lead Needs Attention',
-                body: `${lead.name || 'Lead'} needs review${lead.service_interest ? ` for ${lead.service_interest}` : ''}.`,
-                route: '/admin/crm',
-                severity: 'urgent',
-                created_at: lead.created_at,
-            }));
+            const leadAlerts = (attentionLeadsResult.data || []).map((lead: any) => {
+                const serviceName = lead.work_form_data?.service_interest || lead.work_form_data?.service || lead.work_form_data?.service_type || '';
+                return {
+                    id: `lead_attention:${lead.id}`,
+                    title: 'Lead Needs Attention',
+                    body: `${lead.name || 'Lead'} needs review${serviceName ? ` for ${serviceName}` : ''}.`,
+                    route: '/admin/crm',
+                    severity: 'urgent' as const,
+                    created_at: lead.created_at,
+                };
+            });
 
-            setGlobalAlerts([...activityAlerts, ...failureAlerts, ...leadAlerts]
+            const allRawAlerts = [...activityAlerts, ...failureAlerts, ...leadAlerts].filter((a): a is any => Boolean(a && a.id));
+            const activeAlerts = allRawAlerts.filter(a => !isAlertDismissed(a.id, a.created_at));
+            const sorted = activeAlerts
                 .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                .slice(0, 25));
+                .slice(0, 25);
+            cachedGlobalAlerts = sorted;
+            setGlobalAlerts(sorted);
         };
 
         fetchRecentAlerts().catch(err => console.warn('Failed to fetch global alerts:', err));
@@ -436,9 +531,15 @@ export default function AdminLayout() {
                         body: `Today is the last day of the month (${now.getDate()} ${format(now, 'MMM')}). Click here to review and generate monthly client invoices & staff payslips.`,
                         route: '/admin/billing?tab=monthly',
                         severity: 'attention' as const,
-                        created_at: new Date().toISOString(),
+                        created_at: monthStart,
                     };
-                    setGlobalAlerts(prev => [monthEndAlert, ...prev.filter(item => item.id !== alertKey)].slice(0, 25));
+                    if (!isAlertDismissed(alertKey, monthEndAlert.created_at)) {
+                        setGlobalAlerts(prev => {
+                            const next = [monthEndAlert, ...prev.filter(item => item.id !== alertKey)].slice(0, 25);
+                            cachedGlobalAlerts = next;
+                            return next;
+                        });
+                    }
                 }
             } catch (err) {
                 console.warn('Failed to check month end billing:', err);
@@ -1153,6 +1254,7 @@ export default function AdminLayout() {
                                                                     <div
                                                                         className="min-w-0 flex-1 cursor-pointer"
                                                                         onClick={() => {
+                                                                            handleDismissAlert(alert.id);
                                                                             setIsGlobalNotificationsOpen(false);
                                                                             navigate(alert.route || '/admin/crm');
                                                                         }}
@@ -1186,7 +1288,7 @@ export default function AdminLayout() {
                                                                         type="button"
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
-                                                                            setGlobalAlerts(prev => prev.filter(item => item.id !== alert.id));
+                                                                            handleDismissAlert(alert.id);
                                                                         }}
                                                                         className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-md transition-all shrink-0 cursor-pointer"
                                                                         title="Dismiss notification"
@@ -1206,10 +1308,7 @@ export default function AdminLayout() {
                                                             Showing {displayedAlerts.length} of {totalAlertsCount}
                                                         </span>
                                                         <button
-                                                            onClick={() => {
-                                                                setGlobalAlerts([]);
-                                                                setIsGlobalNotificationsOpen(false);
-                                                            }}
+                                                            onClick={handleClearAllAlerts}
                                                             className="text-xs font-bold text-primary hover:underline transition-transform cursor-pointer"
                                                         >
                                                             Clear all alerts
