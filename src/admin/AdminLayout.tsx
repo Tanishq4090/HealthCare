@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert, AlertCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, type AccessModule } from '../contexts/AuthContext';
 import { AdminDeletionRequestsModal } from './components/AdminDeletionRequestsModal';
@@ -42,20 +42,45 @@ const buildAttentionNotification = (activity: any) => {
             return {
                 title: source === 'AI Phone Call' ? 'New Voice Lead' : 'New Lead Needs Review',
                 body: `${leadName} from ${source}${service ? ` for ${service}` : ''}.`,
+                severity: 'attention' as const,
             };
         case 'form_filled':
-            return { title: 'New Intake Form Submitted', body: `${leadName}${service ? ` requested ${service}` : ' submitted service details'}.` };
+            return { 
+                title: 'New Intake Form Submitted', 
+                body: `${leadName}${service ? ` requested ${service}` : ' submitted service details'}.`,
+                severity: 'attention' as const,
+            };
         case 'quote_question':
-            return { title: 'Quote Question Needs Reply', body: `${leadName} tapped Ask a question.${preview}` };
+            return { 
+                title: 'Quote Question Needs Reply', 
+                body: `${leadName} tapped Ask a question.${preview}`,
+                severity: 'urgent' as const,
+            };
         case 'quote_call_requested':
-            return { title: 'Call Requested From Quote', body: `${leadName} tapped Schedule a call.${preview}` };
+            return { 
+                title: 'Call Requested From Quote', 
+                body: `${leadName} tapped Schedule a call.${preview}`,
+                severity: 'urgent' as const,
+            };
         case 'call_received':
-            return { title: 'Voice Call Needs Review', body: `${leadName} completed an AI call${service ? ` about ${service}` : ''}.` };
+            return { 
+                title: 'Voice Call Needs Review', 
+                body: `${leadName} completed an AI call${service ? ` about ${service}` : ''}.`,
+                severity: 'attention' as const,
+            };
         case 'automation_error':
         case 'whatsapp_deposit_invoice_alert_failed':
-            return { title: 'Automation Needs Attention', body: activity.description || metadata.reason || 'An automated workflow failed.' };
+            return { 
+                title: 'Automation Needs Attention', 
+                body: activity.description || metadata.reason || 'An automated workflow failed.',
+                severity: 'error' as const,
+            };
         case 'needs_attention':
-            return { title: 'Lead Needs Attention', body: `${leadName}: ${metadata.reason || activity.description || 'Manual review required.'}` };
+            return { 
+                title: 'Lead Needs Attention', 
+                body: `${leadName}: ${metadata.reason || activity.description || 'Manual review required.'}`,
+                severity: 'urgent' as const,
+            };
         default:
             return null;
     }
@@ -70,6 +95,7 @@ const buildLeadNotification = (lead: any, oldLead?: any) => {
         return {
             title: source.includes('Phone') ? 'New Voice Lead' : 'New Lead',
             body: `${lead.name || 'New lead'}${service ? ` needs ${service}` : ` came in from ${source}`}.`,
+            severity: 'attention' as const,
         };
     }
 
@@ -77,6 +103,7 @@ const buildLeadNotification = (lead: any, oldLead?: any) => {
         return {
             title: 'Lead Needs Attention',
             body: `${lead.name || 'Lead'} needs review${service ? ` for ${service}` : ''}.`,
+            severity: 'urgent' as const,
         };
     }
 
@@ -98,6 +125,7 @@ export default function AdminLayout() {
     const navigate = useNavigate();
     const { user, logout, hasAccess } = useAuth();
     const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
+    const [notificationFilter, setNotificationFilter] = useState<'all' | 'urgent'>('all');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [globalAlerts, setGlobalAlerts] = useState<any[]>([]);
     const [isDeletionModalOpen, setIsDeletionModalOpen] = useState(false);
@@ -109,6 +137,7 @@ export default function AdminLayout() {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isInputFocused, setIsInputFocused] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
+    const notificationsRef = useRef<HTMLDivElement>(null);
     const notifiedAlertIds = useRef<Set<string>>(new Set());
     const notificationAudioRef = useRef<AudioContext | null>(null);
     const canSearchClients = hasAccess('crm') || hasAccess('clients');
@@ -119,6 +148,9 @@ export default function AdminLayout() {
         const handleClickOutside = (event: MouseEvent) => {
             if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
                 setIsSearchOpen(false);
+            }
+            if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+                setIsGlobalNotificationsOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -159,7 +191,7 @@ export default function AdminLayout() {
         }
     };
 
-    const pushGlobalAlert = (key: string, title: string, body: string, options?: { route?: string; severity?: 'attention' | 'error' }) => {
+    const pushGlobalAlert = (key: string, title: string, body: string, options?: { route?: string; severity?: 'attention' | 'error' | 'urgent' }) => {
         if (!key || notifiedAlertIds.current.has(key)) return;
         notifiedAlertIds.current.add(key);
 
@@ -342,7 +374,7 @@ export default function AdminLayout() {
                     title: notification.title,
                     body: notification.body,
                     route: '/admin/crm',
-                    severity: 'attention',
+                    severity: notification.severity || 'attention',
                     created_at: activity.created_at,
                 };
             }).filter(Boolean);
@@ -364,7 +396,7 @@ export default function AdminLayout() {
                 title: 'Lead Needs Attention',
                 body: `${lead.name || 'Lead'} needs review${lead.service_interest ? ` for ${lead.service_interest}` : ''}.`,
                 route: '/admin/crm',
-                severity: 'attention',
+                severity: 'urgent',
                 created_at: lead.created_at,
             }));
 
@@ -420,7 +452,7 @@ export default function AdminLayout() {
                 const lead = payload.new as any;
                 const notification = buildLeadNotification(lead);
                 if (notification) {
-                    pushGlobalAlert(`lead:${lead.id}`, notification.title, notification.body, { route: '/admin/crm' });
+                    pushGlobalAlert(`lead:${lead.id}`, notification.title, notification.body, { route: '/admin/crm', severity: notification.severity });
                 }
             })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'crm_leads' }, (payload) => {
@@ -428,7 +460,7 @@ export default function AdminLayout() {
                 const oldLead = payload.old as any;
                 const notification = buildLeadNotification(lead, oldLead);
                 if (notification) {
-                    pushGlobalAlert(`lead_attention:${lead.id}:${lead.updated_at || Date.now()}`, notification.title, notification.body, { route: '/admin/crm' });
+                    pushGlobalAlert(`lead_attention:${lead.id}:${lead.updated_at || Date.now()}`, notification.title, notification.body, { route: '/admin/crm', severity: notification.severity });
                 }
             })
             .subscribe();
@@ -439,7 +471,7 @@ export default function AdminLayout() {
                 if (!ATTENTION_EVENT_TYPES.has(activity.event_type)) return;
                 const notification = buildAttentionNotification(activity);
                 if (notification) {
-                    pushGlobalAlert(`activity:${activity.id}`, notification.title, notification.body, { route: '/admin/crm' });
+                    pushGlobalAlert(`activity:${activity.id}`, notification.title, notification.body, { route: '/admin/crm', severity: notification.severity });
                 }
             })
             .subscribe();
@@ -968,57 +1000,227 @@ export default function AdminLayout() {
                             </button>
                         )}
 
-                        <div className="relative">
-                            <button 
-                                onClick={() => setIsGlobalNotificationsOpen(!isGlobalNotificationsOpen)}
-                                className={`relative p-2 transition-colors rounded-full ${isGlobalNotificationsOpen ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
-                            >
-                                <Bell className="w-5 h-5" />
-                                {globalAlerts.length > 0 && (
-                                    <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-                                )}
-                            </button>
-                            
-                            {isGlobalNotificationsOpen && (
-                                <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div className="p-4 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
-                                        <h3 className="font-bold text-slate-900 text-sm">Notifications</h3>
-                                        <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 border border-slate-200 rounded-full shadow-sm">{globalAlerts.length} Live</span>
-                                    </div>
-                                    <div className="max-h-[300px] overflow-y-auto divide-y divide-slate-50">
-                                        {globalAlerts.length === 0 ? (
-                                            <div className="p-6 text-center">
-                                                <p className="text-sm font-semibold text-slate-600">No live alerts right now.</p>
-                                                <p className="text-xs text-slate-400 mt-1">New leads and attention items will pop here.</p>
-                                            </div>
-                                        ) : globalAlerts.map((alert) => (
-                                            <button
-                                                key={alert.id}
-                                                type="button"
-                                                onClick={() => {
-                                                    setIsGlobalNotificationsOpen(false);
-                                                    navigate(alert.route || '/admin/crm');
-                                                }}
-                                                className={`w-full text-left p-4 hover:bg-slate-50 transition-colors cursor-pointer ${alert.severity === 'error' ? 'bg-red-50/60' : 'bg-primary/5'}`}
-                                            >
-                                                <div className="flex items-start gap-3">
-                                                    <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${alert.severity === 'error' ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
-                                                        <Bell className="w-4 h-4" />
+                        <div ref={notificationsRef} className="relative">
+                            {(() => {
+                                const urgentAlertsCount = globalAlerts.filter(a => a.severity === 'error' || a.severity === 'urgent').length;
+                                const totalAlertsCount = globalAlerts.length;
+                                const displayedAlerts = (notificationFilter === 'urgent'
+                                    ? globalAlerts.filter(a => a.severity === 'error' || a.severity === 'urgent')
+                                    : [...globalAlerts].sort((a, b) => {
+                                        const aUrgent = a.severity === 'error' || a.severity === 'urgent' ? 1 : 0;
+                                        const bUrgent = b.severity === 'error' || b.severity === 'urgent' ? 1 : 0;
+                                        if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+                                        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                                    })
+                                );
+
+                                return (
+                                    <>
+                                        <button 
+                                            onClick={() => setIsGlobalNotificationsOpen(!isGlobalNotificationsOpen)}
+                                            className={`relative p-2 transition-colors rounded-full cursor-pointer ${
+                                                isGlobalNotificationsOpen
+                                                    ? 'bg-primary/10 text-primary'
+                                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                                            }`}
+                                            title={
+                                                totalAlertsCount > 0
+                                                    ? `${totalAlertsCount} notification${totalAlertsCount > 1 ? 's' : ''}${
+                                                          urgentAlertsCount > 0 ? ` (${urgentAlertsCount} urgent)` : ' (All normal review)'
+                                                      }`
+                                                    : 'Notifications'
+                                            }
+                                            aria-label="Notifications"
+                                        >
+                                            <Bell className="w-5 h-5" />
+                                            {totalAlertsCount > 0 && (
+                                                <span
+                                                    className={`absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 flex items-center justify-center rounded-full text-[10px] font-black leading-none border-2 border-white shadow-sm transition-all ${
+                                                        urgentAlertsCount > 0
+                                                            ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-400/40'
+                                                            : 'bg-amber-500 text-white'
+                                                    }`}
+                                                >
+                                                    {totalAlertsCount > 99 ? '99+' : totalAlertsCount}
+                                                </span>
+                                            )}
+                                        </button>
+                                        
+                                        {isGlobalNotificationsOpen && (
+                                            <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/80 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                                {/* Header */}
+                                                <div className="p-3.5 border-b border-slate-100 bg-slate-50/70">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <h3 className="font-bold text-slate-900 text-sm">Notifications</h3>
+                                                            <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 border border-slate-200 rounded-full shadow-2xs">
+                                                                {totalAlertsCount} Total
+                                                            </span>
+                                                        </div>
+                                                        {urgentAlertsCount > 0 ? (
+                                                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1 animate-pulse">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                                                                {urgentAlertsCount} Urgent
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-medium text-slate-400">
+                                                                No urgent alerts
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <div className="min-w-0">
-                                                        <p className="text-sm font-semibold text-slate-900 line-clamp-1">{alert.title}</p>
-                                                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{alert.body}</p>
-                                                        <p className="text-[10px] text-slate-400 mt-2 font-medium">{formatNotificationTime(alert.created_at)}</p>
-                                                    </div>
+
+                                                    {/* Filter Tabs */}
+                                                    {totalAlertsCount > 0 && (
+                                                        <div className="flex items-center gap-1.5 pt-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setNotificationFilter('all')}
+                                                                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                                                                    notificationFilter === 'all'
+                                                                        ? 'bg-white text-slate-900 shadow-2xs border border-slate-200 font-bold'
+                                                                        : 'text-slate-500 hover:text-slate-800 hover:bg-white/60'
+                                                                }`}
+                                                            >
+                                                                All ({totalAlertsCount})
+                                                            </button>
+                                                            {urgentAlertsCount > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setNotificationFilter('urgent')}
+                                                                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                                                                        notificationFilter === 'urgent'
+                                                                            ? 'bg-rose-50 text-rose-700 border border-rose-200 font-bold shadow-2xs'
+                                                                            : 'text-rose-600 hover:bg-rose-50/60'
+                                                                    }`}
+                                                                >
+                                                                    <AlertCircle className="w-3 h-3" />
+                                                                    Urgent ({urgentAlertsCount})
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="p-3 text-center bg-slate-50/50 border-t border-slate-50">
-                                        <button onClick={() => setGlobalAlerts([])} className="text-xs font-bold text-primary hover:underline transition-transform inline-block">Clear alerts</button>
-                                    </div>
-                                </div>
-                            )}
+
+                                                {/* List of Alerts */}
+                                                <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100">
+                                                    {displayedAlerts.length === 0 ? (
+                                                        <div className="p-8 text-center">
+                                                            <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+                                                                <Bell className="w-5 h-5" />
+                                                            </div>
+                                                            <p className="text-sm font-semibold text-slate-700">
+                                                                {notificationFilter === 'urgent' ? 'No urgent alerts.' : 'No live alerts right now.'}
+                                                            </p>
+                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                {notificationFilter === 'urgent'
+                                                                    ? 'All critical issues and urgent leads are cleared!'
+                                                                    : 'New leads and attention items will appear here.'}
+                                                            </p>
+                                                        </div>
+                                                    ) : (
+                                                        displayedAlerts.map((alert) => {
+                                                            return (
+                                                                <div
+                                                                    key={alert.id}
+                                                                    className={`group relative w-full text-left p-3.5 hover:bg-slate-50/80 transition-colors flex items-start gap-3 border-l-4 ${
+                                                                        alert.severity === 'error'
+                                                                            ? 'border-l-rose-600 bg-rose-50/30'
+                                                                            : alert.severity === 'urgent'
+                                                                            ? 'border-l-amber-500 bg-amber-50/20'
+                                                                            : 'border-l-teal-500 bg-white'
+                                                                    }`}
+                                                                >
+                                                                    {/* Icon */}
+                                                                    <div
+                                                                        className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                                                            alert.severity === 'error'
+                                                                                ? 'bg-rose-100 text-rose-600'
+                                                                                : alert.severity === 'urgent'
+                                                                                ? 'bg-amber-100 text-amber-700'
+                                                                                : 'bg-teal-50 text-teal-700'
+                                                                        }`}
+                                                                    >
+                                                                        {alert.severity === 'error' ? (
+                                                                            <AlertCircle className="w-4 h-4" />
+                                                                        ) : alert.severity === 'urgent' ? (
+                                                                            <AlertTriangle className="w-4 h-4" />
+                                                                        ) : (
+                                                                            <Bell className="w-4 h-4" />
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Text Info */}
+                                                                    <div
+                                                                        className="min-w-0 flex-1 cursor-pointer"
+                                                                        onClick={() => {
+                                                                            setIsGlobalNotificationsOpen(false);
+                                                                            navigate(alert.route || '/admin/crm');
+                                                                        }}
+                                                                    >
+                                                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                                                            <span
+                                                                                className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded shrink-0 ${
+                                                                                    alert.severity === 'error'
+                                                                                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                                                                        : alert.severity === 'urgent'
+                                                                                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                                                                        : 'bg-slate-100 text-slate-600'
+                                                                                }`}
+                                                                            >
+                                                                                {alert.severity === 'error' ? 'Critical' : alert.severity === 'urgent' ? 'Urgent' : 'Review'}
+                                                                            </span>
+                                                                            <p className="text-xs font-bold text-slate-900 truncate">
+                                                                                {alert.title}
+                                                                            </p>
+                                                                        </div>
+                                                                        <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                                                                            {alert.body}
+                                                                        </p>
+                                                                        <p className="text-[10px] text-slate-400 mt-1 font-medium">
+                                                                            {formatNotificationTime(alert.created_at)}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    {/* Dismiss button */}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setGlobalAlerts(prev => prev.filter(item => item.id !== alert.id));
+                                                                        }}
+                                                                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-md transition-all shrink-0 cursor-pointer"
+                                                                        title="Dismiss notification"
+                                                                    >
+                                                                        <X className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+
+                                                {/* Footer */}
+                                                {totalAlertsCount > 0 && (
+                                                    <div className="p-2.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs px-3.5">
+                                                        <span className="text-[11px] text-slate-500 font-medium">
+                                                            Showing {displayedAlerts.length} of {totalAlertsCount}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => {
+                                                                setGlobalAlerts([]);
+                                                                setIsGlobalNotificationsOpen(false);
+                                                            }}
+                                                            className="text-xs font-bold text-primary hover:underline transition-transform cursor-pointer"
+                                                        >
+                                                            Clear all alerts
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                         <a 
                             href={import.meta.env.DEV ? "http://localhost:5174" : "https://healthcare-website-ecru-delta.vercel.app"} 
