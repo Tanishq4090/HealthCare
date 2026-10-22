@@ -8220,7 +8220,7 @@ export default function CRM() {
                                                 <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
                                                 <div className="flex items-center gap-2">
                                                     <span className={`text-sm font-semibold ${consent?.age || consent?.weight ? 'text-slate-800' : 'text-slate-400 italic'}`}>
-                                                        {consent?.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}` : '—'}
+                                                        {consent?.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : (consent.age_unit?.toLowerCase() === 'days' ? 'days' : 'yrs')}` : '—'}
                                                         {consent?.weight ? `, ${consent.weight} kg` : ''}
                                                     </span>
                                                     <button

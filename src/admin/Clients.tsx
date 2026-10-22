@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp, Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -19,12 +19,23 @@ const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
     diaper_change: 'Diaper Change',
     patient_cleanliness: 'Patient Cleanliness',
     feeding: 'Patient Feeding',
+    medication: 'Medication Assistance',
     bp_check: 'BP & Vital Check',
     sugar_check: 'Sugar Check',
     nebulization: 'Nebulization',
     feeding_tube: 'Feeding Tube Care',
+    feed_rt_tube: 'RT Tube Feeding',
     urine_bag_change: 'Urine Bag Change',
+    urine_bag: 'Urine Bag Care',
+    dressing: 'Wound Dressing',
+    pateint_bath: 'Patient Bath',
+    clean_room: 'Patient Room Cleaning',
+    changing_cloths: 'Changing Clothes',
+    change_bedshit: 'Change Bed Sheet',
+    cut_nails: 'Cut Nails',
+    take_in_washroom: 'Washroom Assistance',
     regular_checkup: 'Regular Checkups',
+    massage: 'Body Massage',
     other: 'Other Patient Care',
 };
 
@@ -41,6 +52,80 @@ const BABY_CARE_DUTY_LABELS: Record<string, string> = {
     mother_food_prep: 'Mother Food Preparation',
     mother_clothes_wash: 'Mother Clothes Washing',
     other: 'Other Baby Care Work',
+};
+
+const getRestartDutyLabel = (dutyId: string, formType?: string): string => {
+    const map = formType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
+    return map[dutyId] || dutyId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+function parseAgeAndWeight(
+    rawAge?: string | number | null,
+    rawUnit?: string | null,
+    rawWeight?: string | number | null,
+    isBabyDefault?: boolean
+): { age: string; ageUnit: 'Days' | 'Months' | 'Years'; weight: string } {
+    let ageStr = String(rawAge ?? '').trim();
+    let weightStr = String(rawWeight ?? '').trim();
+    let unit: 'Days' | 'Months' | 'Years' = isBabyDefault ? 'Days' : 'Years';
+
+    const unitLower = String(rawUnit || '').trim().toLowerCase();
+    if (unitLower.includes('day') || unitLower === 'd') {
+        unit = 'Days';
+    } else if (unitLower.includes('month') || unitLower === 'mo') {
+        unit = 'Months';
+    } else if (unitLower.includes('year') || unitLower === 'yr') {
+        unit = 'Years';
+    }
+
+    if (ageStr) {
+        // Detect weight if embedded in age string (e.g. "50 years & 45kgs", "50 yrs, 45 kg")
+        const weightMatch = ageStr.match(/(\d+(?:\.\d+)?)\s*(?:kgs?|kilos?|kg\b)/i);
+        if (weightMatch) {
+            if (!weightStr) {
+                weightStr = weightMatch[1];
+            }
+            ageStr = ageStr.replace(/(?:&|\band\b|,|\/|\+)?\s*\d+(?:\.\d+)?\s*(?:kgs?|kilos?|kg\b)/gi, '').trim();
+        }
+
+        // Detect unit in age string if present
+        if (/\b(?:days?|d)\b/i.test(ageStr)) {
+            unit = 'Days';
+        } else if (/\b(?:months?|m|mo)\b/i.test(ageStr)) {
+            unit = 'Months';
+        } else if (/\b(?:years?|yrs?|y)\b/i.test(ageStr)) {
+            unit = 'Years';
+        }
+
+        // Strip words like "years", "months", "days" so the numerical or core age remains
+        const cleanAgeNum = ageStr.replace(/\b(?:years?|yrs?|months?|mo|days?|d)\b/gi, '').trim();
+        if (cleanAgeNum) {
+            ageStr = cleanAgeNum;
+        }
+    }
+
+    if (weightStr) {
+        weightStr = weightStr.replace(/\s*(?:kgs?|kg|kilos?)\b/gi, '').trim();
+    }
+
+    return { age: ageStr, ageUnit: unit, weight: weightStr };
+}
+
+const renderAgeWeightPreview = (age: string, unit: string, weight: string) => {
+    if (!age && !weight) return 'Age: N/A';
+    let ageDisplay = '';
+    if (age) {
+        const lower = age.toLowerCase();
+        if (lower.includes('year') || lower.includes('month') || lower.includes('day')) {
+            ageDisplay = age;
+        } else {
+            ageDisplay = `${age} ${unit}`;
+        }
+    }
+    const cleanWeight = weight ? weight.replace(/\s*(?:kgs?|kg)\b/gi, '').trim() : '';
+    const weightDisplay = cleanWeight ? `${cleanWeight}kg` : '';
+    if (ageDisplay && weightDisplay) return `${ageDisplay} • ${weightDisplay}`;
+    return ageDisplay || weightDisplay;
 };
 
 const GOOGLE_PLACE_ID = 'ChIJnbC9IuxN4DsRXEWEnUc0HF8';
@@ -133,7 +218,7 @@ export default function Clients() {
     const [restartLeadFull, setRestartLeadFull] = useState<any>(null);
     const [restartPatientName, setRestartPatientName] = useState('');
     const [restartAge, setRestartAge] = useState('');
-    const [restartAgeUnit, setRestartAgeUnit] = useState<'Years' | 'Months'>('Years');
+    const [restartAgeUnit, setRestartAgeUnit] = useState<'Days' | 'Months' | 'Years'>('Years');
     const [restartWeight, setRestartWeight] = useState('');
     const [restartRelativeName, setRestartRelativeName] = useState('');
     const [restartContactNumber, setRestartContactNumber] = useState('');
@@ -146,6 +231,7 @@ export default function Clients() {
     const [isManualCareExpanded, setIsManualCareExpanded] = useState(false);
     const [isSendingConsent, setIsSendingConsent] = useState(false);
     const [isSendingWorkForm, setIsSendingWorkForm] = useState(false);
+    const [isSavingCareDetails, setIsSavingCareDetails] = useState(false);
 
     const toggleRestartDuty = (dutyKey: string) => {
         setRestartDuties(prev =>
@@ -626,14 +712,20 @@ export default function Clients() {
 
         // Extract patient care fields with fallbacks
         const pName = lastNotesParsed?.patient_name || latestConsent?.patient_name || workFormData?.patient_name || client.name || '';
-        const pAge = lastNotesParsed?.age || (latestConsent?.age != null ? String(latestConsent.age) : '');
-        const pAgeUnit = (lastNotesParsed?.age_unit || latestConsent?.age_unit || (isBaby ? 'Months' : 'Years')) === 'Months' ? 'Months' : 'Years';
-        const pWeight = lastNotesParsed?.weight || (latestConsent?.weight != null ? String(latestConsent.weight) : '');
-        const pRelative = lastNotesParsed?.relative_name || latestConsent?.relative_name || client.name || '';
-        const pContact = lastNotesParsed?.contact_number || latestConsent?.contact_number || client.phone || '';
-        const pAltContact = lastNotesParsed?.alternate_contact_number || latestConsent?.alternate_contact_number || '';
-        const pAddress = lastNotesParsed?.address || latestConsent?.address || client.address || leadFull?.location || '';
-        const pMedical = lastNotesParsed?.medical_condition || latestConsent?.other_details || '';
+        const rawAge = lastNotesParsed?.age || (latestConsent?.age != null ? String(latestConsent.age) : '') || workFormData?.age || '';
+        const rawAgeUnit = lastNotesParsed?.age_unit || latestConsent?.age_unit || workFormData?.age_unit || (isBaby ? 'Days' : 'Years');
+        const rawWeight = lastNotesParsed?.weight || (latestConsent?.weight != null ? String(latestConsent.weight) : '') || workFormData?.weight || '';
+
+        const parsed = parseAgeAndWeight(rawAge, rawAgeUnit, rawWeight, isBaby);
+        const pAge = parsed.age;
+        const pAgeUnit = parsed.ageUnit;
+        const pWeight = parsed.weight;
+
+        const pRelative = lastNotesParsed?.relative_name || latestConsent?.relative_name || workFormData?.relative_name || client.name || '';
+        const pContact = lastNotesParsed?.contact_number || latestConsent?.contact_number || workFormData?.contact_number || client.phone || '';
+        const pAltContact = lastNotesParsed?.alternate_contact_number || latestConsent?.alternate_contact_number || workFormData?.alternate_contact_number || '';
+        const pAddress = lastNotesParsed?.address || latestConsent?.address || workFormData?.address || client.address || leadFull?.location || '';
+        const pMedical = lastNotesParsed?.medical_condition || latestConsent?.other_details || workFormData?.medical_condition || '';
 
         // Extract duties
         let initialDuties: string[] = [];
@@ -693,9 +785,113 @@ export default function Clients() {
             setRestartDuties(valid);
             if (newFormType === 'baby_care_form' && restartAgeUnit === 'Years') {
                 setRestartAgeUnit('Months');
-            } else if (newFormType === 'patient_care_form' && restartAgeUnit === 'Months') {
+            } else if (newFormType === 'patient_care_form' && (restartAgeUnit === 'Months' || restartAgeUnit === 'Days')) {
                 setRestartAgeUnit('Years');
             }
+        }
+    };
+
+    const handleAgeInputChange = (val: string) => {
+        if (/(?:kgs?|kg|kilos?|years?|months?|days?)/i.test(val)) {
+            const parsed = parseAgeAndWeight(val, restartAgeUnit, restartWeight, restartFormType === 'baby_care_form');
+            setRestartAge(parsed.age);
+            if (parsed.weight && !restartWeight) {
+                setRestartWeight(parsed.weight);
+            }
+            setRestartAgeUnit(parsed.ageUnit);
+        } else {
+            setRestartAge(val);
+        }
+    };
+
+    const handleWeightInputChange = (val: string) => {
+        const clean = val.replace(/\s*(?:kgs?|kg|kilos?)\b/gi, '').trim();
+        setRestartWeight(clean);
+    };
+
+    const handleSaveCareDetails = async () => {
+        if (!restartModal?.id) {
+            toast.error('Client record not found.');
+            return;
+        }
+
+        setIsSavingCareDetails(true);
+        const toastId = toast.loading('Saving care details & duties...');
+        try {
+            const workFormData = {
+                form_type: restartFormType,
+                patient_name: restartPatientName.trim() || restartModal.name,
+                age: restartAge.trim(),
+                age_unit: restartAgeUnit,
+                weight: restartWeight.trim(),
+                relative_name: restartRelativeName.trim() || restartModal.name,
+                contact_number: restartContactNumber.trim() || (restartModal.phone || '').replace(/\D/g, ''),
+                alternate_contact_number: restartAltContactNumber.trim(),
+                address: restartAddress.trim(),
+                medical_condition: restartMedicalCondition.trim(),
+                duties: restartDuties,
+                other_work: restartCareInstructions.trim(),
+                updated_at: new Date().toISOString()
+            };
+
+            const leadUpdates: any = {
+                work_form_data: workFormData,
+                updated_at: new Date().toISOString()
+            };
+            if (restartAddress.trim()) {
+                leadUpdates.location = restartAddress.trim();
+            }
+
+            // 1. Update crm_leads
+            const { error: leadErr } = await supabase
+                .from('crm_leads')
+                .update(leadUpdates)
+                .eq('id', restartModal.id);
+
+            if (leadErr) console.warn('Could not update crm_leads work_form_data:', leadErr);
+
+            // 2. Insert into client_consents snapshot
+            const consentPayload = {
+                lead_id: restartModal.id,
+                patient_name: restartPatientName.trim() || restartModal.name,
+                age: restartAge.trim() || null,
+                age_unit: restartAgeUnit,
+                weight: restartWeight.trim() || null,
+                relative_name: restartRelativeName.trim() || restartModal.name,
+                contact_number: restartContactNumber.trim() || restartModal.phone || null,
+                alternate_contact_number: restartAltContactNumber.trim() || null,
+                address: restartAddress.trim() || null,
+                other_details: restartMedicalCondition.trim() || null,
+                service_type: restartServiceType || undefined,
+                created_at: new Date().toISOString()
+            };
+            const { error: consentErr } = await supabase.from('client_consents').insert([consentPayload]);
+            if (consentErr) console.warn('Could not insert client_consents:', consentErr);
+
+            // 3. Mirror into client_work_forms
+            const { error: wfErr } = await supabase.from('client_work_forms').insert([{
+                lead_id: restartModal.id,
+                form_type: restartFormType,
+                patient_name: restartPatientName.trim() || restartModal.name,
+                duties: restartDuties,
+                other_work: restartCareInstructions.trim()
+            }]);
+            if (wfErr) console.warn('Could not mirror client_work_forms:', wfErr);
+
+            // 4. Update in-memory restartLeadFull so preview and subsequent actions stay synchronized
+            setRestartLeadFull((prev: any) => ({
+                ...(prev || {}),
+                work_form_data: workFormData,
+                location: restartAddress.trim() || prev?.location
+            }));
+
+            toast.success('Patient care details and caregiver duties saved successfully! ✨', { id: toastId });
+            setIsManualCareExpanded(false);
+        } catch (err: any) {
+            console.error('Error saving care details:', err);
+            toast.error(`Failed to save care details: ${err.message || 'Unknown error'}`, { id: toastId });
+        } finally {
+            setIsSavingCareDetails(false);
         }
     };
 
@@ -2644,10 +2840,10 @@ export default function Clients() {
                                             <span className="text-[10px] text-slate-400 font-semibold block">Patient / Baby</span>
                                             <span className="font-bold text-slate-800 truncate block">{restartPatientName || restartModal.name}</span>
                                         </div>
-                                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
-                                            <span className="text-[10px] text-slate-400 font-semibold block">Age &amp; Weight</span>
+                                        <div className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-2xs">
+                                            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block mb-0.5">Age &amp; Weight</span>
                                             <span className="font-bold text-slate-800 block">
-                                                {restartAge ? `${restartAge} ${restartAgeUnit}` : 'Age: N/A'}{restartWeight ? ` • ${restartWeight}kg` : ''}
+                                                {renderAgeWeightPreview(restartAge, restartAgeUnit, restartWeight)}
                                             </span>
                                         </div>
                                         <div className="bg-white p-2 rounded-lg border border-slate-200/60">
@@ -2683,18 +2879,15 @@ export default function Clients() {
                                         </span>
                                         {restartDuties.length > 0 ? (
                                             <div className="flex flex-wrap gap-1">
-                                                {restartDuties.map(dKey => {
-                                                    const dict = restartFormType === 'baby_care_form' ? BABY_CARE_DUTY_LABELS : PATIENT_CARE_DUTY_LABELS;
-                                                    return (
-                                                        <span
-                                                            key={dKey}
-                                                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded-md shadow-2xs"
-                                                        >
-                                                            <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                                            {dict[dKey] || dKey}
-                                                        </span>
-                                                    );
-                                                })}
+                                                {restartDuties.map(dKey => (
+                                                    <span
+                                                        key={dKey}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold rounded-md shadow-2xs"
+                                                    >
+                                                        <Check className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                                        {getRestartDutyLabel(dKey, restartFormType)}
+                                                    </span>
+                                                ))}
                                             </div>
                                         ) : (
                                             <p className="text-[11px] text-amber-700 bg-amber-50/80 border border-amber-200 rounded-lg p-2 font-medium">
@@ -2712,39 +2905,60 @@ export default function Clients() {
                                 {/* Expandable Manual Form */}
                                 {isManualCareExpanded && (
                                     <div className="p-4 bg-white rounded-xl border-2 border-teal-200 space-y-4 shadow-sm animate-in slide-in-from-top-2 duration-150">
-                                        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
                                             <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                                                 <Sparkles className="w-3.5 h-3.5 text-teal-600" />
                                                 Manual Patient Care &amp; Duty Configuration
                                             </span>
-                                            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setRestartFormType('patient_care_form');
+                                                            if (restartAgeUnit === 'Months' || restartAgeUnit === 'Days') setRestartAgeUnit('Years');
+                                                        }}
+                                                        className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                            restartFormType === 'patient_care_form'
+                                                                ? 'bg-white text-slate-900 shadow-2xs'
+                                                                : 'text-slate-500 hover:text-slate-700'
+                                                        }`}
+                                                    >
+                                                        Patient Care
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setRestartFormType('baby_care_form');
+                                                            if (restartAgeUnit === 'Years') setRestartAgeUnit('Months');
+                                                        }}
+                                                        className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                            restartFormType === 'baby_care_form'
+                                                                ? 'bg-white text-pink-700 shadow-2xs'
+                                                                : 'text-slate-500 hover:text-slate-700'
+                                                        }`}
+                                                    >
+                                                        Baby Care
+                                                    </button>
+                                                </div>
                                                 <button
                                                     type="button"
-                                                    onClick={() => {
-                                                        setRestartFormType('patient_care_form');
-                                                        if (restartAgeUnit === 'Months') setRestartAgeUnit('Years');
-                                                    }}
-                                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
-                                                        restartFormType === 'patient_care_form'
-                                                            ? 'bg-white text-slate-900 shadow-2xs'
-                                                            : 'text-slate-500 hover:text-slate-700'
-                                                    }`}
+                                                    onClick={handleSaveCareDetails}
+                                                    disabled={isSavingCareDetails}
+                                                    className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white text-[11px] font-bold rounded-lg shadow-2xs flex items-center gap-1 transition-all disabled:opacity-50"
+                                                    title="Save patient care details and caregiver duties to client record"
                                                 >
-                                                    Patient Care
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setRestartFormType('baby_care_form');
-                                                        if (restartAgeUnit === 'Years') setRestartAgeUnit('Months');
-                                                    }}
-                                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
-                                                        restartFormType === 'baby_care_form'
-                                                            ? 'bg-white text-pink-700 shadow-2xs'
-                                                            : 'text-slate-500 hover:text-slate-700'
-                                                    }`}
-                                                >
-                                                    Baby Care
+                                                    {isSavingCareDetails ? (
+                                                        <>
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                            Saving...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Save className="w-3 h-3" />
+                                                            Save Details
+                                                        </>
+                                                    )}
                                                 </button>
                                             </div>
                                         </div>
@@ -2773,17 +2987,18 @@ export default function Clients() {
                                                         <input
                                                             type="text"
                                                             value={restartAge}
-                                                            onChange={e => setRestartAge(e.target.value)}
-                                                            placeholder={restartFormType === 'baby_care_form' ? "e.g. 3" : "e.g. 68"}
+                                                            onChange={e => handleAgeInputChange(e.target.value)}
+                                                            placeholder={restartFormType === 'baby_care_form' ? "e.g. 15 or 3" : "e.g. 68"}
                                                             className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
                                                         />
                                                         <select
                                                             value={restartAgeUnit}
-                                                            onChange={e => setRestartAgeUnit(e.target.value as 'Years' | 'Months')}
-                                                            className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold bg-slate-50"
+                                                            onChange={e => setRestartAgeUnit(e.target.value as 'Days' | 'Months' | 'Years')}
+                                                            className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500/30"
                                                         >
-                                                            <option value="Years">Yrs</option>
-                                                            <option value="Months">Mo</option>
+                                                            <option value="Days">Days</option>
+                                                            <option value="Months">Months</option>
+                                                            <option value="Years">Years</option>
                                                         </select>
                                                     </div>
                                                 </div>
@@ -2792,8 +3007,8 @@ export default function Clients() {
                                                     <input
                                                         type="text"
                                                         value={restartWeight}
-                                                        onChange={e => setRestartWeight(e.target.value)}
-                                                        placeholder="e.g. 55 kg or 4.5 kg"
+                                                        onChange={e => handleWeightInputChange(e.target.value)}
+                                                        placeholder="e.g. 55 or 4.5"
                                                         className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500/30"
                                                     />
                                                 </div>
@@ -2916,6 +3131,40 @@ export default function Clients() {
                                                     placeholder="e.g. Needs assistance with walker, giving medicine at 8 PM..."
                                                     className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-teal-500/30"
                                                 />
+                                            </div>
+
+                                            <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2">
+                                                <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                                                    <Sparkles className="w-3 h-3 text-teal-600" />
+                                                    Saves patient details and care duty scope to client profile
+                                                </div>
+                                                <div className="flex items-center gap-2 self-end sm:self-auto">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsManualCareExpanded(false)}
+                                                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all"
+                                                    >
+                                                        Done
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSaveCareDetails}
+                                                        disabled={isSavingCareDetails}
+                                                        className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-all disabled:opacity-50"
+                                                    >
+                                                        {isSavingCareDetails ? (
+                                                            <>
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                Saving Changes...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Save className="w-3.5 h-3.5" />
+                                                                Save Care Details
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

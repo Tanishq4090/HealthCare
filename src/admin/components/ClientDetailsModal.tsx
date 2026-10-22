@@ -50,10 +50,13 @@ const getDutyLabel = (dutyId: string, formType?: string): string => {
 const formatAgeDisplay = (ageStr?: string, unit?: string) => {
     if (!ageStr) return '—';
     const trimmed = ageStr.trim();
-    if (/\b(yrs|years|months|month|age|kgs|kg)\b/i.test(trimmed)) {
+    if (/\b(yrs|years|months|month|days|day|age|kgs|kg)\b/i.test(trimmed)) {
         return trimmed;
     }
-    return `${trimmed} ${unit?.toLowerCase() === 'months' ? 'months' : 'yrs'}`;
+    const u = unit?.toLowerCase() || '';
+    if (u.includes('day') || u === 'd') return `${trimmed} days`;
+    if (u.includes('month') || u === 'mo') return `${trimmed} months`;
+    return `${trimmed} yrs`;
 };
 
 const resolveServiceCareScope = (svc: any, leadWorkForm: any, allConsents: any, lead: any) => {
@@ -117,6 +120,15 @@ const resolveServiceCareScope = (svc: any, leadWorkForm: any, allConsents: any, 
             } catch (e) {}
         } else {
             instructions = trimmed;
+        }
+    }
+
+    // Separate embedded weight from age if legacy record bundled them together (e.g. "50 years & 45kgs")
+    if (age && (!weight || weight === '')) {
+        const wm = String(age).match(/(\d+(?:\.\d+)?)\s*(?:kgs?|kilos?|kg\b)/i);
+        if (wm) {
+            weight = wm[1];
+            age = String(age).replace(/(?:&|\band\b|,|\/|\+)?\s*\d+(?:\.\d+)?\s*(?:kgs?|kilos?|kg\b)/gi, '').trim();
         }
     }
 
