@@ -91,12 +91,16 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
         const firstName = fullName.split(' ')[0] || fullName;
         const clientCode = client.displayId || 'CL-CLIENT';
         const city = client.city || 'Surat';
+        const rawSvc = client.activeService?.service_type || (client.services && client.services[0]?.service_type);
+        const cleanSvc = (rawSvc && rawSvc !== 'date_range' && rawSvc !== 'open_ended' && rawSvc !== 'one_day' && rawSvc.trim() !== '') ? rawSvc : null;
+        const service = client.allServiceCycles?.[0]?.serviceType || cleanSvc || 'Healthcare Service';
 
         return rawText
             .replace(/{name}/g, firstName)
             .replace(/{fullName}/g, fullName)
             .replace(/{clientCode}/g, clientCode)
-            .replace(/{city}/g, city);
+            .replace(/{city}/g, city)
+            .replace(/{service}/g, service);
     };
 
     const previewRecipient = validRecipients[0] || recipients[0] || {
@@ -405,6 +409,7 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                                 {[
                                     { label: '{name}', desc: 'First Name' },
                                     { label: '{fullName}', desc: 'Full Name' },
+                                    { label: '{service}', desc: 'Service Name' },
                                     { label: '{clientCode}', desc: 'CL-0037' },
                                     { label: '{city}', desc: 'City' },
                                 ].map((t) => (

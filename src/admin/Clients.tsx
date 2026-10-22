@@ -766,7 +766,11 @@ export default function Clients() {
             const depositAmt = (c.activeService || c.activeAssignment) ? Number(c.securityDeposit || 0) : 0;
             const startDate = c.serviceStartDate ? formatDateDisplay(c.serviceStartDate) : 'N/A';
             const addedDate = c.created_at ? formatDateDisplay(c.created_at) : 'N/A';
-            const activeServiceName = c.activeService?.service_type || (c.services && c.services[0]?.service_type) || 'N/A';
+            const currentCycle = c.allServiceCycles?.find((cyc: any) => cyc.isCurrent);
+            const latestCycle = c.allServiceCycles?.[0];
+            const rawSvc = c.activeService?.service_type || (c.services && c.services[0]?.service_type);
+            const cleanSvc = (rawSvc && rawSvc !== 'date_range' && rawSvc !== 'open_ended' && rawSvc !== 'one_day' && rawSvc.trim() !== '') ? rawSvc : null;
+            const activeServiceName = currentCycle?.serviceType || cleanSvc || latestCycle?.serviceType || ((c.services && c.services.length > 0) || c.activeAssignment ? 'Home Care Service' : 'None');
 
             return [
                 c.displayId || 'CL-0001',
@@ -886,7 +890,9 @@ export default function Clients() {
             console.warn('Could not fetch lead details for restart:', e);
         }
 
-        const initialService = lastService?.service_type || leadInterest || 'Old Age Care';
+        const rawSvcType = lastService?.service_type;
+        const validSvcType = (rawSvcType && rawSvcType !== 'date_range' && rawSvcType !== 'open_ended' && rawSvcType !== 'one_day' && rawSvcType.trim() !== '') ? rawSvcType : null;
+        const initialService = validSvcType || leadInterest || 'Old Age Care';
         const rawHours = lastService?.hours_per_day || 10;
         const initialHours = rawHours >= 20 ? 24 : 10;
         const initialComplete = lastService?.complete_month_daily_rate || (leadQuotedRate ? Math.round(leadQuotedRate / 30) : 800);
