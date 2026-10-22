@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp, Save, Loader2, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ClientDetailsModal from './components/ClientDetailsModal';
+import BulkMessageModal from './components/BulkMessageModal';
 import { restartClientService } from '../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
 import { extractCity } from '../utils/crm';
@@ -611,6 +612,200 @@ export default function Clients() {
         } catch (err: any) {
             toast.error(`Failed: ${err.message}`);
         }
+    };
+
+    // Multiple Selection State
+    const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+    const [isBulkMessageModalOpen, setIsBulkMessageModalOpen] = useState<boolean>(false);
+
+    // Filtered & Sorted Clients computed cleanly via useMemo
+    const filteredClients = useMemo(() => {
+        return clients.filter(c => {
+            if (viewingTrash) {
+                return c.status === 'Trash';
+            }
+            if (c.status === 'Trash') return false;
+
+            if (searchQuery.trim()) {
+                const rawQ = searchQuery.trim().toLowerCase();
+                const strippedQ = rawQ.replace(/^(client\s*id|id)\s*[:#-]?\s*/i, '').trim();
+                const cleanQ = rawQ.replace(/[^a-z0-9]/g, '');
+                const cleanStrippedQ = strippedQ.replace(/[^a-z0-9]/g, '');
+
+                const clientIdStr = (c.id || '').toLowerCase();
+                const displayIdStr = (c.displayId || '').toLowerCase();
+                const cleanClientId = clientIdStr.replace(/[^a-z0-9]/g, '');
+                const cleanDisplayId = displayIdStr.replace(/[^a-z0-9]/g, '');
+
+                const idMatch = clientIdStr.includes(rawQ) ||
+                                displayIdStr.includes(rawQ) ||
+                                (strippedQ.length > 0 && (clientIdStr.includes(strippedQ) || displayIdStr.includes(strippedQ))) ||
+                                (cleanQ.length >= 2 && (cleanClientId.includes(cleanQ) || cleanDisplayId.includes(cleanQ))) ||
+                                (cleanStrippedQ.length >= 2 && (cleanClientId.includes(cleanStrippedQ) || cleanDisplayId.includes(cleanStrippedQ)));
+
+                const nameMatch = (c.name || '').toLowerCase().includes(rawQ) ||
+                                  (strippedQ.length > 0 && (c.name || '').toLowerCase().includes(strippedQ));
+                const phoneMatch = (c.phone || '').toLowerCase().includes(rawQ) ||
+                                   (cleanQ.length >= 4 && (c.phone || '').replace(/\D/g, '').includes(cleanQ));
+                const emailMatch = (c.email || '').toLowerCase().includes(rawQ);
+
+                if (!nameMatch && !phoneMatch && !emailMatch && !idMatch) return false;
+            }
+
+            if (selectedCity !== 'all') {
+                const cCity = c.city || extractCity(c);
+                if (cCity.toLowerCase() !== selectedCity.toLowerCase()) return false;
+            }
+
+            // When actively searching, search across all months so clients from any month are found
+            if (viewAllMonths || searchQuery.trim()) return true;
+
+            return isClientInMonth(c, selectedMonth);
+        });
+    }, [clients, viewingTrash, searchQuery, selectedCity, viewAllMonths, selectedMonth]);
+
+    const sortedFilteredClients = useMemo(() => {
+        return [...filteredClients].sort((a, b) => {
+            let comparison = 0;
+            if (sortField === 'displayId') {
+                comparison = (a.displayId || '').localeCompare(b.displayId || '');
+            } else if (sortField === 'name') {
+                comparison = (a.name || '').localeCompare(b.name || '');
+            } else if (sortField === 'city') {
+                const cityA = a.city || extractCity(a);
+                const cityB = b.city || extractCity(b);
+                comparison = cityA.localeCompare(cityB);
+            } else if (sortField === 'phone') {
+                comparison = (a.phone || '').localeCompare(b.phone || '');
+            } else if (sortField === 'workerCount') {
+                comparison = (a.activeWorkerCount || 0) - (b.activeWorkerCount || 0) || (a.workerCount || 0) - (b.workerCount || 0);
+            } else if (sortField === 'securityDeposit') {
+                comparison = (a.securityDeposit || 0) - (b.securityDeposit || 0);
+            } else if (sortField === 'status') {
+                comparison = (a.status || '').localeCompare(b.status || '');
+            } else if (sortField === 'created_at') {
+                const timeA = new Date(a.serviceStartDate || a.created_at || 0).getTime();
+                const timeB = new Date(b.serviceStartDate || b.created_at || 0).getTime();
+                comparison = timeA - timeB;
+            }
+            return sortAsc ? comparison : -comparison;
+        });
+    }, [filteredClients, sortField, sortAsc]);
+
+    // Selection helpers
+    const allVisibleSelected = sortedFilteredClients.length > 0 && sortedFilteredClients.every(c => selectedClientIds.has(c.id));
+    const someVisibleSelected = sortedFilteredClients.some(c => selectedClientIds.has(c.id));
+
+    const handleToggleSelect = (clientId: string, e?: React.MouseEvent) => {
+        e?.stopPropagation();
+        setSelectedClientIds(prev => {
+            const next = new Set(prev);
+            if (next.has(clientId)) {
+                next.delete(clientId);
+            } else {
+                next.add(clientId);
+            }
+            return next;
+        });
+    };
+
+    const handleToggleSelectAll = (visibleList: any[]) => {
+        const visibleIds = visibleList.map(c => c.id);
+        const areAllSelected = visibleIds.length > 0 && visibleIds.every(id => selectedClientIds.has(id));
+        setSelectedClientIds(prev => {
+            const next = new Set(prev);
+            if (areAllSelected) {
+                visibleIds.forEach(id => next.delete(id));
+            } else {
+                visibleIds.forEach(id => next.add(id));
+            }
+            return next;
+        });
+    };
+
+    const handleClearSelection = () => {
+        setSelectedClientIds(new Set());
+    };
+
+    // CSV / Excel Export with UTF-8 BOM & Excel-safe formatting
+    const handleExportCsv = (clientsToExport?: any[]) => {
+        const list = clientsToExport && clientsToExport.length > 0
+            ? clientsToExport
+            : (selectedClientIds.size > 0
+                ? clients.filter(c => selectedClientIds.has(c.id))
+                : sortedFilteredClients);
+
+        if (!list || list.length === 0) {
+            toast.error('No clients available to export.');
+            return;
+        }
+
+        const headers = [
+            'Client ID',
+            'Client Name',
+            'Phone Number',
+            'Email',
+            'City',
+            'Status',
+            'Active Workers',
+            'Total Workers',
+            'Security Deposit (INR)',
+            'Deposit Status',
+            'Refunded/Settled Deposit (INR)',
+            'Service Start Date',
+            'Date Added',
+            'Active Service',
+            'Client UUID'
+        ];
+
+        const rows = list.map(c => {
+            const rawPhone = (c.phone || '').trim();
+            // Prefix with \t inside quotes so Excel displays phone numbers as text without scientific notation or losing digits
+            const excelSafePhone = rawPhone ? `\t${rawPhone}` : '';
+            const city = c.city || extractCity(c);
+            const depositAmt = (c.activeService || c.activeAssignment) ? Number(c.securityDeposit || 0) : 0;
+            const startDate = c.serviceStartDate ? formatDateDisplay(c.serviceStartDate) : 'N/A';
+            const addedDate = c.created_at ? formatDateDisplay(c.created_at) : 'N/A';
+            const activeServiceName = c.activeService?.service_type || (c.services && c.services[0]?.service_type) || 'N/A';
+
+            return [
+                c.displayId || 'CL-0001',
+                c.name || '',
+                excelSafePhone,
+                c.email || '',
+                city,
+                c.status || '',
+                c.activeWorkerCount || 0,
+                c.workerCount || 0,
+                depositAmt,
+                c.depositStatus || 'paid',
+                c.pastDepositTotal || 0,
+                startDate,
+                addedDate,
+                activeServiceName,
+                c.id || ''
+            ];
+        });
+
+        // Prepend UTF-8 BOM (\uFEFF) so Excel respects UTF-8 encoding
+        const csvContent = '\uFEFF' + [
+            headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(','),
+            ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        ].join('\r\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        const prefix = selectedClientIds.size > 0 && clientsToExport
+            ? `Selected_${list.length}_Clients_`
+            : `Clients_${selectedCity !== 'all' ? selectedCity + '_' : ''}${!viewAllMonths ? selectedMonth + '_' : 'All_'}`;
+        link.setAttribute('download', `99Care_${prefix}${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success(`Exported ${list.length} client${list.length !== 1 ? 's' : ''} to CSV/Excel successfully!`);
     };
 
     const confirmTemporaryDelete = async () => {
@@ -1551,6 +1746,36 @@ export default function Clients() {
                                 </button>
                             </div>
 
+                            {/* Export CSV / Excel Button */}
+                            <button
+                                type="button"
+                                onClick={() => handleExportCsv()}
+                                className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                                title={selectedClientIds.size > 0 ? `Export ${selectedClientIds.size} selected clients to CSV / Excel` : `Export all ${sortedFilteredClients.length} clients in current view to CSV / Excel`}
+                            >
+                                <Download className="w-3.5 h-3.5 text-teal-600" />
+                                <span className="hidden sm:inline">Export</span>
+                                <span>CSV/Excel</span>
+                                {selectedClientIds.size > 0 && (
+                                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
+                                        {selectedClientIds.size}
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* Bulk Message Button if any selected */}
+                            {selectedClientIds.size > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsBulkMessageModalOpen(true)}
+                                    className="px-3 py-1.5 text-xs font-bold text-white bg-[#1AA6A8] hover:bg-[#15898A] rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer animate-in fade-in"
+                                    title="Send bulk WhatsApp message to selected clients"
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    <span>Message ({selectedClientIds.size})</span>
+                                </button>
+                            )}
+
                             <button
                                 onClick={() => setViewingTrash(!viewingTrash)}
                                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border shadow-2xs cursor-pointer ${
@@ -1567,42 +1792,74 @@ export default function Clients() {
                     {/* Tier 2: Period & Category Tabs + Month Navigator + City Filter */}
                     <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-slate-200/70">
 
-                            {/* All vs By Month segmented tabs */}
-                            {(() => {
-                                const activeClients = clients.filter(c => {
-                                    if (c.status === 'Trash') return false;
-                                    if (selectedCity !== 'all') {
-                                        const city = c.city || extractCity(c);
-                                        if (city.toLowerCase() !== selectedCity.toLowerCase()) return false;
-                                    }
-                                    return true;
-                                });
-                                const mCount = activeClients.filter(c => isClientInMonth(c, selectedMonth)).length;
-                                return (
-                                    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
-                                        <button
-                                            onClick={() => setViewAllMonths(true)}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                                                viewAllMonths
-                                                    ? 'bg-[#1AA6A8] text-white shadow-2xs'
-                                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            All Clients ({activeClients.length})
-                                        </button>
-                                        <button
-                                            onClick={() => setViewAllMonths(false)}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                                                !viewAllMonths
-                                                    ? 'bg-[#1AA6A8] text-white shadow-2xs'
-                                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            By Month ({mCount})
-                                        </button>
-                                    </div>
-                                );
-                            })()}
+                            {/* All vs By Month segmented tabs + Select All Pill */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {(() => {
+                                    const activeClients = clients.filter(c => {
+                                        if (c.status === 'Trash') return false;
+                                        if (selectedCity !== 'all') {
+                                            const city = c.city || extractCity(c);
+                                            if (city.toLowerCase() !== selectedCity.toLowerCase()) return false;
+                                        }
+                                        return true;
+                                    });
+                                    const mCount = activeClients.filter(c => isClientInMonth(c, selectedMonth)).length;
+                                    return (
+                                        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                                            <button
+                                                onClick={() => setViewAllMonths(true)}
+                                                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                                    viewAllMonths
+                                                        ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                All Clients ({activeClients.length})
+                                            </button>
+                                            <button
+                                                onClick={() => setViewAllMonths(false)}
+                                                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                                    !viewAllMonths
+                                                        ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                By Month ({mCount})
+                                            </button>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Select All / Deselect All Button */}
+                                {sortedFilteredClients.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleToggleSelectAll(sortedFilteredClients)}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                                            allVisibleSelected
+                                                ? 'bg-teal-50 border-teal-300 text-teal-800 font-bold ring-2 ring-teal-200/50'
+                                                : someVisibleSelected
+                                                ? 'bg-teal-50/50 border-teal-200 text-teal-700 font-semibold'
+                                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                        title={allVisibleSelected ? 'Deselect all visible clients' : 'Select all visible clients'}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={allVisibleSelected}
+                                            ref={el => {
+                                                if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                                            }}
+                                            readOnly
+                                            className="w-3.5 h-3.5 rounded text-teal-600 pointer-events-none accent-[#1AA6A8]"
+                                        />
+                                        <span>{allVisibleSelected ? 'Deselect All' : 'Select All'}</span>
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 font-bold">
+                                            {selectedClientIds.size > 0 ? `${selectedClientIds.size}/${sortedFilteredClients.length}` : sortedFilteredClients.length}
+                                        </span>
+                                    </button>
+                                )}
+                            </div>
 
                             {/* Right: Month Navigator + City Filter */}
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1728,51 +1985,7 @@ export default function Clients() {
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-3">
                         {(() => {
-                            const filtered = clients.filter(c => {
-                                if (viewingTrash) {
-                                    return c.status === 'Trash';
-                                }
-                                if (c.status === 'Trash') return false;
-
-                                if (searchQuery.trim()) {
-                                    const rawQ = searchQuery.trim().toLowerCase();
-                                    const strippedQ = rawQ.replace(/^(client\s*id|id)\s*[:#-]?\s*/i, '').trim();
-                                    const cleanQ = rawQ.replace(/[^a-z0-9]/g, '');
-                                    const cleanStrippedQ = strippedQ.replace(/[^a-z0-9]/g, '');
-
-                                    const clientIdStr = (c.id || '').toLowerCase();
-                                    const displayIdStr = (c.displayId || '').toLowerCase();
-                                    const cleanClientId = clientIdStr.replace(/[^a-z0-9]/g, '');
-                                    const cleanDisplayId = displayIdStr.replace(/[^a-z0-9]/g, '');
-
-                                    // Match full UUID, partial UUID, or readable display ID (e.g. CL-0037, 0037, 37)
-                                    const idMatch = clientIdStr.includes(rawQ) ||
-                                                    displayIdStr.includes(rawQ) ||
-                                                    (strippedQ.length > 0 && (clientIdStr.includes(strippedQ) || displayIdStr.includes(strippedQ))) ||
-                                                    (cleanQ.length >= 2 && (cleanClientId.includes(cleanQ) || cleanDisplayId.includes(cleanQ))) ||
-                                                    (cleanStrippedQ.length >= 2 && (cleanClientId.includes(cleanStrippedQ) || cleanDisplayId.includes(cleanStrippedQ)));
-
-                                    const nameMatch = (c.name || '').toLowerCase().includes(rawQ) ||
-                                                      (strippedQ.length > 0 && (c.name || '').toLowerCase().includes(strippedQ));
-                                    const phoneMatch = (c.phone || '').toLowerCase().includes(rawQ) ||
-                                                       (cleanQ.length >= 4 && (c.phone || '').replace(/\D/g, '').includes(cleanQ));
-                                    const emailMatch = (c.email || '').toLowerCase().includes(rawQ);
-
-                                    if (!nameMatch && !phoneMatch && !emailMatch && !idMatch) return false;
-                                }
-
-                                if (selectedCity !== 'all') {
-                                    const cCity = c.city || extractCity(c);
-                                    if (cCity.toLowerCase() !== selectedCity.toLowerCase()) return false;
-                                }
-
-                                // When actively searching, search across all months so clients from any month are found
-                                if (viewAllMonths || searchQuery.trim()) return true;
-
-                                return isClientInMonth(c, selectedMonth);
-                            });
-
-                            if (filtered.length === 0) return (
+                            if (sortedFilteredClients.length === 0) return (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                     <Calendar className="w-10 h-10 text-slate-200 mb-3" />
                                     <p className="text-sm font-semibold text-slate-600">
@@ -1808,116 +2021,123 @@ export default function Clients() {
                                 </div>
                             );
 
-                            // Sortable columns handler (name, city, phone, workers, deposit, status, date, displayId)
-                            const sortedFiltered = [...filtered].sort((a, b) => {
-                                let comparison = 0;
-                                if (sortField === 'displayId') {
-                                    comparison = (a.displayId || '').localeCompare(b.displayId || '');
-                                } else if (sortField === 'name') {
-                                    comparison = (a.name || '').localeCompare(b.name || '');
-                                } else if (sortField === 'city') {
-                                    const cityA = a.city || extractCity(a);
-                                    const cityB = b.city || extractCity(b);
-                                    comparison = cityA.localeCompare(cityB);
-                                } else if (sortField === 'phone') {
-                                    comparison = (a.phone || '').localeCompare(b.phone || '');
-                                } else if (sortField === 'workerCount') {
-                                    comparison = (a.activeWorkerCount || 0) - (b.activeWorkerCount || 0) || (a.workerCount || 0) - (b.workerCount || 0);
-                                } else if (sortField === 'securityDeposit') {
-                                    comparison = (a.securityDeposit || 0) - (b.securityDeposit || 0);
-                                } else if (sortField === 'status') {
-                                    comparison = (a.status || '').localeCompare(b.status || '');
-                                } else if (sortField === 'created_at') {
-                                    const timeA = new Date(a.serviceStartDate || a.created_at || 0).getTime();
-                                    const timeB = new Date(b.serviceStartDate || b.created_at || 0).getTime();
-                                    comparison = timeA - timeB;
-                                }
-                                return sortAsc ? comparison : -comparison;
-                            });
-
-                            // 1. Compact Table View (Issue 1)
                             if (viewMode === 'table') {
                                 return (
                                     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
                                         <table className="w-full text-left border-collapse text-xs">
                                             <thead>
                                                 <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-extrabold uppercase tracking-wider text-slate-600 select-none">
-                                                    <th onClick={() => handleSort('displayId')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Client ID">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>ID</span>
-                                                            {sortField === 'displayId' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                            {/* Select All Checkbox */}
+                                            <th className="py-2.5 px-3 w-10 text-center whitespace-nowrap">
+                                                <div className="flex items-center justify-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={allVisibleSelected}
+                                                        ref={el => {
+                                                            if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                                                        }}
+                                                        onChange={() => handleToggleSelectAll(sortedFilteredClients)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 cursor-pointer accent-[#1AA6A8]"
+                                                        title={allVisibleSelected ? "Deselect all visible clients" : "Select all visible clients"}
+                                                    />
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('displayId')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Client ID">
+                                                <div className="flex items-center gap-1">
+                                                    <span>ID</span>
+                                                    {sortField === 'displayId' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('name')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Name">
+                                                <div className="flex items-center gap-1">
+                                                    <span>Name</span>
+                                                    {sortField === 'name' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('city')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by City">
+                                                <div className="flex items-center gap-1">
+                                                    <span>City</span>
+                                                    {sortField === 'city' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('phone')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Phone">
+                                                <div className="flex items-center gap-1">
+                                                    <span>Phone</span>
+                                                    {sortField === 'phone' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('workerCount')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Workers">
+                                                <div className="flex items-center gap-1">
+                                                    <span>Workers</span>
+                                                    {sortField === 'workerCount' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('securityDeposit')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Deposit">
+                                                <div className="flex items-center gap-1">
+                                                    <span>Deposit</span>
+                                                    {sortField === 'securityDeposit' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('status')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Status">
+                                                <div className="flex items-center gap-1">
+                                                    <span>Status</span>
+                                                    {sortField === 'status' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th onClick={() => handleSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Service Start Date & Date Added to CRM">
+                                                <div className="flex items-center gap-1">
+                                                    <span>Date (Start / Added)</span>
+                                                    {sortField === 'created_at' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                </div>
+                                            </th>
+                                            <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                        {sortedFilteredClients.map((client) => {
+                                            const isSelected = selectedClientIds.has(client.id);
+                                            const city = client.city || extractCity(client);
+                                            return (
+                                                <tr
+                                                    key={client.id}
+                                                    onClick={() => setInspectingClient(client)}
+                                                    className={`transition-colors cursor-pointer group ${
+                                                        isSelected 
+                                                            ? 'bg-teal-50/70 hover:bg-teal-100/60' 
+                                                            : 'hover:bg-teal-50/30'
+                                                    }`}
+                                                >
+                                                    {/* Row Checkbox */}
+                                                    <td className="py-2.5 px-3 w-10 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="flex items-center justify-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => handleToggleSelect(client.id)}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 cursor-pointer accent-[#1AA6A8]"
+                                                                title={`Select ${client.name}`}
+                                                            />
                                                         </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('name')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Name">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>Name</span>
-                                                            {sortField === 'name' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('city')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by City">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>City</span>
-                                                            {sortField === 'city' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('phone')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Phone">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>Phone</span>
-                                                            {sortField === 'phone' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('workerCount')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Workers">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>Workers</span>
-                                                            {sortField === 'workerCount' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('securityDeposit')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Deposit">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>Deposit</span>
-                                                            {sortField === 'securityDeposit' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('status')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Status">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>Status</span>
-                                                            {sortField === 'status' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th onClick={() => handleSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Service Start Date & Date Added to CRM">
-                                                        <div className="flex items-center gap-1">
-                                                            <span>Date (Start / Added)</span>
-                                                            {sortField === 'created_at' ? (sortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                                                        </div>
-                                                    </th>
-                                                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 bg-white">
-                                                {sortedFiltered.map((client) => {
-                                                    const city = client.city || extractCity(client);
-                                                    return (
-                                                        <tr
-                                                            key={client.id}
-                                                            onClick={() => setInspectingClient(client)}
-                                                            className="hover:bg-teal-50/30 transition-colors cursor-pointer group"
+                                                    </td>
+
+                                                    {/* Client ID (CL-0037 with 1-click copy) */}
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
+                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
+                                                            title={`Click to copy ${client.displayId}\nFull UUID: ${client.id}`}
                                                         >
-                                                            {/* Client ID (CL-0037 with 1-click copy) */}
-                                                            <td className="py-2.5 px-3 whitespace-nowrap">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
-                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
-                                                                    title={`Click to copy ${client.displayId}\nFull UUID: ${client.id}`}
-                                                                >
-                                                                    <span>{client.displayId || 'CL-0001'}</span>
-                                                                    {copiedClientIdBadge === (client.displayId || client.id) ? (
-                                                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                                                    ) : (
-                                                                        <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
-                                                                    )}
-                                                                </button>
-                                                            </td>
+                                                            <span>{client.displayId || 'CL-0001'}</span>
+                                                            {copiedClientIdBadge === (client.displayId || client.id) ? (
+                                                                <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                            ) : (
+                                                                <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                            )}
+                                                        </button>
+                                                    </td>
 
                                                             {/* Name */}
                                                             <td className="py-2.5 px-3 whitespace-nowrap">
@@ -2132,46 +2352,90 @@ export default function Clients() {
                                                 })}
                                             </tbody>
                                         </table>
-                                        <div className="p-2.5 bg-slate-50/80 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
-                                            <span>Showing {sortedFiltered.length} client{sortedFiltered.length !== 1 ? 's' : ''}</span>
-                                            <span className="text-[11px] text-slate-400">Click any row to open full client dossier</span>
+                                        <div className="p-2.5 bg-slate-50/80 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between flex-wrap gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <span>Showing {sortedFilteredClients.length} client{sortedFilteredClients.length !== 1 ? 's' : ''}</span>
+                                                {selectedClientIds.size > 0 && (
+                                                    <span className="font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200 text-[11px]">
+                                                        {selectedClientIds.size} selected
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                {selectedClientIds.size > 0 ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleClearSelection}
+                                                        className="text-xs font-semibold text-slate-500 hover:text-red-600 cursor-pointer"
+                                                    >
+                                                        Clear Selection
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleToggleSelectAll(sortedFilteredClients)}
+                                                        className="text-xs font-semibold text-teal-600 hover:text-teal-700 cursor-pointer"
+                                                    >
+                                                        Select All Visible
+                                                    </button>
+                                                )}
+                                                <span className="text-[11px] text-slate-400">Click any row to open full client dossier</span>
+                                            </div>
                                         </div>
                                     </div>
                                 );
                             }
 
                             // 2. Expanded Card View (Issue 1, with fixes for Issues 2, 4, 5)
-                            return sortedFiltered.map((client, idx) => (
-                            <div key={client.id} onClick={() => setInspectingClient(client)} className="p-4 rounded-lg border border-slate-200 hover:border-primary/30 hover:shadow-sm transition-all bg-white group cursor-pointer">
-                                {/* 1. Card Top Bar: # Serial Number, Client ID (CL-0037) & Scope on Left + Added Date & Status on Right */}
-                                <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-100 flex-wrap">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200/90 shadow-2xs" title={`Client #${idx + 1} in current view`}>
-                                            #{idx + 1}
-                                        </span>
-                                        {client.id && (
-                                            <button
-                                                type="button"
-                                                onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
-                                                className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 px-2.5 py-0.5 rounded-md border border-teal-200/80 transition-all cursor-pointer group shadow-2xs"
-                                                title={`Full Client UUID: ${client.id}\nClick to copy ${client.displayId || 'Client ID'}`}
-                                            >
-                                                <span className="text-teal-600 text-[10px] font-sans font-semibold">ID:</span>
-                                                <span className="font-bold text-teal-900">{client.displayId || 'CL-0001'}</span>
-                                                {copiedClientIdBadge === (client.displayId || client.id) ? (
-                                                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                                                ) : (
-                                                    <Copy className="w-3 h-3 text-teal-500 group-hover:text-teal-700 shrink-0" />
-                                                )}
-                                            </button>
-                                        )}
-                                        <span className="text-slate-300">•</span>
-                                        <span className="text-[11px] text-slate-500 font-medium">
-                                            {idx + 1} of {sortedFiltered.length} clients
-                                        </span>
-                                    </div>
+                            return sortedFilteredClients.map((client, idx) => {
+                                const isSelected = selectedClientIds.has(client.id);
+                                return (
+                                <div
+                                    key={client.id}
+                                    onClick={() => setInspectingClient(client)}
+                                    className={`p-4 rounded-lg border transition-all group cursor-pointer ${
+                                        isSelected
+                                            ? 'border-[#1AA6A8] bg-teal-50/20 ring-2 ring-[#1AA6A8]/20 shadow-sm'
+                                            : 'border-slate-200 bg-white hover:border-primary/30 hover:shadow-sm'
+                                    }`}
+                                >
+                                    {/* 1. Card Top Bar: Checkbox, # Serial Number, Client ID (CL-0037) & Scope on Left + Added Date & Status on Right */}
+                                    <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-100 flex-wrap">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => handleToggleSelect(client.id)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 cursor-pointer accent-[#1AA6A8] mr-0.5"
+                                                title={`Select ${client.name}`}
+                                            />
+                                            <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200/90 shadow-2xs" title={`Client #${idx + 1} in current view`}>
+                                                #{idx + 1}
+                                            </span>
+                                            {client.id && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
+                                                    className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 px-2.5 py-0.5 rounded-md border border-teal-200/80 transition-all cursor-pointer group shadow-2xs"
+                                                    title={`Full Client UUID: ${client.id}\nClick to copy ${client.displayId || 'Client ID'}`}
+                                                >
+                                                    <span className="text-teal-600 text-[10px] font-sans font-semibold">ID:</span>
+                                                    <span className="font-bold text-teal-900">{client.displayId || 'CL-0001'}</span>
+                                                    {copiedClientIdBadge === (client.displayId || client.id) ? (
+                                                        <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                    ) : (
+                                                        <Copy className="w-3 h-3 text-teal-500 group-hover:text-teal-700 shrink-0" />
+                                                    )}
+                                                </button>
+                                            )}
+                                            <span className="text-slate-300">•</span>
+                                            <span className="text-[11px] text-slate-500 font-medium">
+                                                {idx + 1} of {sortedFilteredClients.length} clients
+                                            </span>
+                                        </div>
 
-                                    <div className="flex items-center gap-2.5">
+                                        <div className="flex items-center gap-2.5">
                                         {client.created_at && (
                                             <span className="text-[10px] text-slate-400 hidden sm:inline-block">
                                                 Added {new Date(client.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -2452,7 +2716,8 @@ export default function Clients() {
                                     </div>
                                 </div>
                             </div>
-                        ));
+                        );
+                    });
                         })()}
                     </div>
                 </div>
@@ -3921,6 +4186,67 @@ export default function Clients() {
                     }}
                 />
             )}
+
+            {/* Floating Bulk Action Bar */}
+            {selectedClientIds.size > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white px-4 sm:px-6 py-3 rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-md flex items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-5 duration-200 max-w-[95vw] flex-wrap justify-between sm:justify-start">
+                    <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-[#1AA6A8] text-white flex items-center justify-center text-xs font-bold shadow-2xs">
+                            {selectedClientIds.size}
+                        </span>
+                        <span className="text-xs sm:text-sm font-bold text-white whitespace-nowrap">
+                            {selectedClientIds.size} client{selectedClientIds.size !== 1 ? 's' : ''} selected
+                        </span>
+                        <button
+                            type="button"
+                            onClick={handleClearSelection}
+                            className="text-xs text-slate-400 hover:text-white underline ml-1 cursor-pointer"
+                        >
+                            Deselect
+                        </button>
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-700 hidden sm:block" />
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                            type="button"
+                            onClick={() => handleExportCsv(clients.filter(c => selectedClientIds.has(c.id)))}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border border-slate-600 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                            title="Export selected clients to CSV / Excel"
+                        >
+                            <Download className="w-3.5 h-3.5 text-teal-400" />
+                            <span>Export CSV/Excel</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsBulkMessageModalOpen(true)}
+                            className="px-3.5 py-1.5 bg-[#1AA6A8] hover:bg-[#15898A] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                            title="Send WhatsApp or direct messages in bulk"
+                        >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Bulk Message</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleClearSelection}
+                            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-1 cursor-pointer"
+                            title="Clear selection"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Message Modal */}
+            <BulkMessageModal
+                isOpen={isBulkMessageModalOpen}
+                onClose={() => setIsBulkMessageModalOpen(false)}
+                clients={clients.filter(c => selectedClientIds.has(c.id))}
+            />
         </div>
     );
 }
