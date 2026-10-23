@@ -54,8 +54,8 @@ export const adminUser: User = {
     role: 'admin',
     accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
     avatar: 'SA',
-    phone: '+919016116564',
-    phone_numbers: ['+919016116564']
+    phone: undefined,
+    phone_numbers: []
 };
 
 const normalizeStaffAccess = (staffUser: User): User => {

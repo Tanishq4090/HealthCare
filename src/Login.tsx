@@ -111,6 +111,23 @@ export default function Login() {
 
                 const availablePhones = getUserPhoneNumbers(adminUserObj);
 
+                // If no phone number is set yet, ask for the bypass key directly
+                if (availablePhones.length === 0) {
+                    const challenge = await initiateAdminTwoFactor(adminUserObj, undefined, true);
+                    setPending2FA({
+                        challengeId: challenge.challengeId,
+                        targetPhone: '',
+                        maskedPhone: 'No phone registered',
+                        availablePhones: [],
+                        devCode: undefined,
+                        pendingRole: 'admin',
+                        pendingStaffUser: undefined
+                    });
+                    setUseEmergencyKey(true);
+                    setEmergencyKeyInput('');
+                    return;
+                }
+
                 // If admin has multiple registered phone numbers, let them select destination
                 if (availablePhones.length > 1) {
                     setPendingPhoneSelect({
@@ -135,6 +152,7 @@ export default function Login() {
                     pendingStaffUser: undefined
                 });
                 setResendCooldown(30);
+                setUseEmergencyKey(false);
                 setOtpCode(['', '', '', '', '', '']);
                 return;
             }
@@ -152,6 +170,23 @@ export default function Login() {
                 // If staff account is an Admin, require 2FA
                 if (data.user.role === 'admin') {
                     const availablePhones = getUserPhoneNumbers(data.user);
+
+                    // If no phone number is set yet, ask for the bypass key directly
+                    if (availablePhones.length === 0) {
+                        const challenge = await initiateAdminTwoFactor(data.user, undefined, true);
+                        setPending2FA({
+                            challengeId: challenge.challengeId,
+                            targetPhone: '',
+                            maskedPhone: 'No phone registered',
+                            availablePhones: [],
+                            devCode: undefined,
+                            pendingRole: undefined,
+                            pendingStaffUser: data.user
+                        });
+                        setUseEmergencyKey(true);
+                        setEmergencyKeyInput('');
+                        return;
+                    }
 
                     // If multiple phone numbers registered, let admin choose destination
                     if (availablePhones.length > 1) {
@@ -177,6 +212,7 @@ export default function Login() {
                         pendingStaffUser: data.user
                     });
                     setResendCooldown(30);
+                    setUseEmergencyKey(false);
                     setOtpCode(['', '', '', '', '', '']);
                     return;
                 }
@@ -306,12 +342,13 @@ export default function Login() {
 
         if (!pending2FA) return;
 
-        const codeToVerify = useEmergencyKey ? emergencyKeyInput.trim() : otpCode.join('');
-        if (!useEmergencyKey && codeToVerify.length < 6) {
+        const isBypass = pending2FA.availablePhones.length === 0 || useEmergencyKey;
+        const codeToVerify = isBypass ? emergencyKeyInput.trim() : otpCode.join('');
+        if (!isBypass && codeToVerify.length < 6) {
             setError('Please enter the complete 6-digit verification code.');
             return;
         }
-        if (useEmergencyKey && !codeToVerify) {
+        if (isBypass && !codeToVerify) {
             setError('Please enter your emergency admin security key.');
             return;
         }
@@ -550,22 +587,52 @@ export default function Login() {
                     ) : pending2FA ? (
                         /* STEP 2B: Admin Two-Factor Verification */
                         <form onSubmit={handleVerifyTwoFactor} className="space-y-5 animate-in fade-in duration-200">
-                            <div className="text-center pb-2">
-                                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200">
-                                    <ShieldCheck className="w-6 h-6" />
+                            {pending2FA.availablePhones.length === 0 ? (
+                                <div className="text-center pb-2">
+                                    <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-amber-200 shadow-sm">
+                                        <KeyRound className="w-6 h-6" />
+                                    </div>
+                                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-800 mb-1 border border-amber-200/80">
+                                        Security Setup Required
+                                    </span>
+                                    <h2 className="text-lg font-extrabold text-slate-900">
+                                        Emergency Admin Key Required
+                                    </h2>
+                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                        No 2FA WhatsApp phone number has been configured for this account yet. Please enter your master Emergency Admin Security Key to proceed.
+                                    </p>
                                 </div>
-                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1">
-                                    Admin Two-Factor Auth
-                                </span>
-                                <h2 className="text-lg font-extrabold text-slate-900">
-                                    Verification Code Required
-                                </h2>
-                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                    Enter the 6-digit passcode sent to your registered admin WhatsApp (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
-                                </p>
-                            </div>
+                            ) : (
+                                <div className="text-center pb-2">
+                                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200 shadow-sm">
+                                        <ShieldCheck className="w-6 h-6" />
+                                    </div>
+                                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1">
+                                        Admin Two-Factor Auth
+                                    </span>
+                                    <h2 className="text-lg font-extrabold text-slate-900">
+                                        Verification Code Required
+                                    </h2>
+                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                        Enter the 6-digit passcode sent to your registered admin WhatsApp (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
+                                    </p>
+                                </div>
+                            )}
 
-                            {/* Dev Testing Helper (shows generated OTP during local testing/demo) */}
+                            {/* First-time setup hint when no phone is configured */}
+                            {pending2FA.availablePhones.length === 0 && (
+                                <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-left space-y-1">
+                                    <p className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                        WhatsApp 2FA Phone Not Yet Registered
+                                    </p>
+                                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                                        After authenticating with your emergency key, you can register your WhatsApp number(s) in <span className="font-semibold text-amber-950">Settings → Access Control</span>.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Dev Testing Helper (shows generated OTP during local testing/demo if phone registered) */}
                             {pending2FA.devCode && (
                                 <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-center">
                                     <span className="text-[11px] text-blue-700 font-semibold">
@@ -609,7 +676,26 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {!useEmergencyKey ? (
+                            {pending2FA.availablePhones.length === 0 || useEmergencyKey ? (
+                                /* Emergency Security Key Input */
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                                        <span className="flex items-center gap-1.5">
+                                            <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                                            Emergency Admin Bypass Key
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-normal">master key</span>
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={emergencyKeyInput}
+                                        onChange={(e) => setEmergencyKeyInput(e.target.value)}
+                                        placeholder="Enter master bypass key"
+                                        autoFocus
+                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-[#0f172a] font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                                    />
+                                </div>
+                            ) : (
                                 /* 6-Box OTP Input */
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between gap-1.5 sm:gap-2" onPaste={handleOtpPaste}>
@@ -635,55 +721,48 @@ export default function Login() {
                                         Paste or type 6 digits. Expires in 10 minutes.
                                     </p>
                                 </div>
-                            ) : (
-                                /* Emergency Security Key Input */
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                                        <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-                                        Emergency Admin Key
-                                    </label>
-                                    <input
-                                        type="password"
-                                        value={emergencyKeyInput}
-                                        onChange={(e) => setEmergencyKeyInput(e.target.value)}
-                                        placeholder="Enter master bypass key"
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-[#0f172a] font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                    />
-                                </div>
                             )}
 
                             <button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm"
+                                className={`w-full text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm ${
+                                    pending2FA.availablePhones.length === 0
+                                        ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                                        : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                                }`}
                             >
                                 {isLoading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : pending2FA.availablePhones.length === 0 ? (
+                                    "Verify Key & Sign In"
                                 ) : (
                                     "Verify & Access Admin OS"
                                 )}
                             </button>
 
-                            {/* Resend and Recovery Key options */}
-                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    disabled={resendCooldown > 0 || isLoading}
-                                    onClick={handleResendCode}
-                                    className="text-slate-500 hover:text-slate-800 disabled:opacity-50 font-medium flex items-center gap-1"
-                                >
-                                    <RefreshCw className="w-3 h-3" />
-                                    {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend Code'}
-                                </button>
+                            {/* Resend and Recovery Key options (only shown when account has registered phones) */}
+                            {pending2FA.availablePhones.length > 0 && (
+                                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        disabled={resendCooldown > 0 || isLoading}
+                                        onClick={handleResendCode}
+                                        className="text-slate-500 hover:text-slate-800 disabled:opacity-50 font-medium flex items-center gap-1"
+                                    >
+                                        <RefreshCw className="w-3 h-3" />
+                                        {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend Code'}
+                                    </button>
 
-                                <button
-                                    type="button"
-                                    onClick={() => setUseEmergencyKey(prev => !prev)}
-                                    className="text-slate-500 hover:text-primary font-semibold transition-colors"
-                                >
-                                    {useEmergencyKey ? 'Use 6-Digit OTP' : 'Use Emergency Key'}
-                                </button>
-                            </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setUseEmergencyKey(prev => !prev)}
+                                        className="text-slate-500 hover:text-primary font-semibold transition-colors"
+                                    >
+                                        {useEmergencyKey ? 'Use 6-Digit OTP' : 'Use Emergency Key'}
+                                    </button>
+                                </div>
+                            )}
 
                             <button
                                 type="button"

@@ -20,7 +20,6 @@ export interface TwoFactorChallenge {
 
 const CHALLENGE_KEY = '99care_2fa_pending_challenge';
 const EMERGENCY_ADMIN_KEY = '99CARE-SECURE-2026';
-const DEFAULT_AGENCY_ADMIN_PHONE = '+919016116564';
 
 /**
  * SHA-256 helper for client-side challenge hashing
@@ -59,7 +58,7 @@ export function normalizePhoneNumber(raw?: string): string {
  * Masks a phone number for UI display (e.g. +91 90161 16564 -> +91 90161 ••••64)
  */
 export function maskPhoneFor2FA(rawPhone?: string): string {
-    if (!rawPhone) return '+91 ••••• ••••';
+    if (!rawPhone) return 'No Phone Configured';
     const clean = rawPhone.replace(/\D/g, '');
     if (clean.length < 10) return 'Registered Device';
     const last2 = clean.slice(-2);
@@ -68,7 +67,8 @@ export function maskPhoneFor2FA(rawPhone?: string): string {
 }
 
 /**
- * Resolves all available phone numbers for a user
+ * Resolves all available phone numbers for a user.
+ * Returns empty array if no phone numbers are configured.
  */
 export function getUserPhoneNumbers(user: User): string[] {
     const rawList = Array.isArray(user.phone_numbers) && user.phone_numbers.length > 0
@@ -76,27 +76,29 @@ export function getUserPhoneNumbers(user: User): string[] {
         : (user.phone ? [user.phone] : []);
 
     const cleaned = Array.from(new Set(rawList.map(normalizePhoneNumber).filter(Boolean)));
-    if (cleaned.length === 0) {
-        return [DEFAULT_AGENCY_ADMIN_PHONE];
-    }
     return cleaned;
 }
 
 /**
  * Initiates Two-Factor Authentication for an admin user.
- * Generates a challenge and attempts WhatsApp delivery to the chosen phone number.
+ * If no phone numbers are configured or isBypassMode is true, requires the master emergency key directly.
  */
 export async function initiateAdminTwoFactor(
     user: User,
-    selectedPhone?: string
+    selectedPhone?: string,
+    isBypassMode?: boolean
 ): Promise<{
     challengeId: string;
     targetPhone: string;
     maskedPhone: string;
     availablePhones: string[];
     expiresInSeconds: number;
-    devCode?: string; // Provided during local testing or fallback
+    devCode?: string;
+    requiresBypassKey?: boolean;
 }> {
+    const availablePhones = getUserPhoneNumbers(user);
+    const requiresBypassKey = isBypassMode || availablePhones.length === 0;
+
     const otp = generateSecureOTP();
     const salt = crypto.randomUUID();
     const hashedCode = await sha256(`${salt}:${otp}`);
@@ -104,31 +106,33 @@ export async function initiateAdminTwoFactor(
     const now = Date.now();
     const expiresAt = now + 10 * 60 * 1000; // 10 minutes
 
-    const availablePhones = getUserPhoneNumbers(user);
-    const targetPhone = (selectedPhone && availablePhones.includes(normalizePhoneNumber(selectedPhone)))
-        ? normalizePhoneNumber(selectedPhone)
-        : (availablePhones[0] || DEFAULT_AGENCY_ADMIN_PHONE);
-
+    let targetPhone = '';
     let dispatchedVia: 'whatsapp' | 'local_secure' = 'local_secure';
 
-    // Attempt WhatsApp delivery if running against live Supabase
-    try {
-        const cleanDigits = targetPhone.replace(/\D/g, '');
-        const message = `🔐 *99 Care OS Admin Security*\n\nYour 2-Factor Authentication login code is: *${otp}*\n\nValid for 10 minutes. For security, never share this code.`;
-        const { error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
-            body: {
-                recipient: cleanDigits,
-                phone: cleanDigits,
-                message,
-                type: 'admin_2fa_otp'
-            }
-        });
+    if (!requiresBypassKey && availablePhones.length > 0) {
+        targetPhone = (selectedPhone && availablePhones.includes(normalizePhoneNumber(selectedPhone)))
+            ? normalizePhoneNumber(selectedPhone)
+            : availablePhones[0];
 
-        if (!waError) {
-            dispatchedVia = 'whatsapp';
+        // Attempt WhatsApp delivery if running against live Supabase
+        try {
+            const cleanDigits = targetPhone.replace(/\D/g, '');
+            const message = `🔐 *99 Care OS Admin Security*\n\nYour 2-Factor Authentication login code is: *${otp}*\n\nValid for 10 minutes. For security, never share this code.`;
+            const { error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
+                body: {
+                    recipient: cleanDigits,
+                    phone: cleanDigits,
+                    message,
+                    type: 'admin_2fa_otp'
+                }
+            });
+
+            if (!waError) {
+                dispatchedVia = 'whatsapp';
+            }
+        } catch (err) {
+            console.warn('WhatsApp 2FA dispatch fallback:', err);
         }
-    } catch (err) {
-        console.warn('WhatsApp 2FA dispatch fallback:', err);
     }
 
     const challenge: TwoFactorChallenge = {
@@ -142,24 +146,25 @@ export async function initiateAdminTwoFactor(
         createdAt: now,
         expiresAt,
         attempts: 0,
-        targetPhone,
-        maskedTarget: maskPhoneFor2FA(targetPhone),
+        targetPhone: targetPhone || undefined,
+        maskedTarget: targetPhone ? maskPhoneFor2FA(targetPhone) : 'No Phone Registered',
         dispatchedVia
     };
 
     sessionStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenge));
 
-    // Expose devCode in non-production or for admin demo
+    // Expose devCode in non-production only if an OTP was actually generated for delivery
     const isLocal = typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
     return {
         challengeId,
         targetPhone,
-        maskedPhone: challenge.maskedTarget || 'Registered Device',
+        maskedPhone: challenge.maskedTarget || 'No Phone Registered',
         availablePhones,
         expiresInSeconds: 600,
-        devCode: isLocal ? otp : undefined
+        devCode: (!requiresBypassKey && isLocal) ? otp : undefined,
+        requiresBypassKey
     };
 }
 

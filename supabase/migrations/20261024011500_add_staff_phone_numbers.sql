@@ -10,10 +10,9 @@ COMMENT ON COLUMN public.staff_users.phone IS 'Primary phone number for staff ac
 
 -- Add admin_phone_numbers to automation_settings for root admin
 ALTER TABLE public.automation_settings
-ADD COLUMN IF NOT EXISTS admin_phone_numbers JSONB DEFAULT '["+919016116564"]'::jsonb;
+ADD COLUMN IF NOT EXISTS admin_phone_numbers JSONB DEFAULT '[]'::jsonb;
 
 -- Initialize global row if missing
 INSERT INTO public.automation_settings (id, admin_phone_numbers)
-VALUES ('global', '["+919016116564"]'::jsonb)
-ON CONFLICT (id) DO UPDATE
-SET admin_phone_numbers = COALESCE(public.automation_settings.admin_phone_numbers, '["+919016116564"]'::jsonb);
+VALUES ('global', '[]'::jsonb)
+ON CONFLICT (id) DO NOTHING;
