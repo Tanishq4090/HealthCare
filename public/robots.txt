@@ -1,3 +1,10 @@
 User-agent: *
+Disallow: /admin/
+Disallow: /admin
+Disallow: /login
+Disallow: /duty/
+Disallow: /id-card/
+Disallow: /client/confirm-staff/
 Allow: /
 
+Sitemap: https://99care.org/sitemap.xml

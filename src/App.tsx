@@ -39,26 +39,40 @@ import './App.css';
 
 function AppMeta() {
   const mode = getAppMode();
+  const location = useLocation();
 
   useEffect(() => {
-    // Ensure OS pages never get indexed if deployed accidentally on public domain.
+    // Ensure admin/private portal pages and OS domains NEVER get indexed by search engines
     if (typeof document === 'undefined') return;
 
-    document.title =
-      mode === 'os'
-        ? '99 Care OS — Private Portal'
-        : 'Best Home Healthcare Services in Surat | 99 Care';
+    const isAdminOrPrivatePath =
+      location.pathname.startsWith('/admin') ||
+      location.pathname === '/login' ||
+      location.pathname.startsWith('/client/confirm-staff') ||
+      location.pathname.startsWith('/duty') ||
+      location.pathname.startsWith('/id-card');
 
-    const existing = document.querySelector('meta[name="robots"]');
-    if (mode === 'os') {
-      const meta = existing ?? document.createElement('meta');
-      meta.setAttribute('name', 'robots');
-      meta.setAttribute('content', 'noindex,nofollow,noarchive');
-      if (!existing) document.head.appendChild(meta);
-    } else if (existing) {
-      existing.remove();
+    const shouldNoIndex = mode === 'os' || isAdminOrPrivatePath;
+
+    // Set page title accordingly
+    if (mode === 'os' || location.pathname.startsWith('/admin')) {
+      document.title = '99 Care OS — Private Portal';
+    } else if (location.pathname === '/login') {
+      document.title = 'Staff Login | 99 Care';
     }
-  }, [mode]);
+
+    let meta = document.querySelector('meta[name="robots"]');
+    if (shouldNoIndex) {
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'robots');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', 'noindex,nofollow,noarchive');
+    } else if (meta) {
+      meta.remove();
+    }
+  }, [mode, location.pathname]);
 
   return null;
 }
