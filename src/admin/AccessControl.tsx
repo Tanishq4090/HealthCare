@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, AccessModule } from '../contexts/AuthContext';
-import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search, Eye, EyeOff, Lock, History, ShieldCheck, Download, Laptop, Smartphone, Tablet, RefreshCw, Filter, ArrowUpRight, FileText, Layers, Globe, Activity, Info, Phone, Plus, AlertCircle } from 'lucide-react';
+import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search, Eye, EyeOff, Lock, History, ShieldCheck, Download, Laptop, Smartphone, Tablet, RefreshCw, Filter, ArrowUpRight, FileText, Layers, Globe, Activity, Info, Phone, Plus, AlertCircle, QrCode, Copy, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     fetchAllDeletionRequests,
@@ -13,6 +13,7 @@ import {
 } from '../services/deletionService';
 import { fetchAuditLogs, type AuditLogItem, type AuditAction } from '../services/auditService';
 import { normalizePhoneNumber, maskPhoneFor2FA } from '../services/twoFactorService';
+import { generateRandomBase32Secret, verifyTOTPCode, generateOtpAuthUri, getQrCodeUrl } from '../services/totpService';
 import { supabase } from '../lib/supabase';
 
 const MODULES: { id: AccessModule; label: string; desc: string }[] = [
@@ -78,6 +79,14 @@ export default function AccessControl() {
     });
     const [phoneInput, setPhoneInput] = useState('');
 
+    // Google Authenticator (Free RFC 6238 TOTP 2FA) Settings
+    const [adminTotpSecret, setAdminTotpSecret] = useState('');
+    const [isTotpModalOpen, setIsTotpModalOpen] = useState(false);
+    const [pendingTotpSecret, setPendingTotpSecret] = useState('');
+    const [confirmTotpInput, setConfirmTotpInput] = useState('');
+    const [isVerifyingTotp, setIsVerifyingTotp] = useState(false);
+    const [isCopiedSecret, setIsCopiedSecret] = useState(false);
+
     // Fast2SMS Direct Cellular SMS Settings
     const [fast2smsApiKey, setFast2smsApiKey] = useState('');
     const [isSavingFast2sms, setIsSavingFast2sms] = useState(false);
@@ -86,15 +95,81 @@ export default function AccessControl() {
     useEffect(() => {
         supabase
             .from('automation_settings')
-            .select('fast2sms_api_key')
+            .select('fast2sms_api_key, admin_totp_secret')
             .eq('id', 'global')
             .maybeSingle()
             .then(({ data }) => {
                 if (data?.fast2sms_api_key) {
                     setFast2smsApiKey(data.fast2sms_api_key);
                 }
+                if (data?.admin_totp_secret) {
+                    setAdminTotpSecret(data.admin_totp_secret);
+                }
             });
     }, []);
+
+    const handleOpenTotpSetup = () => {
+        const newSecret = generateRandomBase32Secret(20);
+        setPendingTotpSecret(newSecret);
+        setConfirmTotpInput('');
+        setIsCopiedSecret(false);
+        setIsTotpModalOpen(true);
+    };
+
+    const handleCopyTotpSecret = () => {
+        if (!pendingTotpSecret) return;
+        navigator.clipboard.writeText(pendingTotpSecret);
+        setIsCopiedSecret(true);
+        toast.success('Secret key copied to clipboard!');
+        setTimeout(() => setIsCopiedSecret(false), 2500);
+    };
+
+    const handleConfirmTotpActivation = async () => {
+        const cleanCode = confirmTotpInput.trim().replace(/\D/g, '');
+        if (cleanCode.length !== 6) {
+            toast.error('Please enter the 6-digit code showing in your Authenticator app.');
+            return;
+        }
+
+        setIsVerifyingTotp(true);
+        try {
+            const isValid = await verifyTOTPCode(pendingTotpSecret, cleanCode);
+            if (!isValid) {
+                toast.error('Incorrect 6-digit code. Please ensure your device clock is set to automatic time and try the current code.');
+                setIsVerifyingTotp(false);
+                return;
+            }
+
+            const { error } = await supabase
+                .from('automation_settings')
+                .upsert({ id: 'global', admin_totp_secret: pendingTotpSecret }, { onConflict: 'id' });
+
+            if (error) throw error;
+
+            setAdminTotpSecret(pendingTotpSecret);
+            setIsTotpModalOpen(false);
+            toast.success('Google Authenticator activated! Your logins are now secured with free 30s passcodes.');
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to activate Google Authenticator.');
+        } finally {
+            setIsVerifyingTotp(false);
+        }
+    };
+
+    const handleDisableTotp = async () => {
+        if (!window.confirm('Are you sure you want to disable Google Authenticator 2FA? You will need your master Emergency Key (99CARE-SECURE-2026) or SMS to log in.')) return;
+        try {
+            const { error } = await supabase
+                .from('automation_settings')
+                .upsert({ id: 'global', admin_totp_secret: null }, { onConflict: 'id' });
+            if (error) throw error;
+
+            setAdminTotpSecret('');
+            toast.success('Google Authenticator 2FA disabled.');
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to disable Authenticator.');
+        }
+    };
 
     const handleSaveFast2sms = async () => {
         setIsSavingFast2sms(true);
@@ -811,6 +886,12 @@ export default function AccessControl() {
                                                     }`}>
                                                         {u.role === 'admin' ? 'Administrator' : 'Staff User'}
                                                     </span>
+                                                    {u.role === 'admin' && adminTotpSecret && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                                            Google Auth 2FA (Free)
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 {u.phone_numbers && u.phone_numbers.length > 0 ? (
                                                     <div className="mt-1.5 flex flex-wrap gap-1">
@@ -906,6 +987,202 @@ export default function AccessControl() {
                     </table>
                 </div>
             </div>
+
+            {/* Google Authenticator (Free Mobile App 2FA) Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0">
+                            <ShieldCheck className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-slate-900">
+                                    Google Authenticator & Mobile 2FA
+                                </h3>
+                                <span className="text-[10px] uppercase tracking-wider font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200/80">
+                                    100% Free Forever • Zero SMS Fees
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                Generates fresh 6-digit codes every 30 seconds directly inside Google Authenticator, Microsoft Authenticator, or Apple Passwords on your phone. Works completely offline with zero telecom charges.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                        {adminTotpSecret ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                Active & Protected
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                Not Configured
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                        <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                            <span>How it works on your phone:</span>
+                            <span className="text-[11px] font-normal text-slate-500">Google Authenticator (Android/iOS) or Apple Passwords (iPhone)</span>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
+                            {adminTotpSecret
+                                ? 'Your administrator login is protected with Authenticator app passcodes. Every time you log in, enter the 6-digit code currently showing in your phone app. The master emergency key (99CARE-SECURE-2026) remains available as an override.'
+                                : 'Scan the QR code once with Google Authenticator or Apple Passwords. Your phone will immediately start generating 6-digit passcodes that change every 30 seconds. No paid SMS gateways required.'}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                        {adminTotpSecret ? (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenTotpSetup}
+                                    className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                                    Reconfigure / Add Device
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDisableTotp}
+                                    className="px-3.5 py-2 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
+                                >
+                                    Disable
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleOpenTotpSetup}
+                                className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm flex items-center gap-2"
+                            >
+                                <QrCode className="w-4 h-4" />
+                                Set Up Google Authenticator
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Google Authenticator QR Code Setup Modal */}
+            {isTotpModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center">
+                                    <ShieldCheck className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-sm">Set Up Google Authenticator</h3>
+                                    <p className="text-[11px] text-slate-500 font-medium">100% Free • Works Offline • Zero SMS Cost</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsTotpModalOpen(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            {/* Step 1 & 2 */}
+                            <div className="space-y-3 text-center">
+                                <div className="text-xs text-slate-600 leading-relaxed">
+                                    <span className="font-bold text-slate-900">Step 1:</span> Open <span className="font-semibold text-emerald-700">Google Authenticator</span> (or Apple Passwords on iPhone) and tap <strong className="font-bold">+</strong> &rarr; <strong className="font-bold">Scan QR code</strong>.
+                                </div>
+
+                                {/* QR Code Display */}
+                                <div className="p-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl inline-block shadow-sm">
+                                    <img
+                                        src={getQrCodeUrl(generateOtpAuthUri('Admin (99 Care)', pendingTotpSecret, '99 Care OS'))}
+                                        alt="Google Authenticator QR Code"
+                                        className="w-48 h-48 rounded-xl object-contain mx-auto"
+                                    />
+                                </div>
+
+                                {/* Manual Secret Entry */}
+                                <div className="space-y-1.5 pt-1">
+                                    <span className="text-[11px] text-slate-400 font-medium block">
+                                        Can't scan the QR code? Enter this secret manually:
+                                    </span>
+                                    <div className="flex items-center justify-center gap-2">
+                                        <code className="px-3 py-1.5 bg-slate-100 text-slate-800 font-mono font-bold text-xs rounded-lg tracking-wider border border-slate-200">
+                                            {pendingTotpSecret.match(/.{1,4}/g)?.join(' ') || pendingTotpSecret}
+                                        </code>
+                                        <button
+                                            type="button"
+                                            onClick={handleCopyTotpSecret}
+                                            className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg border border-slate-200 transition-colors"
+                                            title="Copy Secret"
+                                        >
+                                            {isCopiedSecret ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                    <a
+                                        href={generateOtpAuthUri('Admin (99 Care)', pendingTotpSecret, '99 Care OS')}
+                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline pt-0.5"
+                                    >
+                                        <ExternalLink className="w-3 h-3" />
+                                        Open directly in Authenticator on this device
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Step 3: Test Verification */}
+                            <div className="pt-3 border-t border-slate-100 space-y-3">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-800 block mb-1">
+                                        Step 2: Enter the 6-digit code showing in your app to activate
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            maxLength={6}
+                                            value={confirmTotpInput}
+                                            onChange={(e) => setConfirmTotpInput(e.target.value.replace(/\D/g, ''))}
+                                            placeholder="000000"
+                                            className="w-full text-center tracking-[0.5em] text-xl font-mono font-bold py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:tracking-normal placeholder:font-normal placeholder:text-sm placeholder:text-slate-400"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 mt-1 text-center">
+                                        This verifies that your device clock and the system are synchronized.
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTotpModalOpen(false)}
+                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleConfirmTotpActivation}
+                                        disabled={isVerifyingTotp || confirmTotpInput.trim().length !== 6}
+                                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isVerifyingTotp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                        Verify & Activate Free 2FA
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Direct Cellular SMS Gateway Card (Fast2SMS) */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">

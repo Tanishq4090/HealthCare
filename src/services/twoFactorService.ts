@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { logAudit } from './auditService';
+import { verifyTOTPCode } from './totpService';
 import type { User } from '../contexts/AuthContext';
 
 export interface TwoFactorChallenge {
@@ -15,7 +16,8 @@ export interface TwoFactorChallenge {
     attempts: number;
     targetPhone?: string;
     maskedTarget?: string;
-    dispatchedVia?: 'sms' | 'whatsapp' | 'local_secure';
+    dispatchedVia?: 'totp' | 'sms' | 'whatsapp' | 'local_secure';
+    totpSecret?: string;
 }
 
 const CHALLENGE_KEY = '99care_2fa_pending_challenge';
@@ -86,7 +88,8 @@ export function getUserPhoneNumbers(user: User): string[] {
 export async function initiateAdminTwoFactor(
     user: User,
     selectedPhone?: string,
-    isBypassMode?: boolean
+    isBypassMode?: boolean,
+    totpSecret?: string
 ): Promise<{
     challengeId: string;
     targetPhone: string;
@@ -95,8 +98,46 @@ export async function initiateAdminTwoFactor(
     expiresInSeconds: number;
     devCode?: string;
     requiresBypassKey?: boolean;
-    dispatchedVia?: 'sms' | 'whatsapp' | 'local_secure';
+    dispatchedVia?: 'totp' | 'sms' | 'whatsapp' | 'local_secure';
 }> {
+    const activeTotpSecret = totpSecret || user.totp_secret;
+
+    // 1. Google Authenticator TOTP: 100% Free App Verification (zero SMS / telecom fees)
+    if (activeTotpSecret) {
+        const challengeId = crypto.randomUUID();
+        const now = Date.now();
+        const expiresAt = now + 10 * 60 * 1000;
+
+        const challenge: TwoFactorChallenge = {
+            challengeId,
+            userId: user.id,
+            username: user.username,
+            name: user.name,
+            role: user.role,
+            hashedCode: '',
+            salt: '',
+            createdAt: now,
+            expiresAt,
+            attempts: 0,
+            maskedTarget: 'Google Authenticator',
+            dispatchedVia: 'totp',
+            totpSecret: activeTotpSecret
+        };
+
+        sessionStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenge));
+
+        return {
+            challengeId,
+            targetPhone: '',
+            maskedPhone: 'Google Authenticator App',
+            availablePhones: [],
+            expiresInSeconds: 600,
+            devCode: undefined,
+            requiresBypassKey: false,
+            dispatchedVia: 'totp'
+        };
+    }
+
     const availablePhones = getUserPhoneNumbers(user);
     const requiresBypassKey = isBypassMode || availablePhones.length === 0;
 
@@ -108,7 +149,7 @@ export async function initiateAdminTwoFactor(
     const expiresAt = now + 10 * 60 * 1000; // 10 minutes
 
     let targetPhone = '';
-    let dispatchedVia: 'sms' | 'whatsapp' | 'local_secure' = 'local_secure';
+    let dispatchedVia: 'totp' | 'sms' | 'whatsapp' | 'local_secure' = 'local_secure';
 
     if (!requiresBypassKey && availablePhones.length > 0) {
         targetPhone = (selectedPhone && availablePhones.includes(normalizePhoneNumber(selectedPhone)))
@@ -241,6 +282,32 @@ export async function verifyAdminTwoFactor(
             userRole: challenge.role,
         });
         return { success: true };
+    }
+
+    // Verify Google Authenticator TOTP if active for this challenge
+    if (challenge.totpSecret) {
+        const isTotpValid = await verifyTOTPCode(challenge.totpSecret, enteredCode);
+        if (isTotpValid) {
+            sessionStorage.removeItem(CHALLENGE_KEY);
+            await logAudit({
+                entityType: 'admin' as any,
+                entityId: challenge.userId,
+                entityName: challenge.name,
+                action: 'EDIT',
+                description: `Admin Google Authenticator TOTP verified for ${challenge.username}`,
+                userId: challenge.userId,
+                userName: challenge.name,
+                userRole: challenge.role,
+            });
+            return { success: true };
+        } else {
+            challenge.attempts += 1;
+            sessionStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenge));
+            return {
+                success: false,
+                error: `Invalid Google Authenticator passcode. ${5 - challenge.attempts} attempts remaining.`
+            };
+        }
     }
 
     // Verify 6-digit hash

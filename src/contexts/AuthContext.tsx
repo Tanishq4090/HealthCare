@@ -16,6 +16,7 @@ export interface User {
     avatar: string;
     phone?: string;
     phone_numbers?: string[];
+    totp_secret?: string;
 }
 
 interface AuthContextType {

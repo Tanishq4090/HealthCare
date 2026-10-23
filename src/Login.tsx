@@ -39,7 +39,7 @@ export default function Login() {
         maskedPhone: string;
         availablePhones: string[];
         devCode?: string;
-        dispatchedVia?: 'sms' | 'whatsapp' | 'local_secure';
+        dispatchedVia?: 'totp' | 'sms' | 'whatsapp' | 'local_secure';
         pendingRole?: string;
         pendingStaffUser?: any;
     } | null>(null);
@@ -84,16 +84,20 @@ export default function Login() {
 
             // 1. Built-in super admin account
             if (cleanUser === 'admin' && password === 'password123') {
-                // Fetch dynamic admin phone numbers from automation_settings
-                let adminPhoneNumbers = ['+919016116564'];
+                // Fetch dynamic admin phone numbers and Google Authenticator TOTP secret from automation_settings
+                let adminPhoneNumbers: string[] = [];
+                let adminTotpSecret: string | undefined = undefined;
                 try {
                     const { data: autoSettings } = await supabase
                         .from('automation_settings')
-                        .select('admin_phone_numbers')
+                        .select('admin_phone_numbers, admin_totp_secret')
                         .eq('id', 'global')
                         .maybeSingle();
-                    if (autoSettings?.admin_phone_numbers && Array.isArray(autoSettings.admin_phone_numbers) && autoSettings.admin_phone_numbers.length > 0) {
+                    if (autoSettings?.admin_phone_numbers && Array.isArray(autoSettings.admin_phone_numbers)) {
                         adminPhoneNumbers = autoSettings.admin_phone_numbers;
+                    }
+                    if (autoSettings?.admin_totp_secret) {
+                        adminTotpSecret = autoSettings.admin_totp_secret;
                     }
                 } catch (err) {
                     console.warn('Could not load admin phone settings:', err);
@@ -107,12 +111,32 @@ export default function Login() {
                     accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
                     avatar: 'SA',
                     phone_numbers: adminPhoneNumbers,
-                    phone: adminPhoneNumbers[0]
+                    phone: adminPhoneNumbers[0],
+                    totp_secret: adminTotpSecret
                 };
+
+                // 1A. Google Authenticator configured: 100% free app verification (Zero fees)
+                if (adminTotpSecret) {
+                    const challenge = await initiateAdminTwoFactor(adminUserObj, undefined, false, adminTotpSecret);
+                    setPending2FA({
+                        challengeId: challenge.challengeId,
+                        targetPhone: '',
+                        maskedPhone: 'Google Authenticator',
+                        availablePhones: [],
+                        devCode: undefined,
+                        dispatchedVia: 'totp',
+                        pendingRole: 'admin',
+                        pendingStaffUser: undefined
+                    });
+                    setResendCooldown(30);
+                    setUseEmergencyKey(false);
+                    setOtpCode(['', '', '', '', '', '']);
+                    return;
+                }
 
                 const availablePhones = getUserPhoneNumbers(adminUserObj);
 
-                // If no phone number is set yet, ask for the bypass key directly
+                // 1B. If no Authenticator and no phone set yet, ask for the bypass key directly
                 if (availablePhones.length === 0) {
                     const challenge = await initiateAdminTwoFactor(adminUserObj, undefined, true);
                     setPending2FA({
@@ -121,6 +145,7 @@ export default function Login() {
                         maskedPhone: 'No phone registered',
                         availablePhones: [],
                         devCode: undefined,
+                        dispatchedVia: 'local_secure',
                         pendingRole: 'admin',
                         pendingStaffUser: undefined
                     });
@@ -171,6 +196,25 @@ export default function Login() {
             if (!error && data?.user) {
                 // If staff account is an Admin, require 2FA
                 if (data.user.role === 'admin') {
+                    // 1A. Google Authenticator TOTP configured: 100% free app verification (zero fees)
+                    if (data.user.totp_secret) {
+                        const challenge = await initiateAdminTwoFactor(data.user, undefined, false, data.user.totp_secret);
+                        setPending2FA({
+                            challengeId: challenge.challengeId,
+                            targetPhone: '',
+                            maskedPhone: 'Google Authenticator',
+                            availablePhones: [],
+                            devCode: undefined,
+                            dispatchedVia: 'totp',
+                            pendingRole: undefined,
+                            pendingStaffUser: data.user
+                        });
+                        setResendCooldown(30);
+                        setUseEmergencyKey(false);
+                        setOtpCode(['', '', '', '', '', '']);
+                        return;
+                    }
+
                     const availablePhones = getUserPhoneNumbers(data.user);
 
                     // If no phone number is set yet, ask for the bypass key directly
@@ -182,6 +226,7 @@ export default function Login() {
                             maskedPhone: 'No phone registered',
                             availablePhones: [],
                             devCode: undefined,
+                            dispatchedVia: 'local_secure',
                             pendingRole: undefined,
                             pendingStaffUser: data.user
                         });
@@ -591,7 +636,22 @@ export default function Login() {
                     ) : pending2FA ? (
                         /* STEP 2B: Admin Two-Factor Verification */
                         <form onSubmit={handleVerifyTwoFactor} className="space-y-5 animate-in fade-in duration-200">
-                            {pending2FA.availablePhones.length === 0 ? (
+                            {pending2FA.dispatchedVia === 'totp' ? (
+                                <div className="text-center pb-2">
+                                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200 shadow-sm">
+                                        <ShieldCheck className="w-6 h-6" />
+                                    </div>
+                                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1 border border-emerald-200/80">
+                                        Google Authenticator (Free 2FA)
+                                    </span>
+                                    <h2 className="text-lg font-extrabold text-slate-900">
+                                        Authenticator Passcode
+                                    </h2>
+                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                        Open <span className="font-semibold text-slate-900">Google Authenticator</span> or Apple Passwords on your phone and enter the 6-digit code.
+                                    </p>
+                                </div>
+                            ) : pending2FA.availablePhones.length === 0 ? (
                                 <div className="text-center pb-2">
                                     <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-amber-200 shadow-sm">
                                         <KeyRound className="w-6 h-6" />
@@ -603,7 +663,7 @@ export default function Login() {
                                         Emergency Admin Key Required
                                     </h2>
                                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                        No 2FA mobile phone number has been configured for this account yet. Please enter your master Emergency Admin Security Key to proceed.
+                                        No 2FA authenticator or mobile phone has been configured for this account yet. Please enter your master Emergency Admin Security Key to proceed.
                                     </p>
                                 </div>
                             ) : (
@@ -623,15 +683,15 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {/* First-time setup hint when no phone is configured */}
-                            {pending2FA.availablePhones.length === 0 && (
+                            {/* First-time setup hint when no phone is configured and not TOTP */}
+                            {pending2FA.availablePhones.length === 0 && pending2FA.dispatchedVia !== 'totp' && (
                                 <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-left space-y-1">
                                     <p className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
                                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                        WhatsApp 2FA Phone Not Yet Registered
+                                        Google Authenticator Setup Required
                                     </p>
                                     <p className="text-[11px] text-amber-800 leading-relaxed">
-                                        After authenticating with your emergency key, you can register your WhatsApp number(s) in <span className="font-semibold text-amber-950">Settings → Access Control</span>.
+                                        After authenticating with your emergency key, you can link Google Authenticator in <span className="font-semibold text-amber-950">Settings → Access Control</span> for 100% free offline 2FA.
                                     </p>
                                 </div>
                             )}
@@ -645,8 +705,8 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {/* Multi-phone switcher if user has more than 1 registered number */}
-                            {pending2FA.availablePhones && pending2FA.availablePhones.length > 1 && (
+                            {/* Multi-phone switcher if user has more than 1 registered number and not TOTP */}
+                            {pending2FA.dispatchedVia !== 'totp' && pending2FA.availablePhones && pending2FA.availablePhones.length > 1 && (
                                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
                                     <div className="flex items-center justify-between text-xs text-slate-600">
                                         <span className="flex items-center gap-1.5 font-medium">
@@ -680,7 +740,7 @@ export default function Login() {
                                 </div>
                             )}
 
-                            {pending2FA.availablePhones.length === 0 || useEmergencyKey ? (
+                            {(pending2FA.availablePhones.length === 0 && pending2FA.dispatchedVia !== 'totp') || useEmergencyKey ? (
                                 /* Emergency Security Key Input */
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
@@ -722,15 +782,23 @@ export default function Login() {
                                         ))}
                                     </div>
                                     <p className="text-[11px] text-slate-400 text-center pt-1">
-                                        Paste or type 6 digits. Expires in 10 minutes.
+                                        {pending2FA.dispatchedVia === 'totp'
+                                            ? '6 digits refresh automatically every 30s in your app.'
+                                            : 'Paste or type 6 digits. Expires in 10 minutes.'}
                                     </p>
 
-                                    {/* Direct Phone SMS / Emergency Key Helper */}
+                                    {/* Direct Phone SMS / Google Authenticator / Emergency Key Helper */}
                                     <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-left space-y-1 mt-2">
                                         <div className="flex items-center justify-between text-[11px]">
                                             <span className="font-semibold text-slate-700 flex items-center gap-1">
-                                                <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
-                                                Didn't receive phone SMS?
+                                                {pending2FA.dispatchedVia === 'totp' ? (
+                                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                                ) : (
+                                                    <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
+                                                )}
+                                                {pending2FA.dispatchedVia === 'totp'
+                                                    ? "Can't access your authenticator app?"
+                                                    : "Didn't receive phone SMS?"}
                                             </span>
                                             <button
                                                 type="button"
@@ -741,7 +809,9 @@ export default function Login() {
                                             </button>
                                         </div>
                                         <p className="text-[10px] text-slate-500 leading-snug">
-                                            Carrier SMS delivery takes a few seconds depending on network signal. You can also sign in instantly using your master Emergency Admin Key.
+                                            {pending2FA.dispatchedVia === 'totp'
+                                                ? "Codes refresh every 30s in your app. If you lost device access, sign in with your master key."
+                                                : "Carrier SMS delivery takes a few seconds. You can also sign in instantly using your master Emergency Admin Key."}
                                         </p>
                                     </div>
                                 </div>
@@ -751,22 +821,22 @@ export default function Login() {
                                 type="submit"
                                 disabled={isLoading}
                                 className={`w-full text-white font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm ${
-                                    pending2FA.availablePhones.length === 0
+                                    pending2FA.availablePhones.length === 0 && pending2FA.dispatchedVia !== 'totp'
                                         ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
                                         : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
                                 }`}
                             >
                                 {isLoading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : pending2FA.availablePhones.length === 0 ? (
+                                ) : (pending2FA.availablePhones.length === 0 && pending2FA.dispatchedVia !== 'totp') ? (
                                     "Verify Key & Sign In"
                                 ) : (
                                     "Verify & Access Admin OS"
                                 )}
                             </button>
 
-                            {/* Resend and Recovery Key options (only shown when account has registered phones) */}
-                            {pending2FA.availablePhones.length > 0 && (
+                            {/* Resend options (only shown when account uses phone SMS/WhatsApp, not TOTP) */}
+                            {pending2FA.dispatchedVia !== 'totp' && pending2FA.availablePhones.length > 0 && (
                                 <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
                                     <button
                                         type="button"
@@ -784,6 +854,18 @@ export default function Login() {
                                         className="text-slate-500 hover:text-primary font-semibold transition-colors"
                                     >
                                         {useEmergencyKey ? 'Use 6-Digit OTP' : 'Use Emergency Key'}
+                                    </button>
+                                </div>
+                            )}
+
+                            {pending2FA.dispatchedVia === 'totp' && (
+                                <div className="flex items-center justify-end text-xs pt-1 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => setUseEmergencyKey(prev => !prev)}
+                                        className="text-slate-500 hover:text-primary font-semibold transition-colors"
+                                    >
+                                        {useEmergencyKey ? 'Use 6-Digit Authenticator' : 'Use Emergency Key'}
                                     </button>
                                 </div>
                             )}
