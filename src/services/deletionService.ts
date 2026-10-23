@@ -105,6 +105,7 @@ export async function fetchAllDeletionRequests(): Promise<DeletionRequest[]> {
     const { data, error } = await supabase
         .from('deletion_requests')
         .select('*')
+        .neq('action_type', 'audit_log')
         .order('created_at', { ascending: false });
 
     if (error) {

@@ -5,6 +5,7 @@ import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../../utils/generateInvoicePdf';
 import { useAuth } from '../../contexts/AuthContext';
 import { maskPhoneNumber } from '../../utils/phoneMask';
+import { logClientView, logClientEdit, logAuditEvent, fetchClientAuditHistory, type AuditLogItem } from '../../services/auditService';
 import { toast } from 'sonner';
 
 const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
@@ -184,7 +185,7 @@ interface ClientDetailsModalProps {
 }
 
 export default function ClientDetailsModal({ client, onClose, onServiceUpdated, onStartNewService }: ClientDetailsModalProps) {
-    const { canViewPhoneNumbers } = useAuth();
+    const { user, canViewPhoneNumbers } = useAuth();
     const clientId = client?.id;
     const [lead, setLead] = useState<any>(null);
     const [activities, setActivities] = useState<any[]>([]);
@@ -199,6 +200,7 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     const [releasingWorkerId, setReleasingWorkerId] = useState<string | null>(null);
     const [copiedClientId, setCopiedClientId] = useState(false);
     const [copiedPhone, setCopiedPhone] = useState(false);
+    const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
 
     // Edit Requirements Modal State
     const [isEditingReq, setIsEditingReq] = useState(false);
@@ -315,22 +317,43 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
 
             const allBills = (svcData || []).flatMap((s: any) => s.service_bills || []);
             setServiceBills(allBills);
+
+            // Fetch audit trail for admin inspection
+            if (user?.role === 'admin') {
+                fetchClientAuditHistory(clientId).then(logs => setAuditLogs(logs));
+            }
         } catch (err) {
             console.error("Error fetching client details:", err);
         } finally {
             setIsLoading(false);
         }
-    }, [clientId]);
+    }, [clientId, user?.role]);
 
     useEffect(() => {
         fetchDetails();
-    }, [fetchDetails]);
+        if (client) {
+            logClientView(client, user ? { id: user.id, name: user.name, role: user.role } : undefined);
+        }
+    }, [fetchDetails, client, user]);
 
     const handleEndActiveService = async (serviceId: string) => {
         setIsEndingService(true);
         try {
             const result = await endService(serviceId);
             if (!result.success) throw new Error('Failed to end service');
+
+            // Record audit log
+            logAuditEvent({
+                entityType: 'client',
+                entityId: clientId,
+                entityName: client?.name || client?.client_name || lead?.name || 'Client',
+                action: 'SERVICE_CHANGE',
+                description: `Ended active service cycle & settled deposit`,
+                userId: user?.id,
+                userName: user?.name,
+                userRole: user?.role,
+            });
+
             toast.success(`Service ended & deposit settled! Client moved to Closed Won.`);
             setShowEndConfirm(false);
             onServiceUpdated?.();
@@ -349,6 +372,19 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
         try {
             const res = await releaseWorker(assignmentId);
             if (!res.success) throw new Error(res.error || 'Failed to release worker');
+
+            // Record audit log
+            logAuditEvent({
+                entityType: 'client',
+                entityId: clientId,
+                entityName: client?.name || client?.client_name || lead?.name || 'Client',
+                action: 'SERVICE_CHANGE',
+                description: `Released caregiver ${workerName} from client assignment`,
+                userId: user?.id,
+                userName: user?.name,
+                userRole: user?.role,
+            });
+
             toast.success(`${workerName} has been released and is now Available.`);
             onServiceUpdated?.();
             await fetchDetails();
@@ -443,6 +479,16 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                 .eq('id', clientId);
 
             if (error) throw error;
+
+            // Record audit edit event with diff
+            logClientEdit(
+                client,
+                { notes: lead?.notes || '' },
+                { notes: finalNotes },
+                user ? { id: user.id, name: user.name, role: user.role } : undefined,
+                `Updated inquiry requirements: Service=${editReqData.service}, Shift=${editReqData.shift}`
+            );
+
             toast.success('Inquiry requirements saved successfully!');
             setIsEditingReq(false);
             await fetchDetails();
@@ -498,6 +544,15 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                     }]);
                 if (error) throw error;
             }
+
+            // Record audit edit event with diff
+            logClientEdit(
+                client,
+                latestConsent || {},
+                editConsentData,
+                user ? { id: user.id, name: user.name, role: user.role } : undefined,
+                `Updated patient care details for ${editConsentData.patientName || client?.name}`
+            );
 
             toast.success('Patient care details saved successfully!');
             setIsEditingConsent(false);
@@ -1708,6 +1763,66 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                             </div>
                         </div>
 
+                        {/* Administrator Audit & Device Access Trail */}
+                        {user?.role === 'admin' && (
+                            <div className="bg-slate-900 text-white rounded-2xl shadow-sm p-4 sm:p-5 border border-slate-800">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                                        <h3 className="font-bold text-white text-sm">
+                                            Client Data Audit Trail (Administrator Only)
+                                        </h3>
+                                    </div>
+                                    <span className="text-[11px] font-semibold text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">
+                                        {auditLogs.length} audit record{auditLogs.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+
+                                {auditLogs.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">No access logs recorded for this client yet.</p>
+                                ) : (
+                                    <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                                        {auditLogs.map((log) => {
+                                            const dev = log.device_info || ({} as any);
+                                            const isView = log.action === 'VIEW';
+                                            const isEdit = log.action === 'EDIT';
+                                            const isExport = log.action === 'EXPORT';
+                                            return (
+                                                <div key={log.id} className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                    <div className="flex items-start gap-2.5 min-w-0">
+                                                        <span className={`px-2 py-0.5 rounded font-bold text-[10px] shrink-0 mt-0.5 ${
+                                                            isView ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' :
+                                                            isEdit ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                                                            isExport ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                                                            'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                        }`}>
+                                                            {log.action}
+                                                        </span>
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="font-bold text-slate-200">{log.user_name}</span>
+                                                                <span className="text-[10px] text-slate-400">({log.user_role})</span>
+                                                                <span className="text-slate-500">•</span>
+                                                                <span className="text-slate-300 truncate">{log.description}</span>
+                                                            </div>
+                                                            <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                                                                <span>📱 {dev.os || 'Unknown OS'} • {dev.browser || 'Browser'}</span>
+                                                                {dev.ip && dev.ip !== 'Local / Unknown' && (
+                                                                    <span className="font-mono text-[10px] text-slate-400 bg-slate-700/50 px-1 rounded">IP: {dev.ip}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">
+                                                        {new Date(log.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

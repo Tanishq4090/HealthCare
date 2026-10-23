@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, CalendarDays, Clock, FileText, Wallet, Banknote, UserPlus, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert, AlertCircle, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, CalendarDays, Clock, FileText, Wallet, Banknote, UserPlus, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert, AlertCircle, AlertTriangle, History } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, type AccessModule } from '../contexts/AuthContext';
 import { maskPhoneNumber } from '../utils/phoneMask';
@@ -881,18 +881,28 @@ export default function AdminLayout() {
                     ))}
                 </nav>
 
-                {/* Settings Link for Admins */}
+                {/* Settings & Audit Links for Admins */}
                 {user?.role === 'admin' && (
-                    <div className="px-4 pb-2 shrink-0">
+                    <div className="px-4 pb-2 shrink-0 space-y-1">
                         <Link
                             to="/admin/settings"
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${location.pathname === '/admin/settings'
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${location.pathname === '/admin/settings' && !location.search.includes('tab=audit')
                                     ? 'bg-primary/10 text-primary'
                                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }`}
                         >
-                            <Settings className={`w-5 h-5 ${location.pathname === '/admin/settings' ? 'text-primary' : 'text-slate-400'}`} />
+                            <Settings className={`w-5 h-5 ${location.pathname === '/admin/settings' && !location.search.includes('tab=audit') ? 'text-primary' : 'text-slate-400'}`} />
                             Access Control
+                        </Link>
+                        <Link
+                            to="/admin/settings?tab=audit"
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${location.pathname === '/admin/settings' && location.search.includes('tab=audit')
+                                    ? 'bg-primary/10 text-primary'
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                }`}
+                        >
+                            <History className={`w-5 h-5 ${location.pathname === '/admin/settings' && location.search.includes('tab=audit') ? 'text-primary' : 'text-slate-400'}`} />
+                            Audit & Access Log
                         </Link>
                     </div>
                 )}
@@ -1061,17 +1071,30 @@ export default function AdminLayout() {
                                     </div>
 
                                     {user?.role === 'admin' && (
-                                        <Link
-                                            to="/admin/settings"
-                                            onClick={() => setIsMobileMenuOpen(false)}
-                                            className={`flex items-center gap-3 px-3 py-3 rounded-xl font-semibold transition-all ${location.pathname === '/admin/settings'
-                                                    ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
-                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                                                }`}
-                                        >
-                                            <Settings className={`w-5 h-5 ${location.pathname === '/admin/settings' ? 'text-primary' : 'text-slate-400'}`} />
-                                            Access Control
-                                        </Link>
+                                        <>
+                                            <Link
+                                                to="/admin/settings"
+                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center gap-3 px-3 py-3 rounded-xl font-semibold transition-all ${location.pathname === '/admin/settings' && !location.search.includes('tab=audit')
+                                                        ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
+                                                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                    }`}
+                                            >
+                                                <Settings className={`w-5 h-5 ${location.pathname === '/admin/settings' && !location.search.includes('tab=audit') ? 'text-primary' : 'text-slate-400'}`} />
+                                                Access Control
+                                            </Link>
+                                            <Link
+                                                to="/admin/settings?tab=audit"
+                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center gap-3 px-3 py-3 rounded-xl font-semibold transition-all ${location.pathname === '/admin/settings' && location.search.includes('tab=audit')
+                                                        ? 'bg-primary/10 text-primary scale-[1.02] shadow-sm'
+                                                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                    }`}
+                                            >
+                                                <History className={`w-5 h-5 ${location.pathname === '/admin/settings' && location.search.includes('tab=audit') ? 'text-primary' : 'text-slate-400'}`} />
+                                                Audit & Access Log
+                                            </Link>
+                                        </>
                                     )}
                                     <hr className="my-2 border-slate-100" />
                                     <Link 

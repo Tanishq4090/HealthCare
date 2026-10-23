@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import RequestDeletionModal from '../components/common/RequestDeletionModal';
 import { buildConsentFlowActionData, buildBabyCareFlowActionData, buildPatientCareFlowActionData } from '../utils/consentFlow';
 import { maskPhoneNumber } from '../utils/phoneMask';
+import { logClientExport, logAuditEvent } from '../services/auditService';
 
 const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
     sponge_bath: 'Sponge Bath',
@@ -874,6 +875,19 @@ export default function Clients() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         toast.success(`Exported ${list.length} client${list.length !== 1 ? 's' : ''} to CSV/Excel successfully!`);
+
+        // Record audit trail of exported client data
+        logClientExport(
+            'csv',
+            list.length,
+            list.slice(0, 5).map((c: any) => c.name || c.client_name),
+            {
+                selectedCity,
+                selectedMonth: !viewAllMonths ? selectedMonth : 'all',
+                isSelection: selectedClientIds.size > 0 && !!clientsToExport,
+            },
+            user ? { id: user.id, name: user.name, role: user.role } : undefined
+        );
     };
 
     const confirmTemporaryDelete = async () => {
@@ -1362,6 +1376,29 @@ export default function Clients() {
             if (!result.success) throw new Error(result.error);
 
             toast.success(`Service restarted for ${restartModal.name}! 🎉 Moved back to Active Client.`);
+
+            // Record audit trail of service modification
+            logAuditEvent({
+                entityType: 'client',
+                entityId: restartModal.id,
+                entityName: restartModal.name,
+                action: 'SERVICE_CHANGE',
+                description: `Restarted service cycle: ${restartServiceType.trim()} (${restartShiftHours}hr shift) from ${restartStartDate}`,
+                userId: user?.id,
+                userName: user?.name,
+                userRole: user?.role,
+                changes: {
+                    fields: ['service_type', 'hours_per_day', 'start_date', 'complete_month_daily_rate', 'workers'],
+                    after: {
+                        serviceType: restartServiceType.trim(),
+                        hoursPerDay: restartShiftHours,
+                        startDate: restartStartDate,
+                        rate: restartCompleteRate,
+                        workersCount: restartSelectedWorkers.length,
+                    }
+                }
+            });
+
             setRestartModal(null);
             fetchClients();
         } catch (err: any) {

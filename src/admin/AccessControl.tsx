@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, AccessModule } from '../contexts/AuthContext';
-import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search, Eye, EyeOff, Lock } from 'lucide-react';
+import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search, Eye, EyeOff, Lock, History, ShieldCheck, Download, Laptop, Smartphone, Tablet, RefreshCw, Filter, ArrowUpRight, FileText, Layers, Globe, Activity, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     fetchAllDeletionRequests,
@@ -10,6 +11,7 @@ import {
     type DeletionRequest,
     type DeletionRequestStatus
 } from '../services/deletionService';
+import { fetchAuditLogs, type AuditLogItem, type AuditAction } from '../services/auditService';
 
 const MODULES: { id: AccessModule; label: string; desc: string }[] = [
     { id: 'dashboard', label: 'Operations Dashboard', desc: 'KPI metrics, daily schedules, analytics overview, and attention alerts.' },
@@ -21,14 +23,38 @@ const MODULES: { id: AccessModule; label: string; desc: string }[] = [
 
 export default function AccessControl() {
     const { user, allUsers, refreshUsers, createUser, updateUser, deleteUser } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
 
-    // Tab state: staff accounts vs deletion requests
-    const [activeTab, setActiveTab] = useState<'staff' | 'deletions'>('staff');
+    // Tab state: staff accounts vs deletion requests vs audit log
+    const tabParam = searchParams.get('tab');
+    const initialTab: 'staff' | 'deletions' | 'audit' =
+        tabParam === 'deletions' || tabParam === 'audit' ? tabParam : 'staff';
+    const [activeTab, setActiveTab] = useState<'staff' | 'deletions' | 'audit'>(initialTab);
+
+    // Keep activeTab synced with URL query parameter
+    useEffect(() => {
+        if (tabParam === 'staff' || tabParam === 'deletions' || tabParam === 'audit') {
+            setActiveTab(tabParam);
+        }
+    }, [tabParam]);
+
+    const handleTabChange = (tab: 'staff' | 'deletions' | 'audit') => {
+        setActiveTab(tab);
+        setSearchParams({ tab });
+    };
 
     // UI States for Staff
     const [isAdding, setIsAdding] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Audit logs states
+    const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+    const [isLoadingAudit, setIsLoadingAudit] = useState(false);
+    const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
+    const [auditUserFilter, setAuditUserFilter] = useState<string>('all');
+    const [auditSearch, setAuditSearch] = useState<string>('');
+    const [selectedDiffItem, setSelectedDiffItem] = useState<AuditLogItem | null>(null);
 
     // Deletion requests states
     const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
@@ -72,6 +98,82 @@ export default function AccessControl() {
     useEffect(() => {
         loadDeletionRequests();
     }, [loadDeletionRequests]);
+
+    const loadAuditLogs = useCallback(async () => {
+        setIsLoadingAudit(true);
+        try {
+            const logs = await fetchAuditLogs({
+                action: auditActionFilter,
+                userId: auditUserFilter,
+                search: auditSearch,
+            });
+            setAuditLogs(logs);
+        } catch (err: any) {
+            console.error('Failed to load audit logs:', err);
+            toast.error('Failed to load audit trail.');
+        } finally {
+            setIsLoadingAudit(false);
+        }
+    }, [auditActionFilter, auditUserFilter, auditSearch]);
+
+    useEffect(() => {
+        if (activeTab === 'audit') {
+            loadAuditLogs();
+        }
+    }, [activeTab, loadAuditLogs]);
+
+    const handleExportAuditCsv = () => {
+        if (auditLogs.length === 0) {
+            toast.error('No audit records to export.');
+            return;
+        }
+
+        const headers = [
+            'Log ID',
+            'Timestamp',
+            'Action',
+            'Staff Name',
+            'Staff Role',
+            'Target Client / Entity',
+            'Description',
+            'Device Type',
+            'Operating System',
+            'Browser',
+            'IP Address',
+            'Changed Fields',
+        ];
+
+        const rows = auditLogs.map(log => {
+            const dev = log.device_info || ({} as any);
+            const fieldsChanged = log.changes?.fields?.join(', ') || 'N/A';
+            return [
+                log.id,
+                log.created_at,
+                log.action,
+                `"${(log.user_name || '').replace(/"/g, '""')}"`,
+                log.user_role,
+                `"${(log.entity_name || '').replace(/"/g, '""')}"`,
+                `"${(log.description || '').replace(/"/g, '""')}"`,
+                dev.deviceType || 'Desktop',
+                dev.os || 'Unknown',
+                dev.browser || 'Unknown',
+                dev.ip || 'N/A',
+                `"${fieldsChanged.replace(/"/g, '""')}"`,
+            ].join(',');
+        });
+
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `99Care_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success(`Exported ${auditLogs.length} audit logs to CSV!`);
+    };
 
     const pendingRequestsCount = useMemo(() => {
         return deletionRequests.filter(r => r.status === 'pending').length;
@@ -231,10 +333,10 @@ export default function AccessControl() {
             </div>
 
             {/* Sub-navigation tabs */}
-            <div className="flex items-center gap-2 mb-6 border-b border-slate-200 pb-3">
+            <div className="flex items-center gap-2 mb-6 border-b border-slate-200 pb-3 overflow-x-auto">
                 <button
-                    onClick={() => setActiveTab('staff')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                    onClick={() => handleTabChange('staff')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 ${
                         activeTab === 'staff'
                             ? 'bg-primary text-white shadow-sm'
                             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
@@ -248,8 +350,8 @@ export default function AccessControl() {
                 </button>
 
                 <button
-                    onClick={() => setActiveTab('deletions')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                    onClick={() => handleTabChange('deletions')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 ${
                         activeTab === 'deletions'
                             ? 'bg-amber-600 text-white shadow-sm'
                             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
@@ -262,6 +364,21 @@ export default function AccessControl() {
                             {pendingRequestsCount} Pending
                         </span>
                     )}
+                </button>
+
+                <button
+                    onClick={() => handleTabChange('audit')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 ${
+                        activeTab === 'audit'
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                    }`}
+                >
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    Data Audit Log
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold ${activeTab === 'audit' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        {auditLogs.length > 0 ? auditLogs.length : 'Live'}
+                    </span>
                 </button>
             </div>
 
@@ -740,6 +857,377 @@ export default function AccessControl() {
                                 </table>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* --- AUDIT LOG REGION --- */}
+            {activeTab === 'audit' && (
+                <div className="space-y-6">
+                    {/* Header Banner & Security Guarantee */}
+                    <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-6 shadow-sm border border-slate-700/60">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div>
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/30 mb-2">
+                                    <ShieldCheck className="w-3.5 h-3.5" /> Client Data Privacy &amp; Compliance Audit
+                                </div>
+                                <h2 className="text-xl font-bold tracking-tight">System Audit &amp; Device Activity Trail</h2>
+                                <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                                    Immutable real-time audit log tracking every user and device that viewed, modified, or exported client data across 99 Care OS.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    onClick={handleExportAuditCsv}
+                                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all shadow-xs"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Export Audit CSV
+                                </button>
+                                <button
+                                    onClick={loadAuditLogs}
+                                    disabled={isLoadingAudit}
+                                    className="p-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all"
+                                    title="Refresh logs"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${isLoadingAudit ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Top Metrics Row */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-700/60">
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Events</p>
+                                <p className="text-xl font-extrabold text-white mt-0.5">{auditLogs.length}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                <p className="text-[11px] font-semibold text-sky-400 uppercase tracking-wider">Client Views</p>
+                                <p className="text-xl font-extrabold text-sky-300 mt-0.5">
+                                    {auditLogs.filter(l => l.action === 'VIEW').length}
+                                </p>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">Data Edits</p>
+                                <p className="text-xl font-extrabold text-amber-300 mt-0.5">
+                                    {auditLogs.filter(l => l.action === 'EDIT').length}
+                                </p>
+                            </div>
+                            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                <p className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Exports / Copies</p>
+                                <p className="text-xl font-extrabold text-emerald-300 mt-0.5">
+                                    {auditLogs.filter(l => l.action === 'EXPORT').length}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Filter & Search Bar */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Action Filter */}
+                            <select
+                                value={auditActionFilter}
+                                onChange={(e) => setAuditActionFilter(e.target.value)}
+                                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                                <option value="all">All Actions</option>
+                                <option value="VIEW">👁️ Views Only</option>
+                                <option value="EDIT">✏️ Edits &amp; Modifications</option>
+                                <option value="EXPORT">📥 Exports &amp; Bulk Copies</option>
+                                <option value="SERVICE_CHANGE">🔄 Service Cycle Changes</option>
+                                <option value="DELETE">🗑️ Deletions</option>
+                            </select>
+
+                            {/* Staff Member Filter */}
+                            <select
+                                value={auditUserFilter}
+                                onChange={(e) => setAuditUserFilter(e.target.value)}
+                                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                                <option value="all">All Staff Members</option>
+                                {displayUsers.map(u => (
+                                    <option key={u.id} value={u.id}>{u.name} ({u.username})</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div className="relative flex-1 sm:max-w-xs">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                                type="text"
+                                value={auditSearch}
+                                onChange={(e) => setAuditSearch(e.target.value)}
+                                placeholder="Search client, user, IP, or OS..."
+                                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Audit Log Table */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        {isLoadingAudit ? (
+                            <div className="p-12 text-center text-slate-500">
+                                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
+                                <p className="text-sm font-semibold">Loading audit trail records...</p>
+                            </div>
+                        ) : auditLogs.length === 0 ? (
+                            <div className="p-12 text-center text-slate-400">
+                                <History className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
+                                <p className="text-sm font-bold text-slate-700">No audit logs matching filters</p>
+                                <p className="text-xs text-slate-500 mt-1">Audit events are logged in real-time when clients are viewed, edited, or exported.</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-bold font-['Plus_Jakarta_Sans'] tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-5 py-3.5">Timestamp</th>
+                                            <th className="px-5 py-3.5">Staff User</th>
+                                            <th className="px-5 py-3.5">Action</th>
+                                            <th className="px-5 py-3.5">Target Client</th>
+                                            <th className="px-5 py-3.5">Device &amp; IP Address</th>
+                                            <th className="px-5 py-3.5 text-right">Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {auditLogs.map((log) => {
+                                            const dev = log.device_info || ({} as any);
+                                            const isView = log.action === 'VIEW';
+                                            const isEdit = log.action === 'EDIT';
+                                            const isExport = log.action === 'EXPORT';
+                                            const isService = log.action === 'SERVICE_CHANGE';
+                                            const isDelete = log.action === 'DELETE';
+
+                                            const DeviceIcon = dev.deviceType === 'Mobile' ? Smartphone : dev.deviceType === 'Tablet' ? Tablet : Laptop;
+
+                                            return (
+                                                <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                                                    {/* Timestamp */}
+                                                    <td className="px-5 py-3.5 whitespace-nowrap">
+                                                        <div className="text-xs font-bold text-slate-900">
+                                                            {new Date(log.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500">
+                                                            {new Date(log.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* User */}
+                                                    <td className="px-5 py-3.5">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 ${
+                                                                log.user_role === 'admin' ? 'bg-primary' : 'bg-slate-500'
+                                                            }`}>
+                                                                {(log.user_name || 'U').slice(0, 2).toUpperCase()}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-xs font-bold text-slate-900 truncate">{log.user_name}</p>
+                                                                <p className="text-[10px] text-slate-400 capitalize">{log.user_role}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Action Pill */}
+                                                    <td className="px-5 py-3.5 whitespace-nowrap">
+                                                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                                                            isView ? 'bg-sky-50 text-sky-700 border border-sky-200' :
+                                                            isEdit ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                                            isExport ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                                                            isService ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                                                            isDelete ? 'bg-red-50 text-red-700 border border-red-200' :
+                                                            'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                        }`}>
+                                                            {isView && <Eye className="w-3 h-3" />}
+                                                            {isEdit && <Edit3 className="w-3 h-3" />}
+                                                            {isExport && <Download className="w-3 h-3" />}
+                                                            {isService && <RefreshCw className="w-3 h-3" />}
+                                                            {isDelete && <Trash2 className="w-3 h-3" />}
+                                                            {log.action}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Target Client */}
+                                                    <td className="px-5 py-3.5 min-w-[160px]">
+                                                        <div className="text-xs font-bold text-slate-900 truncate">
+                                                            {log.entity_name}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500 truncate font-mono">
+                                                            {log.description}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Device & IP Profile */}
+                                                    <td className="px-5 py-3.5 min-w-[200px]">
+                                                        <div className="flex items-center gap-1.5 text-xs text-slate-800 font-medium">
+                                                            <DeviceIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                                            <span>{dev.os || 'Unknown OS'}</span>
+                                                            <span className="text-slate-300">•</span>
+                                                            <span className="text-slate-600">{dev.browser || 'Browser'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500">
+                                                            {dev.ip && dev.ip !== 'Local / Unknown' && (
+                                                                <span className="font-mono bg-slate-100 text-slate-700 px-1 rounded border border-slate-200">
+                                                                    IP: {dev.ip}
+                                                                </span>
+                                                            )}
+                                                            {dev.screen && <span>({dev.screen})</span>}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Action / Inspect */}
+                                                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                                                        {(log.changes?.fields?.length || log.changes?.export_details || log.changes?.diff) ? (
+                                                            <button
+                                                                onClick={() => setSelectedDiffItem(log)}
+                                                                className="px-2.5 py-1 text-xs font-bold text-primary hover:text-white bg-primary/10 hover:bg-primary rounded-lg transition-colors inline-flex items-center gap-1"
+                                                            >
+                                                                <Layers className="w-3 h-3" />
+                                                                Inspect Diff
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => setSelectedDiffItem(log)}
+                                                                className="px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors inline-flex items-center gap-1"
+                                                            >
+                                                                <Info className="w-3 h-3" />
+                                                                Details
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* --- DIFF INSPECTION MODAL --- */}
+            {selectedDiffItem && (
+                <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setSelectedDiffItem(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                        selectedDiffItem.action === 'VIEW' ? 'bg-sky-100 text-sky-800' :
+                                        selectedDiffItem.action === 'EDIT' ? 'bg-amber-100 text-amber-800' :
+                                        selectedDiffItem.action === 'EXPORT' ? 'bg-purple-100 text-purple-800' :
+                                        'bg-emerald-100 text-emerald-800'
+                                    }`}>
+                                        {selectedDiffItem.action}
+                                    </span>
+                                    <h3 className="text-base font-bold text-slate-900">
+                                        Audit Event: {selectedDiffItem.entity_name}
+                                    </h3>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Performed by <span className="font-semibold text-slate-800">{selectedDiffItem.user_name}</span> ({selectedDiffItem.user_role}) on {new Date(selectedDiffItem.created_at).toLocaleString()}
+                                </p>
+                            </div>
+                            <button onClick={() => setSelectedDiffItem(null)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Device & Hardware Fingerprint */}
+                        <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2">
+                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                <Globe className="w-3.5 h-3.5 text-slate-500" /> Device &amp; Connection Context
+                            </h4>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                <div>
+                                    <span className="text-[10px] text-slate-400 block">Device</span>
+                                    <span className="font-semibold text-slate-800">{selectedDiffItem.device_info?.deviceType || 'Desktop'}</span>
+                                </div>
+                                <div>
+                                    <span className="text-[10px] text-slate-400 block">Operating System</span>
+                                    <span className="font-semibold text-slate-800">{selectedDiffItem.device_info?.os || 'Unknown'}</span>
+                                </div>
+                                <div>
+                                    <span className="text-[10px] text-slate-400 block">Browser</span>
+                                    <span className="font-semibold text-slate-800">{selectedDiffItem.device_info?.browser || 'Unknown'}</span>
+                                </div>
+                                <div>
+                                    <span className="text-[10px] text-slate-400 block">IP Address</span>
+                                    <span className="font-mono font-semibold text-slate-800">{selectedDiffItem.device_info?.ip || 'Unavailable'}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Field Changes Table (For Edits) */}
+                        {selectedDiffItem.changes?.diff && Object.keys(selectedDiffItem.changes.diff).length > 0 && (
+                            <div className="space-y-2">
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                    Modified Fields ({Object.keys(selectedDiffItem.changes.diff).length})
+                                </h4>
+                                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                    <table className="w-full text-xs text-left">
+                                        <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                                            <tr>
+                                                <th className="p-2.5">Field</th>
+                                                <th className="p-2.5">Previous Value (Before)</th>
+                                                <th className="p-2.5">New Value (After)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 font-mono">
+                                            {Object.entries(selectedDiffItem.changes.diff).map(([key, delta]: [string, any]) => (
+                                                <tr key={key} className="hover:bg-slate-50">
+                                                    <td className="p-2.5 font-bold font-sans text-slate-800">{key}</td>
+                                                    <td className="p-2.5 text-red-600 bg-red-50/50 break-all">{String(delta.from ?? '—')}</td>
+                                                    <td className="p-2.5 text-emerald-700 bg-emerald-50/50 break-all">{String(delta.to ?? '—')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Export Details (For Exports) */}
+                        {selectedDiffItem.changes?.export_details && (
+                            <div className="bg-purple-50/60 rounded-xl p-3.5 border border-purple-200/80 space-y-2 text-xs">
+                                <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Download className="w-3.5 h-3.5" /> Export Specifications
+                                </h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <span className="text-[10px] text-purple-700/80 block">Export Format</span>
+                                        <span className="font-bold text-purple-900 uppercase">{selectedDiffItem.changes.export_details.format}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] text-purple-700/80 block">Total Records</span>
+                                        <span className="font-bold text-purple-900">{selectedDiffItem.changes.export_details.record_count}</span>
+                                    </div>
+                                </div>
+                                {selectedDiffItem.changes.export_details.sample_names && selectedDiffItem.changes.export_details.sample_names.length > 0 && (
+                                    <div className="pt-2 border-t border-purple-100">
+                                        <span className="text-[10px] text-purple-700/80 block mb-1">Sample Exported Records</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {selectedDiffItem.changes.export_details.sample_names.map((name, i) => (
+                                                <span key={i} className="px-2 py-0.5 rounded bg-white text-purple-900 border border-purple-200 text-[11px] font-medium">
+                                                    {name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end pt-2">
+                            <button
+                                onClick={() => setSelectedDiffItem(null)}
+                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

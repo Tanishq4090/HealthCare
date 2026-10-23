@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { maskPhoneNumber } from '../../utils/phoneMask';
+import { logClientExport } from '../../services/auditService';
 
 interface BulkMessageModalProps {
     isOpen: boolean;
@@ -35,7 +36,7 @@ const PRESET_TEMPLATES = [
 ];
 
 export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onClose, clients: initialClients }) => {
-    const { canViewPhoneNumbers } = useAuth();
+    const { user, canViewPhoneNumbers } = useAuth();
     const [recipients, setRecipients] = useState<any[]>(initialClients || []);
     const [messageTemplate, setMessageTemplate] = useState<string>(PRESET_TEMPLATES[0].text);
     const [activeTemplateId, setActiveTemplateId] = useState<string>(PRESET_TEMPLATES[0].id);
@@ -228,6 +229,15 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
 
         navigator.clipboard.writeText(compiled);
         toast.success(`Copied ${validRecipients.length} personalized messages to clipboard!`);
+
+        // Record audit trail of exported client contacts
+        logClientExport(
+            'clipboard',
+            validRecipients.length,
+            validRecipients.slice(0, 5).map(c => c.name),
+            { templateId: activeTemplateId },
+            user ? { id: user.id, name: user.name, role: user.role } : undefined
+        );
     };
 
     return (
