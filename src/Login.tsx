@@ -1,9 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2, Lock, User as UserIcon, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, AlertCircle, Clock } from 'lucide-react';
+import { Loader2, Lock, User as UserIcon, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, AlertCircle, Clock, Phone, Smartphone, CheckCircle2 } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { supabase } from './lib/supabase';
-import { initiateAdminTwoFactor, verifyAdminTwoFactor, resendAdminTwoFactorCode, cancelTwoFactorChallenge } from './services/twoFactorService';
+import {
+    initiateAdminTwoFactor,
+    verifyAdminTwoFactor,
+    resendAdminTwoFactorCode,
+    cancelTwoFactorChallenge,
+    getUserPhoneNumbers,
+    maskPhoneFor2FA
+} from './services/twoFactorService';
 
 export default function Login() {
     const { user, login } = useAuth();
@@ -16,10 +23,21 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
 
-    // Step 2: 2FA State for Admin accounts
+    // Step 2A: Phone selector state (when admin has multiple registered phone numbers)
+    const [pendingPhoneSelect, setPendingPhoneSelect] = useState<{
+        user: any;
+        availablePhones: string[];
+        selectedPhone: string;
+        pendingRole?: string;
+        pendingStaffUser?: any;
+    } | null>(null);
+
+    // Step 2B: 2FA Verification State for Admin accounts
     const [pending2FA, setPending2FA] = useState<{
         challengeId: string;
+        targetPhone: string;
         maskedPhone: string;
+        availablePhones: string[];
         devCode?: string;
         pendingRole?: string;
         pendingStaffUser?: any;
@@ -65,20 +83,53 @@ export default function Login() {
 
             // 1. Built-in super admin account
             if (cleanUser === 'admin' && password === 'password123') {
+                // Fetch dynamic admin phone numbers from automation_settings
+                let adminPhoneNumbers = ['+919016116564'];
+                try {
+                    const { data: autoSettings } = await supabase
+                        .from('automation_settings')
+                        .select('admin_phone_numbers')
+                        .eq('id', 'global')
+                        .maybeSingle();
+                    if (autoSettings?.admin_phone_numbers && Array.isArray(autoSettings.admin_phone_numbers) && autoSettings.admin_phone_numbers.length > 0) {
+                        adminPhoneNumbers = autoSettings.admin_phone_numbers;
+                    }
+                } catch (err) {
+                    console.warn('Could not load admin phone settings:', err);
+                }
+
                 const adminUserObj: any = {
                     id: 'admin',
                     username: 'admin',
                     name: 'System Admin',
                     role: 'admin',
                     accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
-                    avatar: 'SA'
+                    avatar: 'SA',
+                    phone_numbers: adminPhoneNumbers,
+                    phone: adminPhoneNumbers[0]
                 };
 
-                // Trigger 2FA for Admin accounts
-                const challenge = await initiateAdminTwoFactor(adminUserObj);
+                const availablePhones = getUserPhoneNumbers(adminUserObj);
+
+                // If admin has multiple registered phone numbers, let them select destination
+                if (availablePhones.length > 1) {
+                    setPendingPhoneSelect({
+                        user: adminUserObj,
+                        availablePhones,
+                        selectedPhone: availablePhones[0],
+                        pendingRole: 'admin',
+                        pendingStaffUser: undefined
+                    });
+                    return;
+                }
+
+                // Single phone number: dispatch 2FA immediately
+                const challenge = await initiateAdminTwoFactor(adminUserObj, availablePhones[0]);
                 setPending2FA({
                     challengeId: challenge.challengeId,
+                    targetPhone: challenge.targetPhone,
                     maskedPhone: challenge.maskedPhone,
+                    availablePhones,
                     devCode: challenge.devCode,
                     pendingRole: 'admin',
                     pendingStaffUser: undefined
@@ -100,10 +151,27 @@ export default function Login() {
             if (!error && data?.user) {
                 // If staff account is an Admin, require 2FA
                 if (data.user.role === 'admin') {
-                    const challenge = await initiateAdminTwoFactor(data.user);
+                    const availablePhones = getUserPhoneNumbers(data.user);
+
+                    // If multiple phone numbers registered, let admin choose destination
+                    if (availablePhones.length > 1) {
+                        setPendingPhoneSelect({
+                            user: data.user,
+                            availablePhones,
+                            selectedPhone: availablePhones[0],
+                            pendingRole: undefined,
+                            pendingStaffUser: data.user
+                        });
+                        return;
+                    }
+
+                    // Single phone number: dispatch immediately
+                    const challenge = await initiateAdminTwoFactor(data.user, availablePhones[0]);
                     setPending2FA({
                         challengeId: challenge.challengeId,
+                        targetPhone: challenge.targetPhone,
                         maskedPhone: challenge.maskedPhone,
+                        availablePhones,
                         devCode: challenge.devCode,
                         pendingRole: undefined,
                         pendingStaffUser: data.user
@@ -123,6 +191,66 @@ export default function Login() {
 
         } catch (err: any) {
             setError(err.message || 'Authentication failed.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // User chooses destination phone from multiple registered numbers and triggers OTP
+    const handleConfirmPhoneSelect = async () => {
+        if (!pendingPhoneSelect) return;
+        setIsLoading(true);
+        setError('');
+        try {
+            const challenge = await initiateAdminTwoFactor(pendingPhoneSelect.user, pendingPhoneSelect.selectedPhone);
+            setPending2FA({
+                challengeId: challenge.challengeId,
+                targetPhone: challenge.targetPhone,
+                maskedPhone: challenge.maskedPhone,
+                availablePhones: pendingPhoneSelect.availablePhones,
+                devCode: challenge.devCode,
+                pendingRole: pendingPhoneSelect.pendingRole,
+                pendingStaffUser: pendingPhoneSelect.pendingStaffUser
+            });
+            setPendingPhoneSelect(null);
+            setResendCooldown(30);
+            setOtpCode(['', '', '', '', '', '']);
+        } catch (err: any) {
+            setError(err.message || 'Failed to dispatch verification code');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Switch to another registered number directly from the OTP screen
+    const handleSwitchPhone = async (newPhone: string) => {
+        if (!pending2FA || isLoading) return;
+        setIsLoading(true);
+        setError('');
+        try {
+            const adminUserObj = pending2FA.pendingStaffUser || {
+                id: 'admin',
+                username: 'admin',
+                name: 'System Admin',
+                role: 'admin',
+                accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
+                avatar: 'SA',
+                phone_numbers: pending2FA.availablePhones,
+                phone: newPhone
+            };
+            const res = await resendAdminTwoFactorCode(adminUserObj, newPhone);
+            if (res.success) {
+                setResendCooldown(30);
+                setPending2FA(prev => prev ? {
+                    ...prev,
+                    targetPhone: newPhone,
+                    maskedPhone: res.maskedPhone || prev.maskedPhone,
+                    devCode: res.devCode
+                } : null);
+                setOtpCode(['', '', '', '', '', '']);
+            } else {
+                setError(res.error || 'Failed to switch verification number');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -218,9 +346,11 @@ export default function Login() {
                 name: 'System Admin',
                 role: 'admin',
                 accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
-                avatar: 'SA'
+                avatar: 'SA',
+                phone_numbers: pending2FA.availablePhones,
+                phone: pending2FA.targetPhone
             };
-            const res = await resendAdminTwoFactorCode(adminUserObj);
+            const res = await resendAdminTwoFactorCode(adminUserObj, pending2FA.targetPhone);
             if (res.success) {
                 setResendCooldown(30);
                 if (res.devCode) {
@@ -236,6 +366,7 @@ export default function Login() {
 
     const handleCancel2FA = () => {
         cancelTwoFactorChallenge();
+        setPendingPhoneSelect(null);
         setPending2FA(null);
         setError('');
         setOtpCode(['', '', '', '', '', '']);
@@ -281,7 +412,7 @@ export default function Login() {
                 {/* Login or 2FA Box */}
                 <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xl shadow-slate-200/50">
 
-                    {!pending2FA ? (
+                    {!pendingPhoneSelect && !pending2FA ? (
                         /* STEP 1: Username & Password Form */
                         <form onSubmit={handleInitialSubmit} className="space-y-4">
                             {error && (
@@ -333,8 +464,91 @@ export default function Login() {
                                 )}
                             </button>
                         </form>
-                    ) : (
-                        /* STEP 2: Admin Two-Factor Verification */
+                    ) : pendingPhoneSelect ? (
+                        /* STEP 2A: Select Phone Destination for 2FA OTP */
+                        <div className="space-y-5 animate-in fade-in duration-200">
+                            <div className="text-center pb-2">
+                                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200">
+                                    <Smartphone className="w-6 h-6" />
+                                </div>
+                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1">
+                                    Admin 2FA Security
+                                </span>
+                                <h2 className="text-lg font-extrabold text-slate-900">
+                                    Select WhatsApp Destination
+                                </h2>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                    You have multiple phone numbers registered. Choose which WhatsApp number to receive your 6-digit login verification code.
+                                </p>
+                            </div>
+
+                            {error && (
+                                <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs border border-red-100 font-semibold flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
+                            <div className="space-y-2.5">
+                                {pendingPhoneSelect.availablePhones.map((phone, idx) => {
+                                    const isSelected = pendingPhoneSelect.selectedPhone === phone;
+                                    return (
+                                        <div
+                                            key={phone}
+                                            onClick={() => setPendingPhoneSelect(prev => prev ? { ...prev, selectedPhone: phone } : null)}
+                                            className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${
+                                                isSelected
+                                                    ? 'border-emerald-600 bg-emerald-50/60 shadow-xs'
+                                                    : 'border-slate-200 bg-white hover:border-slate-300'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-5 h-5 rounded-full flex items-center justify-center border transition-colors ${
+                                                    isSelected ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white'
+                                                }`}>
+                                                    {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-mono font-bold text-slate-900">
+                                                        {maskPhoneFor2FA(phone)}
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-500">
+                                                        {idx === 0 ? 'Primary WhatsApp Account' : `Backup Mobile #${idx + 1}`}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                <Phone className="w-2.5 h-2.5" /> WhatsApp
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handleConfirmPhoneSelect}
+                                disabled={isLoading}
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm"
+                            >
+                                {isLoading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    "Send 6-Digit Code"
+                                )}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleCancel2FA}
+                                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-600 flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                                Back to Username & Password
+                            </button>
+                        </div>
+                    ) : pending2FA ? (
+                        /* STEP 2B: Admin Two-Factor Verification */
                         <form onSubmit={handleVerifyTwoFactor} className="space-y-5 animate-in fade-in duration-200">
                             <div className="text-center pb-2">
                                 <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200">
@@ -347,7 +561,7 @@ export default function Login() {
                                     Verification Code Required
                                 </h2>
                                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                    Enter the 6-digit passcode sent to your registered admin WhatsApp device (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
+                                    Enter the 6-digit passcode sent to your registered admin WhatsApp (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
                                 </p>
                             </div>
 
@@ -357,6 +571,34 @@ export default function Login() {
                                     <span className="text-[11px] text-blue-700 font-semibold">
                                         Test Passcode: <span className="font-mono font-black text-blue-900 text-sm tracking-widest">{pending2FA.devCode}</span>
                                     </span>
+                                </div>
+                            )}
+
+                            {/* Multi-phone switcher if user has more than 1 registered number */}
+                            {pending2FA.availablePhones && pending2FA.availablePhones.length > 1 && (
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                                    <div className="flex items-center justify-between text-xs text-slate-600">
+                                        <span className="flex items-center gap-1.5 font-medium">
+                                            <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                                            Active Destination: <span className="font-mono font-bold text-slate-900">{pending2FA.maskedPhone}</span>
+                                        </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-200/60">
+                                        <span>Send code to another number:</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {pending2FA.availablePhones.filter(p => p !== pending2FA.targetPhone).map(altPhone => (
+                                                <button
+                                                    key={altPhone}
+                                                    type="button"
+                                                    onClick={() => handleSwitchPhone(altPhone)}
+                                                    disabled={isLoading}
+                                                    className="text-primary hover:text-primary/80 font-bold underline cursor-pointer disabled:opacity-50"
+                                                >
+                                                    {maskPhoneFor2FA(altPhone)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
@@ -452,7 +694,7 @@ export default function Login() {
                                 Back to Username & Password
                             </button>
                         </form>
-                    )}
+                    ) : null}
 
                 </div>
 

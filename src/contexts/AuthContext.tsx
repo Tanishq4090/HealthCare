@@ -14,6 +14,8 @@ export interface User {
     role: 'admin' | 'user';
     accesses: AccessModule[];
     avatar: string;
+    phone?: string;
+    phone_numbers?: string[];
 }
 
 interface AuthContextType {
@@ -45,13 +47,15 @@ const SESSION_USER_KEY = '99care_os_session_user';
 const TANISHQ_USERNAME = 'tanishq4090';
 const TANISHQ_ACCESS: AccessModule[] = ['hr', 'finance'];
 
-const adminUser: User = {
+export const adminUser: User = {
     id: 'admin',
     username: 'admin',
     name: 'System Admin',
     role: 'admin',
     accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
-    avatar: 'SA'
+    avatar: 'SA',
+    phone: '+919016116564',
+    phone_numbers: ['+919016116564']
 };
 
 const normalizeStaffAccess = (staffUser: User): User => {
@@ -108,22 +112,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const refreshUsers = useCallback(async () => {
         try {
-            // First attempt to query staff_users table directly so custom permissions (e.g. view_phones) are 100% retained
+            // Fetch root admin configured 2FA phone numbers from automation_settings
+            let resolvedAdmin: User = { ...adminUser };
+            try {
+                const { data: autoSettings } = await supabase
+                    .from('automation_settings')
+                    .select('admin_phone_numbers')
+                    .eq('id', 'global')
+                    .maybeSingle();
+                if (autoSettings?.admin_phone_numbers && Array.isArray(autoSettings.admin_phone_numbers) && autoSettings.admin_phone_numbers.length > 0) {
+                    resolvedAdmin = {
+                        ...resolvedAdmin,
+                        phone_numbers: autoSettings.admin_phone_numbers,
+                        phone: autoSettings.admin_phone_numbers[0]
+                    };
+                }
+            } catch (err) {
+                console.warn('Could not fetch admin 2fa phone settings:', err);
+            }
+
+            // Attempt to query staff_users table directly
             const { data: dbStaff, error: dbErr } = await supabase
                 .from('staff_users')
-                .select('id, username, full_name, role, accesses, avatar, created_at')
+                .select('id, username, full_name, role, accesses, avatar, phone, phone_numbers, created_at')
                 .order('created_at', { ascending: true });
 
             if (!dbErr && dbStaff && dbStaff.length > 0) {
-                const mapped: User[] = dbStaff.map(row => ({
-                    id: row.id,
-                    username: row.username,
-                    name: row.full_name,
-                    role: row.role as any,
-                    accesses: row.accesses || [],
-                    avatar: row.avatar || row.username.slice(0, 2).toUpperCase(),
-                }));
-                setAllUsers([adminUser, ...mapped.filter(u => u.id !== adminUser.id).map(normalizeStaffAccess)]);
+                const mapped: User[] = dbStaff.map(row => {
+                    const phoneList = Array.isArray(row.phone_numbers) && row.phone_numbers.length > 0
+                        ? row.phone_numbers
+                        : (row.phone ? [row.phone] : []);
+                    return {
+                        id: row.id,
+                        username: row.username,
+                        name: row.full_name,
+                        role: row.role as any,
+                        accesses: row.accesses || [],
+                        avatar: row.avatar || row.username.slice(0, 2).toUpperCase(),
+                        phone: phoneList[0] || row.phone || undefined,
+                        phone_numbers: phoneList,
+                    };
+                });
+                setAllUsers([resolvedAdmin, ...mapped.filter(u => u.id !== resolvedAdmin.id).map(normalizeStaffAccess)]);
                 return;
             }
 
@@ -132,7 +162,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
 
             if (error) throw error;
-            setAllUsers([adminUser, ...((data?.users || []) as User[]).map(normalizeStaffAccess)]);
+            setAllUsers([resolvedAdmin, ...((data?.users || []) as User[]).map(normalizeStaffAccess)]);
         } catch (err) {
             console.error('Failed to load OS staff users:', err);
             setAllUsers([adminUser]);
@@ -317,52 +347,109 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     const createUser = async (newUser: User) => {
+        const phoneList = newUser.phone_numbers && newUser.phone_numbers.length > 0
+            ? newUser.phone_numbers
+            : (newUser.phone ? [newUser.phone] : []);
+
         const data = await callStaffAuth({
             action: 'create',
             username: newUser.username,
             password: newUser.password,
             name: newUser.name,
+            role: newUser.role || 'user',
+            phone: phoneList[0] || undefined,
+            phone_numbers: phoneList,
             accesses: newUser.accesses,
         });
 
-        // Ensure accesses in database has view_phones if specified
-        if (data?.user?.id && newUser.accesses) {
+        // Ensure accesses and phone details in database are completely synced
+        if (data?.user?.id) {
             await supabase
                 .from('staff_users')
-                .update({ accesses: newUser.accesses })
+                .update({ 
+                    accesses: newUser.accesses || [],
+                    role: newUser.role || 'user',
+                    phone: phoneList[0] || null,
+                    phone_numbers: phoneList
+                })
                 .eq('id', data.user.id);
         }
 
         const resolvedUser: User = normalizeStaffAccess({
             ...(data?.user || newUser),
+            role: newUser.role || 'user',
             accesses: newUser.accesses || [],
+            phone: phoneList[0] || undefined,
+            phone_numbers: phoneList
         });
 
-        setAllUsers(prev => [adminUser, ...prev.filter(existing => existing.id !== adminUser.id), resolvedUser]);
+        setAllUsers(prev => [...prev.filter(existing => existing.id !== resolvedUser.id), resolvedUser]);
         await refreshUsers();
     };
 
     const updateUser = async (updatedUser: User) => {
+        const phoneList = updatedUser.phone_numbers && updatedUser.phone_numbers.length > 0
+            ? updatedUser.phone_numbers
+            : (updatedUser.phone ? [updatedUser.phone] : []);
+
+        if (updatedUser.id === 'admin') {
+            // Update root admin phone numbers in automation_settings
+            try {
+                await supabase
+                    .from('automation_settings')
+                    .upsert({
+                        id: 'global',
+                        admin_phone_numbers: phoneList.length > 0 ? phoneList : ['+919016116564']
+                    }, { onConflict: 'id' });
+            } catch (err) {
+                console.warn('Failed to persist admin phone numbers in automation_settings:', err);
+            }
+
+            const updatedAdmin: User = {
+                ...adminUser,
+                ...updatedUser,
+                phone: phoneList[0] || '+919016116564',
+                phone_numbers: phoneList.length > 0 ? phoneList : ['+919016116564']
+            };
+
+            setAllUsers(prev => prev.map(u => u.id === 'admin' ? updatedAdmin : u));
+            if (user?.id === 'admin') {
+                savePersistedUser(updatedAdmin);
+                setUser(updatedAdmin);
+            }
+            await refreshUsers();
+            return;
+        }
+
         const data = await callStaffAuth({
             action: 'update',
             id: updatedUser.id,
             username: updatedUser.username,
             password: updatedUser.password,
             name: updatedUser.name,
+            role: updatedUser.role,
+            phone: phoneList[0] || undefined,
+            phone_numbers: phoneList,
             accesses: updatedUser.accesses,
         });
 
-        // Ensure accesses in database has view_phones if specified
-        if (updatedUser.accesses) {
-            await supabase
-                .from('staff_users')
-                .update({ accesses: updatedUser.accesses })
-                .eq('id', updatedUser.id);
-        }
+        // Ensure accesses, role, and phone details in database are directly synced
+        await supabase
+            .from('staff_users')
+            .update({ 
+                accesses: updatedUser.accesses || [],
+                role: updatedUser.role || 'user',
+                phone: phoneList[0] || null,
+                phone_numbers: phoneList
+            })
+            .eq('id', updatedUser.id);
 
         const resolvedUser: User = normalizeStaffAccess({
             ...(data?.user || updatedUser),
+            role: updatedUser.role || 'user',
             accesses: updatedUser.accesses || [],
+            phone: phoneList[0] || undefined,
+            phone_numbers: phoneList
         });
 
         setAllUsers(prev => prev.map(existing => existing.id === resolvedUser.id ? resolvedUser : existing));

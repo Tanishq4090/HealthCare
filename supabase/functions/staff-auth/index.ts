@@ -41,14 +41,52 @@ const sha256 = async (value: string) => {
 
 const hashPassword = async (password: string, salt: string) => sha256(`${salt}:${password}`);
 
-const toPublicUser = (row: any) => ({
-  id: row.id,
-  username: row.username,
-  name: row.full_name,
-  role: row.role,
-  accesses: row.accesses || [],
-  avatar: row.avatar || avatarForName(row.full_name || row.username),
-});
+const normalizePhone = (raw: string): string => {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return raw.startsWith("+") ? raw : `+${raw}`;
+};
+
+const sanitizePhoneNumbers = (input: unknown): string[] => {
+  if (Array.isArray(input)) {
+    return Array.from(
+      new Set(
+        input
+          .map((p) => normalizePhone(String(p || "")))
+          .filter((p) => p.length >= 10)
+      )
+    );
+  }
+  if (typeof input === "string" && input.trim()) {
+    return Array.from(
+      new Set(
+        input
+          .split(",")
+          .map((p) => normalizePhone(p.trim()))
+          .filter((p) => p.length >= 10)
+      )
+    );
+  }
+  return [];
+};
+
+const toPublicUser = (row: any) => {
+  const phoneList = Array.isArray(row.phone_numbers) && row.phone_numbers.length > 0
+    ? row.phone_numbers
+    : (row.phone ? [row.phone] : []);
+  return {
+    id: row.id,
+    username: row.username,
+    name: row.full_name,
+    role: row.role,
+    accesses: row.accesses || [],
+    avatar: row.avatar || avatarForName(row.full_name || row.username),
+    phone: phoneList[0] || row.phone || "",
+    phone_numbers: phoneList,
+  };
+};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -87,7 +125,7 @@ serve(async (req) => {
     if (action === "list") {
       const { data, error } = await supabase
         .from("staff_users")
-        .select("id, username, full_name, role, accesses, avatar, created_at")
+        .select("id, username, full_name, role, accesses, avatar, phone, phone_numbers, created_at")
         .order("created_at", { ascending: true });
 
       if (error) throw error;
@@ -99,6 +137,8 @@ serve(async (req) => {
       const fullName = String(body.name || "").trim();
       const password = String(body.password || "");
       const accesses = sanitizeAccesses(body.accesses);
+      const phoneNumbers = sanitizePhoneNumbers(body.phone_numbers || body.phone);
+      const role = body.role === "admin" ? "admin" : "user";
 
       if (!username || !fullName || !password) {
         return json({ error: "Full name, username, and password are required." }, 400);
@@ -112,13 +152,15 @@ serve(async (req) => {
         .insert({
           username,
           full_name: fullName,
-          role: "user",
+          role,
           accesses,
+          phone: phoneNumbers[0] || null,
+          phone_numbers: phoneNumbers,
           avatar: avatarForName(fullName),
           password_hash: passwordHash,
           password_salt: salt,
         })
-        .select("id, username, full_name, role, accesses, avatar")
+        .select("id, username, full_name, role, accesses, avatar, phone, phone_numbers")
         .single();
 
       if (error) throw error;
@@ -131,6 +173,9 @@ serve(async (req) => {
       const fullName = String(body.name || "").trim();
       const accesses = sanitizeAccesses(body.accesses);
       const password = body.password ? String(body.password) : "";
+      const phoneNumbers = body.phone_numbers !== undefined || body.phone !== undefined
+        ? sanitizePhoneNumbers(body.phone_numbers || body.phone)
+        : undefined;
 
       if (!id || !username || !fullName) {
         return json({ error: "User id, full name, and username are required." }, 400);
@@ -144,6 +189,15 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       };
 
+      if (body.role === "admin" || body.role === "user") {
+        updatePayload.role = body.role;
+      }
+
+      if (phoneNumbers !== undefined) {
+        updatePayload.phone_numbers = phoneNumbers;
+        updatePayload.phone = phoneNumbers[0] || null;
+      }
+
       if (password) {
         const salt = randomSalt();
         updatePayload.password_salt = salt;
@@ -154,7 +208,7 @@ serve(async (req) => {
         .from("staff_users")
         .update(updatePayload)
         .eq("id", id)
-        .select("id, username, full_name, role, accesses, avatar")
+        .select("id, username, full_name, role, accesses, avatar, phone, phone_numbers")
         .single();
 
       if (error) throw error;

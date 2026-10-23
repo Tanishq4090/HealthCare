@@ -13,12 +13,14 @@ export interface TwoFactorChallenge {
     createdAt: number;
     expiresAt: number;
     attempts: number;
+    targetPhone?: string;
     maskedTarget?: string;
     dispatchedVia?: 'whatsapp' | 'local_secure';
 }
 
 const CHALLENGE_KEY = '99care_2fa_pending_challenge';
 const EMERGENCY_ADMIN_KEY = '99CARE-SECURE-2026';
+const DEFAULT_AGENCY_ADMIN_PHONE = '+919016116564';
 
 /**
  * SHA-256 helper for client-side challenge hashing
@@ -42,27 +44,56 @@ function generateSecureOTP(): string {
 }
 
 /**
- * Masks a phone number (e.g. +91 98765 43210 -> +91 98*** **210)
+ * Normalizes an Indian phone number to E.164 format
  */
-function maskPhoneFor2FA(rawPhone?: string): string {
+export function normalizePhoneNumber(raw?: string): string {
+    if (!raw) return '';
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
+    return raw.startsWith('+') ? raw : `+${digits}`;
+}
+
+/**
+ * Masks a phone number for UI display (e.g. +91 90161 16564 -> +91 90161 ••••64)
+ */
+export function maskPhoneFor2FA(rawPhone?: string): string {
     if (!rawPhone) return '+91 ••••• ••••';
     const clean = rawPhone.replace(/\D/g, '');
-    if (clean.length < 10) return 'Registered Admin Phone';
-    const last3 = clean.slice(-3);
-    const first2 = clean.slice(0, 2);
-    return `+91 ${first2}••• •••${last3}`;
+    if (clean.length < 10) return 'Registered Device';
+    const last2 = clean.slice(-2);
+    const first5 = clean.length >= 12 ? clean.slice(2, 7) : clean.slice(0, 5);
+    return `+91 ${first5} ••••${last2}`;
+}
+
+/**
+ * Resolves all available phone numbers for a user
+ */
+export function getUserPhoneNumbers(user: User): string[] {
+    const rawList = Array.isArray(user.phone_numbers) && user.phone_numbers.length > 0
+        ? user.phone_numbers
+        : (user.phone ? [user.phone] : []);
+
+    const cleaned = Array.from(new Set(rawList.map(normalizePhoneNumber).filter(Boolean)));
+    if (cleaned.length === 0) {
+        return [DEFAULT_AGENCY_ADMIN_PHONE];
+    }
+    return cleaned;
 }
 
 /**
  * Initiates Two-Factor Authentication for an admin user.
- * Generates a challenge and attempts WhatsApp delivery if a phone number is registered.
+ * Generates a challenge and attempts WhatsApp delivery to the chosen phone number.
  */
 export async function initiateAdminTwoFactor(
     user: User,
-    adminPhone?: string
+    selectedPhone?: string
 ): Promise<{
     challengeId: string;
+    targetPhone: string;
     maskedPhone: string;
+    availablePhones: string[];
     expiresInSeconds: number;
     devCode?: string; // Provided during local testing or fallback
 }> {
@@ -73,16 +104,21 @@ export async function initiateAdminTwoFactor(
     const now = Date.now();
     const expiresAt = now + 10 * 60 * 1000; // 10 minutes
 
-    const targetPhone = adminPhone || '+919987654321';
+    const availablePhones = getUserPhoneNumbers(user);
+    const targetPhone = (selectedPhone && availablePhones.includes(normalizePhoneNumber(selectedPhone)))
+        ? normalizePhoneNumber(selectedPhone)
+        : (availablePhones[0] || DEFAULT_AGENCY_ADMIN_PHONE);
+
     let dispatchedVia: 'whatsapp' | 'local_secure' = 'local_secure';
 
     // Attempt WhatsApp delivery if running against live Supabase
     try {
+        const cleanDigits = targetPhone.replace(/\D/g, '');
         const message = `🔐 *99 Care OS Admin Security*\n\nYour 2-Factor Authentication login code is: *${otp}*\n\nValid for 10 minutes. For security, never share this code.`;
         const { error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
             body: {
-                recipient: targetPhone.replace(/\D/g, ''),
-                phone: targetPhone.replace(/\D/g, ''),
+                recipient: cleanDigits,
+                phone: cleanDigits,
                 message,
                 type: 'admin_2fa_otp'
             }
@@ -106,6 +142,7 @@ export async function initiateAdminTwoFactor(
         createdAt: now,
         expiresAt,
         attempts: 0,
+        targetPhone,
         maskedTarget: maskPhoneFor2FA(targetPhone),
         dispatchedVia
     };
@@ -118,7 +155,9 @@ export async function initiateAdminTwoFactor(
 
     return {
         challengeId,
+        targetPhone,
         maskedPhone: challenge.maskedTarget || 'Registered Device',
+        availablePhones,
         expiresInSeconds: 600,
         devCode: isLocal ? otp : undefined
     };
@@ -204,12 +243,20 @@ export async function verifyAdminTwoFactor(
 }
 
 /**
- * Resends a fresh OTP code for the pending challenge
+ * Resends a fresh OTP code for the pending challenge, optionally switching to another registered phone
  */
-export async function resendAdminTwoFactorCode(user: User): Promise<{ success: boolean; devCode?: string; error?: string }> {
+export async function resendAdminTwoFactorCode(
+    user: User,
+    selectedPhone?: string
+): Promise<{ success: boolean; devCode?: string; targetPhone?: string; maskedPhone?: string; error?: string }> {
     try {
-        const res = await initiateAdminTwoFactor(user);
-        return { success: true, devCode: res.devCode };
+        const res = await initiateAdminTwoFactor(user, selectedPhone);
+        return {
+            success: true,
+            devCode: res.devCode,
+            targetPhone: res.targetPhone,
+            maskedPhone: res.maskedPhone
+        };
     } catch (err: any) {
         return { success: false, error: err.message || 'Failed to resend verification code' };
     }
