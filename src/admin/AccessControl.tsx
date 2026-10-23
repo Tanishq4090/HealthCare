@@ -12,11 +12,11 @@ import {
 } from '../services/deletionService';
 
 const MODULES: { id: AccessModule; label: string; desc: string }[] = [
-    { id: 'dashboard', label: 'Main Dashboard', desc: 'Access to high-level analytics and business overview.' },
-    { id: 'crm', label: 'AI CRM Pipeline', desc: 'Allows access to the lead management Kanban board.' },
-    { id: 'clients', label: 'Client Master', desc: 'Allows viewing and managing the Client Master spreadsheet.' },
-    { id: 'hr', label: 'AI HR & Workers', desc: 'Grants access to worker management, payroll, and compliance.' },
-    { id: 'finance', label: 'Finance & Billing', desc: 'Grants access to invoices and revenue tracking.' },
+    { id: 'dashboard', label: 'Operations Dashboard', desc: 'KPI metrics, daily schedules, analytics overview, and attention alerts.' },
+    { id: 'crm', label: 'Leads & Inquiries', desc: 'Customer inquiries, AI call recordings, quotations, and conversion pipeline.' },
+    { id: 'clients', label: 'Client Master', desc: 'Patient records, active service cycles, multi-select export, and bulk WhatsApp.' },
+    { id: 'hr', label: 'Caregivers & Operations', desc: 'Caregiver directory, deployments, live attendance matrix, and caregiver payroll.' },
+    { id: 'finance', label: 'Finance & Billing', desc: 'Monthly client invoice generator, security deposits, and collection ledger.' },
 ];
 
 export default function AccessControl() {

@@ -725,7 +725,7 @@ export default function AdminLayout() {
             title: 'Operations & Care',
             items: [
                 { name: 'Client Master', href: '/admin/clients', icon: Users, requiredModule: 'clients' },
-                { name: 'Scheduling & Visits', href: '/admin/hr?tab=allocation&subtab=assignments', icon: CalendarDays, requiredModule: 'hr' },
+                { name: 'Caregiver Deployments', href: '/admin/hr?tab=allocation&subtab=assignments', icon: CalendarDays, requiredModule: 'hr' },
                 { name: 'Live Attendance', href: '/admin/hr?tab=attendance', icon: Clock, requiredModule: 'hr' },
                 { name: 'Caregivers & Staff', href: '/admin/hr?tab=allocation', icon: UserCog, requiredModule: 'hr' },
             ],
@@ -810,7 +810,7 @@ export default function AdminLayout() {
     const mobileBottomNavItems = [
         { name: 'Home', href: '/admin', icon: LayoutDashboard, requiredModule: 'dashboard' as AccessModule },
         { name: 'Clients', href: '/admin/clients', icon: Users, requiredModule: 'clients' as AccessModule },
-        { name: 'Visits', href: '/admin/hr?tab=allocation&subtab=assignments', icon: CalendarDays, requiredModule: 'hr' as AccessModule },
+        { name: 'Deployments', href: '/admin/hr?tab=allocation&subtab=assignments', icon: CalendarDays, requiredModule: 'hr' as AccessModule },
         { name: 'Attendance', href: '/admin/hr?tab=attendance', icon: Clock, requiredModule: 'hr' as AccessModule },
         { name: 'Invoices', href: '/admin/billing?tab=monthly', icon: FileText, requiredModule: 'finance' as AccessModule },
     ].filter(item => !item.requiredModule || hasAccess(item.requiredModule));

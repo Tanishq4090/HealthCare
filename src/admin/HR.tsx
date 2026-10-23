@@ -2283,7 +2283,7 @@ export default function HR() {
                             : activeTab === 'payroll'
                                 ? 'Caregiver Payroll & Payslips'
                                 : searchParams.get('subtab') === 'assignments'
-                                    ? 'Scheduling & Patient Deployments'
+                                    ? 'Caregiver Deployments & Shifts'
                                     : 'Caregivers & Staff Registry'}
                     </h1>
                     <p className="text-slate-500 mt-1">
@@ -2292,7 +2292,7 @@ export default function HR() {
                             : activeTab === 'payroll'
                                 ? 'Caregiver earnings calculations, automated payslip generator, and WhatsApp dispatch.'
                                 : searchParams.get('subtab') === 'assignments'
-                                    ? 'Active client deployments, shift hours, and caregiver assignments.'
+                                    ? 'Active client deployments, shift hours (10h/24h), and caregiver duty assignments.'
                                     : 'Caregiver directory, onboarding, KYC documents, and shift rates.'}
                     </p>
                 </div>
