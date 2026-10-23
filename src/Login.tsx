@@ -39,6 +39,7 @@ export default function Login() {
         maskedPhone: string;
         availablePhones: string[];
         devCode?: string;
+        dispatchedVia?: 'sms' | 'whatsapp' | 'local_secure';
         pendingRole?: string;
         pendingStaffUser?: any;
     } | null>(null);
@@ -148,6 +149,7 @@ export default function Login() {
                     maskedPhone: challenge.maskedPhone,
                     availablePhones,
                     devCode: challenge.devCode,
+                    dispatchedVia: challenge.dispatchedVia,
                     pendingRole: 'admin',
                     pendingStaffUser: undefined
                 });
@@ -208,6 +210,7 @@ export default function Login() {
                         maskedPhone: challenge.maskedPhone,
                         availablePhones,
                         devCode: challenge.devCode,
+                        dispatchedVia: challenge.dispatchedVia,
                         pendingRole: undefined,
                         pendingStaffUser: data.user
                     });
@@ -245,6 +248,7 @@ export default function Login() {
                 maskedPhone: challenge.maskedPhone,
                 availablePhones: pendingPhoneSelect.availablePhones,
                 devCode: challenge.devCode,
+                dispatchedVia: challenge.dispatchedVia,
                 pendingRole: pendingPhoneSelect.pendingRole,
                 pendingStaffUser: pendingPhoneSelect.pendingStaffUser
             });
@@ -550,12 +554,12 @@ export default function Login() {
                                                         {maskPhoneFor2FA(phone)}
                                                     </p>
                                                     <p className="text-[11px] text-slate-500">
-                                                        {idx === 0 ? 'Primary WhatsApp Account' : `Backup Mobile #${idx + 1}`}
+                                                        {idx === 0 ? 'Primary Mobile Device' : `Backup Mobile #${idx + 1}`}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                                <Phone className="w-2.5 h-2.5" /> WhatsApp
+                                            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                <Smartphone className="w-2.5 h-2.5" /> SMS & WhatsApp
                                             </span>
                                         </div>
                                     );
@@ -566,12 +570,12 @@ export default function Login() {
                                 type="button"
                                 onClick={handleConfirmPhoneSelect}
                                 disabled={isLoading}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm"
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm"
                             >
                                 {isLoading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
-                                    "Send 6-Digit Code"
+                                    "Send 6-Digit SMS Code"
                                 )}
                             </button>
 
@@ -599,22 +603,22 @@ export default function Login() {
                                         Emergency Admin Key Required
                                     </h2>
                                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                        No 2FA WhatsApp phone number has been configured for this account yet. Please enter your master Emergency Admin Security Key to proceed.
+                                        No 2FA mobile phone number has been configured for this account yet. Please enter your master Emergency Admin Security Key to proceed.
                                     </p>
                                 </div>
                             ) : (
                                 <div className="text-center pb-2">
-                                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200 shadow-sm">
-                                        <ShieldCheck className="w-6 h-6" />
+                                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-indigo-200 shadow-sm">
+                                        <Smartphone className="w-6 h-6" />
                                     </div>
-                                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1">
-                                        Admin Two-Factor Auth
+                                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-indigo-100 text-indigo-800 mb-1 border border-indigo-200/80">
+                                        Direct Phone SMS 2FA
                                     </span>
                                     <h2 className="text-lg font-extrabold text-slate-900">
-                                        Verification Code Required
+                                        SMS Verification Code Sent
                                     </h2>
                                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                        Enter the 6-digit passcode sent to your registered admin WhatsApp (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
+                                        Enter the 6-digit passcode sent directly to your phone's SMS Messages app (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
                                     </p>
                                 </div>
                             )}
@@ -721,22 +725,23 @@ export default function Login() {
                                         Paste or type 6 digits. Expires in 10 minutes.
                                     </p>
 
-                                    {/* WhatsApp 24-hour window / Didn't receive code helper */}
+                                    {/* Direct Phone SMS / Emergency Key Helper */}
                                     <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-left space-y-1 mt-2">
                                         <div className="flex items-center justify-between text-[11px]">
-                                            <span className="font-semibold text-slate-700">Didn't receive WhatsApp OTP?</span>
-                                            <a
-                                                href="https://wa.me/917971542924?text=Hi"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-emerald-700 hover:text-emerald-800 font-bold underline flex items-center gap-1"
+                                            <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                                <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
+                                                Didn't receive phone SMS?
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setUseEmergencyKey(true)}
+                                                className="text-primary hover:text-primary/80 font-bold underline text-[11px]"
                                             >
-                                                <Phone className="w-3 h-3 text-emerald-600" />
-                                                Send "Hi" (+91 79 7154 2924)
-                                            </a>
+                                                Use Emergency Key
+                                            </button>
                                         </div>
                                         <p className="text-[10px] text-slate-500 leading-snug">
-                                            Meta WhatsApp Cloud API requires your number to send a message to our business WhatsApp once to activate delivery, or you can switch to the <button type="button" onClick={() => setUseEmergencyKey(true)} className="text-primary font-bold underline">Emergency Key</button>.
+                                            Carrier SMS delivery takes a few seconds depending on network signal. You can also sign in instantly using your master Emergency Admin Key.
                                         </p>
                                     </div>
                                 </div>

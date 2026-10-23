@@ -15,7 +15,7 @@ export interface TwoFactorChallenge {
     attempts: number;
     targetPhone?: string;
     maskedTarget?: string;
-    dispatchedVia?: 'whatsapp' | 'local_secure';
+    dispatchedVia?: 'sms' | 'whatsapp' | 'local_secure';
 }
 
 const CHALLENGE_KEY = '99care_2fa_pending_challenge';
@@ -95,6 +95,7 @@ export async function initiateAdminTwoFactor(
     expiresInSeconds: number;
     devCode?: string;
     requiresBypassKey?: boolean;
+    dispatchedVia?: 'sms' | 'whatsapp' | 'local_secure';
 }> {
     const availablePhones = getUserPhoneNumbers(user);
     const requiresBypassKey = isBypassMode || availablePhones.length === 0;
@@ -107,16 +108,37 @@ export async function initiateAdminTwoFactor(
     const expiresAt = now + 10 * 60 * 1000; // 10 minutes
 
     let targetPhone = '';
-    let dispatchedVia: 'whatsapp' | 'local_secure' = 'local_secure';
+    let dispatchedVia: 'sms' | 'whatsapp' | 'local_secure' = 'local_secure';
 
     if (!requiresBypassKey && availablePhones.length > 0) {
         targetPhone = (selectedPhone && availablePhones.includes(normalizePhoneNumber(selectedPhone)))
             ? normalizePhoneNumber(selectedPhone)
             : availablePhones[0];
 
-        // Attempt WhatsApp delivery if running against live Supabase
+        const cleanDigits = targetPhone.replace(/\D/g, '');
+        const clean10 = cleanDigits.slice(-10);
+
+        // 1. Primary: Direct Cellular SMS via Fast2SMS (delivers to native Messages app)
         try {
-            const cleanDigits = targetPhone.replace(/\D/g, '');
+            const { data: smsData, error: smsError } = await supabase.functions.invoke('send-sms-otp', {
+                body: {
+                    phone: clean10,
+                    otp,
+                    purpose: 'admin_2fa_login'
+                }
+            });
+
+            if (!smsError && smsData?.success) {
+                dispatchedVia = 'sms';
+            } else {
+                console.warn('Fast2SMS dispatch note:', smsData || smsError);
+            }
+        } catch (smsErr) {
+            console.warn('SMS dispatch error:', smsErr);
+        }
+
+        // 2. Also attempt WhatsApp delivery in parallel
+        try {
             const message = `🔐 *99 Care OS Admin Security*\n\nYour 2-Factor Authentication login code is: *${otp}*\n\nValid for 10 minutes. For security, never share this code.`;
             const { error: waError } = await supabase.functions.invoke('meta-whatsapp-outbound', {
                 body: {
@@ -127,7 +149,7 @@ export async function initiateAdminTwoFactor(
                 }
             });
 
-            if (!waError) {
+            if (!waError && dispatchedVia === 'local_secure') {
                 dispatchedVia = 'whatsapp';
             }
         } catch (err) {
@@ -164,7 +186,8 @@ export async function initiateAdminTwoFactor(
         availablePhones,
         expiresInSeconds: 600,
         devCode: (!requiresBypassKey && isLocal) ? otp : undefined,
-        requiresBypassKey
+        requiresBypassKey,
+        dispatchedVia
     };
 }
 
