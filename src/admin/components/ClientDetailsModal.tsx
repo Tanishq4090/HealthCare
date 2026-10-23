@@ -1,11 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse, ListChecks, CheckSquare, MessageCircle } from 'lucide-react';
+import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, ClipboardList, Briefcase, ChevronRight, User, History, Wallet, CheckCircle2, RotateCcw, Receipt, ShieldCheck, ChevronDown, ChevronUp, AlertCircle, XCircle, Loader2, Pencil, Save, Copy, Check, HeartPulse, ListChecks, CheckSquare, MessageCircle, ShieldAlert } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../../utils/generateInvoicePdf';
 import { useAuth } from '../../contexts/AuthContext';
 import { maskPhoneNumber } from '../../utils/phoneMask';
 import { logClientView, logClientEdit, logAuditEvent, fetchClientAuditHistory, type AuditLogItem } from '../../services/auditService';
+import {
+    normalizeDPDPConsent,
+    saveClientDPDPConsent,
+    withdrawClientDPDPConsent,
+    calculateRetentionExpiryDate,
+    getRetentionStatus,
+    type DPDPConsentData,
+    type DPDPRetentionPeriod,
+} from '../../services/dpdpService';
 import { toast } from 'sonner';
 
 const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
@@ -225,6 +234,14 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     });
     const [isSavingConsent, setIsSavingConsent] = useState(false);
 
+    // DPDP Act 2023 Consent & Retention State
+    const [dpdpConsent, setDpdpConsent] = useState<DPDPConsentData | null>(null);
+    const [isSavingDpdp, setIsSavingDpdp] = useState(false);
+    const [isEditingDpdp, setIsEditingDpdp] = useState(false);
+    const [dpdpDraft, setDpdpDraft] = useState<DPDPConsentData | null>(null);
+    const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+    const [withdrawReason, setWithdrawReason] = useState('');
+
     const [generatingPdfBillId, setGeneratingPdfBillId] = useState<string | null>(null);
 
     const handleOpenOrGeneratePdf = async (bill: any, svc: any, invNo: string, bi: number) => {
@@ -294,6 +311,14 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
             // 1. Fetch Lead (including consents)
             const { data: leadData } = await supabase.from('crm_leads').select('*, client_consents(*)').eq('id', clientId).single();
             setLead(leadData);
+
+            // Initialize DPDP Act 2023 consent state
+            const initialDpdp = normalizeDPDPConsent(
+                leadData?.dpdp_consent || leadData?.client_consents?.[0]?.dpdp_consent || leadData,
+                leadData?.created_at
+            );
+            setDpdpConsent(initialDpdp);
+            setDpdpDraft(initialDpdp);
 
             // 2. Fetch Activities
             const { data: actData } = await supabase.from('crm_lead_activity').select('*').eq('lead_id', clientId).order('created_at', { ascending: false });
@@ -563,6 +588,60 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
             toast.error(`Failed to save patient details: ${err.message || 'Unknown error'}`);
         } finally {
             setIsSavingConsent(false);
+        }
+    };
+
+    const handleSaveDpdpConsent = async () => {
+        if (!dpdpDraft) return;
+        setIsSavingDpdp(true);
+        try {
+            const clientName = client?.name || client?.client_name || lead?.name || 'Client';
+            const res = await saveClientDPDPConsent({
+                clientId,
+                clientName,
+                clientRef: client,
+                updatedConsent: dpdpDraft,
+                previousConsent: dpdpConsent || undefined,
+                currentUser: user ? { id: user.id, name: user.name, role: user.role } : undefined,
+            });
+            if (!res.success) throw new Error(res.error || 'Failed to save consent');
+            setDpdpConsent(dpdpDraft);
+            setIsEditingDpdp(false);
+            toast.success('DPDP Act 2023 Consent & Retention preferences saved successfully!');
+            await fetchDetails();
+            onServiceUpdated?.();
+        } catch (err: any) {
+            console.error('Error saving DPDP consent:', err);
+            toast.error(`Failed to save DPDP consent: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingDpdp(false);
+        }
+    };
+
+    const handleWithdrawDpdpConsent = async () => {
+        setIsSavingDpdp(true);
+        try {
+            const clientName = client?.name || client?.client_name || lead?.name || 'Client';
+            const res = await withdrawClientDPDPConsent({
+                clientId,
+                clientName,
+                clientRef: client,
+                reason: withdrawReason.trim() || 'Client requested consent revocation',
+                previousConsent: dpdpConsent || undefined,
+                currentUser: user ? { id: user.id, name: user.name, role: user.role } : undefined,
+            });
+            if (!res.success) throw new Error(res.error || 'Failed to withdraw consent');
+            setShowWithdrawConfirm(false);
+            setWithdrawReason('');
+            setIsEditingDpdp(false);
+            toast.success('Consent marked as Withdrawn under DPDP Act 2023 Sec 6(4). Marketing and review broadcasts disabled.');
+            await fetchDetails();
+            onServiceUpdated?.();
+        } catch (err: any) {
+            console.error('Error withdrawing DPDP consent:', err);
+            toast.error(`Failed to withdraw consent: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingDpdp(false);
         }
     };
 
@@ -1626,6 +1705,256 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                             </div>
                         </div>
 
+                        {/* DPDP Act 2023 Consent & Retention Policy Card */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0">
+                                        <ShieldCheck className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-slate-800 text-sm">
+                                                DPDP Act 2023 Compliance &amp; Consent
+                                            </h3>
+                                            <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                {dpdpConsent?.notice_version || 'DPDP-2023-V1.0'}
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            Purpose-specific consent, marketing opt-ins, and statutory retention limits under India's privacy law
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Status Badge & Actions */}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {dpdpConsent?.consent_status === 'withdrawn' ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                            <XCircle className="w-3.5 h-3.5" /> Consent Withdrawn
+                                        </span>
+                                    ) : dpdpConsent?.consent_marketing && dpdpConsent?.consent_review_messages ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <CheckCircle2 className="w-3.5 h-3.5" /> Full DPDP Consent
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                            <AlertCircle className="w-3.5 h-3.5" /> Care Only (Marketing Opted Out)
+                                        </span>
+                                    )}
+
+                                    {!isEditingDpdp ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setDpdpDraft(dpdpConsent ? { ...dpdpConsent } : normalizeDPDPConsent(null));
+                                                setIsEditingDpdp(true);
+                                            }}
+                                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:bg-primary/5 px-2.5 py-1 rounded-lg border border-primary/20 transition-colors"
+                                        >
+                                            <Pencil className="w-3 h-3" /> Edit Preferences
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditingDpdp(false)}
+                                                className="text-xs text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded-lg hover:bg-slate-100 font-medium"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveDpdpConsent}
+                                                disabled={isSavingDpdp}
+                                                className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-primary hover:bg-primary/90 px-3 py-1 rounded-lg shadow-xs transition-colors disabled:opacity-50"
+                                            >
+                                                {isSavingDpdp ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                                Save Changes
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Granular Purpose Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {/* Purpose 1: Data Storage */}
+                                <div className={`p-3.5 rounded-xl border transition-all ${
+                                    (isEditingDpdp ? dpdpDraft?.consent_data_storage : dpdpConsent?.consent_data_storage)
+                                        ? 'bg-teal-50/40 border-teal-200/80 text-slate-800'
+                                        : 'bg-slate-50 border-slate-200 text-slate-400'
+                                }`}>
+                                    <label className={`flex items-start gap-2.5 ${isEditingDpdp ? 'cursor-pointer' : 'cursor-default'}`}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isEditingDpdp ? Boolean(dpdpDraft?.consent_data_storage) : Boolean(dpdpConsent?.consent_data_storage)}
+                                            onChange={(e) => {
+                                                if (isEditingDpdp && dpdpDraft) {
+                                                    setDpdpDraft({ ...dpdpDraft, consent_data_storage: e.target.checked });
+                                                }
+                                            }}
+                                            disabled={!isEditingDpdp}
+                                            className="mt-0.5 w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                                        />
+                                        <div className="space-y-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-xs text-slate-900">Health Data Storage</span>
+                                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 bg-teal-100 text-teal-800 rounded">
+                                                    Essential
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Store patient vitals, diagnosis, address &amp; emergency contacts to execute home care.
+                                            </p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                {/* Purpose 2: Marketing & Promotions */}
+                                <div className={`p-3.5 rounded-xl border transition-all ${
+                                    (isEditingDpdp ? dpdpDraft?.consent_marketing : dpdpConsent?.consent_marketing)
+                                        ? 'bg-teal-50/40 border-teal-200/80 text-slate-800'
+                                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                                }`}>
+                                    <label className={`flex items-start gap-2.5 ${isEditingDpdp ? 'cursor-pointer' : 'cursor-default'}`}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isEditingDpdp ? Boolean(dpdpDraft?.consent_marketing) : Boolean(dpdpConsent?.consent_marketing)}
+                                            onChange={(e) => {
+                                                if (isEditingDpdp && dpdpDraft) {
+                                                    setDpdpDraft({ ...dpdpDraft, consent_marketing: e.target.checked });
+                                                }
+                                            }}
+                                            disabled={!isEditingDpdp}
+                                            className="mt-0.5 w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                                        />
+                                        <div className="space-y-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-xs text-slate-900">Marketing &amp; Offers</span>
+                                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded">
+                                                    Opt-in
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Send festive greetings, seasonal health packages &amp; discounts via WhatsApp/SMS.
+                                            </p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                {/* Purpose 3: Reviews & Feedback */}
+                                <div className={`p-3.5 rounded-xl border transition-all ${
+                                    (isEditingDpdp ? dpdpDraft?.consent_review_messages : dpdpConsent?.consent_review_messages)
+                                        ? 'bg-teal-50/40 border-teal-200/80 text-slate-800'
+                                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                                }`}>
+                                    <label className={`flex items-start gap-2.5 ${isEditingDpdp ? 'cursor-pointer' : 'cursor-default'}`}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isEditingDpdp ? Boolean(dpdpDraft?.consent_review_messages) : Boolean(dpdpConsent?.consent_review_messages)}
+                                            onChange={(e) => {
+                                                if (isEditingDpdp && dpdpDraft) {
+                                                    setDpdpDraft({ ...dpdpDraft, consent_review_messages: e.target.checked });
+                                                }
+                                            }}
+                                            disabled={!isEditingDpdp}
+                                            className="mt-0.5 w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                                        />
+                                        <div className="space-y-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-xs text-slate-900">Review &amp; Rating Requests</span>
+                                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded">
+                                                    Opt-in
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 leading-tight">
+                                                Post-service caregiver feedback surveys and Google review invitations.
+                                            </p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Retention Policy Section */}
+                            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <Clock className="w-4 h-4 text-slate-600 shrink-0" />
+                                        <span className="font-bold text-slate-900">Data Retention Period (Sec. 8(7)):</span>
+                                        {!isEditingDpdp ? (
+                                            <span className="font-semibold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                                {dpdpConsent?.retention_period === '1_year' ? '1 Year (Short-term Inquiry)' :
+                                                 dpdpConsent?.retention_period === '7_years_tax' ? '7 Years (Financial & Tax Compliance)' :
+                                                 dpdpConsent?.retention_period === 'custom' ? 'Custom Expiration' :
+                                                 '3 Years (Clinical Guideline Standard)'}
+                                            </span>
+                                        ) : (
+                                            <select
+                                                value={dpdpDraft?.retention_period || '3_years_clinical'}
+                                                onChange={(e) => {
+                                                    if (!dpdpDraft) return;
+                                                    const newPeriod = e.target.value as DPDPRetentionPeriod;
+                                                    const newUntil = calculateRetentionExpiryDate(dpdpDraft.retention_start_date, newPeriod);
+                                                    setDpdpDraft({
+                                                        ...dpdpDraft,
+                                                        retention_period: newPeriod,
+                                                        retention_until_date: newUntil,
+                                                    });
+                                                }}
+                                                className="bg-white border border-slate-300 rounded px-2 py-1 text-xs font-semibold text-slate-800"
+                                            >
+                                                <option value="1_year">1 Year (Inquiry / Short-term)</option>
+                                                <option value="3_years_clinical">3 Years (Clinical Records Standard — Recommended)</option>
+                                                <option value="7_years_tax">7 Years (Financial &amp; Tax Compliance)</option>
+                                                <option value="custom">Custom Date</option>
+                                            </select>
+                                        )}
+                                    </div>
+
+                                    {/* Live Expiry Countdown */}
+                                    {(() => {
+                                        const retInfo = getRetentionStatus(isEditingDpdp ? dpdpDraft?.retention_until_date : dpdpConsent?.retention_until_date);
+                                        const expiryDate = isEditingDpdp ? dpdpDraft?.retention_until_date : dpdpConsent?.retention_until_date;
+                                        return (
+                                            <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 pl-6">
+                                                <span>
+                                                    Retention Valid Until:{' '}
+                                                    <strong className="text-slate-800">
+                                                        {expiryDate ? new Date(expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '3 Years from Intake'}
+                                                    </strong>
+                                                </span>
+                                                <span className="text-slate-400">•</span>
+                                                <span className={`font-semibold ${
+                                                    retInfo.status === 'expired' ? 'text-rose-600' :
+                                                    retInfo.status === 'expiring_soon' ? 'text-amber-600' :
+                                                    'text-teal-700'
+                                                }`}>
+                                                    {retInfo.label}
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+
+                                {/* Revoke / Withdraw Button */}
+                                {dpdpConsent?.consent_status !== 'withdrawn' ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowWithdrawConfirm(true)}
+                                        className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded border border-rose-200 transition-colors self-start md:self-auto shrink-0"
+                                        title="Client requested to revoke consent under DPDP Act"
+                                    >
+                                        Withdraw Consent
+                                    </button>
+                                ) : (
+                                    <span className="text-[11px] text-rose-600 font-medium italic">
+                                        Revoked on {dpdpConsent.withdrawn_at ? new Date(dpdpConsent.withdrawn_at).toLocaleDateString() : 'N/A'}: {dpdpConsent.withdrawn_reason || 'Client request'}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
                         {/* Caregiver Work Form & Duties Agreement */}
                         {(() => {
                             const workForm = lead?.work_form_data;
@@ -2012,6 +2341,63 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                 </div>
             )}
 
+            {/* DPDP Consent Withdrawal Confirmation Modal */}
+            {showWithdrawConfirm && (
+                <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-2xs" onClick={() => setShowWithdrawConfirm(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <ShieldAlert className="w-5 h-5 text-rose-600" />
+                                Withdraw DPDP Consent (Sec. 6(4))
+                            </h3>
+                            <button onClick={() => setShowWithdrawConfirm(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="space-y-3 text-xs text-slate-600">
+                            <p>
+                                Under India's DPDP Act 2023, the client has the legal right to revoke or withdraw consent at any time.
+                                Withdrawing consent will:
+                            </p>
+                            <ul className="list-disc pl-4 space-y-1 text-slate-700 font-medium">
+                                <li>Instantly disable promotional, festival, and marketing WhatsApp broadcasts.</li>
+                                <li>Prevent automated post-service review or feedback requests.</li>
+                                <li>Log an official audit revocation entry with timestamp and staff ID.</li>
+                            </ul>
+                            <div className="pt-2">
+                                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                    Reason for Withdrawal (Required for Compliance Proof)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={withdrawReason}
+                                    onChange={(e) => setWithdrawReason(e.target.value)}
+                                    placeholder="e.g., Client requested stop over phone / Service ended"
+                                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowWithdrawConfirm(false)}
+                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleWithdrawDpdpConsent}
+                                disabled={isSavingDpdp}
+                                className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            >
+                                {isSavingDpdp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                                Confirm Withdrawal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

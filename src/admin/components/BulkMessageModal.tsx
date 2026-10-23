@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { X, Send, MessageCircle, Copy, Check, Users, Sparkles, AlertCircle, CheckCircle2, Loader2, ExternalLink, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Send, MessageCircle, Copy, Check, Users, Sparkles, AlertCircle, CheckCircle2, Loader2, ExternalLink, RefreshCw, ChevronDown, ChevronUp, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { maskPhoneNumber } from '../../utils/phoneMask';
 import { logClientExport } from '../../services/auditService';
+import { normalizeDPDPConsent, canSendMarketing, canSendReviewRequest } from '../../services/dpdpService';
 
 interface BulkMessageModalProps {
     isOpen: boolean;
@@ -42,6 +43,8 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
     const [activeTemplateId, setActiveTemplateId] = useState<string>(PRESET_TEMPLATES[0].id);
     const [showRecipientsList, setShowRecipientsList] = useState(false);
     
+    const [enforceDpdpFilter, setEnforceDpdpFilter] = useState(true);
+
     // Dispatch progress state
     const [isSending, setIsSending] = useState(false);
     const [progress, setProgress] = useState<{ current: number; total: number; success: number; failed: number }>({
@@ -63,10 +66,55 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
         }
     }, [isOpen, initialClients]);
 
+    const isMarketingTemplate = activeTemplateId === 'festive_greetings' || activeTemplateId === 'custom';
+    const isReviewTemplate = activeTemplateId === 'service_checkin';
+
+    // Evaluate DPDP compliance per recipient for active message type
+    const dpdpEvaluated = useMemo(() => {
+        return recipients.map(c => {
+            const hasValidPhone = Boolean(c.phone && c.phone.replace(/\D/g, '').length >= 10);
+            const dpdp = normalizeDPDPConsent(c.dpdp_consent || c.client_consents?.[0]?.dpdp_consent || c, c.created_at);
+            
+            let dpdpAllowed = true;
+            let dpdpReason = 'DPDP Compliant';
+
+            if (dpdp.consent_status === 'withdrawn') {
+                dpdpAllowed = false;
+                dpdpReason = 'Consent Withdrawn under DPDP Act Sec 6(4)';
+            } else if (isMarketingTemplate && !canSendMarketing(dpdp)) {
+                dpdpAllowed = false;
+                dpdpReason = 'Not opted in to marketing broadcasts under DPDP Act';
+            } else if (isReviewTemplate && !canSendReviewRequest(dpdp)) {
+                dpdpAllowed = false;
+                dpdpReason = 'Not opted in to review/feedback messages under DPDP Act';
+            }
+
+            return {
+                client: c,
+                hasValidPhone,
+                dpdpAllowed,
+                dpdpReason,
+                dpdp,
+            };
+        });
+    }, [recipients, activeTemplateId, isMarketingTemplate, isReviewTemplate]);
+
+    const dpdpBlockedRecipients = useMemo(() => {
+        return dpdpEvaluated.filter(item => item.hasValidPhone && !item.dpdpAllowed);
+    }, [dpdpEvaluated]);
+
+    // Active recipients targeted for sending/exporting
+    const activeTargetRecipients = useMemo(() => {
+        return dpdpEvaluated
+            .filter(item => item.hasValidPhone && (!enforceDpdpFilter || item.dpdpAllowed))
+            .map(item => item.client);
+    }, [dpdpEvaluated, enforceDpdpFilter]);
+
     if (!isOpen) return null;
 
-    const validRecipients = recipients.filter(c => c.phone && c.phone.replace(/\D/g, '').length >= 10);
-    const missingPhoneCount = recipients.length - validRecipients.length;
+    const validRecipients = activeTargetRecipients;
+    const rawValidCount = recipients.filter(c => c.phone && c.phone.replace(/\D/g, '').length >= 10).length;
+    const missingPhoneCount = recipients.length - rawValidCount;
 
     const handleRemoveRecipient = (id: string) => {
         setRecipients(prev => prev.filter(c => c.id !== id));
@@ -278,7 +326,7 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                     {/* Recipients Summary Bar with Toggle Dropdown */}
                     <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:p-3.5">
                         <div className="flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <Users className="w-4 h-4 text-teal-600" />
                                 <span className="text-xs font-bold text-slate-800">
                                     {validRecipients.length} Ready to message
@@ -287,6 +335,12 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                                     <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
                                         <AlertCircle className="w-3 h-3 text-amber-600" />
                                         {missingPhoneCount} missing phone
+                                    </span>
+                                )}
+                                {dpdpBlockedRecipients.length > 0 && (
+                                    <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                                        <ShieldAlert className="w-3 h-3 text-amber-600" />
+                                        {dpdpBlockedRecipients.length} {enforceDpdpFilter ? 'excluded by DPDP' : 'DPDP opt-out'}
                                     </span>
                                 )}
                             </div>
@@ -305,6 +359,8 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                             <div className="mt-3 pt-3 border-t border-slate-200/80 max-h-48 overflow-y-auto space-y-1.5 pr-1">
                                 {recipients.map((c) => {
                                     const hasValidPhone = c.phone && c.phone.replace(/\D/g, '').length >= 10;
+                                    const evalItem = dpdpEvaluated.find(e => e.client.id === c.id);
+                                    const isBlocked = evalItem && !evalItem.dpdpAllowed;
                                     const res = dispatchResults[c.id];
                                     return (
                                         <div
@@ -314,10 +370,12 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                                                     ? 'bg-emerald-50/70 border-emerald-200'
                                                     : res?.status === 'failed'
                                                     ? 'bg-red-50/70 border-red-200'
+                                                    : isBlocked && enforceDpdpFilter
+                                                    ? 'bg-amber-50/40 border-amber-200/60 opacity-60'
                                                     : 'bg-white border-slate-200'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2 min-w-0">
+                                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                                 <span className="font-mono text-[11px] font-bold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200 shrink-0">
                                                     {c.displayId || 'CL-0001'}
                                                 </span>
@@ -328,6 +386,15 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                                                 {c.city && (
                                                     <span className="text-[10px] text-slate-500 uppercase tracking-wide px-1.5 py-0.2 bg-slate-100 rounded shrink-0">
                                                         {c.city}
+                                                    </span>
+                                                )}
+                                                {isBlocked ? (
+                                                    <span className="text-[9px] font-bold text-amber-800 bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-200 shrink-0" title={evalItem?.dpdpReason}>
+                                                        DPDP Opt-out
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[9px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200 shrink-0">
+                                                        Consent ✓
                                                     </span>
                                                 )}
                                             </div>
@@ -373,6 +440,44 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                             </div>
                         )}
                     </div>
+
+                    {/* DPDP Act 2023 Compliance Safeguard Banner */}
+                    {dpdpBlockedRecipients.length > 0 && (
+                        <div className={`p-3 rounded-xl border flex items-start justify-between gap-3 text-xs transition-colors ${
+                            enforceDpdpFilter ? 'bg-amber-50/80 border-amber-200 text-amber-900' : 'bg-rose-50 border-rose-200 text-rose-900'
+                        }`}>
+                            <div className="flex items-start gap-2.5">
+                                <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${enforceDpdpFilter ? 'text-amber-600' : 'text-rose-600'}`} />
+                                <div className="space-y-0.5">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold">
+                                            DPDP Act 2023 Compliance Safeguard
+                                        </span>
+                                        <span className="text-[10px] font-mono bg-white/70 px-1.5 py-0.2 rounded border border-amber-200/60 font-semibold">
+                                            Sec. 6(1) Opt-in Protection
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                                        {enforceDpdpFilter
+                                            ? `${dpdpBlockedRecipients.length} of ${recipients.length} selected client(s) are automatically excluded because they did not opt into ${isMarketingTemplate ? 'marketing/promotions' : 'review messages'} under India's DPDP Act.`
+                                            : `⚠️ Compliance Warning: You have disabled the DPDP safeguard filter. ${dpdpBlockedRecipients.length} recipient(s) did not opt into this communication category.`}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <label className="flex items-center gap-1.5 shrink-0 cursor-pointer font-semibold text-[11px] bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                                <input
+                                    type="checkbox"
+                                    checked={enforceDpdpFilter}
+                                    onChange={(e) => setEnforceDpdpFilter(e.target.checked)}
+                                    className="w-3.5 h-3.5 text-primary rounded border-slate-300 focus:ring-primary"
+                                />
+                                <span className={enforceDpdpFilter ? 'text-slate-800' : 'text-rose-700'}>
+                                    Exclude Opted-out
+                                </span>
+                            </label>
+                        </div>
+                    )}
 
                     {/* Template Pills */}
                     <div>
