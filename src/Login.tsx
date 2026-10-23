@@ -720,6 +720,25 @@ export default function Login() {
                                     <p className="text-[11px] text-slate-400 text-center pt-1">
                                         Paste or type 6 digits. Expires in 10 minutes.
                                     </p>
+
+                                    {/* WhatsApp 24-hour window / Didn't receive code helper */}
+                                    <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-left space-y-1 mt-2">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                            <span className="font-semibold text-slate-700">Didn't receive WhatsApp OTP?</span>
+                                            <a
+                                                href="https://wa.me/917971542924?text=Hi"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-emerald-700 hover:text-emerald-800 font-bold underline flex items-center gap-1"
+                                            >
+                                                <Phone className="w-3 h-3 text-emerald-600" />
+                                                Send "Hi" (+91 79 7154 2924)
+                                            </a>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 leading-snug">
+                                            Meta WhatsApp Cloud API requires your number to send a message to our business WhatsApp once to activate delivery, or you can switch to the <button type="button" onClick={() => setUseEmergencyKey(true)} className="text-primary font-bold underline">Emergency Key</button>.
+                                        </p>
+                                    </div>
                                 </div>
                             )}
 
