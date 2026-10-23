@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import { SessionTimeoutModal } from '../components/SessionTimeoutModal';
+import { logAudit } from '../services/auditService';
 
 export type AccessModule = 'crm' | 'clients' | 'hr' | 'finance' | 'dashboard' | 'view_phones';
 
@@ -19,16 +21,24 @@ interface AuthContextType {
     allUsers: User[]; 
     loading: boolean;
     login: (role?: string, staffUser?: User) => Promise<void>; 
-    logout: () => Promise<void>;
+    logout: (reason?: 'manual' | 'timeout') => Promise<void>;
     hasAccess: (module: AccessModule) => boolean;
     canViewPhoneNumbers: boolean;
     refreshUsers: () => Promise<void>;
     createUser: (user: User) => Promise<void>;
     updateUser: (user: User) => Promise<void>;
     deleteUser: (userId: string) => Promise<void>;
+    sessionWarning: { show: boolean; secondsLeft: number } | null;
+    resetSessionActivity: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes inactivity timeout
+export const WARNING_BEFORE_TIMEOUT_MS = 60 * 1000; // 60 seconds warning window
+export const MAX_SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours absolute maximum
+const LAST_ACTIVITY_KEY = '99care_last_activity_ts';
+const SESSION_START_KEY = '99care_session_start_ts';
 
 const AUTH_USER_KEY = '99care_os_auth_user';
 const SESSION_USER_KEY = '99care_os_session_user';
@@ -94,6 +104,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [user, setUser] = useState<User | null>(initialUser);
     const [allUsers, setAllUsers] = useState<User[]>([]); 
     const [loading, setLoading] = useState<boolean>(!initialUser);
+    const [sessionWarning, setSessionWarning] = useState<{ show: boolean; secondsLeft: number } | null>(null);
 
     const refreshUsers = useCallback(async () => {
         try {
@@ -133,6 +144,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const persisted = readPersistedUser();
             if (persisted) {
                 setUser(persisted);
+                // Initialize session activity if missing
+                const now = Date.now();
+                if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
+                    localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+                }
+                if (!localStorage.getItem(SESSION_START_KEY)) {
+                    localStorage.setItem(SESSION_START_KEY, String(now));
+                }
             } else {
                 setUser(null);
             }
@@ -142,7 +161,112 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         checkUser();
     }, [refreshUsers]);
 
+    const resetSessionActivity = useCallback(() => {
+        const now = Date.now();
+        localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+        setSessionWarning(null);
+    }, []);
+
+    const logout = useCallback(async (reason: 'manual' | 'timeout' = 'manual') => {
+        try {
+            await supabase.auth.signOut();
+        } catch (err) {
+            console.warn('Sign out warning:', err);
+        }
+        clearPersistedUser();
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        localStorage.removeItem(SESSION_START_KEY);
+        setUser(null);
+        setSessionWarning(null);
+
+        if (reason === 'timeout' && typeof window !== 'undefined') {
+            window.location.href = '/login?reason=timeout';
+        }
+    }, []);
+
+    // Session Inactivity & Lifetime Heartbeat Monitor
+    useEffect(() => {
+        if (!user) {
+            setSessionWarning(null);
+            return;
+        }
+
+        let lastThrottledRecord = Date.now();
+
+        const handleUserActivity = () => {
+            const now = Date.now();
+            if (now - lastThrottledRecord > 15000) { // Throttle activity updates to once per 15s
+                lastThrottledRecord = now;
+                localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+                setSessionWarning(null);
+            }
+        };
+
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === LAST_ACTIVITY_KEY && e.newValue) {
+                setSessionWarning(null);
+            }
+            if (e.key === AUTH_USER_KEY && !e.newValue) {
+                setUser(null);
+            }
+        };
+
+        const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+        events.forEach(evt => window.addEventListener(evt, handleUserActivity, { passive: true }));
+        window.addEventListener('storage', handleStorageChange);
+
+        const interval = setInterval(async () => {
+            const now = Date.now();
+            const storedLastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || now);
+            const storedSessionStart = Number(localStorage.getItem(SESSION_START_KEY) || now);
+
+            const idleElapsed = now - storedLastActivity;
+            const totalSessionElapsed = now - storedSessionStart;
+
+            // Trigger logout if idle limit (30m) or total max lifespan (12h) is reached
+            if (idleElapsed >= IDLE_TIMEOUT_MS || totalSessionElapsed >= MAX_SESSION_DURATION_MS) {
+                clearInterval(interval);
+                try {
+                    await logAudit({
+                        entityType: 'auth',
+                        entityId: user.id,
+                        entityName: user.name,
+                        action: 'EDIT',
+                        description: `User session automatically timed out due to 30 minutes of inactivity (${user.username})`,
+                        userId: user.id,
+                        userName: user.name,
+                        userRole: user.role,
+                    });
+                } catch (err) {
+                    console.warn('Failed to audit timeout:', err);
+                }
+                await logout('timeout');
+                return;
+            }
+
+            // Trigger 60-second warning countdown before timeout
+            const timeRemaining = IDLE_TIMEOUT_MS - idleElapsed;
+            if (timeRemaining <= WARNING_BEFORE_TIMEOUT_MS) {
+                const secondsLeft = Math.max(1, Math.ceil(timeRemaining / 1000));
+                setSessionWarning({ show: true, secondsLeft });
+            } else {
+                setSessionWarning(null);
+            }
+        }, 1000);
+
+        return () => {
+            events.forEach(evt => window.removeEventListener(evt, handleUserActivity));
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(interval);
+        };
+    }, [user, logout]);
+
     const login = async (role?: string, staffUser?: User) => {
+        const now = Date.now();
+        localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+        localStorage.setItem(SESSION_START_KEY, String(now));
+        setSessionWarning(null);
+
         if (staffUser) {
             let userToPersist = staffUser;
             try {
@@ -172,16 +296,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setLoading(false);
             await refreshUsers();
         }
-    };
-
-    const logout = async () => {
-        try {
-            await supabase.auth.signOut();
-        } catch (err) {
-            console.warn('Sign out warning:', err);
-        }
-        clearPersistedUser();
-        setUser(null);
     };
 
     const hasAccess = (module: AccessModule) => {
@@ -268,8 +382,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     return (
-        <AuthContext.Provider value={{ user, allUsers, loading, login, logout, hasAccess, canViewPhoneNumbers, refreshUsers, createUser, updateUser, deleteUser }}>
+        <AuthContext.Provider value={{
+            user,
+            allUsers,
+            loading,
+            login,
+            logout,
+            hasAccess,
+            canViewPhoneNumbers,
+            refreshUsers,
+            createUser,
+            updateUser,
+            deleteUser,
+            sessionWarning,
+            resetSessionActivity
+        }}>
             {children}
+            <SessionTimeoutModal
+                isOpen={Boolean(sessionWarning?.show && user)}
+                secondsLeft={sessionWarning?.secondsLeft || 60}
+                onStayLoggedIn={resetSessionActivity}
+                onLogoutNow={() => logout('manual')}
+            />
         </AuthContext.Provider>
     );
 };

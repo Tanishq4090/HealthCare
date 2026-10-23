@@ -1,17 +1,37 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Loader2, Lock, User as UserIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Loader2, Lock, User as UserIcon, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, AlertCircle, Clock } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { supabase } from './lib/supabase';
+import { initiateAdminTwoFactor, verifyAdminTwoFactor, resendAdminTwoFactorCode, cancelTwoFactorChallenge } from './services/twoFactorService';
 
 export default function Login() {
     const { user, login } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [isLoading, setIsLoading] = useState(false);
 
+    // Step 1: Credentials state
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+
+    // Step 2: 2FA State for Admin accounts
+    const [pending2FA, setPending2FA] = useState<{
+        challengeId: string;
+        maskedPhone: string;
+        devCode?: string;
+        pendingRole?: string;
+        pendingStaffUser?: any;
+    } | null>(null);
+
+    const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
+    const [resendCooldown, setResendCooldown] = useState(30);
+    const [useEmergencyKey, setUseEmergencyKey] = useState(false);
+    const [emergencyKeyInput, setEmergencyKeyInput] = useState('');
+    const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+    const timeoutReason = searchParams.get('reason') === 'timeout';
 
     // Auto-redirect if already logged in
     useEffect(() => {
@@ -20,7 +40,16 @@ export default function Login() {
         }
     }, [user, navigate]);
 
-    const handleLogin = async (e: React.FormEvent) => {
+    // Resend cooldown timer for 2FA
+    useEffect(() => {
+        if (!pending2FA || resendCooldown <= 0) return;
+        const interval = setInterval(() => {
+            setResendCooldown(prev => Math.max(0, prev - 1));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [pending2FA, resendCooldown]);
+
+    const handleInitialSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
 
@@ -34,13 +63,32 @@ export default function Login() {
         try {
             const cleanUser = username.toLowerCase().trim();
 
-            // Built-in owner account for managing OS staff users.
+            // 1. Built-in super admin account
             if (cleanUser === 'admin' && password === 'password123') {
-                 await login('admin');
-                 navigate('/admin', { replace: true });
-                 return;
+                const adminUserObj: any = {
+                    id: 'admin',
+                    username: 'admin',
+                    name: 'System Admin',
+                    role: 'admin',
+                    accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
+                    avatar: 'SA'
+                };
+
+                // Trigger 2FA for Admin accounts
+                const challenge = await initiateAdminTwoFactor(adminUserObj);
+                setPending2FA({
+                    challengeId: challenge.challengeId,
+                    maskedPhone: challenge.maskedPhone,
+                    devCode: challenge.devCode,
+                    pendingRole: 'admin',
+                    pendingStaffUser: undefined
+                });
+                setResendCooldown(30);
+                setOtpCode(['', '', '', '', '', '']);
+                return;
             }
 
+            // 2. Database staff authentication via Edge Function
             const { data, error } = await supabase.functions.invoke('staff-auth', {
                 body: {
                     action: 'login',
@@ -50,6 +98,22 @@ export default function Login() {
             });
 
             if (!error && data?.user) {
+                // If staff account is an Admin, require 2FA
+                if (data.user.role === 'admin') {
+                    const challenge = await initiateAdminTwoFactor(data.user);
+                    setPending2FA({
+                        challengeId: challenge.challengeId,
+                        maskedPhone: challenge.maskedPhone,
+                        devCode: challenge.devCode,
+                        pendingRole: undefined,
+                        pendingStaffUser: data.user
+                    });
+                    setResendCooldown(30);
+                    setOtpCode(['', '', '', '', '', '']);
+                    return;
+                }
+
+                // Standard non-admin staff log in directly
                 await login(undefined, data.user);
                 navigate('/admin', { replace: true });
                 return;
@@ -64,85 +128,337 @@ export default function Login() {
         }
     };
 
+    // OTP Box Navigation
+    const handleOtpChange = (index: number, val: string) => {
+        const clean = val.replace(/\D/g, '');
+        const updated = [...otpCode];
+
+        if (clean.length > 1) {
+            // User pasted multi-digit text
+            const chars = clean.slice(0, 6).split('');
+            for (let i = 0; i < 6; i++) {
+                updated[i] = chars[i] || '';
+            }
+            setOtpCode(updated);
+            const nextIdx = Math.min(clean.length, 5);
+            otpInputRefs.current[nextIdx]?.focus();
+            return;
+        }
+
+        updated[index] = clean.slice(-1);
+        setOtpCode(updated);
+
+        if (clean && index < 5) {
+            otpInputRefs.current[index + 1]?.focus();
+        }
+    };
+
+    const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Backspace' && !otpCode[index] && index > 0) {
+            otpInputRefs.current[index - 1]?.focus();
+        }
+    };
+
+    const handleOtpPaste = (e: React.ClipboardEvent) => {
+        e.preventDefault();
+        const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+        if (!pasted) return;
+        const updated = ['', '', '', '', '', ''];
+        for (let i = 0; i < pasted.length; i++) {
+            updated[i] = pasted[i];
+        }
+        setOtpCode(updated);
+        const focusIdx = Math.min(pasted.length, 5);
+        otpInputRefs.current[focusIdx]?.focus();
+    };
+
+    const handleVerifyTwoFactor = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+
+        if (!pending2FA) return;
+
+        const codeToVerify = useEmergencyKey ? emergencyKeyInput.trim() : otpCode.join('');
+        if (!useEmergencyKey && codeToVerify.length < 6) {
+            setError('Please enter the complete 6-digit verification code.');
+            return;
+        }
+        if (useEmergencyKey && !codeToVerify) {
+            setError('Please enter your emergency admin security key.');
+            return;
+        }
+
+        setIsLoading(true);
+
+        try {
+            const result = await verifyAdminTwoFactor(pending2FA.challengeId, codeToVerify);
+            if (!result.success) {
+                setError(result.error || 'Verification failed.');
+                return;
+            }
+
+            // 2FA Succeeded: Complete persistent login
+            await login(pending2FA.pendingRole, pending2FA.pendingStaffUser);
+            navigate('/admin', { replace: true });
+        } catch (err: any) {
+            setError(err.message || 'Two-factor verification failed.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleResendCode = async () => {
+        if (!pending2FA || resendCooldown > 0) return;
+        setIsLoading(true);
+        setError('');
+        try {
+            const adminUserObj = pending2FA.pendingStaffUser || {
+                id: 'admin',
+                username: 'admin',
+                name: 'System Admin',
+                role: 'admin',
+                accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
+                avatar: 'SA'
+            };
+            const res = await resendAdminTwoFactorCode(adminUserObj);
+            if (res.success) {
+                setResendCooldown(30);
+                if (res.devCode) {
+                    setPending2FA(prev => prev ? { ...prev, devCode: res.devCode } : null);
+                }
+            } else {
+                setError(res.error || 'Failed to resend code');
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleCancel2FA = () => {
+        cancelTwoFactorChallenge();
+        setPending2FA(null);
+        setError('');
+        setOtpCode(['', '', '', '', '', '']);
+        setUseEmergencyKey(false);
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 selection:bg-primary/20">
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
                 * { font-family: 'Plus Jakarta Sans', sans-serif; }
-                .login-card { animation: cardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
-                @keyframes cardIn { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: none; } }
+                .login-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+                @keyframes cardIn { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
             `}</style>
 
-            <div className="w-full max-w-sm login-card">
+            <div className="w-full max-w-sm sm:max-w-md login-card">
                 {/* Logo & Header */}
-                <div className="text-center mb-8">
-                    <div className="w-20 h-20 bg-white shadow-xl shadow-slate-200/50 rounded-3xl flex items-center justify-center mx-auto mb-6 p-3 ring-1 ring-slate-100">
+                <div className="text-center mb-6">
+                    <div className="w-20 h-20 bg-white shadow-xl shadow-slate-200/50 rounded-3xl flex items-center justify-center mx-auto mb-5 p-3 ring-1 ring-slate-100">
                         <img 
                             src="/99care-logo.png"
                             alt="99 Care Logo" 
                             className="w-full h-full object-contain"
                         />
                     </div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">99 Care OS</h1>
-                    <p className="text-slate-500 font-medium">Healthcare Operations Management</p>
+                    <h1 className="text-3xl font-extrabold text-slate-900 mb-1 tracking-tight">99 Care OS</h1>
+                    <p className="text-slate-500 font-medium text-sm">Healthcare Operations & Clinical ERP</p>
                 </div>
 
-                {/* Login Box */}
-                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-xl shadow-slate-200/50">
-                    <form onSubmit={handleLogin} className="space-y-5">
-
-                        {error && (
-                            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm border border-red-100 font-medium">
-                                {error}
-                            </div>
-                        )}
-
-                        <div className="space-y-2">
-                            <label className="text-sm font-bold text-slate-700">Username</label>
-                            <div className="relative">
-                                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input
-                                    type="text"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    placeholder="Enter your username"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                />
-                            </div>
+                {/* Session Timeout Banner if redirected */}
+                {timeoutReason && !pending2FA && (
+                    <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-800 shadow-xs">
+                        <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                            <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Session Expired</p>
+                            <p className="text-xs text-amber-700/90 mt-0.5 leading-relaxed">
+                                You were automatically logged out due to 30 minutes of inactivity for patient data protection.
+                            </p>
                         </div>
+                    </div>
+                )}
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-bold text-slate-700">Password</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="Enter your password"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                />
-                            </div>
-                        </div>
+                {/* Login or 2FA Box */}
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xl shadow-slate-200/50">
 
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="w-full bg-primary text-white font-bold py-3.5 px-4 rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed mt-2"
-                        >
-                            {isLoading ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                                "Sign In"
+                    {!pending2FA ? (
+                        /* STEP 1: Username & Password Form */
+                        <form onSubmit={handleInitialSubmit} className="space-y-4">
+                            {error && (
+                                <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs sm:text-sm border border-red-100 font-semibold flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <span>{error}</span>
+                                </div>
                             )}
-                        </button>
-                    </form>
 
-                    {/* Security Update: Removed dev-note for default plain text admin credentials */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600">Username</label>
+                                <div className="relative">
+                                    <UserIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                        placeholder="Enter your OS username"
+                                        autoComplete="username"
+                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600">Password</label>
+                                <div className="relative">
+                                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="Enter your account password"
+                                        autoComplete="current-password"
+                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-[#0f172a] font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="w-full bg-primary text-white font-bold py-3.5 px-4 rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed mt-3 text-sm"
+                            >
+                                {isLoading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    "Sign In"
+                                )}
+                            </button>
+                        </form>
+                    ) : (
+                        /* STEP 2: Admin Two-Factor Verification */
+                        <form onSubmit={handleVerifyTwoFactor} className="space-y-5 animate-in fade-in duration-200">
+                            <div className="text-center pb-2">
+                                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-emerald-200">
+                                    <ShieldCheck className="w-6 h-6" />
+                                </div>
+                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 mb-1">
+                                    Admin Two-Factor Auth
+                                </span>
+                                <h2 className="text-lg font-extrabold text-slate-900">
+                                    Verification Code Required
+                                </h2>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                    Enter the 6-digit passcode sent to your registered admin WhatsApp device (<span className="font-mono font-semibold text-slate-700">{pending2FA.maskedPhone}</span>).
+                                </p>
+                            </div>
+
+                            {/* Dev Testing Helper (shows generated OTP during local testing/demo) */}
+                            {pending2FA.devCode && (
+                                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                                    <span className="text-[11px] text-blue-700 font-semibold">
+                                        Test Passcode: <span className="font-mono font-black text-blue-900 text-sm tracking-widest">{pending2FA.devCode}</span>
+                                    </span>
+                                </div>
+                            )}
+
+                            {error && (
+                                <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs border border-red-100 font-semibold flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
+                            {!useEmergencyKey ? (
+                                /* 6-Box OTP Input */
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between gap-1.5 sm:gap-2" onPaste={handleOtpPaste}>
+                                        {otpCode.map((digit, idx) => (
+                                            <input
+                                                key={idx}
+                                                ref={el => { otpInputRefs.current[idx] = el; }}
+                                                type="text"
+                                                inputMode="numeric"
+                                                maxLength={1}
+                                                value={digit}
+                                                onChange={(e) => handleOtpChange(idx, e.target.value)}
+                                                onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                                                className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-xl font-black font-mono rounded-xl border transition-all focus:outline-none ${
+                                                    digit
+                                                        ? 'border-emerald-500 bg-emerald-50/40 text-emerald-950 ring-2 ring-emerald-500/20'
+                                                        : 'border-slate-200 bg-slate-50 text-slate-900 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20'
+                                                }`}
+                                            />
+                                        ))}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 text-center pt-1">
+                                        Paste or type 6 digits. Expires in 10 minutes.
+                                    </p>
+                                </div>
+                            ) : (
+                                /* Emergency Security Key Input */
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                                        <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                                        Emergency Admin Key
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={emergencyKeyInput}
+                                        onChange={(e) => setEmergencyKeyInput(e.target.value)}
+                                        placeholder="Enter master bypass key"
+                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-[#0f172a] font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    />
+                                </div>
+                            )}
+
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed text-sm"
+                            >
+                                {isLoading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    "Verify & Access Admin OS"
+                                )}
+                            </button>
+
+                            {/* Resend and Recovery Key options */}
+                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    disabled={resendCooldown > 0 || isLoading}
+                                    onClick={handleResendCode}
+                                    className="text-slate-500 hover:text-slate-800 disabled:opacity-50 font-medium flex items-center gap-1"
+                                >
+                                    <RefreshCw className="w-3 h-3" />
+                                    {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend Code'}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setUseEmergencyKey(prev => !prev)}
+                                    className="text-slate-500 hover:text-primary font-semibold transition-colors"
+                                >
+                                    {useEmergencyKey ? 'Use 6-Digit OTP' : 'Use Emergency Key'}
+                                </button>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handleCancel2FA}
+                                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-600 flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                                Back to Username & Password
+                            </button>
+                        </form>
+                    )}
+
                 </div>
 
-                <div className="text-center mt-8 text-xs text-slate-400">
-                    <p>Secured by 99 Care OS Authentication</p>
+                <div className="text-center mt-6 text-xs text-slate-400 flex items-center justify-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>DPDP Act 2023 & Healthcare Security Enabled</span>
                 </div>
             </div>
         </div>

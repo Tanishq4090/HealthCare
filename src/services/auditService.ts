@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 import { getDeviceInfo, getClientIp, type DeviceInfo } from '../utils/deviceInfo';
 
 export type AuditAction = 'VIEW' | 'EDIT' | 'EXPORT' | 'SERVICE_CHANGE' | 'DELETE' | 'CREATE';
-export type AuditEntityType = 'client' | 'lead' | 'worker' | 'finance';
+export type AuditEntityType = 'client' | 'lead' | 'worker' | 'finance' | 'admin' | 'auth';
 
 export interface AuditLogChanges {
     fields?: string[];
@@ -71,6 +71,8 @@ function resolveCurrentStaffUser(): { id: string; name: string; role: string } {
 /**
  * Records an audit log entry in Supabase with device metadata and diffs.
  */
+export const logAudit = logAuditEvent;
+
 export async function logAuditEvent(params: LogAuditParams): Promise<void> {
     try {
         // Prevent duplicate views of the same client within 60 seconds

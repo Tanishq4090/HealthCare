@@ -6,9 +6,10 @@ import { Loader2 } from 'lucide-react';
 interface ProtectedRouteProps {
     children: React.ReactNode;
     requiredModule?: AccessModule;
+    adminOnly?: boolean;
 }
 
-export default function ProtectedRoute({ children, requiredModule }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requiredModule, adminOnly }: ProtectedRouteProps) {
     const { user, hasAccess, loading } = useAuth();
     const location = useLocation();
 
@@ -25,6 +26,11 @@ export default function ProtectedRoute({ children, requiredModule }: ProtectedRo
 
     if (!user) {
         return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    // Check if route strictly requires System Administrator
+    if (adminOnly && user.role !== 'admin') {
+        return <Navigate to="/admin" replace />;
     }
 
     // Check if a specific module is required and if the user has access

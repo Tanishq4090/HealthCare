@@ -22,10 +22,12 @@ import {
 import { markPayslipDispatched, toggleWorkerPaidStatus, computePayrollBalance, PAYSLIP_SENT_STATUS } from '../utils/payrollDispatch';
 
 export default function HR() {
+    const { user, hasAccess } = useAuth();
+    const canAccessPayroll = hasAccess('finance');
     const [searchParams, setSearchParams] = useSearchParams();
     const urlTab = searchParams.get('tab');
     const [activeTab, setActiveTab] = useState<'allocation' | 'attendance' | 'payroll'>(
-        urlTab === 'payroll' || urlTab === 'attendance' ? urlTab : 'allocation'
+        (urlTab === 'payroll' && canAccessPayroll) || urlTab === 'attendance' ? (urlTab as any) : 'allocation'
     );
     const [isGenerating, setIsGenerating] = useState(false);
     const [workers, setWorkers] = useState<any[]>([]);
@@ -35,7 +37,6 @@ export default function HR() {
     const [isLoading, setIsLoading] = useState(true);
     const [workerSearch, setWorkerSearch] = useState('');
     const [workerStatusFilter, setWorkerStatusFilter] = useState<string>('All');
-    const { user } = useAuth();
     const [requestDeleteWorker, setRequestDeleteWorker] = useState<{ id: string; name: string } | null>(null);
     const [deletingWorkerId, setDeletingWorkerId] = useState<string | null>(null);
     const [isDeletingWorker, setIsDeletingWorker] = useState(false);
@@ -296,7 +297,9 @@ export default function HR() {
         try {
             // Fetch from employees table instead of workers
             const { data: employeeData, error: employeeError } = await supabase.from('employees').select('*');
-            const { data: payrollData, error: payrollError } = await supabase.from('payroll').select('*');
+            const { data: payrollData, error: payrollError } = canAccessPayroll
+                ? await supabase.from('payroll').select('*')
+                : { data: [], error: null };
             // Fix: use assignment_status (not status), and fetch ALL statuses so completed duties appear
             const { data: assignmentsData } = await supabase
                 .from('worker_assignments')
@@ -1073,12 +1076,17 @@ export default function HR() {
     // Sync active tab with URL query parameter (?tab=payroll, etc.)
     useEffect(() => {
         const tabParam = searchParams.get('tab') as any;
+        if (tabParam === 'payroll' && !canAccessPayroll) {
+            setActiveTab('allocation');
+            setSearchParams({ tab: 'allocation' });
+            return;
+        }
         if (tabParam && ['allocation', 'attendance', 'payroll'].includes(tabParam)) {
             setActiveTab(tabParam);
         } else if (!tabParam && activeTab !== 'allocation') {
             setActiveTab('allocation');
         }
-    }, [searchParams]);
+    }, [searchParams, canAccessPayroll]);
 
     const handleInlineAttendanceMark = async (workerId: string, status: string) => {
         setInlineMarkingId(workerId);
@@ -2311,12 +2319,14 @@ export default function HR() {
                     >
                         Attendance
                     </button>
-                    <button
-                        onClick={() => { setActiveTab('payroll'); setSearchParams({ tab: 'payroll' }); fetchData(); }}
-                        className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'payroll' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                        Payroll
-                    </button>
+                    {canAccessPayroll && (
+                        <button
+                            onClick={() => { setActiveTab('payroll'); setSearchParams({ tab: 'payroll' }); fetchData(); }}
+                            className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'payroll' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                            Payroll
+                        </button>
+                    )}
                 </div>
             </div>
 

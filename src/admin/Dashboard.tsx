@@ -54,7 +54,8 @@ type WebsiteBooking = {
 };
 
 export default function Dashboard() {
-    const { canViewPhoneNumbers } = useAuth();
+    const { canViewPhoneNumbers, hasAccess } = useAuth();
+    const canViewFinance = hasAccess('finance');
     const navigate = useNavigate();
 
     const [stats, setStats] = useState({
@@ -532,10 +533,12 @@ export default function Dashboard() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 font-['Plus_Jakarta_Sans']">
-                        Business Dashboard
+                        {canViewFinance ? 'Business Dashboard' : 'Care & Operations Dashboard'}
                     </h1>
                     <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                        Real-time cash collections, website bookings, staff duties, and outstanding balances.
+                        {canViewFinance
+                            ? 'Real-time cash collections, website bookings, staff duties, and outstanding balances.'
+                            : 'Real-time caregiver deployments, duty rosters, website bookings, and patient intake.'}
                     </p>
                 </div>
                 <button
@@ -547,52 +550,54 @@ export default function Dashboard() {
                 </button>
             </div>
 
-            {/* ── 1. Top Section: Monthly Collections Graph ─────────────────────── */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
-                    <div>
-                        <h2 className="font-bold text-slate-900 text-base">Monthly Cash Collections</h2>
-                        <p className="text-xs text-slate-500">Total money collected (Security Deposits + Care Service Fees) over the last 6 months.</p>
+            {/* ── 1. Top Section: Monthly Collections Graph (Finance Module Only) ─── */}
+            {canViewFinance && (
+                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
+                        <div>
+                            <h2 className="font-bold text-slate-900 text-base">Monthly Cash Collections</h2>
+                            <p className="text-xs text-slate-500">Total money collected (Security Deposits + Care Service Fees) over the last 6 months.</p>
+                        </div>
+                        <div className="flex items-center flex-wrap gap-6 sm:gap-8">
+                            <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collections</span>
+                                <span className="text-lg sm:text-xl font-black text-slate-900">₹{stats.totalCollections.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">This Month</span>
+                                <span className="text-lg sm:text-xl font-black text-emerald-600">₹{stats.monthCollections.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Deposits in Hand</span>
+                                <span className="text-lg sm:text-xl font-black text-indigo-600">₹{stats.depositsHeld.toLocaleString('en-IN')}</span>
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex items-center flex-wrap gap-6 sm:gap-8">
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collections</span>
-                            <span className="text-lg sm:text-xl font-black text-slate-900">₹{stats.totalCollections.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">This Month</span>
-                            <span className="text-lg sm:text-xl font-black text-emerald-600">₹{stats.monthCollections.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Deposits in Hand</span>
-                            <span className="text-lg sm:text-xl font-black text-indigo-600">₹{stats.depositsHeld.toLocaleString('en-IN')}</span>
-                        </div>
+
+                    <div className="h-[220px] sm:h-[260px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={monthlyCollectionsTrend} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorCollections" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0.02}/>
+                                    </linearGradient>
+                                </defs>
+                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
+                                <Tooltip
+                                    formatter={(val: number) => [`₹${val.toLocaleString('en-IN')}`, 'Total Collected']}
+                                    contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontWeight: 'bold' }}
+                                />
+                                <Area type="monotone" dataKey="total" stroke="#0d9488" strokeWidth={3} fillOpacity={1} fill="url(#colorCollections)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
+            )}
 
-                <div className="h-[220px] sm:h-[260px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={monthlyCollectionsTrend} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorCollections" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#0d9488" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#0d9488" stopOpacity={0.02}/>
-                                </linearGradient>
-                            </defs>
-                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
-                            <Tooltip
-                                formatter={(val: number) => [`₹${val.toLocaleString('en-IN')}`, 'Total Collected']}
-                                contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontWeight: 'bold' }}
-                            />
-                            <Area type="monotone" dataKey="total" stroke="#0d9488" strokeWidth={3} fillOpacity={1} fill="url(#colorCollections)" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            {/* ── 2. Core Numbers: 6 Dedicated Cards (Opens Exact Tabs!) ─────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            {/* ── 2. Core Numbers: Role-Aware Cards ─────────────────────────────── */}
+            <div className={`grid gap-3 sm:gap-4 ${canViewFinance ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
                 {/* 1. Staff on Duty */}
                 <div
                     onClick={() => navigate('/admin/clients')}
@@ -633,73 +638,78 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* 3. Staff Wages Due (Opens HR Payroll Tab Directly!) */}
-                <div
-                    onClick={() => navigate('/admin/hr?tab=payroll')}
-                    className="bg-rose-50/40 p-4 rounded-xl border border-rose-200/90 hover:border-rose-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-extrabold text-rose-800 uppercase tracking-wider">Staff Wages Due</span>
-                        <div className="p-1.5 rounded-lg bg-rose-100 text-rose-700">
-                            <Wallet className="w-4 h-4" />
+                {/* Finance Metrics: Visible ONLY to users with Finance module access */}
+                {canViewFinance && (
+                    <>
+                        {/* 3. Staff Wages Due */}
+                        <div
+                            onClick={() => navigate('/admin/hr?tab=payroll')}
+                            className="bg-rose-50/40 p-4 rounded-xl border border-rose-200/90 hover:border-rose-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-extrabold text-rose-800 uppercase tracking-wider">Staff Wages Due</span>
+                                <div className="p-1.5 rounded-lg bg-rose-100 text-rose-700">
+                                    <Wallet className="w-4 h-4" />
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-black text-rose-900">₹{stats.staffPayables.toLocaleString('en-IN')}</h3>
+                                <p className="text-[11px] font-bold text-rose-700 mt-1 flex items-center justify-between">
+                                    <span>₹{stats.relievedStaffDues.toLocaleString('en-IN')} ready for {stats.relievedStaffCount} relieved</span>
+                                    <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                        Pay in HR →
+                                    </span>
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-black text-rose-900">₹{stats.staffPayables.toLocaleString('en-IN')}</h3>
-                        <p className="text-[11px] font-bold text-rose-700 mt-1 flex items-center justify-between">
-                            <span>₹{stats.relievedStaffDues.toLocaleString('en-IN')} ready for {stats.relievedStaffCount} relieved</span>
-                            <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                                Pay in HR →
-                            </span>
-                        </p>
-                    </div>
-                </div>
 
-                {/* 4. Client Invoices Due (Opens Billing Monthly Tab Directly!) */}
-                <div
-                    onClick={() => navigate('/admin/billing?tab=monthly')}
-                    className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/90 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-extrabold text-amber-800 uppercase tracking-wider">Invoices Due</span>
-                        <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700">
-                            <FileText className="w-4 h-4" />
+                        {/* 4. Client Invoices Due */}
+                        <div
+                            onClick={() => navigate('/admin/billing?tab=monthly')}
+                            className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/90 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-extrabold text-amber-800 uppercase tracking-wider">Invoices Due</span>
+                                <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700">
+                                    <FileText className="w-4 h-4" />
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-black text-amber-900">₹{stats.clientReceivables.toLocaleString('en-IN')}</h3>
+                                <p className="text-[11px] font-bold text-amber-700 mt-1 flex items-center justify-between">
+                                    <span>{stats.clientUnpaidCount} unpaid</span>
+                                    <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                        Invoices →
+                                    </span>
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-black text-amber-900">₹{stats.clientReceivables.toLocaleString('en-IN')}</h3>
-                        <p className="text-[11px] font-bold text-amber-700 mt-1 flex items-center justify-between">
-                            <span>{stats.clientUnpaidCount} unpaid</span>
-                            <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                                Invoices →
-                            </span>
-                        </p>
-                    </div>
-                </div>
 
-                {/* 5. Security Deposits Held (Opens Billing Deposits Tab Directly!) */}
-                <div
-                    onClick={() => navigate('/admin/billing?tab=deposits')}
-                    className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200/90 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-extrabold text-indigo-800 uppercase tracking-wider">Deposits Held</span>
-                        <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
-                            <IndianRupee className="w-4 h-4" />
+                        {/* 5. Security Deposits Held */}
+                        <div
+                            onClick={() => navigate('/admin/billing?tab=deposits')}
+                            className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200/90 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-extrabold text-indigo-800 uppercase tracking-wider">Deposits Held</span>
+                                <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
+                                    <IndianRupee className="w-4 h-4" />
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-black text-indigo-900">₹{stats.depositsHeld.toLocaleString('en-IN')}</h3>
+                                <p className="text-[11px] font-bold text-indigo-700 mt-1 flex items-center justify-between">
+                                    <span>In reserve</span>
+                                    <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                        Deposits →
+                                    </span>
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-black text-indigo-900">₹{stats.depositsHeld.toLocaleString('en-IN')}</h3>
-                        <p className="text-[11px] font-bold text-indigo-700 mt-1 flex items-center justify-between">
-                            <span>In reserve</span>
-                            <span className="flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                                Deposits →
-                            </span>
-                        </p>
-                    </div>
-                </div>
+                    </>
+                )}
 
-                {/* 6. Website Bookings */}
+                {/* Website Bookings */}
                 <div
                     onClick={() => navigate('/admin/crm')}
                     className="bg-teal-50/40 p-4 rounded-xl border border-teal-200/90 hover:border-teal-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
@@ -720,6 +730,28 @@ export default function Dashboard() {
                         </p>
                     </div>
                 </div>
+
+                {/* Operations Alternative Metric for Nurse Coordinators / Non-Finance */}
+                {!canViewFinance && (
+                    <div
+                        onClick={() => navigate('/admin/crm')}
+                        className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200/90 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-extrabold text-indigo-800 uppercase tracking-wider">Active Leads</span>
+                            <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
+                                <Users className="w-4 h-4" />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-black text-indigo-900">{stats.activeLeadsCount}</h3>
+                            <p className="text-[11px] font-bold text-indigo-700 mt-1 flex items-center justify-between">
+                                <span>In care pipeline</span>
+                                <ArrowRight className="w-3 h-3 text-indigo-600 group-hover:translate-x-1 transition-transform" />
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── 3. Recent Website Bookings (Prominent Section) ─────────────────── */}
@@ -842,130 +874,132 @@ export default function Dashboard() {
                 )}
             </div>
 
-            {/* ── 4. Immediate Action Items (Two Clean Side-by-Side Lists) ───────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Column 1: Relieved Staff Awaiting Payout */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-                        <div>
-                            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-rose-500" />
-                                Staff Awaiting Wage Payment
-                                {stats.relievedStaffDues > 0 && (
-                                    <span className="text-[11px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
-                                        ₹{stats.relievedStaffDues.toLocaleString('en-IN')} Ready
-                                    </span>
-                                )}
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Relieved staff whose duty finished and are ready for settlement</p>
-                        </div>
-                        <button
-                            onClick={() => navigate('/admin/hr?tab=payroll')}
-                            className="text-xs font-bold text-teal-600 hover:text-teal-700"
-                        >
-                            Open HR Payroll →
-                        </button>
-                    </div>
-
-                    <div className="flex-1 overflow-auto space-y-2.5">
-                        {urgentStaffPayouts.length > 0 ? (
-                            urgentStaffPayouts.slice(0, 5).map(item => (
-                                <div
-                                    key={item.id}
-                                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3"
-                                >
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-bold text-slate-900 truncate">
-                                                {item.worker}
-                                            </span>
-                                            {item.type === 'final' && (
-                                                <span className="text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded">
-                                                    Relieved
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p className="text-xs text-slate-500 mt-0.5">
-                                            Client: <span className="font-semibold text-slate-700">{item.client_name}</span> • {item.days_worked} days
-                                        </p>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <div className="text-sm font-black text-rose-700">
-                                            ₹{item.net_balance.toLocaleString('en-IN')}
-                                        </div>
-                                        <button
-                                            onClick={() => navigate('/admin/hr?tab=payroll')}
-                                            className="mt-1 px-2.5 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200 transition-colors"
-                                        >
-                                            Pay in HR →
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-6 text-slate-400 text-xs">
-                                <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
-                                All worker payouts are up to date.
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Column 2: Unpaid Client Invoices */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-                        <div>
-                            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                                Client Invoices Pending Payment
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Uncollected service bills issued to clients</p>
-                        </div>
-                        <button
-                            onClick={() => navigate('/admin/billing?tab=monthly')}
-                            className="text-xs font-bold text-teal-600 hover:text-teal-700"
-                        >
-                            Open Billing →
-                        </button>
-                    </div>
-
-                    <div className="flex-1 overflow-auto space-y-2.5">
-                        {urgentClientBills.length > 0 ? (
-                            urgentClientBills.slice(0, 5).map(bill => (
-                                <div
-                                    key={bill.id}
-                                    className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3"
-                                >
-                                    <div className="min-w-0">
-                                        <span className="text-sm font-bold text-slate-900 truncate block">
-                                            {bill.client_name}
+            {/* ── 4. Immediate Action Items (Finance Module Only) ──────────────── */}
+            {canViewFinance && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Column 1: Relieved Staff Awaiting Payout */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                            <div>
+                                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                                    Staff Awaiting Wage Payment
+                                    {stats.relievedStaffDues > 0 && (
+                                        <span className="text-[11px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
+                                            ₹{stats.relievedStaffDues.toLocaleString('en-IN')} Ready
                                         </span>
-                                        <p className="text-xs text-slate-500 mt-0.5">
-                                            Period: <span className="font-medium text-slate-700">{bill.period_start} to {bill.period_end}</span>
-                                        </p>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <div className="text-sm font-black text-amber-900">
-                                            ₹{bill.amount.toLocaleString('en-IN')}
-                                        </div>
-                                        <button
-                                            onClick={() => navigate('/admin/billing?tab=monthly')}
-                                            className="mt-1 px-2.5 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] transition-colors"
-                                        >
-                                            Collect →
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-6 text-slate-400 text-xs">
-                                <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
-                                All client invoices are collected.
+                                    )}
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Relieved staff whose duty finished and are ready for settlement</p>
                             </div>
-                        )}
+                            <button
+                                onClick={() => navigate('/admin/hr?tab=payroll')}
+                                className="text-xs font-bold text-teal-600 hover:text-teal-700"
+                            >
+                                Open HR Payroll →
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto space-y-2.5">
+                            {urgentStaffPayouts.length > 0 ? (
+                                urgentStaffPayouts.slice(0, 5).map(item => (
+                                    <div
+                                        key={item.id}
+                                        className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3"
+                                    >
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-bold text-slate-900 truncate">
+                                                    {item.worker}
+                                                </span>
+                                                {item.type === 'final' && (
+                                                    <span className="text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded">
+                                                        Relieved
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                Client: <span className="font-semibold text-slate-700">{item.client_name}</span> • {item.days_worked} days
+                                            </p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <div className="text-sm font-black text-rose-700">
+                                                ₹{item.net_balance.toLocaleString('en-IN')}
+                                            </div>
+                                            <button
+                                                onClick={() => navigate('/admin/hr?tab=payroll')}
+                                                className="mt-1 px-2.5 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200 transition-colors"
+                                            >
+                                                Pay in HR →
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-6 text-slate-400 text-xs">
+                                    <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+                                    All worker payouts are up to date.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Column 2: Unpaid Client Invoices */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                            <div>
+                                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                    Client Invoices Pending Payment
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Uncollected service bills issued to clients</p>
+                            </div>
+                            <button
+                                onClick={() => navigate('/admin/billing?tab=monthly')}
+                                className="text-xs font-bold text-teal-600 hover:text-teal-700"
+                            >
+                                Open Billing →
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto space-y-2.5">
+                            {urgentClientBills.length > 0 ? (
+                                urgentClientBills.slice(0, 5).map(bill => (
+                                    <div
+                                        key={bill.id}
+                                        className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3"
+                                    >
+                                        <div className="min-w-0">
+                                            <span className="text-sm font-bold text-slate-900 truncate block">
+                                                {bill.client_name}
+                                            </span>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                Period: <span className="font-medium text-slate-700">{bill.period_start} to {bill.period_end}</span>
+                                            </p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <div className="text-sm font-black text-amber-900">
+                                                ₹{bill.amount.toLocaleString('en-IN')}
+                                            </div>
+                                            <button
+                                                onClick={() => navigate('/admin/billing?tab=monthly')}
+                                                className="mt-1 px-2.5 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] transition-colors"
+                                            >
+                                                Collect →
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-6 text-slate-400 text-xs">
+                                    <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+                                    All client invoices are collected.
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* ── 5. Compact Recent Activity Stream ─────────────────────────────── */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">

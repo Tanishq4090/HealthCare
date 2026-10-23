@@ -104,7 +104,7 @@ function AppContent() {
             <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
             <Route path="hr" element={<ProtectedRoute requiredModule="hr"><HR /></ProtectedRoute>} />
             <Route path="billing" element={<ProtectedRoute requiredModule="finance"><Billing /></ProtectedRoute>} />
-            <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
+            <Route path="settings" element={<ProtectedRoute adminOnly><AccessControl /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
 
@@ -162,7 +162,7 @@ function AppContent() {
           <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
           <Route path="hr" element={<ProtectedRoute requiredModule="hr"><HR /></ProtectedRoute>} />
           <Route path="billing" element={<ProtectedRoute requiredModule="finance"><Billing /></ProtectedRoute>} />
-          <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
+          <Route path="settings" element={<ProtectedRoute adminOnly><AccessControl /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
 
@@ -208,7 +208,7 @@ function AppContent() {
           <Route path="clients" element={<ProtectedRoute requiredModule="clients"><Clients /></ProtectedRoute>} />
           <Route path="hr" element={<ProtectedRoute requiredModule="hr"><HR /></ProtectedRoute>} />
           <Route path="billing" element={<ProtectedRoute requiredModule="finance"><Billing /></ProtectedRoute>} />
-          <Route path="settings" element={<ProtectedRoute><AccessControl /></ProtectedRoute>} />
+          <Route path="settings" element={<ProtectedRoute adminOnly><AccessControl /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
 

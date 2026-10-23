@@ -736,7 +736,7 @@ export default function AdminLayout() {
             items: [
                 { name: 'Invoices & Billing', href: '/admin/billing?tab=monthly', icon: FileText, requiredModule: 'finance' },
                 { name: 'Security Deposits', href: '/admin/billing?tab=deposits', icon: Wallet, requiredModule: 'finance' },
-                { name: 'Caregiver Payroll', href: '/admin/hr?tab=payroll', icon: Banknote, requiredModule: 'hr' },
+                { name: 'Caregiver Payroll', href: '/admin/hr?tab=payroll', icon: Banknote, requiredModule: 'finance' },
             ],
         },
         {
