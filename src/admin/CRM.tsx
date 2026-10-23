@@ -17,6 +17,7 @@ import { useAuth } from '../contexts/AuthContext';
 import RequestDeletionModal from '../components/common/RequestDeletionModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { normalizePhoneDigits, phoneLast10, phonesMatch } from '../utils/phone';
+import { maskPhoneNumber } from '../utils/phoneMask';
 import { buildVoiceCallIntakePrefill, buildLeadIntakePrefill } from '../utils/voiceCallIntake';
 import { buildConsentFlowActionData, buildBabyCareFlowActionData, buildPatientCareFlowActionData, resolveLeadDisplayName } from '../utils/consentFlow';
 import {
@@ -218,7 +219,7 @@ export default function CRM() {
     const [leads, setLeads] = useState<any[]>([]);
     const [trashedLeads, setTrashedLeads] = useState<any[]>([]);
     const [isLoadingTrash, setIsLoadingTrash] = useState(false);
-    const { user } = useAuth();
+    const { user, canViewPhoneNumbers } = useAuth();
     const [requestDeleteLead, setRequestDeleteLead] = useState<{ id: string; name: string; defaultActionType?: 'move_to_trash' | 'permanent_delete' } | null>(null);
     // Delete choice modal state
     const [deleteChoiceModal, setDeleteChoiceModal] = useState<{ id: string; name: string } | null>(null);
@@ -4106,7 +4107,7 @@ export default function CRM() {
         const rows = exportList.map(l => [
             l.id,
             l.name,
-            l.phone || "",
+            l.phone ? (canViewPhoneNumbers ? l.phone : maskPhoneNumber(l.phone, false)) : "",
             l.email || "",
             extractCity(l),
             l.source || "",
@@ -5601,6 +5602,9 @@ export default function CRM() {
     // Helper to standardize phone number display
     const formatPhoneNumber = (num: string) => {
         if (!num) return '';
+        if (!canViewPhoneNumbers) {
+            return maskPhoneNumber(num, false);
+        }
         const digits = num.replace(/\D/g, '');
         if (digits.length === 10) return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
         if (digits.startsWith('91') && digits.length === 12) {

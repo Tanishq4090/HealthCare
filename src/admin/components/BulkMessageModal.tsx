@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import { X, Send, MessageCircle, Copy, Check, Users, Sparkles, AlertCircle, CheckCircle2, Loader2, ExternalLink, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+import { maskPhoneNumber } from '../../utils/phoneMask';
 
 interface BulkMessageModalProps {
     isOpen: boolean;
@@ -33,6 +35,7 @@ const PRESET_TEMPLATES = [
 ];
 
 export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onClose, clients: initialClients }) => {
+    const { canViewPhoneNumbers } = useAuth();
     const [recipients, setRecipients] = useState<any[]>(initialClients || []);
     const [messageTemplate, setMessageTemplate] = useState<string>(PRESET_TEMPLATES[0].text);
     const [activeTemplateId, setActiveTemplateId] = useState<string>(PRESET_TEMPLATES[0].id);
@@ -218,9 +221,9 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
         }
 
         const compiled = validRecipients.map((c, idx) => {
-            const cleanPhone = cleanPhoneDigits(c.phone);
+            const cleanPhone = canViewPhoneNumbers ? `+${cleanPhoneDigits(c.phone)}` : maskPhoneNumber(c.phone, false);
             const msg = formatMessageForClient(messageTemplate, c);
-            return `--- [${idx + 1}] ${c.name} (${c.displayId || 'CL-CLIENT'}) | +${cleanPhone} ---\n${msg}\n`;
+            return `--- [${idx + 1}] ${c.name} (${c.displayId || 'CL-CLIENT'}) | ${cleanPhone} ---\n${msg}\n`;
         }).join('\n');
 
         navigator.clipboard.writeText(compiled);
@@ -310,7 +313,7 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                                                 </span>
                                                 <span className="font-bold text-slate-800 truncate">{c.name}</span>
                                                 <span className="text-slate-400 font-mono text-[11px] shrink-0">
-                                                    {c.phone || 'No Phone'}
+                                                    {c.phone ? maskPhoneNumber(c.phone, canViewPhoneNumbers) : 'No Phone'}
                                                 </span>
                                                 {c.city && (
                                                     <span className="text-[10px] text-slate-500 uppercase tracking-wide px-1.5 py-0.2 bg-slate-100 rounded shrink-0">
@@ -330,7 +333,7 @@ export const BulkMessageModal: React.FC<BulkMessageModalProps> = ({ isOpen, onCl
                                                         <span className="text-[10px] text-red-600 font-semibold" title={res.error}>
                                                             Failed
                                                         </span>
-                                                        {hasValidPhone && (
+                                                        {hasValidPhone && canViewPhoneNumbers && (
                                                             <a
                                                                 href={`https://wa.me/${cleanPhoneDigits(c.phone)}?text=${encodeURIComponent(formatMessageForClient(messageTemplate, c))}`}
                                                                 target="_blank"

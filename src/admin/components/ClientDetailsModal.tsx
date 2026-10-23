@@ -3,6 +3,8 @@ import { X, Phone, Users, MapPin, Calendar, Clock, Activity, FileText, Clipboard
 import { supabase } from '../../lib/supabase';
 import { endService, releaseWorker } from '../../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../../utils/generateInvoicePdf';
+import { useAuth } from '../../contexts/AuthContext';
+import { maskPhoneNumber } from '../../utils/phoneMask';
 import { toast } from 'sonner';
 
 const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
@@ -182,6 +184,7 @@ interface ClientDetailsModalProps {
 }
 
 export default function ClientDetailsModal({ client, onClose, onServiceUpdated, onStartNewService }: ClientDetailsModalProps) {
+    const { canViewPhoneNumbers } = useAuth();
     const clientId = client?.id;
     const [lead, setLead] = useState<any>(null);
     const [activities, setActivities] = useState<any[]>([]);
@@ -700,34 +703,44 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                         </span>
                                     );
                                 }
+                                const displayPhone = maskPhoneNumber(rawPhone, canViewPhoneNumbers);
                                 const cleanDigits = rawPhone.replace(/\D/g, '');
                                 const waDigits = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
                                 const telDigits = rawPhone.startsWith('+') ? rawPhone : (cleanDigits.length === 10 ? `+91${cleanDigits}` : `+${cleanDigits}`);
                                 return (
                                     <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded-lg">
-                                        <a
-                                            href={`tel:${telDigits}`}
-                                            className="inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-800 hover:text-primary hover:underline transition-colors group/call"
-                                            title={`Click to call ${rawPhone}`}
-                                        >
-                                            <Phone className="w-3.5 h-3.5 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
-                                            <span>{rawPhone}</span>
-                                        </a>
-                                        <a
-                                            href={`https://wa.me/${waDigits}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
-                                            title={`Chat on WhatsApp (${rawPhone})`}
-                                        >
-                                            <MessageCircle className="w-3.5 h-3.5" />
-                                        </a>
+                                        {canViewPhoneNumbers ? (
+                                            <>
+                                                <a
+                                                    href={`tel:${telDigits}`}
+                                                    className="inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-800 hover:text-primary hover:underline transition-colors group/call"
+                                                    title={`Click to call ${rawPhone}`}
+                                                >
+                                                    <Phone className="w-3.5 h-3.5 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
+                                                    <span>{displayPhone}</span>
+                                                </a>
+                                                <a
+                                                    href={`https://wa.me/${waDigits}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+                                                    title={`Chat on WhatsApp (${rawPhone})`}
+                                                >
+                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                </a>
+                                            </>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-800">
+                                                <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                <span>{displayPhone}</span>
+                                            </span>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                navigator.clipboard.writeText(rawPhone);
+                                                navigator.clipboard.writeText(displayPhone);
                                                 setCopiedPhone(true);
-                                                toast.success(`Copied phone: ${rawPhone}`);
+                                                toast.success(`Copied phone: ${displayPhone}`);
                                                 setTimeout(() => setCopiedPhone(false), 2000);
                                             }}
                                             className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
@@ -1538,7 +1551,9 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                         </div>
                                         <div className="flex flex-col">
                                             <span className="text-xs font-semibold text-slate-400 uppercase">Contact Number</span>
-                                            <span className="text-sm font-medium text-slate-800">{latestConsent.contact_number || lead?.phone || '—'}</span>
+                                            <span className="text-sm font-medium text-slate-800 font-mono">
+                                                {latestConsent.contact_number || lead?.phone ? maskPhoneNumber(latestConsent.contact_number || lead?.phone, canViewPhoneNumbers) : '—'}
+                                            </span>
                                         </div>
                                     </div>
                                 ) : (

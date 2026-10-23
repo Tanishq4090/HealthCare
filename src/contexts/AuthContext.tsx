@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useState, useEffect } fr
 import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
-export type AccessModule = 'crm' | 'clients' | 'hr' | 'finance' | 'dashboard';
+export type AccessModule = 'crm' | 'clients' | 'hr' | 'finance' | 'dashboard' | 'view_phones';
 
 export interface User {
     id: string;
@@ -21,6 +21,7 @@ interface AuthContextType {
     login: (role?: string, staffUser?: User) => Promise<void>; 
     logout: () => Promise<void>;
     hasAccess: (module: AccessModule) => boolean;
+    canViewPhoneNumbers: boolean;
     refreshUsers: () => Promise<void>;
     createUser: (user: User) => Promise<void>;
     updateUser: (user: User) => Promise<void>;
@@ -39,7 +40,7 @@ const adminUser: User = {
     username: 'admin',
     name: 'System Admin',
     role: 'admin',
-    accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard'],
+    accesses: ['crm', 'clients', 'hr', 'finance', 'dashboard', 'view_phones'],
     avatar: 'SA'
 };
 
@@ -54,7 +55,7 @@ const normalizeStaffAccess = (staffUser: User): User => {
         ...staffUser,
         password: undefined,
         role: 'user',
-        accesses: TANISHQ_ACCESS,
+        accesses: (staffUser.accesses && staffUser.accesses.length > 0) ? staffUser.accesses : TANISHQ_ACCESS,
     };
 };
 
@@ -96,6 +97,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const refreshUsers = useCallback(async () => {
         try {
+            // First attempt to query staff_users table directly so custom permissions (e.g. view_phones) are 100% retained
+            const { data: dbStaff, error: dbErr } = await supabase
+                .from('staff_users')
+                .select('id, username, full_name, role, accesses, avatar, created_at')
+                .order('created_at', { ascending: true });
+
+            if (!dbErr && dbStaff && dbStaff.length > 0) {
+                const mapped: User[] = dbStaff.map(row => ({
+                    id: row.id,
+                    username: row.username,
+                    name: row.full_name,
+                    role: row.role as any,
+                    accesses: row.accesses || [],
+                    avatar: row.avatar || row.username.slice(0, 2).toUpperCase(),
+                }));
+                setAllUsers([adminUser, ...mapped.filter(u => u.id !== adminUser.id).map(normalizeStaffAccess)]);
+                return;
+            }
+
             const { data, error } = await supabase.functions.invoke('staff-auth', {
                 body: { action: 'list' }
             });
@@ -124,7 +144,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const login = async (role?: string, staffUser?: User) => {
         if (staffUser) {
-            const normalized = normalizeStaffAccess(staffUser);
+            let userToPersist = staffUser;
+            try {
+                // Ensure real accesses from DB (including view_phones) are loaded
+                const { data: dbUser } = await supabase
+                    .from('staff_users')
+                    .select('accesses')
+                    .eq('id', staffUser.id)
+                    .maybeSingle();
+                if (dbUser?.accesses) {
+                    userToPersist = { ...staffUser, accesses: dbUser.accesses };
+                }
+            } catch (err) {
+                console.warn('Could not re-fetch staff accesses:', err);
+            }
+            const normalized = normalizeStaffAccess(userToPersist);
             savePersistedUser(normalized);
             setUser(normalized);
             setLoading(false);
@@ -156,6 +190,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return user.accesses.includes(module);
     };
 
+    // Administrators and selected staff with 'view_phones' can look at phone numbers
+    const canViewPhoneNumbers = Boolean(
+        user && (user.role === 'admin' || user.accesses?.includes('view_phones'))
+    );
+
     const callStaffAuth = async (body: Record<string, unknown>) => {
         const { data, error } = await supabase.functions.invoke('staff-auth', { body });
         if (error) throw error;
@@ -172,10 +211,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             accesses: newUser.accesses,
         });
 
-        if (data?.user) {
-            setAllUsers(prev => [adminUser, ...prev.filter(existing => existing.id !== adminUser.id), normalizeStaffAccess(data.user)]);
+        // Ensure accesses in database has view_phones if specified
+        if (data?.user?.id && newUser.accesses) {
+            await supabase
+                .from('staff_users')
+                .update({ accesses: newUser.accesses })
+                .eq('id', data.user.id);
         }
 
+        const resolvedUser: User = normalizeStaffAccess({
+            ...(data?.user || newUser),
+            accesses: newUser.accesses || [],
+        });
+
+        setAllUsers(prev => [adminUser, ...prev.filter(existing => existing.id !== adminUser.id), resolvedUser]);
         await refreshUsers();
     };
 
@@ -189,14 +238,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             accesses: updatedUser.accesses,
         });
 
-        if (data?.user) {
-            setAllUsers(prev => prev.map(existing => existing.id === data.user.id ? normalizeStaffAccess(data.user) : existing));
+        // Ensure accesses in database has view_phones if specified
+        if (updatedUser.accesses) {
+            await supabase
+                .from('staff_users')
+                .update({ accesses: updatedUser.accesses })
+                .eq('id', updatedUser.id);
         }
 
+        const resolvedUser: User = normalizeStaffAccess({
+            ...(data?.user || updatedUser),
+            accesses: updatedUser.accesses || [],
+        });
+
+        setAllUsers(prev => prev.map(existing => existing.id === resolvedUser.id ? resolvedUser : existing));
+
         if (user?.id === updatedUser.id) {
-            const nextUser = normalizeStaffAccess({ ...user, ...(data?.user || updatedUser) });
-            savePersistedUser(nextUser);
-            setUser(nextUser);
+            savePersistedUser(resolvedUser);
+            setUser(resolvedUser);
         }
 
         await refreshUsers();
@@ -209,7 +268,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     return (
-        <AuthContext.Provider value={{ user, allUsers, loading, login, logout, hasAccess, refreshUsers, createUser, updateUser, deleteUser }}>
+        <AuthContext.Provider value={{ user, allUsers, loading, login, logout, hasAccess, canViewPhoneNumbers, refreshUsers, createUser, updateUser, deleteUser }}>
             {children}
         </AuthContext.Provider>
     );

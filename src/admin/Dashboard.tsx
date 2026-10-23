@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { sanitizePipelineStages } from '../utils/crm';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import {
@@ -53,6 +54,7 @@ type WebsiteBooking = {
 };
 
 export default function Dashboard() {
+    const { canViewPhoneNumbers } = useAuth();
     const navigate = useNavigate();
 
     const [stats, setStats] = useState({
@@ -807,7 +809,7 @@ export default function Dashboard() {
                                     </button>
 
                                     <div className="flex items-center gap-1.5">
-                                        {booking.phone && (
+                                        {booking.phone && canViewPhoneNumbers && (
                                             <>
                                                 <a
                                                     href={`tel:${booking.phone}`}

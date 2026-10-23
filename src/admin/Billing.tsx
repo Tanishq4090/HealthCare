@@ -12,6 +12,8 @@ import { resolveClientBillingRatePerDay, numberToWordsINR, calculateClientAttend
 import ServicesPanel from '../components/hr/ServicesPanel';
 import { recordServiceInvoice, markServiceBillPaid } from '../services/serviceLifecycle';
 import { generateAndUploadInvoicePdf } from '../utils/generateInvoicePdf';
+import { useAuth } from '../contexts/AuthContext';
+import { maskPhoneNumber } from '../utils/phoneMask';
 
 type ManualInvoiceForm = {
     clientName: string;
@@ -105,6 +107,7 @@ const manualInvoiceInitialForm = (): ManualInvoiceForm => ({
 
 
 export default function Billing() {
+    const { canViewPhoneNumbers } = useAuth();
     const [searchParams, setSearchParams] = useSearchParams();
     const currentMonthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const [activeTab, setActiveTab] = useState<'deposits' | 'monthly' | 'history'>((searchParams.get('tab') as any) || 'deposits');
@@ -3474,7 +3477,7 @@ export default function Billing() {
                                 <div className="text-sm">
                                     <p className="font-bold text-slate-800 mb-1">Bill To:</p>
                                     <p className="font-bold text-lg text-slate-900">{invoiceData.clientName}</p>
-                                    <p className="text-slate-600">Ph: {invoiceData.phone}</p>
+                                    <p className="text-slate-600">Ph: {canViewPhoneNumbers ? invoiceData.phone : maskPhoneNumber(invoiceData.phone, false)}</p>
                                     {invoiceData.address && <p className="text-slate-600 max-w-xs mt-0.5">{invoiceData.address}</p>}
                                 </div>
                                 <div className="text-sm flex flex-col gap-2 text-right">
@@ -3940,7 +3943,7 @@ export default function Billing() {
                             {manualDuplicateMatches.slice(0, 3).map(match => (
                                 <div key={`${match.source}-${match.id}`} className="p-3 rounded-xl border border-slate-200 bg-slate-50">
                                     <p className="text-sm font-bold text-slate-900">{match.name}</p>
-                                    <p className="text-xs text-slate-500 mt-0.5">{match.phone || manualInvoiceForm.phone}</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">{canViewPhoneNumbers ? (match.phone || manualInvoiceForm.phone) : maskPhoneNumber(match.phone || manualInvoiceForm.phone, false)}</p>
                                     {match.stage && <p className="text-[11px] text-primary font-semibold mt-1">Stage: {match.stage}</p>}
                                 </div>
                             ))}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp, Save, Loader2, MessageCircle } from 'lucide-react';
+import { Search, Star, Users, Building, MessageSquare, X, Phone, Wallet, History as HistoryIcon, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, MapPin, UserMinus, Calendar, Plus, Trash2, ArchiveRestore, Clock, ShieldCheck, CheckCircle2, Receipt, Send, Copy, Download, ExternalLink, Check, RefreshCw, Table, LayoutGrid, ArrowUpDown, ArrowUp, ArrowDown, Eye, Info, HeartPulse, ClipboardList, Sparkles, ChevronUp, Save, Loader2, MessageCircle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -11,6 +11,7 @@ import { extractCity } from '../utils/crm';
 import { useAuth } from '../contexts/AuthContext';
 import RequestDeletionModal from '../components/common/RequestDeletionModal';
 import { buildConsentFlowActionData, buildBabyCareFlowActionData, buildPatientCareFlowActionData } from '../utils/consentFlow';
+import { maskPhoneNumber } from '../utils/phoneMask';
 
 const PATIENT_CARE_DUTY_LABELS: Record<string, string> = {
     sponge_bath: 'Sponge Bath',
@@ -134,6 +135,7 @@ const GOOGLE_REVIEW_URL = `https://search.google.com/local/writereview?placeid=$
 const GOOGLE_MAPS_URL = `https://www.google.com/maps/place/?q=place_id:${GOOGLE_PLACE_ID}`;
 
 export default function Clients() {
+    const { user, canViewPhoneNumbers } = useAuth();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const restartClientId = searchParams.get('restart');
@@ -191,9 +193,10 @@ export default function Clients() {
     const handleCopyPhone = (phoneToCopy: string, e: React.MouseEvent) => {
         e.stopPropagation();
         const clean = phoneToCopy.trim();
-        navigator.clipboard.writeText(clean);
+        const textToCopy = canViewPhoneNumbers ? clean : maskPhoneNumber(clean, false);
+        navigator.clipboard.writeText(textToCopy);
         setCopiedPhoneBadge(clean);
-        toast.success(`Copied phone: ${clean}`);
+        toast.success(`Copied phone: ${textToCopy}`);
         setTimeout(() => setCopiedPhoneBadge(null), 2000);
     };
 
@@ -567,7 +570,6 @@ export default function Clients() {
     };
 
     // Remove from pipeline confirmation state
-    const { user } = useAuth();
     const [requestDeleteClient, setRequestDeleteClient] = useState<any>(null);
     const [removeConfirmClient, setRemoveConfirmClient] = useState<any>(null);
     const [deleteConfirmClient, setDeleteConfirmClient] = useState<any>(null);
@@ -770,8 +772,9 @@ export default function Clients() {
 
         const rows = list.map(c => {
             const rawPhone = (c.phone || '').trim();
+            const exportedPhone = canViewPhoneNumbers ? rawPhone : (rawPhone ? maskPhoneNumber(rawPhone, false) : '');
             // Prefix with \t inside quotes so Excel displays phone numbers as text without scientific notation or losing digits
-            const excelSafePhone = rawPhone ? `\t${rawPhone}` : '';
+            const excelSafePhone = exportedPhone ? `\t${exportedPhone}` : '';
             const city = c.city || extractCity(c);
             const depositAmt = (c.activeService || c.activeAssignment) ? Number(c.securityDeposit || 0) : 0;
             const pastDepositAmt = Number(c.pastDepositTotal || 0);
@@ -2246,6 +2249,30 @@ export default function Clients() {
                                                                     const waDigits = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
                                                                     const telDigits = rawPhone.startsWith('+') ? rawPhone : (cleanDigits.length === 10 ? `+91${cleanDigits}` : `+${cleanDigits}`);
                                                                     const isCopied = copiedPhoneBadge === rawPhone;
+                                                                    const displayPhone = maskPhoneNumber(rawPhone, canViewPhoneNumbers);
+
+                                                                    if (!canViewPhoneNumbers) {
+                                                                        return (
+                                                                            <div className="inline-flex items-center gap-1.5 py-0.5">
+                                                                                <span className="font-mono text-xs font-semibold text-slate-700 inline-flex items-center gap-1" title="Phone masked for role privacy">
+                                                                                    <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                                    <span>{displayPhone}</span>
+                                                                                </span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => handleCopyPhone(rawPhone, e)}
+                                                                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                                                                    title="Copy masked phone number"
+                                                                                >
+                                                                                    {isCopied ? (
+                                                                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                                                    ) : (
+                                                                                        <Copy className="w-3.5 h-3.5" />
+                                                                                    )}
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    }
 
                                                                     return (
                                                                         <div className="inline-flex items-center gap-1.5 py-0.5">
@@ -2572,23 +2599,25 @@ export default function Clients() {
                                             </p>
                                             {client.phone && (
                                                 <div className="flex items-center gap-0.5">
-                                                    {/* WhatsApp button */}
-                                                    <a
-                                                        href={`https://wa.me/${(client.phone.replace(/\D/g, '').length === 10 ? '91' : '') + client.phone.replace(/\D/g, '')}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="p-1 rounded-md text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
-                                                        title={`Chat on WhatsApp (${client.phone})`}
-                                                    >
-                                                        <MessageCircle className="w-3.5 h-3.5" />
-                                                    </a>
+                                                    {/* WhatsApp button - only for users with full phone permission */}
+                                                    {canViewPhoneNumbers && (
+                                                        <a
+                                                            href={`https://wa.me/${(client.phone.replace(/\D/g, '').length === 10 ? '91' : '') + client.phone.replace(/\D/g, '')}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="p-1 rounded-md text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                            title={`Chat on WhatsApp (${client.phone})`}
+                                                        >
+                                                            <MessageCircle className="w-3.5 h-3.5" />
+                                                        </a>
+                                                    )}
                                                     {/* Copy button */}
                                                     <button
                                                         type="button"
                                                         onClick={(e) => handleCopyPhone(client.phone, e)}
                                                         className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                                                        title="Copy phone number"
+                                                        title={canViewPhoneNumbers ? "Copy phone number" : "Copy masked phone"}
                                                     >
                                                         {copiedPhoneBadge === client.phone ? (
                                                             <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -2600,15 +2629,22 @@ export default function Clients() {
                                             )}
                                         </div>
                                         {client.phone ? (
-                                            <a
-                                                href={`tel:${client.phone.startsWith('+') ? client.phone : (client.phone.replace(/\D/g, '').length === 10 ? `+91${client.phone.replace(/\D/g, '')}` : `+${client.phone.replace(/\D/g, '')}`)}`}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="text-sm font-bold text-slate-700 hover:text-primary hover:underline truncate transition-colors font-mono inline-flex items-center gap-1 group/call"
-                                                title={`Click to call ${client.phone}`}
-                                            >
-                                                <Phone className="w-3 h-3 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
-                                                <span>{client.phone}</span>
-                                            </a>
+                                            canViewPhoneNumbers ? (
+                                                <a
+                                                    href={`tel:${client.phone.startsWith('+') ? client.phone : (client.phone.replace(/\D/g, '').length === 10 ? `+91${client.phone.replace(/\D/g, '')}` : `+${client.phone.replace(/\D/g, '')}`)}`}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="text-sm font-bold text-slate-700 hover:text-primary hover:underline truncate transition-colors font-mono inline-flex items-center gap-1 group/call"
+                                                    title={`Click to call ${client.phone}`}
+                                                >
+                                                    <Phone className="w-3 h-3 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
+                                                    <span>{client.phone}</span>
+                                                </a>
+                                            ) : (
+                                                <div className="text-sm font-bold text-slate-700 truncate font-mono inline-flex items-center gap-1" title="Phone masked for role privacy">
+                                                    <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                                                    <span>{maskPhoneNumber(client.phone, false)}</span>
+                                                </div>
+                                            )
                                         ) : (
                                             <p className="text-sm font-bold text-slate-400 truncate">N/A</p>
                                         )}
@@ -3232,7 +3268,7 @@ export default function Clients() {
                                                 Send Forms Directly to Client via WhatsApp
                                             </p>
                                             <p className="text-[11px] text-emerald-700/90 font-medium">
-                                                Dispatches prefilled interactive WhatsApp forms directly to <strong>{restartContactNumber || restartModal.phone || 'client'}</strong>
+                                                Dispatches prefilled interactive WhatsApp forms directly to <strong>{canViewPhoneNumbers ? (restartContactNumber || restartModal.phone || 'client') : maskPhoneNumber(restartContactNumber || restartModal.phone, false)}</strong>
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
@@ -3303,7 +3339,7 @@ export default function Clients() {
                                         </div>
                                         <div className="bg-white p-2 rounded-lg border border-slate-200/60">
                                             <span className="text-[10px] text-slate-400 font-semibold block">Contact</span>
-                                            <span className="font-bold text-slate-800 truncate block">{restartContactNumber || restartModal.phone || 'N/A'}</span>
+                                            <span className="font-bold text-slate-800 truncate block">{canViewPhoneNumbers ? (restartContactNumber || restartModal.phone || 'N/A') : maskPhoneNumber(restartContactNumber || restartModal.phone, false)}</span>
                                         </div>
                                     </div>
 

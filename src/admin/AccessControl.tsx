@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import type { User, AccessModule } from '../contexts/AuthContext';
-import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search } from 'lucide-react';
+import { UserCheck, UserPlus, ShieldAlert, Trash2, Edit3, X, Check, Save, Users, Ban, Loader2, Clock, CheckCircle2, Search, Eye, EyeOff, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     fetchAllDeletionRequests,
@@ -326,33 +326,77 @@ export default function AccessControl() {
                                     <ShieldAlert className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                                     <div>
                                         <p className="text-sm font-bold text-emerald-900">Administrator Override</p>
-                                        <p className="text-sm text-emerald-700 mt-0.5">This user is a system administrator and automatically has full access to all modules.</p>
+                                        <p className="text-sm text-emerald-700 mt-0.5">This user is a system administrator and automatically has full access to all modules and full phone visibility.</p>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {MODULES.map(mod => {
-                                        const isChecked = formData.accesses?.includes(mod.id);
-                                        return (
-                                            <div
-                                                key={mod.id}
-                                                onClick={() => toggleAccess(mod.id)}
-                                                className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3 ${isChecked
-                                                    ? 'border-primary bg-primary/5'
-                                                    : 'border-slate-100 bg-white hover:border-slate-200'
-                                                    }`}
-                                            >
-                                                <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 transition-colors ${isChecked ? 'bg-primary text-white' : 'bg-slate-100 text-transparent border border-slate-200'
-                                                    }`}>
-                                                    <Check className="w-3.5 h-3.5" strokeWidth={3} />
-                                                </div>
-                                                <div>
-                                                    <p className={`text-sm font-bold ${isChecked ? 'text-primary' : 'text-slate-700'}`}>{mod.label}</p>
-                                                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{mod.desc}</p>
-                                                </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {MODULES.map(mod => {
+                                                const isChecked = formData.accesses?.includes(mod.id);
+                                                return (
+                                                    <div
+                                                        key={mod.id}
+                                                        onClick={() => toggleAccess(mod.id)}
+                                                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3 ${isChecked
+                                                            ? 'border-primary bg-primary/5'
+                                                            : 'border-slate-100 bg-white hover:border-slate-200'
+                                                            }`}
+                                                    >
+                                                        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 transition-colors ${isChecked ? 'bg-primary text-white' : 'bg-slate-100 text-transparent border border-slate-200'
+                                                            }`}>
+                                                            <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                                                        </div>
+                                                        <div>
+                                                            <p className={`text-sm font-bold ${isChecked ? 'text-primary' : 'text-slate-700'}`}>{mod.label}</p>
+                                                            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{mod.desc}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Data Privacy & Phone Masking */}
+                                    <div className="pt-2">
+                                        <label className="block text-sm font-bold text-slate-900 mb-2 border-b border-slate-100 pb-2">
+                                            Data Privacy & Sensitive Fields
+                                        </label>
+                                        <div
+                                            onClick={() => toggleAccess('view_phones')}
+                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-start gap-3.5 ${
+                                                formData.accesses?.includes('view_phones')
+                                                    ? 'border-emerald-500 bg-emerald-50/40 shadow-sm'
+                                                    : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                                                formData.accesses?.includes('view_phones') ? 'bg-emerald-600 text-white' : 'bg-white text-transparent border border-slate-300'
+                                            }`}>
+                                                <Check className="w-3.5 h-3.5" strokeWidth={3} />
                                             </div>
-                                        );
-                                    })}
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-sm font-bold ${formData.accesses?.includes('view_phones') ? 'text-emerald-900' : 'text-slate-700'}`}>
+                                                        Reveal Full Phone Numbers
+                                                    </span>
+                                                    {formData.accesses?.includes('view_phones') ? (
+                                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                                                            <Eye className="w-3 h-3" /> Full Visibility
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 bg-slate-200/70 text-slate-700 rounded-md">
+                                                            <EyeOff className="w-3 h-3 text-slate-500" /> Masked Default (95370•••75)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                                    When enabled, this user can see unmasked 10-digit phone numbers, click to dial, copy numbers, and export contact details. When disabled, client, caregiver, lead, and invoice phone numbers are masked across all pages.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -382,12 +426,15 @@ export default function AccessControl() {
                             <tr>
                                 <th className="px-6 py-4">User</th>
                                 <th className="px-6 py-4">Username</th>
-                                <th className="px-6 py-4">Access Modules</th>
+                                <th className="px-6 py-4">Access Modules & Privacy</th>
                                 <th className="px-6 py-4 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {displayUsers.map((u) => (
+                            {displayUsers.map((u) => {
+                                const normalMods = (u.accesses || []).filter(m => m !== 'view_phones');
+                                const hasPhoneAccess = u.role === 'admin' || (u.accesses || []).includes('view_phones');
+                                return (
                                 <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
@@ -405,20 +452,38 @@ export default function AccessControl() {
                                     </td>
                                     <td className="px-6 py-4">
                                         {u.role === 'admin' ? (
-                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                                                * Full System Access
-                                            </span>
+                                            <div className="flex flex-col gap-1.5 items-start">
+                                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                                                    * Full System Access
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                    <Eye className="w-3 h-3 text-emerald-600" /> Full Phone Visibility
+                                                </span>
+                                            </div>
                                         ) : (
-                                            <div className="flex flex-wrap gap-2">
-                                                {u.accesses.length === 0 && <span className="text-slate-400 italic">No Access</span>}
-                                                {u.accesses.map(mod => {
-                                                    const dict = MODULES.find(m => m.id === mod);
-                                                    return (
-                                                        <span key={mod} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                                            {dict?.label || mod}
+                                            <div className="flex flex-col gap-1.5">
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {normalMods.length === 0 && <span className="text-slate-400 italic text-xs">No Module Access</span>}
+                                                    {normalMods.map(mod => {
+                                                        const dict = MODULES.find(m => m.id === mod);
+                                                        return (
+                                                            <span key={mod} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                                                {dict?.label || mod}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div>
+                                                    {hasPhoneAccess ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                            <Eye className="w-3 h-3 text-emerald-600" /> Full Phone Access
                                                         </span>
-                                                    );
-                                                })}
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                                            <EyeOff className="w-3 h-3 text-slate-400" /> Phone Masked (95370•••75)
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </td>
@@ -452,7 +517,8 @@ export default function AccessControl() {
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

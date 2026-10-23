@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate, Navigate } from 'react-router-d
 import { LayoutDashboard, Users, UserCog, CalendarDays, Clock, FileText, Wallet, Banknote, UserPlus, LogOut, Bell, Search, Landmark, Settings, CreditCard, Menu, X, Loader2, ShieldAlert, AlertCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, type AccessModule } from '../contexts/AuthContext';
+import { maskPhoneNumber } from '../utils/phoneMask';
 import { AdminDeletionRequestsModal } from './components/AdminDeletionRequestsModal';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -186,7 +187,7 @@ const buildWhatsAppFailureNotification = (log: any) => {
 export default function AdminLayout() {
     const location = useLocation();
     const navigate = useNavigate();
-    const { user, logout, hasAccess } = useAuth();
+    const { user, logout, hasAccess, canViewPhoneNumbers } = useAuth();
     const [isGlobalNotificationsOpen, setIsGlobalNotificationsOpen] = useState(false);
     const [notificationFilter, setNotificationFilter] = useState<'all' | 'urgent'>('all');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -997,7 +998,7 @@ export default function AdminLayout() {
                                                                             className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
                                                                         >
                                                                             <span className="text-sm font-semibold text-slate-900">{client.name}</span>
-                                                                            <span className="text-xs text-slate-500">{client.phone}</span>
+                                                                            <span className="text-xs text-slate-500 font-mono">{client.phone ? maskPhoneNumber(client.phone, canViewPhoneNumbers) : ''}</span>
                                                                         </button>
                                                                     ))}
                                                                 </div>
@@ -1147,7 +1148,7 @@ export default function AdminLayout() {
                                                     >
                                                         <span className="text-sm font-semibold text-slate-900">{client.name}</span>
                                                         <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                            <span>{client.phone}</span>
+                                                            <span className="font-mono">{client.phone ? maskPhoneNumber(client.phone, canViewPhoneNumbers) : ''}</span>
                                                             <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                                                             <span className="text-primary font-medium">{client.pipeline_stage}</span>
                                                         </div>
@@ -1172,7 +1173,7 @@ export default function AdminLayout() {
                                                     >
                                                         <span className="text-sm font-semibold text-slate-900">{worker.full_name}</span>
                                                         <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                            <span>{worker.phone}</span>
+                                                            <span className="font-mono">{worker.phone ? maskPhoneNumber(worker.phone, canViewPhoneNumbers) : ''}</span>
                                                             <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                                                             <span className="text-emerald-600 font-medium">{worker.job_title}</span>
                                                         </div>

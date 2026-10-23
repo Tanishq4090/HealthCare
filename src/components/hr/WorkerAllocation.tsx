@@ -50,6 +50,7 @@ import PayslipGenerator from './PayslipGenerator';
 import type { Employee, EmployeeStatus, CreateEmployeeInput } from '../../types/hr';
 import { formatIdCardDuty } from '../../utils/employeeIdCard';
 import { useAuth } from '../../contexts/AuthContext';
+import { maskPhoneNumber } from '../../utils/phoneMask';
 import RequestDeletionModal from '../common/RequestDeletionModal';
 
 // ── Types ─────────────────────────────────────────────────
@@ -1174,6 +1175,7 @@ function IDCardPreviewDialog({ employee, open, onClose }: { employee: Employee |
 // ── Staff Details Dialog ──────────────────────────────────
 
 function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | null; open: boolean; onClose: () => void }) {
+  const { canViewPhoneNumbers } = useAuth();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -1236,7 +1238,7 @@ function StaffDetailsDialog({ employee, open, onClose }: { employee: Employee | 
                     <Phone className="w-4 h-4 text-slate-300" />
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase">Primary Contact</p>
-                      <p className="text-sm font-semibold text-slate-800">{employee.phone || '—'}</p>
+                      <p className="text-sm font-semibold text-slate-800">{employee.phone ? maskPhoneNumber(employee.phone, canViewPhoneNumbers) : '—'}</p>
                     </div>
                   </div>
                   <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 flex items-start gap-3">
@@ -1357,7 +1359,7 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
     finally { setIsLoading(false); }
   }, []);
 
-  const { user } = useAuth();
+  const { user, canViewPhoneNumbers } = useAuth();
   const [requestDeleteEmp, setRequestDeleteEmp] = useState<Employee | null>(null);
 
   const handleDelete = async (emp: Employee) => {
@@ -1561,14 +1563,21 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
                     <td className="px-5 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1 text-xs">
                         {emp.phone ? (
-                          <a
-                            href={`tel:${emp.phone}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-1.5"
-                          >
-                            <Phone className="w-3.5 h-3.5 text-slate-400" />
-                            {emp.phone}
-                          </a>
+                          canViewPhoneNumbers ? (
+                            <a
+                              href={`tel:${emp.phone}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-1.5"
+                            >
+                              <Phone className="w-3.5 h-3.5 text-slate-400" />
+                              {emp.phone}
+                            </a>
+                          ) : (
+                            <span className="text-slate-600 font-medium flex items-center gap-1.5 font-mono">
+                              <Phone className="w-3.5 h-3.5 text-slate-400" />
+                              {maskPhoneNumber(emp.phone, false)}
+                            </span>
+                          )
                         ) : (
                           <span className="text-slate-400 flex items-center gap-1.5">
                             <Phone className="w-3.5 h-3.5 text-slate-300" /> No Phone
@@ -1766,13 +1775,19 @@ function AvailableWorkersTab({ onAssign, onPreview, onViewDetails }: {
                     <div className="flex items-center gap-1.5 min-w-0">
                       <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       {emp.phone ? (
-                        <a
-                          href={`tel:${emp.phone}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-slate-600 hover:text-primary font-medium transition-colors truncate"
-                        >
-                          {emp.phone}
-                        </a>
+                        canViewPhoneNumbers ? (
+                          <a
+                            href={`tel:${emp.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-slate-600 hover:text-primary font-medium transition-colors truncate"
+                          >
+                            {emp.phone}
+                          </a>
+                        ) : (
+                          <span className="text-slate-600 font-medium truncate font-mono">
+                            {maskPhoneNumber(emp.phone, false)}
+                          </span>
+                        )
                       ) : (
                         <span className="text-slate-400">No Phone</span>
                       )}
