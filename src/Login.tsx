@@ -391,7 +391,7 @@ export default function Login() {
 
         if (!pending2FA) return;
 
-        const isBypass = pending2FA.availablePhones.length === 0 || useEmergencyKey;
+        const isBypass = (pending2FA.availablePhones.length === 0 && pending2FA.dispatchedVia !== 'totp') || useEmergencyKey;
         const codeToVerify = isBypass ? emergencyKeyInput.trim() : otpCode.join('');
         if (!isBypass && codeToVerify.length < 6) {
             setError('Please enter the complete 6-digit verification code.');
