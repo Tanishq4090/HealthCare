@@ -109,11 +109,21 @@ export default function AccessControl() {
     }, []);
 
     const handleOpenTotpSetup = () => {
-        const newSecret = generateRandomBase32Secret(20);
-        setPendingTotpSecret(newSecret);
+        if (!pendingTotpSecret) {
+            const newSecret = generateRandomBase32Secret(32);
+            setPendingTotpSecret(newSecret);
+        }
         setConfirmTotpInput('');
         setIsCopiedSecret(false);
         setIsTotpModalOpen(true);
+    };
+
+    const handleRegenerateTotpSecret = () => {
+        const newSecret = generateRandomBase32Secret(32);
+        setPendingTotpSecret(newSecret);
+        setConfirmTotpInput('');
+        setIsCopiedSecret(false);
+        toast.info('New QR code generated! Please scan the new QR code in your Authenticator.');
     };
 
     const handleCopyTotpSecret = () => {
@@ -1103,19 +1113,19 @@ export default function AccessControl() {
                                 {/* QR Code Display */}
                                 <div className="p-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl inline-block shadow-sm">
                                     <img
-                                        src={getQrCodeUrl(generateOtpAuthUri('Admin (99 Care)', pendingTotpSecret, '99 Care OS'))}
+                                        src={getQrCodeUrl(generateOtpAuthUri('admin', pendingTotpSecret, '99 Care'))}
                                         alt="Google Authenticator QR Code"
                                         className="w-48 h-48 rounded-xl object-contain mx-auto"
                                     />
                                 </div>
 
-                                {/* Manual Secret Entry */}
+                                {/* Manual Secret Entry & Apple Passwords link */}
                                 <div className="space-y-1.5 pt-1">
                                     <span className="text-[11px] text-slate-400 font-medium block">
                                         Can't scan the QR code? Enter this secret manually:
                                     </span>
                                     <div className="flex items-center justify-center gap-2">
-                                        <code className="px-3 py-1.5 bg-slate-100 text-slate-800 font-mono font-bold text-xs rounded-lg tracking-wider border border-slate-200">
+                                        <code className="px-3 py-1.5 bg-slate-100 text-slate-800 font-mono font-bold text-xs rounded-lg tracking-wider border border-slate-200 select-all">
                                             {pendingTotpSecret.match(/.{1,4}/g)?.join(' ') || pendingTotpSecret}
                                         </code>
                                         <button
@@ -1127,13 +1137,35 @@ export default function AccessControl() {
                                             {isCopiedSecret ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                                         </button>
                                     </div>
-                                    <a
-                                        href={generateOtpAuthUri('Admin (99 Care)', pendingTotpSecret, '99 Care OS')}
-                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline pt-0.5"
-                                    >
-                                        <ExternalLink className="w-3 h-3" />
-                                        Open directly in Authenticator on this device
-                                    </a>
+                                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1 text-[11px]">
+                                        <a
+                                            href={generateOtpAuthUri('admin', pendingTotpSecret, '99 Care')}
+                                            className="inline-flex items-center gap-1 font-semibold text-emerald-700 hover:underline"
+                                        >
+                                            <ExternalLink className="w-3 h-3" />
+                                            Open in Apple Passwords / Keychain
+                                        </a>
+                                        <span className="hidden sm:inline text-slate-300">•</span>
+                                        <button
+                                            type="button"
+                                            onClick={handleRegenerateTotpSecret}
+                                            className="inline-flex items-center gap-1 font-semibold text-slate-500 hover:text-slate-800"
+                                        >
+                                            <RefreshCw className="w-3 h-3" />
+                                            Regenerate New QR
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Apple Passwords / Existing Code Callout */}
+                                <div className="p-3 bg-amber-50/90 border border-amber-200/80 rounded-xl text-left text-xs text-amber-950 space-y-1">
+                                    <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                                        Using Apple Passwords / Mac Keychain?
+                                    </div>
+                                    <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                                        If Apple Passwords displays an old code from an earlier date (e.g. August 2026), please tap <strong>Delete</strong> on that old code first and click <strong>Add Code</strong>, or simply scan this QR code using <strong>Google Authenticator</strong> on your phone.
+                                    </p>
                                 </div>
                             </div>
 

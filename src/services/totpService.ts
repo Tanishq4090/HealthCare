@@ -26,9 +26,10 @@ export function base32Decode(base32: string): Uint8Array {
 }
 
 /**
- * Generates a cryptographically random Base32 secret key
+ * Generates a cryptographically random Base32 secret key.
+ * RFC 4226 / RFC 6238 recommends 160 bits (20 bytes = 32 Base32 characters) for HMAC-SHA1.
  */
-export function generateRandomBase32Secret(length = 20): string {
+export function generateRandomBase32Secret(length = 32): string {
     const randomBytes = new Uint8Array(length);
     if (typeof window !== 'undefined' && window.crypto) {
         window.crypto.getRandomValues(randomBytes);
@@ -80,12 +81,12 @@ export async function generateTOTPCode(secret: string, timestamp = Date.now()): 
 
 /**
  * Verifies an entered 6-digit passcode against the user's TOTP secret.
- * Allows +/- 1 window (30-second clock drift allowance).
+ * Allows +/- 2 windows (+/- 60-second clock drift allowance) to prevent false rejections.
  */
 export async function verifyTOTPCode(
     secret: string,
     enteredCode: string,
-    windowSteps = 1
+    windowSteps = 2
 ): Promise<boolean> {
     const clean = enteredCode.trim().replace(/\D/g, '');
     if (clean.length !== 6) return false;
