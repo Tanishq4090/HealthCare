@@ -55,7 +55,7 @@ export default function Navbar() {
     { name: 'Home', url: '/', icon: Home },
     { name: 'About', url: '/about', icon: User },
     { name: 'Services', url: '/services', icon: HeartPulse, dropdown: servicesDropdown },
-    { name: 'Reviews', url: '/#reviews', icon: Star },
+    { name: 'Reviews', url: '/reviews', icon: Star },
     { name: 'Blog', url: '/blog', icon: FileText },
     { name: 'Contact', url: '/contact', icon: Phone }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,7 +129,7 @@ export default function Navbar() {
                     <Link to="/services" onClick={() => setIsOpen(false)} className="block py-2.5 text-sm text-brand-blue font-semibold mt-1">View all services &rarr;</Link>
                   </div>
                   
-                  <a href="/#reviews" onClick={() => setIsOpen(false)} className="block relative text-base font-medium transition-colors duration-200 py-3 px-4 rounded-lg text-gray-600 dark:text-gray-400 hover:text-brand-blue hover:bg-gray-50 dark:hover:bg-slate-900">Reviews</a>
+                  <NavLink to="/reviews" onClick={() => setIsOpen(false)} className={navLinkClass}>Reviews</NavLink>
                   <NavLink to="/blog" onClick={() => setIsOpen(false)} className={navLinkClass}>Blog</NavLink>
                   <NavLink to="/contact" onClick={() => setIsOpen(false)} className={navLinkClass}>Contact</NavLink>
                 </div>

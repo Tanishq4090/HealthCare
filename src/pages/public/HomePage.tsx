@@ -429,6 +429,11 @@ export default function HomePage() {
                 <span className="text-sm font-bold text-gray-900 dark:text-white">4.9 / 5.0</span>
                 <span className="text-xs text-gray-400 border-l border-gray-200 dark:border-slate-700 pl-2.5">500+ Verified Patients</span>
               </div>
+              <div className="mt-4">
+                <Link to="/reviews" className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-blue hover:underline">
+                  View All Verified Reviews &rarr;
+                </Link>
+              </div>
             </div>
           </AnimateOnScroll>
           

@@ -53,7 +53,7 @@ export default function Footer() {
             <div className="flex flex-col gap-4 text-sm">
               <Link to="/about" className="text-gray-400 hover:text-white transition-colors w-w-fit">About Us</Link>
               <Link to="/services" className="text-gray-400 hover:text-white transition-colors w-w-fit">Services</Link>
-              <Link to="/#reviews" className="text-gray-400 hover:text-white transition-colors w-fit">Patient Reviews</Link>
+              <Link to="/reviews" className="text-gray-400 hover:text-white transition-colors w-fit">Patient Reviews</Link>
               <Link to="/appointment" className="text-gray-400 hover:text-white transition-colors w-fit">Appointment</Link>
               <Link to="/contact" className="text-gray-400 hover:text-white transition-colors w-w-fit">Contact Us</Link>
             </div>

@@ -28,6 +28,7 @@ import AppointmentPage from './pages/public/AppointmentPage';
 import AppointmentConfirmedPage from './pages/public/AppointmentConfirmedPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PublicIDCard from './pages/public/PublicIDCard';
+import ReviewsPage from './pages/public/ReviewsPage';
 import PrivacyPolicyPage from './pages/public/PrivacyPolicyPage';
 import TermsPage from './pages/public/TermsPage';
 import { APP_MODE, getAppMode } from './config/appMode';
@@ -111,6 +112,8 @@ function AppContent() {
           {/* Public pages fallback in OS mode */}
           <Route element={<Layout />}>
             <Route path="/about" element={<AboutPage />} />
+          <Route path="/reviews" element={<ReviewsPage />} />
+            <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/services/:slug" element={<ServiceDetailPage />} />
             <Route path="/blog" element={<BlogPage />} />
@@ -137,6 +140,7 @@ function AppContent() {
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/reviews" element={<ReviewsPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/services/:slug" element={<ServiceDetailPage />} />
           <Route path="/blog" element={<BlogPage />} />
@@ -178,6 +182,7 @@ function AppContent() {
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/reviews" element={<ReviewsPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/services/:slug" element={<ServiceDetailPage />} />
           <Route path="/blog" element={<BlogPage />} />
