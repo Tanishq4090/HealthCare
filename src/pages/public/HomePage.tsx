@@ -45,8 +45,8 @@ export default function HomePage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="Best Home Healthcare Services in Surat | 99 Care"
-        description="99 Care provides trusted home healthcare services in Surat, including professional nursing care, patient care, elderly care and personalized medical support at home."
+        title="Premier Home Healthcare Services | 99 Care"
+        description="99 Care provides trusted home healthcare services, including professional nursing care, patient care, elderly care and personalized medical support at home."
         canonical="https://99care.org"
         jsonLd={{
           "@context": "https://schema.org",
@@ -56,13 +56,13 @@ export default function HomePage() {
           "url": "https://99care.org",
           "logo": "https://99care.org/99care-logo.png",
           "image": "https://99care.org/99care-logo.png",
-          "description": "Professional home healthcare services in Surat, Gujarat. Wound care, nursing at home, injection services, maternity care, newborn care, and elderly caretaker services available 24/7.",
+          "description": "Professional home healthcare services. Wound care, nursing at home, injection services, maternity care, newborn care, and elderly caretaker services available 24/7.",
           "telephone": "+919016116564",
           "email": "99careforyou@gmail.com",
           "address": {
             "@type": "PostalAddress",
             "streetAddress": "104, Fortune Mall, Nr. Galaxy Circle, Pal gam",
-            "addressLocality": "Adajan, Surat",
+            "addressLocality": "Adajan",
             "addressRegion": "Gujarat",
             "postalCode": "395009",
             "addressCountry": "IN"
@@ -80,6 +80,15 @@ export default function HomePage() {
       <div className="w-full bg-white dark:bg-slate-950">
       {/* SECTION 1 — HERO */}
       <section className="relative min-h-[90vh] flex flex-col justify-center items-center text-center px-6 pt-20 pb-32 bg-white dark:bg-slate-950 overflow-hidden">
+        {/* Homepage Hero Background Image with soft gradient overlay */}
+        <div className="absolute inset-0 -z-20 overflow-hidden pointer-events-none">
+          <img
+            src="/images/homepage-bg.jpg"
+            alt="99 Care Home Healthcare"
+            className="w-full h-full object-cover object-center opacity-15 dark:opacity-10 scale-105 filter blur-[0.5px]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/95 via-white/85 to-white dark:from-slate-950/95 dark:via-slate-950/90 dark:to-slate-950" />
+        </div>
         {/* Decorative subtle background gradient blob */}
         <motion.div 
           style={{ y: blob1Y }}
@@ -101,7 +110,7 @@ export default function HomePage() {
             transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0 }}
             className="text-brand-blue dark:text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-8 bg-brand-blue-light/50 dark:bg-brand-blue/20 px-4 py-1.5 rounded-full border border-brand-blue/20 dark:border-brand-blue/40 flex items-center gap-2"
           >
-            <BrandEmblem className="w-4 h-4" /> Trusted Home Healthcare • Surat, Gujarat
+            <BrandEmblem className="w-4 h-4" /> Trusted Home Healthcare • Compassionate Care
           </motion.span>
           
           <h1 className="text-5xl md:text-7xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-[1.1] mb-6 overflow-hidden">
@@ -172,7 +181,7 @@ export default function HomePage() {
             <div className="hidden sm:block w-px h-3 bg-gray-200"></div>
             <div className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-brand-green" /> 3+ Years Experience</div>
             <div className="hidden sm:block w-px h-3 bg-gray-200 dark:bg-slate-800"></div>
-            <div className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-brand-green" /> 53+ Sessions Done</div>
+            <div className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-brand-green" /> 100+ Sessions Done</div>
           </motion.div>
         </motion.div>
       </section>
@@ -181,15 +190,15 @@ export default function HomePage() {
       <section className="py-24 bg-brand-gray dark:bg-slate-900/50 border-y border-gray-100 dark:border-slate-800">
         <AnimateOnScroll variants={staggerContainer} className="container mx-auto px-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-12 text-center md:text-left divide-y md:divide-y-0 divide-gray-200 dark:divide-slate-800">
-            <StatCard value={16} suffix="+" label="Happy Patients" sublabel="In Surat area" />
+            <StatCard value={500} suffix="+" label="Happy Patients" sublabel="Satisfied families" />
             <div className="md:border-l md:border-gray-200 md:pl-12 border-0">
-              <StatCard value={53} suffix="+" label="Sessions Done" sublabel="Successfully completed" />
+              <StatCard value={100} suffix="+" label="Sessions Done" sublabel="Successfully completed" />
             </div>
             <div className="lg:border-l lg:border-gray-200 lg:pl-12 border-0">
               <StatCard value={24} suffix="×7" label="Support" sublabel="Always available" />
             </div>
             <div className="md:border-l md:border-gray-200 md:pl-12 border-0">
-              <StatCard value={3} suffix="+" label="Years Experience" sublabel="Trusted in Surat" />
+              <StatCard value={3} suffix="+" label="Years Experience" sublabel="Trusted care partner" />
             </div>
           </div>
         </AnimateOnScroll>
@@ -405,12 +414,21 @@ export default function HomePage() {
       </section>
 
       {/* SECTION 6 — REAL GOOGLE REVIEWS */}
-      <section className="py-24 md:py-32 bg-brand-gray dark:bg-slate-900/50 overflow-hidden">
+      <section id="reviews" className="py-24 md:py-32 bg-brand-gray dark:bg-slate-900/50 overflow-hidden scroll-mt-20">
         <div className="container mx-auto px-6 max-w-7xl">
           <AnimateOnScroll variants={fadeUp} delay={0.1}>
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">What Our Patients Say</h2>
-              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Real reviews from Google</p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm font-medium mb-5">Real reviews from Google</p>
+              <div className="inline-flex items-center gap-2.5 bg-white dark:bg-slate-900 px-4 py-2 rounded-full border border-gray-200/80 dark:border-slate-800 shadow-sm">
+                <div className="flex items-center gap-0.5">
+                  {[...Array(5)].map((_, i) => (
+                    <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <span className="text-sm font-bold text-gray-900 dark:text-white">4.9 / 5.0</span>
+                <span className="text-xs text-gray-400 border-l border-gray-200 dark:border-slate-700 pl-2.5">500+ Verified Patients</span>
+              </div>
             </div>
           </AnimateOnScroll>
           
@@ -509,7 +527,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-                  Extremely satisfied with the home nursing care provided by 99 Care for my elderly father in Surat. The nurse was compassionate, punctual, and attentive to all his medical needs. Highly recommended for senior citizen care!
+                  Extremely satisfied with the home nursing care provided by 99 Care for my elderly father at home. The nurse was compassionate, punctual, and attentive to all his medical needs. Highly recommended for senior citizen care!
                 </p>
               </div>
             </motion.div>
@@ -602,7 +620,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-                  Best home healthcare service in Surat! Reliable, affordable, and trustworthy staff for senior citizen care and family medical needs.
+                  Best home healthcare service! Reliable, affordable, and trustworthy staff for senior citizen care and family medical needs.
                 </p>
               </div>
             </motion.div>

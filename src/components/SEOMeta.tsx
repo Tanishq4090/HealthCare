@@ -74,7 +74,7 @@ export function SEOMeta({
 
     // Cleanup on page unmount
     return () => {
-      document.title = '99 Care — Home Healthcare Services in Surat';
+      document.title = '99 Care — Premier Home Healthcare Services';
       if (script && document.head.contains(script)) {
         document.head.removeChild(script);
       }

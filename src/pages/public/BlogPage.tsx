@@ -43,8 +43,8 @@ export default function BlogPage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="Home Healthcare Blog | Tips & Guides by 99 Care Surat"
-        description="Read expert articles on home nursing, wound care, maternity care, and elderly care in Surat. Healthcare tips from the 99 Care team."
+        title="Home Healthcare Blog | Tips & Guides by 99 Care"
+        description="Read expert articles on home nursing, wound care, maternity care, and elderly care. Healthcare tips from the 99 Care team."
         canonical="https://99care.org/blog"
       />
       <div className="w-full bg-slate-50/60 dark:bg-slate-950 min-h-screen pb-32">

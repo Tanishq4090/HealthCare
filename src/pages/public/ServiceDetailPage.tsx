@@ -25,7 +25,7 @@ export default function ServiceDetailPage() {
   return (
     <PageTransition>
       <SEOMeta
-        title={`${service.title} in Surat | 99 Care`}
+        title={`${service.title} | 99 Care`}
         description={service.shortDesc}
         canonical={`https://99care.org/services/${service.slug}`}
         ogImage={`https://99care.org${service.image}`}
@@ -41,14 +41,14 @@ export default function ServiceDetailPage() {
             "url": "https://99care.org",
             "address": {
               "@type": "PostalAddress",
-              "addressLocality": "Surat",
+              "addressLocality": "Adajan",
               "addressRegion": "Gujarat",
               "addressCountry": "IN"
             }
           },
           "areaServed": {
             "@type": "City",
-            "name": "Surat"
+            "name": "India"
           },
           "description": service.shortDesc,
           "image": `https://99care.org${service.image}`
@@ -109,7 +109,7 @@ export default function ServiceDetailPage() {
                 </div>
                 <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-4 py-2 rounded-xl border border-gray-200/60 dark:border-slate-800 shadow-sm">
                   <Award className="w-4 h-4 text-amber-500" />
-                  <span>Experienced Care Specialists in Surat</span>
+                  <span>Experienced Care Specialists</span>
                 </div>
               </div>
             </AnimateOnScroll>
@@ -258,7 +258,7 @@ export default function ServiceDetailPage() {
               <span className="text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-3 block">Complete Care Options</span>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-white mb-4 tracking-tight">Explore Other Care Services</h2>
               <p className="text-gray-500 dark:text-gray-400 text-base max-w-2xl mx-auto font-light">
-                Discover our full spectrum of professional nursing and dedicated caretaker services in Surat.
+                Discover our full spectrum of professional nursing and dedicated caretaker services.
               </p>
             </div>
           </AnimateOnScroll>

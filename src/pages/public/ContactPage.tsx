@@ -127,14 +127,14 @@ export default function ContactPage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="Contact 99 Care | Home Healthcare in Surat — +91 9016 116 564"
-        description="Contact 99 Care Surat for home nursing, caretaker, and healthcare services. Call, WhatsApp, or fill out the form. We respond within 2 hours."
+        title="Contact 99 Care | Home Healthcare Services — +91 9016 116 564"
+        description="Contact 99 Care for home nursing, caretaker, and healthcare services. Call, WhatsApp, or fill out the form. We respond within 2 hours."
         canonical="https://99care.org/contact"
         jsonLd={{
           "@context": "https://schema.org",
           "@type": "ContactPage",
           "name": "Contact 99 Care",
-          "description": "Contact 99 Care Surat for home nursing, caretaker, and healthcare services. Call +91 9016 116 564.",
+          "description": "Contact 99 Care for home nursing, caretaker, and healthcare services. Call +91 9016 116 564.",
           "mainEntity": {
             "@type": ["LocalBusiness", "MedicalBusiness"],
             "name": "99 Care — Home Healthcare Services",
@@ -143,7 +143,7 @@ export default function ContactPage() {
             "address": {
               "@type": "PostalAddress",
               "streetAddress": "104, Fortune Mall, Nr. Galaxy Circle, Pal gam",
-              "addressLocality": "Adajan, Surat",
+              "addressLocality": "Adajan",
               "addressRegion": "Gujarat",
               "postalCode": "395009",
               "addressCountry": "IN"
@@ -169,7 +169,7 @@ export default function ContactPage() {
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.2}>
               <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 font-light max-w-2xl mx-auto leading-relaxed">
-                Have questions about our home nursing or caretaker services in Surat? We're available around the clock to support you.
+                Have questions about our home nursing or caretaker services? We're available around the clock to support you.
               </p>
             </AnimateOnScroll>
           </div>
@@ -331,9 +331,9 @@ export default function ContactPage() {
                       <div className="flex items-start gap-4 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-gray-100 dark:border-slate-800">
                         <MapPin className="w-5 h-5 text-brand-blue mt-0.5 flex-shrink-0" />
                         <p className="text-sm leading-relaxed">
-                          <strong className="text-gray-900 dark:text-white block mb-0.5">Surat Office Address:</strong>
+                          <strong className="text-gray-900 dark:text-white block mb-0.5">Head Office Address:</strong>
                           104, Fortune Mall, Nr. Galaxy Circle, Pal Gam,<br/>
-                          Adajan, Surat, Gujarat – 395009
+                          Adajan, Gujarat – 395009
                         </p>
                       </div>
 
@@ -429,7 +429,7 @@ export default function ContactPage() {
 
                     <GradientButton asChild className="mt-4 w-full flex items-center justify-center gap-2 rounded-2xl py-3.5">
                       <a
-                        href="https://maps.google.com/?q=104+Fortune+Mall+Adajan+Surat+Gujarat"
+                        href="https://maps.google.com/?q=104+Fortune+Mall+Adajan+Gujarat"
                         target="_blank"
                         rel="noopener noreferrer"
                       >

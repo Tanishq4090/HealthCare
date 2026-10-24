@@ -50,7 +50,7 @@ export const blogs: BlogPost[] = [
       },
       {
         paragraph:
-          'At 99 Care, we have seen firsthand how home healthcare transforms the recovery experience for our patients in Surat and the surrounding areas. If you are considering home-based care for yourself or a loved one, we invite you to speak with our team. We are here to help you make the best decision for your family\'s health and well-being.',
+          'At 99 Care, we have seen firsthand how home healthcare transforms the recovery experience for our patients and their families. If you are considering home-based care for yourself or a loved one, we invite you to speak with our team. We are here to help you make the best decision for your family\'s health and well-being.',
       },
     ],
   },
@@ -62,8 +62,8 @@ export const blogs: BlogPost[] = [
     readTime: '5 min read',
     image: '/images/blog/reliable-care.png',
     excerpt:
-      'Discover why families across Surat trust 99 Care for professional, compassionate home healthcare. From verified nurses to 24/7 support: here is what sets us apart.',
-    tags: ['99 Care', 'Home Care', 'Surat Healthcare'],
+      'Discover why families trust 99 Care for professional, compassionate home healthcare. From verified nurses to 24/7 support: here is what sets us apart.',
+    tags: ['99 Care', 'Home Care', 'Quality Healthcare'],
     relatedSlugs: ['advantages-of-home-health-care', 'home-health-care-tips-for-seniors'],
     content: [
       {
@@ -88,11 +88,11 @@ export const blogs: BlogPost[] = [
       {
         heading: 'A Vast Network Built on Experience',
         paragraph:
-          'Over three years of operation in Surat, we have built a deep network of experienced healthcare professionals, medical supply partners, and clinical consultants. This network means that when your loved one needs specialized care, whether it is a particular type of wound dressing, a specific physiotherapy technique, or a referral to a specialist, we have the connections to make it happen quickly and efficiently.',
+          'Over years of dedicated operation, we have built a deep network of experienced healthcare professionals, medical supply partners, and clinical consultants. This network means that when your loved one needs specialized care, whether it is a particular type of wound dressing, a specific physiotherapy technique, or a referral to a specialist, we have the connections to make it happen quickly and efficiently.',
       },
       {
         paragraph:
-          'When you choose 99 Care, you are choosing a team that genuinely cares about outcomes, not just for your loved one\'s physical health but for the peace of mind and well-being of your entire family. We are proud to be Surat\'s trusted home healthcare partner, and we look forward to serving you.',
+          'When you choose 99 Care, you are choosing a team that genuinely cares about outcomes, not just for your loved one\'s physical health but for the peace of mind and well-being of your entire family. We are proud to be your trusted home healthcare partner, and we look forward to serving you.',
       },
     ],
   },
@@ -690,50 +690,50 @@ export const blogs: BlogPost[] = [
     ],
   },
   {
-    slug: 'surat-healthcare-complete-guide',
-    title: 'Surat Healthcare: A Complete Guide to Healthcare Services in Surat',
+    slug: 'complete-guide-to-home-healthcare',
+    title: 'Home Healthcare: A Complete Guide to Comprehensive Medical Care at Home',
     date: 'August 11, 2026',
     author: '99 Care Team',
     readTime: '5 min read',
-    image: '/images/blog/surat-healthcare-guide.jpg',
+    image: '/images/blog/home-healthcare-guide.jpg',
     excerpt:
-      'Explore the healthcare landscape in Surat: hospitals, home care services, and tips for accessing quality medical care in the city.',
-    tags: ['Surat Healthcare', 'Home Care Surat', 'Healthcare Services', 'Elderly Care Surat'],
+      'Explore the modern home healthcare landscape: hospitals, home care services, and tips for accessing quality medical care directly at home.',
+    tags: ['Home Healthcare', 'Home Care', 'Healthcare Services', 'Elderly Care'],
     relatedSlugs: ['home-care-services-complete-guide', 'senior-care-services-choose-best-care'],
     content: [
       {
         paragraph:
-          "Surat, one of Gujarat's fastest-growing cities, has seen significant growth in its healthcare infrastructure over the past decade. From advanced hospitals to home-based care services, residents now have access to a wide range of healthcare services in Surat. This guide explores what quality healthcare looks like in the city and how to access the right care for your needs.",
+          "Urban communities have seen significant growth in modern healthcare infrastructure over the past decade. From advanced hospitals to home-based care services, families now have access to a wide range of personalized medical services delivered at home. This guide explores what quality home healthcare looks like and how to access the right care for your needs.",
       },
       {
-        heading: 'Growing Healthcare Infrastructure in Surat',
+        heading: 'Growing Modern Healthcare Infrastructure',
         paragraph:
-          "Surat has developed a strong network of multi-specialty hospitals, diagnostic centers, and healthcare providers catering to the city's rapidly growing population. Alongside traditional hospital care, there's been a rising demand for home healthcare services in Surat, driven by busy lifestyles and an aging population.",
+          "Modern communities have developed a strong network of multi-specialty hospitals, diagnostic centers, and healthcare providers. Alongside traditional hospital care, there has been a rising demand for specialized home healthcare services driven by busy lifestyles and an aging population.",
       },
       {
-        heading: 'Key Healthcare Services Available in Surat',
+        heading: 'Key Healthcare Services Available at Home',
         paragraph:
           '1. Hospital and Emergency Care: Multi-specialty hospitals offering emergency care, surgery, diagnostics, and specialized treatment across departments.\n\n2. Home Healthcare Services: Professional home care services including skilled nursing care, elderly care, post-operative care, physiotherapy at home, and maternity/newborn care.\n\n3. Diagnostic and Pathology Services: Quality diagnostic labs ensuring timely testing and accurate results for early detection.\n\n4. Preventive Healthcare: Increased demand for preventive checkups, vaccination drives, and wellness programs across the city.',
       },
       {
-        heading: 'Why Home Healthcare is Growing in Surat',
+        heading: 'Why Home Healthcare is Growing Rapidly',
         paragraph:
           '• Busy urban lifestyles make it difficult for families to always be present at hospitals\n• Aging population requires ongoing care and support\n• Cost-effectiveness compared to prolonged hospital stays\n• Comfort of home aids faster recovery, especially for elderly and post-surgical patients',
       },
       {
-        heading: 'Choosing the Right Healthcare Provider in Surat',
+        heading: 'Choosing the Right Healthcare Provider',
         paragraph:
           '1. Reputation and reviews from local residents\n2. Range of services offered: ensure they match your specific needs\n3. Qualified and verified staff with proper medical training\n4. Availability: especially for emergencies or 24/7 support\n5. Transparent pricing without hidden costs\n6. Proximity and response time for urgent care needs',
       },
       {
-        heading: 'Tips for Accessing Quality Healthcare in Surat',
+        heading: 'Tips for Accessing Quality Healthcare',
         paragraph:
           '• Keep a list of nearby hospitals and emergency contacts\n• Maintain updated medical records for faster treatment\n• Consider home care services for elderly family members or post-surgical recovery\n• Schedule regular preventive health checkups\n• Choose providers with verified credentials and strong local reputations',
       },
       {
         heading: 'Conclusion',
         paragraph:
-          "As Surat continues to grow, so does its healthcare ecosystem, offering residents more choices for both hospital-based and home-based care. Whether you need emergency treatment, ongoing elderly care, or support for a new mother and baby, 99 Care's expanding healthcare services in Surat make it possible to access quality, compassionate care close to home.",
+          "As modern healthcare continues to evolve, families are provided with more flexible choices for both clinical and home-based recovery. Whether you need post-surgical rehabilitation, ongoing elderly care, or support for a new mother and baby, 99 Care provides comprehensive, high-quality, and compassionate care directly at home.",
       },
     ],
   },

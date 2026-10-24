@@ -17,7 +17,7 @@ export default function Footer() {
               />
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-8 pr-4">
-              Professional home healthcare, delivered with care. Serving families across Surat with compassion and medical excellence.
+              Professional home healthcare, delivered with care. Serving families with compassion and medical excellence.
             </p>
             <div className="flex gap-4">
               {/* Facebook */}
@@ -53,7 +53,8 @@ export default function Footer() {
             <div className="flex flex-col gap-4 text-sm">
               <Link to="/about" className="text-gray-400 hover:text-white transition-colors w-w-fit">About Us</Link>
               <Link to="/services" className="text-gray-400 hover:text-white transition-colors w-w-fit">Services</Link>
-              <Link to="/appointment" className="text-gray-400 hover:text-white transition-colors w-w-fit">Appointment</Link>
+              <Link to="/#reviews" className="text-gray-400 hover:text-white transition-colors w-fit">Patient Reviews</Link>
+              <Link to="/appointment" className="text-gray-400 hover:text-white transition-colors w-fit">Appointment</Link>
               <Link to="/contact" className="text-gray-400 hover:text-white transition-colors w-w-fit">Contact Us</Link>
             </div>
           </div>
@@ -80,7 +81,7 @@ export default function Footer() {
             <div className="flex flex-col gap-4 text-sm text-gray-400">
               <p>📞 +91 9016116564</p>
               <p>📧 99careforyou@gmail.com</p>
-              <p>📍 104, Fortune Mall, Galaxy Circle, Adajan, Surat</p>
+              <p>📍 104, Fortune Mall, Galaxy Circle, Adajan</p>
               <Link to="/appointment" className="text-[#1AA6A8] hover:text-white transition-colors font-semibold">Book Appointment →</Link>
             </div>
           </div>

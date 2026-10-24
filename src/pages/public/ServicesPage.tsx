@@ -71,8 +71,8 @@ export default function ServicesPage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="Home Healthcare Services in Surat | 99 Care"
-        description="Browse all home healthcare services: nursing, wound care, injection at home, maternity care, newborn care, old age care, and caretaker services in Surat."
+        title="Premier Home Care Services | 99 Care"
+        description="Browse all home healthcare services: nursing, wound care, injection at home, maternity care, newborn care, old age care, and caretaker services."
         canonical="https://99care.org/services"
       />
       <div className="w-full bg-slate-50/60 dark:bg-slate-950 pb-32 min-h-screen">
@@ -88,12 +88,12 @@ export default function ServicesPage() {
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.1}>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 dark:text-white mb-6 tracking-tight leading-tight">
-                Surat's Premier Home Care Services
+                Premier Home Care Services
               </h1>
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.2}>
               <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 font-light max-w-2xl mx-auto leading-relaxed">
-                Comprehensive, verified, and compassionate healthcare delivered directly to your doorstep in Surat.
+                Comprehensive, verified, and compassionate healthcare delivered directly to your doorstep.
               </p>
             </AnimateOnScroll>
           </div>

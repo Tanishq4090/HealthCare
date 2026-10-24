@@ -11,7 +11,7 @@ interface Message {
   time: string;
 }
 
-const PHONE_NUMBER = '917971542924';
+const PHONE_NUMBER = '919016116564';
 const WHATSAPP_URL = `https://api.whatsapp.com/send/?phone=${PHONE_NUMBER}&text=Hi%2C%20I%20need%20help%20with%20a%20healthcare%20service&type=phone_number&app_absent=0`;
 
 function getTime(): string {
@@ -182,7 +182,7 @@ export function WhatsAppWidget() {
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Chat on WhatsApp</h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Open WhatsApp app</p>
+                    <p className="text-xs text-[#25D366] font-medium">+91 9016 116 564</p>
                   </div>
                   <ExternalLink className="w-4 h-4 text-slate-400" />
                 </a>

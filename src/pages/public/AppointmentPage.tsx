@@ -52,7 +52,7 @@ export default function AppointmentPage() {
       phone: '',
       email: '',
       serviceId: '',
-      city: 'Surat',
+      city: '',
       location: '',
       notes: '',
     },
@@ -62,7 +62,7 @@ export default function AppointmentPage() {
     try {
       setIsLoading(true);
       
-      const selectedCity = data.city || 'Surat';
+      const selectedCity = data.city || '';
       const formattedLocation = `${data.location}, ${selectedCity}`;
       const enrichedNotes = [
         data.notes || '',
@@ -111,7 +111,7 @@ export default function AppointmentPage() {
               "Service Requested": data.serviceId,
               "Preferred Date": format(data.date, 'EEEE, MMMM d, yyyy'),
               "Preferred Time": data.timeSlot,
-              "Location in Surat": data.location,
+              "Location": data.location,
               "Notes / Special Requirements": data.notes || "None",
               "Submitted At": new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
               "_captcha": "false"
@@ -158,8 +158,8 @@ export default function AppointmentPage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="Book Home Healthcare Appointment | 99 Care Surat"
-        description="Book a professional nurse, caretaker or home healthcare service in Surat. Fill in your details and our team will confirm within 2 hours. Available 24/7."
+        title="Book Home Healthcare Appointment | 99 Care"
+        description="Book a professional nurse, caretaker or home healthcare service. Fill in your details and our team will confirm within 2 hours. Available 24/7."
         canonical="https://99care.org/appointment"
       />
       <div className="w-full bg-slate-50/60 dark:bg-slate-950 min-h-screen pb-32">
@@ -180,7 +180,7 @@ export default function AppointmentPage() {
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.2}>
               <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 font-light max-w-2xl mx-auto leading-relaxed">
-                Fill in the details below and our healthcare team in Surat will confirm your booking within 2 hours.
+                Fill in the details below and our healthcare team will confirm your booking within 2 hours.
               </p>
             </AnimateOnScroll>
           </div>
@@ -328,14 +328,14 @@ export default function AppointmentPage() {
                         render={({ field }) => (
                           <FormItem className="space-y-2">
                             <FormLabel className="text-sm font-semibold text-gray-900 dark:text-white ml-1">City <span className="text-red-500">*</span></FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value || 'Surat'}>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <FormControl>
                                 <SelectTrigger className="h-13 bg-slate-50/80 dark:bg-slate-800/80 border-gray-200/80 dark:border-slate-700 text-gray-900 dark:text-white focus:ring-brand-blue rounded-2xl">
                                   <SelectValue placeholder="Select city" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 rounded-2xl shadow-xl">
-                                {['Surat', 'Navsari', 'Bardoli', 'Bharuch', 'Valsad', 'Vapi', 'Ahmedabad', 'Vadodara', 'Mumbai', 'Other'].map((cityName) => (
+                                {['Navsari', 'Bardoli', 'Bharuch', 'Valsad', 'Vapi', 'Ahmedabad', 'Vadodara', 'Mumbai', 'Other'].map((cityName) => (
                                   <SelectItem key={cityName} value={cityName} className="text-gray-700 dark:text-gray-300 focus:bg-slate-50 dark:focus:bg-slate-800 rounded-xl my-1">{cityName}</SelectItem>
                                 ))}
                               </SelectContent>
@@ -469,7 +469,7 @@ export default function AppointmentPage() {
                 <Accordion type="single" collapsible className="space-y-4">
                   {[
                     { q: "Will I get the same nurse or caretaker each time?", a: "We always try to assign the same verified caretaker to ensure continuity of care. If unavoidable, we inform you in advance and ensure the replacement is fully briefed." },
-                    { q: "What areas in Surat do you cover?", a: "We cover all major areas including Pal, Adajan, Vesu, Althan, Udhna, Katargam, Varachha, City Centre, Piplod, and surrounding localities." },
+                    { q: "What city do you cover?", a: "We provide comprehensive home healthcare services across major cities and surrounding metropolitan regions. Please contact us directly to confirm availability in your specific neighborhood." },
                     { q: "How soon can a caretaker arrive after booking?", a: "For same-day bookings we typically arrange a caretaker within 2–4 hours. Scheduled bookings are confirmed the evening before with a confirmation call." },
                     { q: "What qualifications do your nursing staff have?", a: "All nurses are GNM or ANM certified with minimum 2 years of clinical experience. Caretakers are background-verified and complete our in-house training program." },
                     { q: "Can I cancel or reschedule my appointment?", a: "Yes — call us at +91 9016 116 564 at least 4 hours before. WhatsApp us anytime for quick changes." },

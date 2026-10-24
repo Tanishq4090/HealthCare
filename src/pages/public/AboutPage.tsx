@@ -12,8 +12,8 @@ export default function AboutPage() {
   return (
     <PageTransition>
       <SEOMeta
-        title="About 99 Care | Trusted Home Healthcare in Surat"
-        description="Learn about 99 Care's mission to bring verified, compassionate healthcare to Surat homes. Meet our team and discover our commitment to quality care."
+        title="About 99 Care | Trusted Home Healthcare Services"
+        description="Learn about 99 Care's mission to bring verified, compassionate healthcare directly to your home. Meet our team and discover our commitment to quality care."
         canonical="https://99care.org/about"
       />
       <div className="w-full bg-slate-50/60 dark:bg-slate-950 min-h-screen pb-24">
@@ -36,12 +36,12 @@ export default function AboutPage() {
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.1}>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 dark:text-white mb-6 tracking-tight leading-tight">
-                Caring for Surat, One Home at a Time
+                More Than Care, We Bring Comfort, Trust & Family-Like Support.
               </h1>
             </AnimateOnScroll>
             <AnimateOnScroll variants={fadeUp} delay={0.2}>
               <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 font-light max-w-2xl mx-auto leading-relaxed">
-                Bringing professional, compassionate, and personalized healthcare directly to your doorstep in Surat.
+                Bringing professional, compassionate, and personalized healthcare directly to your doorstep.
               </p>
             </AnimateOnScroll>
           </div>
@@ -54,7 +54,7 @@ export default function AboutPage() {
               <AnimateOnScroll variants={slideLeft}>
                 <div className="bg-slate-50/80 dark:bg-slate-900/60 p-8 sm:p-10 rounded-3xl border border-gray-200/80 dark:border-slate-800 shadow-sm">
                   <span className="text-brand-blue text-xs font-bold uppercase tracking-[0.2em] mb-3 flex items-center gap-1.5">
-                    <BrandEmblem className="w-4 h-4" /> Surat's Premier Healthcare Partner
+                    <BrandEmblem className="w-4 h-4" /> Premier Healthcare Partner
                   </span>
                   <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-6 tracking-tight flex items-center gap-3">
                     Welcome to 99 Care
@@ -63,7 +63,7 @@ export default function AboutPage() {
                     We understand that home is where healing happens best. That's why we bring expert medical care directly to you. Our team of certified nurses, experienced caretakers, and trained medical professionals are passionate about improving your quality of life without the stress of hospital visits.
                   </p>
                   <p className="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed font-light text-base">
-                    Founded in Surat, Gujarat, we have built our reputation on trust, reliability, and an unwavering commitment to patient well-being.
+                    Founded on the principles of patient-first care, we have built our reputation on trust, reliability, and an unwavering commitment to health and well-being.
                   </p>
                   
                   <div className="space-y-3.5 pt-4 border-t border-gray-200/60 dark:border-slate-800">
@@ -98,7 +98,7 @@ export default function AboutPage() {
                   </div>
                 </div>
                 <div className="mt-4 text-center">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 italic">Delivering healthcare with compassion in Surat</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 italic">Delivering healthcare with compassion and excellence</span>
                 </div>
               </AnimateOnScroll>
             </div>
@@ -126,7 +126,7 @@ export default function AboutPage() {
                 
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white pt-4 border-t border-gray-100 dark:border-slate-800">Bringing About Change</h3>
                 <p>
-                  With pride, <span className="font-bold text-brand-blue dark:text-teal-400">99 Care</span> serves as a reliable healthcare partner for multiple families today. Continuing into the future, we still hold tight to our core values, innovating and raising the bar for home health services across Surat.
+                  With pride, <span className="font-bold text-brand-blue dark:text-teal-400">99 Care</span> serves as a reliable healthcare partner for multiple families today. Continuing into the future, we still hold tight to our core values, innovating and raising the bar for home health services across every community we serve.
                 </p>
               </div>
             </div>
@@ -172,7 +172,7 @@ export default function AboutPage() {
                   </div>
                   <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Our Vision</h3>
                   <p className="text-gray-600 dark:text-gray-300 leading-relaxed font-light">
-                    To be the most trusted and preferred partner for home healthcare in Surat, setting new benchmarks for quality, reliability, and compassion in every aspect of personalized recovery and wellness.
+                    To be the most trusted and preferred partner for home healthcare, setting new benchmarks for quality, reliability, and compassion in every aspect of personalized recovery and wellness.
                   </p>
                 </motion.div>
               </motion.div>
@@ -243,7 +243,7 @@ export default function AboutPage() {
           <AnimateOnScroll variants={{ hidden: { opacity: 0, scale: 0.95 }, visible: { opacity: 1, scale: 1, transition: { duration: 0.5 } } }} className="max-w-2xl mx-auto flex flex-col items-center">
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white mb-6">Ready to Experience Better Care?</h2>
             <p className="text-white/90 text-base sm:text-lg mb-10 font-light max-w-lg leading-relaxed">
-              Schedule a consultation today and let our verified team care for your family in Surat.
+              Schedule a consultation today and let our verified team care for your family.
             </p>
             <motion.div
               whileHover={{ scale: 1.03 }}
