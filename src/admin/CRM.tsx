@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, ChevronUp, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff, HeartPulse, Sparkles } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, ChevronUp, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff, HeartPulse, Sparkles, Table, LayoutList, Kanban, Copy, ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -945,6 +945,53 @@ export default function CRM() {
     const [isDispatchingWorkForm, setIsDispatchingWorkForm] = useState(false);
     const [detailsModalClient, setDetailsModalClient] = useState<any | null>(null);
     const [isEndingLeadService, setIsEndingLeadService] = useState(false);
+
+    // ── CRM View Mode & Table Sorting (Rows & Columns View) ───────────────────
+    const [crmViewMode, setCrmViewMode] = useState<'table' | 'pipeline'>(() => {
+        try {
+            return (localStorage.getItem('crmViewMode') as 'table' | 'pipeline') || 'table';
+        } catch {
+            return 'table';
+        }
+    });
+    const handleSetCrmViewMode = (mode: 'table' | 'pipeline') => {
+        setCrmViewMode(mode);
+        try {
+            localStorage.setItem('crmViewMode', mode);
+        } catch {}
+    };
+
+    const [crmSearchQuery, setCrmSearchQuery] = useState('');
+    const [crmSortField, setCrmSortField] = useState<'id' | 'name' | 'city' | 'phone' | 'priority' | 'stage' | 'rate' | 'created_at'>('created_at');
+    const [crmSortAsc, setCrmSortAsc] = useState<boolean>(false);
+
+    const [copiedLeadIdBadge, setCopiedLeadIdBadge] = useState<string | null>(null);
+    const [copiedLeadPhoneBadge, setCopiedLeadPhoneBadge] = useState<string | null>(null);
+
+    const handleCopyLeadId = (idStr: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(idStr);
+        setCopiedLeadIdBadge(idStr);
+        toast.success(`Copied ID ${idStr}`);
+        setTimeout(() => setCopiedLeadIdBadge(null), 2000);
+    };
+
+    const handleCopyLeadPhone = (phoneStr: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(phoneStr);
+        setCopiedLeadPhoneBadge(phoneStr);
+        toast.success(`Copied phone number`);
+        setTimeout(() => setCopiedLeadPhoneBadge(null), 2000);
+    };
+
+    const handleCrmSort = (field: 'id' | 'name' | 'city' | 'phone' | 'priority' | 'stage' | 'rate' | 'created_at') => {
+        if (crmSortField === field) {
+            setCrmSortAsc(!crmSortAsc);
+        } else {
+            setCrmSortField(field);
+            setCrmSortAsc(true);
+        }
+    };
 
     const handleEndLeadService = async (lead: any) => {
         const clientServices = (lead.services || []) as any[];
@@ -4859,6 +4906,54 @@ export default function CRM() {
         })
     }));
 
+    // ── Table View Data & Sorting (Flat list of visible leads) ───────────────
+    const tableLeads = useMemo(() => {
+        const allItems = columns.flatMap(c => c.items);
+        if (!crmSearchQuery.trim()) return allItems;
+        const q = crmSearchQuery.toLowerCase().trim();
+        return allItems.filter(item => {
+            const name = (item.name || '').toLowerCase();
+            const phone = (item.phone || item.whatsapp_number || '').replace(/\D/g, '');
+            const city = extractCity(item).toLowerCase();
+            const stage = (item.pipeline_stage || '').toLowerCase();
+            const displayId = `ld-${(item.id || '').substring(0, 4)}`.toLowerCase();
+            const notes = (item.notes || '').toLowerCase();
+            const service = (item.service_interest || '').toLowerCase();
+            return name.includes(q) || phone.includes(q) || city.includes(q) || stage.includes(q) || displayId.includes(q) || notes.includes(q) || service.includes(q);
+        });
+    }, [columns, crmSearchQuery]);
+
+    const sortedTableLeads = useMemo(() => {
+        return [...tableLeads].sort((a, b) => {
+            let comp = 0;
+            if (crmSortField === 'id') {
+                const idA = `LD-${(a.id || '').substring(0, 4).toUpperCase()}`;
+                const idB = `LD-${(b.id || '').substring(0, 4).toUpperCase()}`;
+                comp = idA.localeCompare(idB);
+            } else if (crmSortField === 'name') {
+                comp = (a.name || '').localeCompare(b.name || '');
+            } else if (crmSortField === 'city') {
+                comp = extractCity(a).localeCompare(extractCity(b));
+            } else if (crmSortField === 'phone') {
+                comp = (a.phone || a.whatsapp_number || '').localeCompare(b.phone || b.whatsapp_number || '');
+            } else if (crmSortField === 'priority') {
+                const prioRank = { hot: 3, medium: 2, cold: 1 };
+                const rA = prioRank[a.priority as 'hot' | 'medium' | 'cold'] || 2;
+                const rB = prioRank[b.priority as 'hot' | 'medium' | 'cold'] || 2;
+                comp = rA - rB;
+            } else if (crmSortField === 'stage') {
+                comp = (a.pipeline_stage || '').localeCompare(b.pipeline_stage || '');
+            } else if (crmSortField === 'rate') {
+                const rA = Number(a.complete_month_daily_rate || a.incomplete_month_daily_rate || a.valueAmount || 0);
+                const rB = Number(b.complete_month_daily_rate || b.incomplete_month_daily_rate || b.valueAmount || 0);
+                comp = rA - rB;
+            } else if (crmSortField === 'created_at') {
+                comp = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+            }
+            return crmSortAsc ? comp : -comp;
+        });
+    }, [tableLeads, crmSortField, crmSortAsc]);
+
     const handleUpdateLeadValue = async (leadId: string) => {
         const newValue = parseInt(editingLeadValueAmount.replace(/\D/g, ''), 10);
 
@@ -5857,8 +5952,60 @@ export default function CRM() {
                                 )}
                             </div>
 
+                            {/* View Mode Switcher: Table vs Pipeline */}
+                            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSetCrmViewMode('table')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                        crmViewMode === 'table'
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                                    title="Compact table view with rows and columns"
+                                >
+                                    <Table className="w-3.5 h-3.5" />
+                                    <span>Table</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSetCrmViewMode('pipeline')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                                        crmViewMode === 'pipeline'
+                                            ? 'bg-[#1AA6A8] text-white shadow-2xs'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                                    }`}
+                                    title="Pipeline accordion view with stage cards"
+                                >
+                                    <Kanban className="w-3.5 h-3.5" />
+                                    <span>Pipeline</span>
+                                </button>
+                            </div>
+
+                            {/* Live Search */}
+                            <div className="relative min-w-[160px] sm:min-w-[210px]">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    value={crmSearchQuery}
+                                    onChange={(e) => setCrmSearchQuery(e.target.value)}
+                                    placeholder={`Search ${activeTab === 'clients' ? 'clients' : 'leads'}...`}
+                                    className="w-full pl-8 pr-7 py-1.5 text-xs font-medium bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-[#1AA6A8]/20 focus:border-[#1AA6A8] transition-all"
+                                />
+                                {crmSearchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setCrmSearchQuery('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                                        title="Clear search"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </div>
+
                             {/* Badges Visibility Toggle */}
-                            {activeTab === 'pipeline' && (
+                            {crmViewMode === 'pipeline' && activeTab === 'pipeline' && (
                                 <button
                                     type="button"
                                     onClick={toggleShowBadges}
@@ -5916,11 +6063,375 @@ export default function CRM() {
                         </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4 pr-2 custom-scrollbar">
+                    <div className={`flex-1 flex flex-col ${crmViewMode === 'table' ? 'min-h-0 overflow-hidden' : 'gap-4 overflow-y-auto pb-4 pr-2 custom-scrollbar'}`}>
                         {isLoading ? (
                             <div className="flex-1 flex items-center justify-center">
                                 <Loader2 className="w-8 h-8 text-primary animate-spin" />
                                 <span className="ml-3 text-slate-500 font-medium">Loading live pipeline...</span>
+                            </div>
+                        ) : crmViewMode === 'table' ? (
+                            /* ── TABLE VIEW (Rows & Columns View) ── */
+                            <div className="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
+                                <div className="overflow-x-auto flex-1 custom-scrollbar">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-extrabold uppercase tracking-wider text-slate-600 select-none sticky top-0 z-10 backdrop-blur-xs">
+                                                <th className="py-2.5 px-3 w-12 text-center whitespace-nowrap">#</th>
+                                                <th onClick={() => handleCrmSort('id')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Lead ID">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>ID</span>
+                                                        {crmSortField === 'id' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('name')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Name">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Lead Name & Service</span>
+                                                        {crmSortField === 'name' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('city')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by City">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>City</span>
+                                                        {crmSortField === 'city' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('phone')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Phone">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Phone</span>
+                                                        {crmSortField === 'phone' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('priority')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Priority">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Priority</span>
+                                                        {crmSortField === 'priority' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('stage')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Stage">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Stage</span>
+                                                        {crmSortField === 'stage' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('rate')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Daily Rate / Budget">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Rates / Budget</span>
+                                                        {crmSortField === 'rate' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th onClick={() => handleCrmSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Date Added">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Date Added</span>
+                                                        {crmSortField === 'created_at' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                    </div>
+                                                </th>
+                                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 bg-white">
+                                            {sortedTableLeads.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={10} className="py-16 text-center">
+                                                        <div className="flex flex-col items-center justify-center">
+                                                            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+                                                                <Users className="w-6 h-6 text-slate-400" />
+                                                            </div>
+                                                            <p className="text-sm font-semibold text-slate-600">
+                                                                {crmSearchQuery 
+                                                                    ? `No leads found matching "${crmSearchQuery}"` 
+                                                                    : crmSelectedCity !== 'all' 
+                                                                        ? `No leads found for ${crmSelectedCity}` 
+                                                                        : 'No leads found for this period'}
+                                                            </p>
+                                                            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                                                                {crmSearchQuery ? 'Try clearing or modifying your search filter.' : 'Try selecting "All Leads" or choosing a different month.'}
+                                                            </p>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                sortedTableLeads.map((item, itemIdx) => {
+                                                    const priorityMeta = item.priority === 'hot'
+                                                        ? { label: 'Hot', cls: 'bg-red-100 text-red-700 border-red-200' }
+                                                        : item.priority === 'cold'
+                                                            ? { label: 'Low', cls: 'bg-blue-100 text-blue-700 border-blue-200' }
+                                                            : { label: 'Medium', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
+
+                                                    let serviceName: string | null = item.service_interest || null;
+                                                    let shiftBubble: string | null = null;
+                                                    if (item.notes) {
+                                                        const serviceMatch = item.notes.match(/^Service:\s*(.+)$/im);
+                                                        const shiftMatch = item.notes.match(/^Shift:\s*(.+)$/im);
+                                                        if (!serviceName && serviceMatch) serviceName = serviceMatch[1].trim();
+                                                        if (shiftMatch) shiftBubble = shiftMatch[1].trim();
+                                                    }
+                                                    if (!serviceName) serviceName = item.intent || null;
+                                                    if (serviceName === 'Unknown' || serviceName === '') serviceName = null;
+                                                    if (shiftBubble === '' || shiftBubble === 'Unknown') shiftBubble = null;
+
+                                                    const city = extractCity(item);
+                                                    const displayId = `LD-${(item.id || '').substring(0, 4).toUpperCase()}`;
+
+                                                    const lQuote = item.crm_quotations?.[0];
+                                                    const cRate = item.complete_month_daily_rate || lQuote?.complete_month_rate || item.services?.[0]?.complete_month_daily_rate;
+                                                    const incRate = item.incomplete_month_daily_rate || lQuote?.incomplete_month_rate || item.services?.[0]?.incomplete_month_daily_rate;
+
+                                                    const rawPhone = (item.whatsapp_number || item.phone || '').trim();
+                                                    const cleanDigits = rawPhone.replace(/\D/g, '');
+                                                    const waDigits = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+                                                    const telDigits = rawPhone.startsWith('+') ? rawPhone : (cleanDigits.length === 10 ? `+91${cleanDigits}` : `+${cleanDigits}`);
+                                                    const isCopied = copiedLeadPhoneBadge === rawPhone;
+                                                    const displayPhone = formatPhoneNumber(rawPhone);
+
+                                                    return (
+                                                        <tr
+                                                            key={item.id}
+                                                            onClick={async () => {
+                                                                setSelectedInspectorLead(item);
+                                                                fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                if (item.needs_attention) {
+                                                                    setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                    await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                }
+                                                            }}
+                                                            className="hover:bg-teal-50/40 transition-colors cursor-pointer group"
+                                                        >
+                                                            {/* Sr No */}
+                                                            <td className="py-2.5 px-3 text-center text-slate-400 font-mono text-[11px] select-none whitespace-nowrap">
+                                                                {itemIdx + 1}
+                                                            </td>
+
+                                                            {/* ID badge with 1-click copy */}
+                                                            <td className="py-2.5 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => handleCopyLeadId(displayId, e)}
+                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
+                                                                    title={`Click to copy ${displayId}\nFull UUID: ${item.id}`}
+                                                                >
+                                                                    <span>{displayId}</span>
+                                                                    {copiedLeadIdBadge === displayId ? (
+                                                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                                    ) : (
+                                                                        <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                                    )}
+                                                                </button>
+                                                            </td>
+
+                                                            {/* Lead Name & Service */}
+                                                            <td className="py-2.5 px-3 whitespace-nowrap">
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold shadow-2xs ${getAvatarColor(item.name || 'Lead')}`}>
+                                                                        {getInitials(item.name || 'L')}
+                                                                    </div>
+                                                                    <div className="min-w-0 flex flex-col">
+                                                                        <div className="font-bold text-slate-900 group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
+                                                                            <span className="truncate">{item.name || 'Unnamed Lead'}</span>
+                                                                            {item.needs_attention && (
+                                                                                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse" title="Needs attention" />
+                                                                            )}
+                                                                        </div>
+                                                                        {serviceName ? (
+                                                                            <span className="text-[10px] text-slate-500 truncate font-medium">
+                                                                                {serviceName}{shiftBubble ? ` • ${shiftBubble}` : ''}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="text-[10px] text-slate-400 italic">General Inquiry</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* City */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 uppercase tracking-wider">
+                                                                    <MapPin className="w-2.5 h-2.5 text-sky-600" /> {city}
+                                                                </span>
+                                                            </td>
+
+                                                            {/* Phone */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                {!rawPhone ? (
+                                                                    <span className="font-mono text-xs text-slate-400">N/A</span>
+                                                                ) : !canViewPhoneNumbers ? (
+                                                                    <div className="inline-flex items-center gap-1.5 py-0.5">
+                                                                        <span className="font-mono text-xs font-semibold text-slate-700 inline-flex items-center gap-1" title="Phone masked for role privacy">
+                                                                            <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                            <span>{displayPhone}</span>
+                                                                        </span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => handleCopyLeadPhone(rawPhone, e)}
+                                                                            className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                                                            title="Copy phone"
+                                                                        >
+                                                                            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="inline-flex items-center gap-1.5 py-0.5">
+                                                                        <a
+                                                                            href={`tel:${telDigits}`}
+                                                                            className="font-mono text-xs font-semibold text-slate-800 hover:text-primary hover:underline transition-colors inline-flex items-center gap-1 group/call"
+                                                                            title={`Click to call ${rawPhone}`}
+                                                                        >
+                                                                            <Phone className="w-3 h-3 text-slate-400 group-hover/call:text-primary transition-colors shrink-0" />
+                                                                            <span>{displayPhone}</span>
+                                                                        </a>
+                                                                        <div className="inline-flex items-center gap-0.5 shrink-0">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => fetchWhatsappChat(item)}
+                                                                                className="p-1 rounded-md text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                                                title={`Chat with ${item.name} on WhatsApp`}
+                                                                            >
+                                                                                <MessageCircle className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => handleCopyLeadPhone(rawPhone, e)}
+                                                                                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                                                                title="Copy phone number"
+                                                                            >
+                                                                                {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </td>
+
+                                                            {/* Priority */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${priorityMeta.cls}`}>
+                                                                    {priorityMeta.label}
+                                                                </span>
+                                                            </td>
+
+                                                            {/* Stage / Status with quick dropdown */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                <select
+                                                                    value={item.pipeline_stage}
+                                                                    onChange={async (e) => {
+                                                                        const newStage = e.target.value;
+                                                                        if (newStage && newStage !== item.pipeline_stage) {
+                                                                            await handleMoveLead(item.id, newStage);
+                                                                        }
+                                                                    }}
+                                                                    className="text-xs font-semibold bg-slate-50 hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-700 rounded-lg px-2 py-1 cursor-pointer outline-none focus:ring-2 focus:ring-teal-200 transition-colors"
+                                                                    title="Change pipeline stage"
+                                                                >
+                                                                    {activeStages.map((stg) => (
+                                                                        <option key={stg} value={stg}>{stg}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </td>
+
+                                                            {/* Rates / Budget */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                <div className="flex flex-col gap-0.5">
+                                                                    {cRate ? (
+                                                                        <span
+                                                                            onClick={() => openQuickEdit(item)}
+                                                                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-pointer hover:bg-emerald-100 transition-colors w-fit"
+                                                                            title="Full Month Daily Rate (Click to edit)"
+                                                                        >
+                                                                            Full: ₹{Number(cRate).toLocaleString('en-IN')}/d
+                                                                        </span>
+                                                                    ) : null}
+                                                                    {incRate ? (
+                                                                        <span
+                                                                            onClick={() => openQuickEdit(item)}
+                                                                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors w-fit"
+                                                                            title="Partial Month Daily Rate (Click to edit)"
+                                                                        >
+                                                                            Part: ₹{Number(incRate).toLocaleString('en-IN')}/d
+                                                                        </span>
+                                                                    ) : null}
+                                                                    {!cRate && !incRate && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openQuickEdit(item)}
+                                                                            className="text-[10px] text-slate-400 hover:text-primary font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                                                                        >
+                                                                            <Plus className="w-2.5 h-2.5" /> Set Rates
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Date Added */}
+                                                            <td className="py-2.5 px-2.5 whitespace-nowrap">
+                                                                <div className="flex flex-col text-slate-600">
+                                                                    <span className="font-semibold text-xs text-slate-800">
+                                                                        {item.created_at ? format(new Date(item.created_at), 'dd MMM yyyy') : '—'}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-400 font-mono">
+                                                                        {item.created_at ? format(new Date(item.created_at), 'hh:mm a') : ''}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Actions */}
+                                                            <td className="py-2.5 px-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openQuickEdit(item)}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-teal-50 transition-colors cursor-pointer"
+                                                                        title="Quick edit lead info & rates"
+                                                                    >
+                                                                        <Edit3 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={async () => {
+                                                                            setSelectedInspectorLead(item);
+                                                                            fetchLeadActivity(item.id, item.duplicate_of_lead_id);
+                                                                            if (item.needs_attention) {
+                                                                                setLeads(prev => prev.map(l => l.id === item.id ? { ...l, needs_attention: false } : l));
+                                                                                await supabase.from('crm_leads').update({ needs_attention: false }).eq('id', item.id);
+                                                                            }
+                                                                        }}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-teal-50 transition-colors cursor-pointer"
+                                                                        title="View lead inspector drawer"
+                                                                    >
+                                                                        <Eye className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => fetchWhatsappChat(item)}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                                        title="WhatsApp chat"
+                                                                    >
+                                                                        <MessageCircle className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteLead(item.id, item.name)}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                                                        title="Delete / Trash lead"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {/* Table footer with lead count summary */}
+                                <div className="p-2.5 px-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
+                                    <div>
+                                        Showing <span className="font-bold text-slate-800">{sortedTableLeads.length}</span> {activeTab === 'clients' ? 'clients' : 'leads'}
+                                        {crmSearchQuery ? ` matching "${crmSearchQuery}"` : ''}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[11px] text-slate-400">Click any row to view full details</span>
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <>
