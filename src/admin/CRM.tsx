@@ -5414,7 +5414,6 @@ export default function CRM() {
                     name: leadName,
                     phone: leadPhone || null,
                     whatsapp_number: standardized || null,
-                    location: addClientAddress.trim() || null,
                     source: 'Manual Client Setup',
                     status: 'Active',
                     pipeline_stage: 'Active Client',
@@ -5490,8 +5489,7 @@ export default function CRM() {
                 await supabase.from('client_consents').insert([{
                     lead_id: newLead.id,
                     patient_name: patientNameClean,
-                    age: addClientAge.trim() || null,
-                    age_unit: addClientAgeUnit,
+                    age: addClientAge.trim() ? `${addClientAge.trim()} ${addClientAgeUnit}` : null,
                     weight: addClientWeight.trim() || null,
                     relative_name: addClientRelativeName.trim() || leadName,
                     contact_number: leadPhone || null,
@@ -5555,7 +5553,7 @@ export default function CRM() {
                     }]);
 
                 // 5b. Insert into legacy worker_assignments for compatibility
-                await supabase
+                const { data: legacyAsg } = await supabase
                     .from('worker_assignments')
                     .insert([{
                         client_id: newLead.id,
@@ -5568,7 +5566,9 @@ export default function CRM() {
                         deposit_amount: depAmount,
                         deposit_paid: depAmount,
                         client_billing_rate: cmRate,
-                    }]);
+                    }])
+                    .select('id')
+                    .single();
 
                 // 5c. Update Employee status
                 await supabase
@@ -5598,15 +5598,16 @@ export default function CRM() {
                             return {
                                 worker_id: worker.workerId,
                                 duty_date: dateStr,
+                                assignment_id: legacyAsg?.id || null,
                                 status: isAbsent ? 'absent' : 'present',
                                 is_absent: isAbsent,
-                                client_name: leadName,
+                                notes: `Auto-marked for ${leadName}`,
                             };
                         });
 
                         await supabase
                             .from('attendance')
-                            .insert(attendancePayloads);
+                            .upsert(attendancePayloads, { onConflict: 'worker_id, duty_date' });
                     }
                 }
             }
@@ -8878,7 +8879,12 @@ export default function CRM() {
                                                         placeholder="Age (e.g. 1 yrs or 6 months)"
                                                     />
                                                     <button
-                                                        onClick={() => handleSaveConsentField(leadId, 'age', inspectorConsentDraft.trim(), 'Age', consent?.age ? `${consent.age} ${consent.age_unit || 'yrs'}` : '—', inspectorConsentDraft.trim())}
+                                                        onClick={() => {
+                                                            const existingAgeStr = consent?.age
+                                                                ? (/\b(yrs?|years?|months?|mo|days?)\b/i.test(String(consent.age)) ? String(consent.age).trim() : `${consent.age} ${consent.age_unit || 'yrs'}`)
+                                                                : '—';
+                                                            handleSaveConsentField(leadId, 'age', inspectorConsentDraft.trim(), 'Age', existingAgeStr, inspectorConsentDraft.trim());
+                                                        }}
                                                         className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer shrink-0"
                                                     >
                                                         <Check className="w-3.5 h-3.5" />
@@ -8893,13 +8899,20 @@ export default function CRM() {
                                                 <span className="text-sm text-slate-500 font-medium">Age & Weight</span>
                                                 <div className="flex items-center gap-2">
                                                     <span className={`text-sm font-semibold ${consent?.age || consent?.weight ? 'text-slate-800' : 'text-slate-400 italic'}`}>
-                                                        {consent?.age ? `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : (consent.age_unit?.toLowerCase() === 'days' ? 'days' : 'yrs')}` : '—'}
+                                                        {consent?.age
+                                                            ? (/\b(yrs?|years?|months?|mo|days?)\b/i.test(String(consent.age))
+                                                                ? String(consent.age).trim()
+                                                                : `${consent.age} ${consent.age_unit?.toLowerCase() === 'months' ? 'months' : (consent.age_unit?.toLowerCase() === 'days' ? 'days' : 'yrs')}`)
+                                                            : '—'}
                                                         {consent?.weight ? `, ${consent.weight} kg` : ''}
                                                     </span>
                                                     <button
                                                         onClick={() => {
                                                             setEditingInspectorConsentField('age_weight');
-                                                            setInspectorConsentDraft(consent?.age ? `${consent.age} ${consent.age_unit || 'yrs'}` : '');
+                                                            const existingAgeStr = consent?.age
+                                                                ? (/\b(yrs?|years?|months?|mo|days?)\b/i.test(String(consent.age)) ? String(consent.age).trim() : `${consent.age} ${consent.age_unit || 'yrs'}`)
+                                                                : '';
+                                                            setInspectorConsentDraft(existingAgeStr);
                                                         }}
                                                         className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
                                                         title="Edit Age & Weight"

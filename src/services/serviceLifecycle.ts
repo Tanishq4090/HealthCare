@@ -619,8 +619,8 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
 
         // Synchronize careScope with CRM lead & client_consents
         if (input.careScope) {
-            if (input.careScope.address) {
-                leadUpdatePayload.location = input.careScope.address;
+            if (input.careScope.address && !/^(Address|Location):/im.test(updatedNotes)) {
+                leadUpdatePayload.notes = `${updatedNotes}\nAddress: ${input.careScope.address}`;
             }
             if (input.careScope.duties || input.careScope.formType) {
                 const workFormPayload = {
@@ -651,8 +651,7 @@ export async function restartClientService(input: RestartClientServiceInput): Pr
                     lead_id: input.clientId,
                     phone: input.careScope.contactNumber || undefined,
                     patient_name: input.careScope.patientName || input.clientName,
-                    age: input.careScope.age || null,
-                    age_unit: input.careScope.ageUnit || 'Years',
+                    age: input.careScope.age ? `${input.careScope.age} ${input.careScope.ageUnit || 'Years'}` : null,
                     weight: input.careScope.weight || null,
                     relative_name: input.careScope.relativeName || input.clientName,
                     contact_number: input.careScope.contactNumber || null,

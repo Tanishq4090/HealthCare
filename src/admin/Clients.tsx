@@ -1127,9 +1127,6 @@ export default function Clients() {
                 work_form_data: workFormData,
                 updated_at: new Date().toISOString()
             };
-            if (restartAddress.trim()) {
-                leadUpdates.location = restartAddress.trim();
-            }
 
             // 1. Update crm_leads
             const { error: leadErr } = await supabase
@@ -1143,15 +1140,14 @@ export default function Clients() {
             const consentPayload = {
                 lead_id: restartModal.id,
                 patient_name: restartPatientName.trim() || restartModal.name,
-                age: restartAge.trim() || null,
-                age_unit: restartAgeUnit,
+                age: restartAge.trim() ? `${restartAge.trim()} ${restartAgeUnit}` : null,
                 weight: restartWeight.trim() || null,
                 relative_name: restartRelativeName.trim() || restartModal.name,
                 contact_number: restartContactNumber.trim() || restartModal.phone || null,
                 alternate_contact_number: restartAltContactNumber.trim() || null,
                 address: restartAddress.trim() || null,
                 other_details: restartMedicalCondition.trim() || null,
-                service_type: restartServiceType || undefined,
+                service_category: restartServiceType || undefined,
                 created_at: new Date().toISOString()
             };
             const { error: consentErr } = await supabase.from('client_consents').insert([consentPayload]);

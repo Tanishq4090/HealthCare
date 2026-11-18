@@ -38,11 +38,26 @@ export function buildConsentFlowData(
     const leadDisplayName = resolveLeadDisplayName(lead);
     const startDate = consent?.service_start_date || quote?.start_date || '';
 
+    const rawConsentAge = consent?.age != null ? String(consent.age).trim() : '';
+    let parsedAge = rawConsentAge;
+    let parsedAgeUnit = consent?.age_unit != null ? String(consent.age_unit) : '';
+    if (rawConsentAge && !parsedAgeUnit) {
+        const unitMatch = rawConsentAge.match(/^(\d+(?:\.\d+)?)\s*(days?|d|months?|mo|years?|yrs?|y)\b/i);
+        if (unitMatch) {
+            parsedAge = unitMatch[1];
+            const u = unitMatch[2].toLowerCase();
+            if (u.startsWith('d')) parsedAgeUnit = 'Days';
+            else if (u.startsWith('m')) parsedAgeUnit = 'Months';
+            else parsedAgeUnit = 'Years';
+        }
+    }
+    if (!parsedAgeUnit) parsedAgeUnit = 'Years';
+
     const data: Record<string, string> = {
         relative_name: leadDisplayName || String(consent?.relative_name || '').trim(),
         patient_name: String(consent?.patient_name || '').trim(),
-        age: consent?.age != null ? String(consent.age) : '',
-        age_unit: consent?.age_unit != null ? String(consent.age_unit) : 'Years',
+        age: parsedAge,
+        age_unit: parsedAgeUnit,
         weight: consent?.weight != null ? String(consent.weight) : '',
         contact_number: String(consent?.contact_number || phone || '').trim(),
         alternate_contact_number: String(consent?.alternate_contact_number || '').trim(),
