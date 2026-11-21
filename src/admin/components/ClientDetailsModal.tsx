@@ -208,8 +208,14 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
     const [showEndConfirm, setShowEndConfirm] = useState(false);
     const [releasingWorkerId, setReleasingWorkerId] = useState<string | null>(null);
     const [copiedClientId, setCopiedClientId] = useState(false);
+    const [copiedLeadId, setCopiedLeadId] = useState(false);
     const [copiedPhone, setCopiedPhone] = useState(false);
     const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+
+    // Service Start Date Direct Editing
+    const [isEditingStartDate, setIsEditingStartDate] = useState(false);
+    const [startDateDraft, setStartDateDraft] = useState('');
+    const [isSavingStartDate, setIsSavingStartDate] = useState(false);
 
     // Edit Requirements Modal State
     const [isEditingReq, setIsEditingReq] = useState(false);
@@ -309,7 +315,25 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
         setIsLoading(true);
         try {
             // 1. Fetch Lead (including consents)
-            const { data: leadData } = await supabase.from('crm_leads').select('*, client_consents(*)').eq('id', clientId).single();
+            let leadData = null;
+            const { data: directLead } = await supabase.from('crm_leads').select('*, client_consents(*)').eq('id', clientId).maybeSingle();
+            leadData = directLead;
+
+            if (!leadData) {
+                // If lead ID does not match client UUID, match by 10-digit phone
+                const cleanP = (client?.phone_number || client?.phone || '').replace(/\D/g, '').slice(-10);
+                if (cleanP && cleanP.length === 10) {
+                    const { data: matchedLeads } = await supabase
+                        .from('crm_leads')
+                        .select('*, client_consents(*)')
+                        .or(`phone.ilike.%${cleanP}%,whatsapp_number.ilike.%${cleanP}%`)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    if (matchedLeads && matchedLeads.length > 0) {
+                        leadData = matchedLeads[0];
+                    }
+                }
+            }
             setLead(leadData);
 
             // Initialize DPDP Act 2023 consent state
@@ -388,6 +412,35 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
             toast.error(`Failed to end service: ${err.message || 'Unknown error'}`);
         } finally {
             setIsEndingService(false);
+        }
+    };
+
+    const handleSaveServiceStartDate = async (newDate: string) => {
+        if (!newDate || !activeService?.id) return;
+        setIsSavingStartDate(true);
+        try {
+            await supabase
+                .from('services')
+                .update({ start_date: newDate })
+                .eq('id', activeService.id);
+
+            const targetLeadId = lead?.id || activeService.lead_id || clientId;
+            if (targetLeadId) {
+                await supabase
+                    .from('client_consents')
+                    .update({ service_start_date: newDate })
+                    .eq('lead_id', targetLeadId);
+            }
+
+            setServices(prev => prev.map(s => s.id === activeService.id ? { ...s, start_date: newDate } : s));
+            setIsEditingStartDate(false);
+            toast.success(`Service start date updated to ${formatDate(newDate)}!`);
+            onServiceUpdated?.();
+        } catch (err: any) {
+            console.error('Error saving start date:', err);
+            toast.error('Failed to update start date: ' + (err.message || err));
+        } finally {
+            setIsSavingStartDate(false);
         }
     };
 
@@ -914,6 +967,35 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                     <Copy className="w-3.5 h-3.5 text-teal-600 group-hover:text-teal-800 shrink-0" />
                                 )}
                             </button>
+                            {(() => {
+                                const rawLId = lead?.id || client?.leadId;
+                                const lDisplay = rawLId ? `LD-${rawLId.substring(0, 4).toUpperCase()}` : null;
+                                if (!lDisplay) return null;
+                                return (
+                                    <>
+                                        <span className="text-slate-300">•</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(lDisplay);
+                                                setCopiedLeadId(true);
+                                                toast.success(`CRM Lead ID ${lDisplay} copied!`);
+                                                setTimeout(() => setCopiedLeadId(false), 2000);
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 hover:border-slate-300 border border-slate-200 text-xs font-mono font-bold text-slate-800 transition-all cursor-pointer shadow-2xs"
+                                            title={`Linked CRM Lead ID: ${lDisplay}\nFull Lead UUID: ${rawLId}\nClick to copy`}
+                                        >
+                                            <span className="text-slate-500 text-[11px] font-sans font-medium">CRM Lead:</span>
+                                            <span className="font-bold text-slate-900 text-xs select-all">{lDisplay}</span>
+                                            {copiedLeadId ? (
+                                                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                            ) : (
+                                                <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            )}
+                                        </button>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer">
@@ -1004,12 +1086,20 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                             </div>
                                             {(() => {
                                                 const staffList = getStaffForService(activeService);
+                                                const activeStaff = staffList.filter((st: any) => st.isActive);
+                                                const previousStaff = staffList.filter((st: any) => !st.isActive);
+
                                                 if (staffList.length === 0) {
                                                     return <p className="text-xs text-slate-400 italic">No staff assigned to this service cycle.</p>;
                                                 }
                                                 return (
                                                     <div className="space-y-2">
-                                                        {staffList.map((st: any, i: number) => (
+                                                        {activeStaff.length === 0 && (
+                                                            <p className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                                                No active staff assigned currently.
+                                                            </p>
+                                                        )}
+                                                        {activeStaff.map((st: any, i: number) => (
                                                             <div key={i} className="flex items-center justify-between gap-2 p-2 bg-white rounded-lg border border-slate-100 shadow-2xs">
                                                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                                                     <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold shrink-0">
@@ -1017,22 +1107,36 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                                     </div>
                                                                     <div className="min-w-0 flex-1">
                                                                         <p className="text-xs font-bold text-slate-800 truncate">{st.name}</p>
-                                                                        <p className="text-[10px] text-slate-400">{st.role} • {st.status}</p>
+                                                                        <p className="text-[10px] text-slate-400">{st.role} • Active</p>
                                                                     </div>
                                                                 </div>
-                                                                {st.isActive && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleReleaseWorker(st.id, st.name)}
-                                                                        disabled={releasingWorkerId === st.id}
-                                                                        className="px-2 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors cursor-pointer shrink-0 disabled:opacity-50"
-                                                                        title="Release this caregiver back to Available without ending the client's service"
-                                                                    >
-                                                                        {releasingWorkerId === st.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'Release'}
-                                                                    </button>
-                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleReleaseWorker(st.id, st.name)}
+                                                                    disabled={releasingWorkerId === st.id}
+                                                                    className="px-2 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                                                                    title="Release this caregiver back to Available without ending the client's service"
+                                                                >
+                                                                    {releasingWorkerId === st.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'Release'}
+                                                                </button>
                                                             </div>
                                                         ))}
+
+                                                        {previousStaff.length > 0 && (
+                                                            <div className="pt-2 border-t border-slate-200/80">
+                                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                                                    Completed / Replaced Caregiver:
+                                                                </p>
+                                                                <div className="space-y-1">
+                                                                    {previousStaff.map((st: any, i: number) => (
+                                                                        <div key={i} className="flex items-center justify-between px-2 py-1 bg-slate-100 rounded text-[11px] text-slate-600">
+                                                                            <span className="font-medium truncate">{st.name} ({st.role})</span>
+                                                                            <span className="text-[10px] font-semibold text-slate-400 shrink-0">Ended</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 );
                                             })()}
@@ -1044,16 +1148,61 @@ export default function ClientDetailsModal({ client, onClose, onServiceUpdated, 
                                                 <Calendar className="w-3.5 h-3.5 text-emerald-600" />
                                                 <span>Key Dates (This Service)</span>
                                             </div>
-                                            <div className="space-y-1.5 text-xs">
-                                                <div className="flex justify-between">
-                                                    <span className="text-slate-500">Service Started:</span>
-                                                    <span className="font-bold text-slate-800">{formatDate(activeService.start_date)}</span>
+                                            <div className="space-y-2 text-xs">
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <span className="text-slate-500 shrink-0">Service Started:</span>
+                                                    {isEditingStartDate ? (
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <input
+                                                                type="date"
+                                                                value={startDateDraft}
+                                                                onChange={e => setStartDateDraft(e.target.value)}
+                                                                className="text-xs font-bold bg-white border border-emerald-400 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-emerald-500"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                disabled={isSavingStartDate}
+                                                                onClick={() => handleSaveServiceStartDate(startDateDraft)}
+                                                                className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 cursor-pointer shadow-2xs"
+                                                                title="Save service start date"
+                                                            >
+                                                                {isSavingStartDate ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={isSavingStartDate}
+                                                                onClick={() => setIsEditingStartDate(false)}
+                                                                className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 cursor-pointer"
+                                                                title="Cancel"
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="font-bold text-slate-800">
+                                                                {formatDate(activeService.start_date || lead?.client_consents?.[0]?.service_start_date)}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const currentVal = (activeService.start_date || lead?.client_consents?.[0]?.service_start_date || '').slice(0, 10);
+                                                                    setStartDateDraft(currentVal);
+                                                                    setIsEditingStartDate(true);
+                                                                }}
+                                                                className="p-1 rounded text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                                                title="Edit Service Start Date"
+                                                            >
+                                                                <Pencil className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="flex justify-between">
+                                                <div className="flex justify-between items-center">
                                                     <span className="text-slate-500">Expected End:</span>
                                                     <span className="font-bold text-slate-800">{activeService.end_date ? formatDate(activeService.end_date) : 'Ongoing (Open-Ended)'}</span>
                                                 </div>
-                                                <div className="flex justify-between">
+                                                <div className="flex justify-between items-center">
                                                     <span className="text-slate-500">Shift Hours:</span>
                                                     <span className="font-bold text-slate-800">{activeService.hours_per_day || 10} Hours/day</span>
                                                 </div>

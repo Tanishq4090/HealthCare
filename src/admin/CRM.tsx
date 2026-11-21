@@ -238,6 +238,48 @@ export default function CRM() {
     const [crmSelectedCity, setCrmSelectedCity] = useState<string>('all');
     const [isCityDropdownOpen, setIsCityDropdownOpen] = useState<boolean>(false);
 
+    const [crmSelectedYear, crmSelectedMonthNum] = useMemo(() => {
+        if (!crmSelectedMonth) {
+            const now = new Date();
+            return [String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0')];
+        }
+        const [y, m] = crmSelectedMonth.split('-');
+        return [y || String(new Date().getFullYear()), m || String(new Date().getMonth() + 1).padStart(2, '0')];
+    }, [crmSelectedMonth]);
+
+    const crmAvailableYears = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        const yearsSet = new Set<number>([
+            currentYear - 3,
+            currentYear - 2,
+            currentYear - 1,
+            currentYear,
+            currentYear + 1,
+            currentYear + 2
+        ]);
+        (leads || []).forEach((l: any) => {
+            const dateStr = l.created_at || l.appointment_datetime;
+            if (dateStr) {
+                const yr = new Date(dateStr).getFullYear();
+                if (!isNaN(yr) && yr >= 2020 && yr <= 2035) {
+                    yearsSet.add(yr);
+                }
+            }
+        });
+        return Array.from(yearsSet).sort((a, b) => b - a);
+    }, [leads]);
+
+    const crmSetYear = (newYear: string) => {
+        setCrmViewAllMonths(false);
+        setCrmSelectedMonth(`${newYear}-${crmSelectedMonthNum}`);
+    };
+
+    const crmSetMonth = (newMonthIdx: number) => {
+        setCrmViewAllMonths(false);
+        const mStr = String(newMonthIdx + 1).padStart(2, '0');
+        setCrmSelectedMonth(`${crmSelectedYear}-${mStr}`);
+    };
+
     const crmMonthLabel = (ym: string) => {
         if (!ym) return '';
         const [y, m] = ym.split('-');
@@ -962,7 +1004,7 @@ export default function CRM() {
     };
 
     const [crmSearchQuery, setCrmSearchQuery] = useState('');
-    const [crmSortField, setCrmSortField] = useState<'id' | 'name' | 'city' | 'phone' | 'priority' | 'stage' | 'rate' | 'created_at'>('created_at');
+    const [crmSortField, setCrmSortField] = useState<'id' | 'name' | 'city' | 'phone' | 'priority' | 'stage' | 'rate' | 'created_at' | 'start_date'>('created_at');
     const [crmSortAsc, setCrmSortAsc] = useState<boolean>(false);
 
     const [copiedLeadIdBadge, setCopiedLeadIdBadge] = useState<string | null>(null);
@@ -984,7 +1026,7 @@ export default function CRM() {
         setTimeout(() => setCopiedLeadPhoneBadge(null), 2000);
     };
 
-    const handleCrmSort = (field: 'id' | 'name' | 'city' | 'phone' | 'priority' | 'stage' | 'rate' | 'created_at') => {
+    const handleCrmSort = (field: 'id' | 'name' | 'city' | 'phone' | 'priority' | 'stage' | 'rate' | 'created_at' | 'start_date') => {
         if (crmSortField === field) {
             setCrmSortAsc(!crmSortAsc);
         } else {
@@ -1493,28 +1535,60 @@ export default function CRM() {
                     await supabase.from('crm_leads').update({ shift_type: newValue }).eq('id', leadId);
                 }
 
+                // If service_start_date, sync active services table and active worker assignments
+                if (field === 'service_start_date') {
+                    try {
+                        await supabase
+                            .from('services')
+                            .update({ start_date: newValue })
+                            .or(`client_id.eq.${leadId},lead_id.eq.${leadId}`)
+                            .eq('status', 'active');
+                    } catch (svcErr) {
+                        console.warn('Error syncing services start_date:', svcErr);
+                    }
+                    try {
+                        await supabase
+                            .from('worker_assignments')
+                            .update({ start_date: newValue })
+                            .eq('client_id', leadId)
+                            .eq('assignment_status', 'active');
+                    } catch (asgnErr) {
+                        console.warn('Error syncing worker_assignments start_date:', asgnErr);
+                    }
+                }
+
                 // Sync state
                 setSelectedInspectorLead((prev: any) => {
                     if (!prev || prev.id !== leadId) return prev;
                     const prevConsents = (prev.client_consents || []).filter((c: any) => c.id !== updatedConsent?.id);
+                    const updatedServices = (prev.services || []).map((s: any) =>
+                        s.status === 'active' ? { ...s, start_date: newValue } : s
+                    );
                     return {
                         ...prev,
                         client_consents: updatedConsent ? [updatedConsent, ...prevConsents] : prev.client_consents,
+                        services: field === 'service_start_date' ? updatedServices : prev.services,
                         ...(field === 'relative_name' || field === 'patient_name' ? { name: newValue } : {}),
                         ...(field === 'service_category' ? { service_interest: newValue } : {}),
                         ...(field === 'offered_time' ? { shift_type: newValue } : {}),
+                        ...(field === 'service_start_date' ? { plannedStart: newValue } : {}),
                     };
                 });
 
                 setLeads(prev => prev.map(l => {
                     if (l.id !== leadId) return l;
                     const prevConsents = (l.client_consents || []).filter((c: any) => c.id !== updatedConsent?.id);
+                    const updatedServices = (l.services || []).map((s: any) =>
+                        s.status === 'active' ? { ...s, start_date: newValue } : s
+                    );
                     return {
                         ...l,
                         client_consents: updatedConsent ? [updatedConsent, ...prevConsents] : l.client_consents,
+                        services: field === 'service_start_date' ? updatedServices : l.services,
                         ...(field === 'relative_name' || field === 'patient_name' ? { name: newValue } : {}),
                         ...(field === 'service_category' ? { service_interest: newValue } : {}),
                         ...(field === 'offered_time' ? { shift_type: newValue } : {}),
+                        ...(field === 'service_start_date' ? { plannedStart: newValue } : {}),
                     };
                 }));
 
@@ -2437,10 +2511,10 @@ export default function CRM() {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const [leadsResult, assignmentsResult, paymentsResult] = await Promise.all([
+            const [leadsResult, assignmentsResult, paymentsResult, clientsResult] = await Promise.all([
                 supabase
                     .from('crm_leads')
-                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, status, deposit_amount, deposit_status, start_date, created_at, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
+                    .select('*, crm_quotations(start_date, duration, service_category, service_name, shift_type, hours_per_day, complete_month_rate, incomplete_month_rate, deposit, estimated_monthly_total, created_at), client_consents(*), services(id, client_id, status, deposit_amount, deposit_status, start_date, created_at, complete_month_daily_rate, incomplete_month_daily_rate, service_worker_assignments(id, employee_id, start_date, end_date, employees(full_name, employee_id)))')
                     .is('deleted_at', null)
                     .not('pipeline_stage', 'eq', 'Archived')
                     .order('created_at', { ascending: false }),
@@ -2450,11 +2524,43 @@ export default function CRM() {
                 supabase
                     .from('payments')
                     .select('client_name, amount, payment_type')
-                    .eq('payment_type', 'deposit')
+                    .eq('payment_type', 'deposit'),
+                supabase
+                    .from('clients')
+                    .select('id, client_name, phone_number, created_at')
+                    .order('created_at', { ascending: true })
             ]);
 
             const allAssignments = assignmentsResult.data || [];
             const paidDepositNames = new Set((paymentsResult.data || []).map((p: any) => (p.client_name || '').trim().toLowerCase()));
+
+            // Build deterministic client code mapping for cross-referencing in CRM
+            const dbClients = (clientsResult?.data || []);
+            const clientCodeMap = new Map<string, string>();
+            const phoneToClientCodeMap = new Map<string, string>();
+            dbClients.forEach((c: any, index: number) => {
+                const code = `CL-${String(index + 1).padStart(4, '0')}`;
+                clientCodeMap.set(c.id, code);
+                const p = (c.phone_number || '').replace(/\D/g, '').slice(-10);
+                if (p && p.length === 10 && !phoneToClientCodeMap.has(p)) {
+                    phoneToClientCodeMap.set(p, code);
+                }
+            });
+
+            const resolveLeadClientCode = (l: any) => {
+                if (clientCodeMap.has(l.id)) return clientCodeMap.get(l.id);
+                if (l.services && l.services.length > 0) {
+                    for (const s of l.services) {
+                        if (s.client_id && clientCodeMap.has(s.client_id)) {
+                            return clientCodeMap.get(s.client_id);
+                        }
+                    }
+                }
+                const p = (l.phone || l.whatsapp_number || '').replace(/\D/g, '').slice(-10);
+                if (p && phoneToClientCodeMap.has(p)) return phoneToClientCodeMap.get(p);
+                return null;
+            };
+
             const data = leadsResult.data;
             const error = leadsResult.error;
 
@@ -2500,14 +2606,15 @@ export default function CRM() {
                                 ...l,
                                 pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
                                 has_paid_deposit: hasPaidDeposit,
-                                is_deposit_pending: isDepositPending
+                                is_deposit_pending: isDepositPending,
+                                clientCode: resolveLeadClientCode(l)
                             };
                         })
                     );
                     setSelectedInspectorLead((prev: any) => {
                         if (!prev?.id) return prev;
                         const latest = fallbackRows.find((l) => l.id === prev.id);
-                        return latest ? { ...prev, ...latest } : prev;
+                        return latest ? { ...prev, ...latest, clientCode: resolveLeadClientCode(latest) } : prev;
                     });
                     return;
                 }
@@ -2548,7 +2655,8 @@ export default function CRM() {
                         ...l,
                         pipeline_stage: isLegacyPipelineStage(l.pipeline_stage) ? firstStage : l.pipeline_stage,
                         has_paid_deposit: hasPaidDeposit,
-                        is_deposit_pending: isDepositPending
+                        is_deposit_pending: isDepositPending,
+                        clientCode: resolveLeadClientCode(l)
                     };
                 })
             );
@@ -2556,7 +2664,7 @@ export default function CRM() {
             setSelectedInspectorLead((prev: any) => {
                 if (!prev?.id) return prev;
                 const latest = rows.find((l) => l.id === prev.id);
-                return latest ? { ...prev, ...latest } : prev;
+                return latest ? { ...prev, ...latest, clientCode: resolveLeadClientCode(latest) } : prev;
             });
         } catch (err: any) {
             console.error('Error fetching leads:', err);
@@ -2903,7 +3011,7 @@ export default function CRM() {
                         .from('services')
                         .update({
                             legacy_assignment_id: result.assignment?.id || null,
-                            start_date: serviceStartDate,
+                            start_date: (dbActiveSvc as any)?.start_date || serviceStartDate,
                             end_date: serviceEndDate ? serviceEndDate : null,
                             hours_per_day: serviceHours,
                             complete_month_daily_rate: cmRate,
@@ -4150,19 +4258,25 @@ export default function CRM() {
             return;
         }
 
-        const headers = ["ID", "Name", "Phone", "Email", "City", "Source", "Status", "Pipeline Stage", "Est. Monthly Value", "Created At"];
-        const rows = exportList.map(l => [
-            l.id,
-            l.name,
-            l.phone ? (canViewPhoneNumbers ? l.phone : maskPhoneNumber(l.phone, false)) : "",
-            l.email || "",
-            extractCity(l),
-            l.source || "",
-            l.status || "",
-            l.pipeline_stage || "",
-            `INR ${l.estimated_value_monthly || 0}`,
-            l.created_at || ""
-        ]);
+        const headers = ["ID", "Name", "Phone", "Email", "City", "Source", "Status", "Pipeline Stage", "Service Start Date", "Est. Monthly Value", "Created At"];
+        const rows = exportList.map(l => {
+            const itemConsent = getLatestByCreatedAt(l.client_consents);
+            const itemActiveSvc = (l.services || []).find((s: any) => s.status === 'active') || l.services?.[0];
+            const rawSvcStart = itemActiveSvc?.start_date || itemConsent?.service_start_date || l.plannedStart || "";
+            return [
+                l.id,
+                l.name,
+                l.phone ? (canViewPhoneNumbers ? l.phone : maskPhoneNumber(l.phone, false)) : "",
+                l.email || "",
+                extractCity(l),
+                l.source || "",
+                l.status || "",
+                l.pipeline_stage || "",
+                rawSvcStart,
+                `INR ${l.estimated_value_monthly || 0}`,
+                l.created_at || ""
+            ];
+        });
 
         const csvContent = [
             headers.join(","),
@@ -4878,13 +4992,18 @@ export default function CRM() {
         items: filteredLeads.filter(l => l.pipeline_stage === stage).map(l => {
             const p = (l.whatsapp_number || l.phone || '').replace(/\D/g, '').slice(-10);
 
-            // Extract latest quote dates
+            // Extract latest quote dates or active service / consent start date
             let plannedStart = null;
             let plannedDuration = null;
             if (l.crm_quotations && l.crm_quotations.length > 0) {
                 const latestQuote = [...l.crm_quotations].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                 plannedStart = latestQuote.start_date;
                 plannedDuration = latestQuote.duration;
+            }
+            const activeSvc = (l.services || []).find((s: any) => s.status === 'active') || l.services?.[0];
+            const consent = getLatestByCreatedAt(l.client_consents);
+            if (!plannedStart) {
+                plannedStart = activeSvc?.start_date || consent?.service_start_date || null;
             }
 
             const serviceDays = getLeadServiceDays(l);
@@ -4917,9 +5036,10 @@ export default function CRM() {
             const city = extractCity(item).toLowerCase();
             const stage = (item.pipeline_stage || '').toLowerCase();
             const displayId = `ld-${(item.id || '').substring(0, 4)}`.toLowerCase();
+            const clientCode = (item.clientCode || '').toLowerCase();
             const notes = (item.notes || '').toLowerCase();
             const service = (item.service_interest || '').toLowerCase();
-            return name.includes(q) || phone.includes(q) || city.includes(q) || stage.includes(q) || displayId.includes(q) || notes.includes(q) || service.includes(q);
+            return name.includes(q) || phone.includes(q) || city.includes(q) || stage.includes(q) || displayId.includes(q) || clientCode.includes(q) || notes.includes(q) || service.includes(q);
         });
     }, [columns, crmSearchQuery]);
 
@@ -4947,6 +5067,17 @@ export default function CRM() {
                 const rA = Number(a.complete_month_daily_rate || a.incomplete_month_daily_rate || a.valueAmount || 0);
                 const rB = Number(b.complete_month_daily_rate || b.incomplete_month_daily_rate || b.valueAmount || 0);
                 comp = rA - rB;
+            } else if (crmSortField === 'start_date') {
+                const getStartDate = (lead: any) => {
+                    const consent = getLatestByCreatedAt(lead.client_consents);
+                    const activeSvc = (lead.services || []).find((s: any) => s.status === 'active') || lead.services?.[0];
+                    return activeSvc?.start_date || consent?.service_start_date || lead.plannedStart || lead.created_at || null;
+                };
+                const dateA = getStartDate(a);
+                const dateB = getStartDate(b);
+                const timeA = dateA ? new Date(dateA).getTime() : 0;
+                const timeB = dateB ? new Date(dateB).getTime() : 0;
+                comp = (isNaN(timeA) ? 0 : timeA) - (isNaN(timeB) ? 0 : timeB);
             } else if (crmSortField === 'created_at') {
                 comp = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
             }
@@ -5431,17 +5562,53 @@ export default function CRM() {
 
             if (leadError) throw leadError;
 
-            // 2. Ensure Client record exists in clients table
-            const { error: clientError } = await supabase
-                .from('clients')
-                .upsert({
+            // 2. Ensure Client record exists in clients table (Deduplicated by 10-digit phone / name)
+            const cleanPhone = (leadPhone || '').replace(/\D/g, '').slice(-10);
+            let targetClientId = newLead.id;
+            let isExistingClient = false;
+
+            if (cleanPhone && cleanPhone.length === 10) {
+                const { data: matchedClients } = await supabase
+                    .from('clients')
+                    .select('id, client_name')
+                    .or(`phone_number.ilike.%${cleanPhone}%`);
+                if (matchedClients && matchedClients.length > 0) {
+                    targetClientId = matchedClients[0].id;
+                    isExistingClient = true;
+                }
+            }
+
+            if (!isExistingClient && leadName.trim()) {
+                const { data: matchedByName } = await supabase
+                    .from('clients')
+                    .select('id, client_name')
+                    .ilike('client_name', leadName.trim());
+                if (matchedByName && matchedByName.length > 0) {
+                    targetClientId = matchedByName[0].id;
+                    isExistingClient = true;
+                }
+            }
+
+            if (isExistingClient) {
+                // End any currently active services for this client so this new cycle becomes active
+                await supabase
+                    .from('services')
+                    .update({ status: 'ended', end_date: addClientStartDate })
+                    .eq('client_id', targetClientId)
+                    .eq('status', 'active');
+
+                await supabase.from('clients').update({
+                    client_name: leadName,
+                    phone_number: leadPhone || null,
+                }).eq('id', targetClientId);
+            } else {
+                await supabase.from('clients').insert([{
                     id: newLead.id,
                     client_name: leadName,
                     phone_number: leadPhone || null,
                     source: 'Manual Client Setup',
-                }, { onConflict: 'id' });
-
-            if (clientError) console.warn('Clients table upsert warning:', clientError);
+                }]);
+            }
 
             // 3. Create Service in services table
             const serviceCareScopePayload = {
@@ -5466,7 +5633,7 @@ export default function CRM() {
             const { data: newService, error: serviceError } = await supabase
                 .from('services')
                 .insert([{
-                    client_id: newLead.id,
+                    client_id: targetClientId,
                     lead_id: newLead.id,
                     service_type: addClientServiceName || 'Home Care Service',
                     hours_per_day: addClientShiftHours,
@@ -5556,7 +5723,7 @@ export default function CRM() {
                 const { data: legacyAsg } = await supabase
                     .from('worker_assignments')
                     .insert([{
-                        client_id: newLead.id,
+                        client_id: targetClientId,
                         employee_id: worker.workerId,
                         service_type: addClientServiceName,
                         hours_per_day: addClientShiftHours,
@@ -5853,6 +6020,7 @@ export default function CRM() {
                             </div>
 
                             {/* Month Navigator */}
+                            {/* Month & Year Navigator */}
                             <div className={`flex items-center bg-white border rounded-lg overflow-hidden transition-all ${
                                 !crmViewAllMonths 
                                     ? 'border-[#1AA6A8] ring-2 ring-[#1AA6A8]/20 shadow-xs' 
@@ -5863,7 +6031,7 @@ export default function CRM() {
                                         setCrmViewAllMonths(false);
                                         crmPrevMonth();
                                     }} 
-                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm cursor-pointer"
+                                    className="px-2 py-1.5 text-slate-600 hover:bg-slate-100 hover:text-[#1AA6A8] transition-colors font-bold text-sm cursor-pointer"
                                     title="Previous Month"
                                 >
                                     ‹
@@ -5877,16 +6045,58 @@ export default function CRM() {
                                 >
                                     {crmMonthLabel(crmSelectedMonth)}
                                 </span>
+                                
+                                {/* Month Dropdown Selector */}
+                                <div className="relative border-l border-slate-200">
+                                    <select
+                                        value={parseInt(crmSelectedMonthNum, 10) - 1}
+                                        onChange={(e) => crmSetMonth(parseInt(e.target.value, 10))}
+                                        className={`px-2.5 py-1.5 text-xs font-bold bg-transparent cursor-pointer focus:outline-none appearance-none pr-5.5 transition-colors ${
+                                            !crmViewAllMonths ? 'text-[#1AA6A8] bg-teal-50/40' : 'text-slate-700 hover:bg-slate-50'
+                                        }`}
+                                        title="Select Month"
+                                    >
+                                        {[
+                                            'January', 'February', 'March', 'April', 'May', 'June',
+                                            'July', 'August', 'September', 'October', 'November', 'December'
+                                        ].map((mName, idx) => (
+                                            <option key={idx} value={idx} className="text-slate-800 bg-white font-medium">
+                                                {mName}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="w-3 h-3 text-slate-400 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
+                                </div>
+
                                 <button 
                                     onClick={() => {
                                         setCrmViewAllMonths(false);
                                         crmNextMonth();
                                     }} 
-                                    className="px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors font-bold text-sm cursor-pointer"
+                                    className="px-2 py-1.5 text-slate-600 hover:bg-slate-100 hover:text-[#1AA6A8] transition-colors font-bold text-sm cursor-pointer border-r border-slate-200"
                                     title="Next Month"
                                 >
                                     ›
                                 </button>
+
+                                {/* Year Filter Dropdown directly beside the month */}
+                                <div className="relative flex items-center bg-slate-50/70 hover:bg-slate-100/80 transition-colors">
+                                    <select
+                                        value={crmSelectedYear}
+                                        onChange={(e) => crmSetYear(e.target.value)}
+                                        className={`py-1.5 pl-2.5 pr-5 text-xs font-extrabold bg-transparent cursor-pointer focus:outline-none appearance-none transition-colors ${
+                                            !crmViewAllMonths ? 'text-[#1AA6A8]' : 'text-slate-700'
+                                        }`}
+                                        title="Select Year (e.g. 2025, 2026)"
+                                    >
+                                        {crmAvailableYears.map((yr) => (
+                                            <option key={yr} value={String(yr)} className="text-slate-800 bg-white font-bold">
+                                                {yr}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="w-3 h-3 text-slate-400 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
+                                </div>
                             </div>
 
                             {/* City Filter Dropdown */}
@@ -6120,10 +6330,10 @@ export default function CRM() {
                                                         {crmSortField === 'rate' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                                                     </div>
                                                 </th>
-                                                <th onClick={() => handleCrmSort('created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Date Added">
+                                                <th onClick={() => handleCrmSort('start_date')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Service Start Date">
                                                     <div className="flex items-center gap-1">
-                                                        <span>Date Added</span>
-                                                        {crmSortField === 'created_at' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        <span>Service Start Date</span>
+                                                        {crmSortField === 'start_date' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                                                     </div>
                                                 </th>
                                                 <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
@@ -6202,21 +6412,31 @@ export default function CRM() {
                                                                 {itemIdx + 1}
                                                             </td>
 
-                                                            {/* ID badge with 1-click copy */}
+                                                            {/* ID badge with 1-click copy + Client Master Code */}
                                                             <td className="py-2.5 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => handleCopyLeadId(displayId, e)}
-                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
-                                                                    title={`Click to copy ${displayId}\nFull UUID: ${item.id}`}
-                                                                >
-                                                                    <span>{displayId}</span>
-                                                                    {copiedLeadIdBadge === displayId ? (
-                                                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                                                    ) : (
-                                                                        <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => handleCopyLeadId(displayId, e)}
+                                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
+                                                                        title={`Click to copy ${displayId}\nFull UUID: ${item.id}`}
+                                                                    >
+                                                                        <span>{displayId}</span>
+                                                                        {copiedLeadIdBadge === displayId ? (
+                                                                            <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                                        ) : (
+                                                                            <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                                        )}
+                                                                    </button>
+                                                                    {item.clientCode && (
+                                                                        <span
+                                                                            className="font-mono text-[10px] font-bold text-teal-900 bg-teal-100/70 border border-teal-300 px-1.5 py-0.5 rounded shadow-2xs"
+                                                                            title={`Client Master Code: ${item.clientCode}`}
+                                                                        >
+                                                                            {item.clientCode}
+                                                                        </span>
                                                                     )}
-                                                                </button>
+                                                                </div>
                                                             </td>
 
                                                             {/* Lead Name & Service */}
@@ -6360,16 +6580,30 @@ export default function CRM() {
                                                                 </div>
                                                             </td>
 
-                                                            {/* Date Added */}
+                                                            {/* Service Start Date */}
                                                             <td className="py-2.5 px-2.5 whitespace-nowrap">
-                                                                <div className="flex flex-col text-slate-600">
-                                                                    <span className="font-semibold text-xs text-slate-800">
-                                                                        {item.created_at ? format(new Date(item.created_at), 'dd MMM yyyy') : '—'}
-                                                                    </span>
-                                                                    <span className="text-[10px] text-slate-400 font-mono">
-                                                                        {item.created_at ? format(new Date(item.created_at), 'hh:mm a') : ''}
-                                                                    </span>
-                                                                </div>
+                                                                {(() => {
+                                                                    const itemConsent = getLatestByCreatedAt(item.client_consents);
+                                                                    const itemActiveSvc = (item.services || []).find((s: any) => s.status === 'active') || item.services?.[0];
+                                                                    const rawSvcStart = itemActiveSvc?.start_date || itemConsent?.service_start_date || item.plannedStart;
+                                                                    const formattedStart = rawSvcStart ? (() => {
+                                                                        const d = new Date(rawSvcStart);
+                                                                        return isNaN(d.getTime()) ? String(rawSvcStart) : format(d, 'dd MMM yyyy');
+                                                                    })() : null;
+
+                                                                    return (
+                                                                        <div className="flex flex-col text-slate-600">
+                                                                            <span className={`font-semibold text-xs ${formattedStart ? 'text-slate-800' : 'text-slate-500'}`}>
+                                                                                {formattedStart || (item.created_at ? format(new Date(item.created_at), 'dd MMM yyyy') : '—')}
+                                                                            </span>
+                                                                            <span className="text-[10px] text-slate-400">
+                                                                                {formattedStart && item.created_at
+                                                                                    ? `Added ${format(new Date(item.created_at), 'dd MMM yyyy')}`
+                                                                                    : (item.created_at ? format(new Date(item.created_at), 'hh:mm a') : '')}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </td>
 
                                                             {/* Actions */}
@@ -8405,6 +8639,35 @@ export default function CRM() {
                                             || (selectedInspectorLead.notes ? selectedInspectorLead.notes.split('|')[0].replace('Service:', '').trim() : '')}
                                     </p>
                                 )}
+                                <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const lid = `LD-${(selectedInspectorLead.id || '').substring(0, 4).toUpperCase()}`;
+                                            navigator.clipboard.writeText(lid);
+                                            toast.success(`Lead ID ${lid} copied!`);
+                                        }}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors cursor-pointer"
+                                        title="CRM Lead ID (Click to copy)"
+                                    >
+                                        <span>LD-{(selectedInspectorLead.id || '').substring(0, 4).toUpperCase()}</span>
+                                        <Copy className="w-2.5 h-2.5 text-slate-400" />
+                                    </button>
+                                    {selectedInspectorLead.clientCode && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(selectedInspectorLead.clientCode);
+                                                toast.success(`Client Master Code ${selectedInspectorLead.clientCode} copied!`);
+                                            }}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition-colors cursor-pointer"
+                                            title="Client Master Code (Click to copy)"
+                                        >
+                                            <span>{selectedInspectorLead.clientCode}</span>
+                                            <Copy className="w-2.5 h-2.5 text-teal-500" />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0 ml-2">
@@ -8704,8 +8967,10 @@ export default function CRM() {
                         {/* ── Patient & Care Details (Always Visible & Directly Editable) ──────────────────────────── */}
                         {(() => {
                             const consent = getLatestByCreatedAt(selectedInspectorLead.client_consents);
-                            const startDateFormatted = consent?.service_start_date
-                                ? new Date(consent.service_start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                            const activeSvc = (selectedInspectorLead.services || []).find((s: any) => s.status === 'active') || selectedInspectorLead.services?.[0];
+                            const rawStartDate = activeSvc?.start_date || consent?.service_start_date || selectedInspectorLead.plannedStart;
+                            const startDateFormatted = rawStartDate
+                                ? new Date(rawStartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                                 : '—';
                             const leadId = selectedInspectorLead.id;
 
@@ -9104,13 +9369,13 @@ export default function CRM() {
                                             <div className="group/field flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-100/60 transition-colors">
                                                 <span className="text-sm text-slate-500 font-medium">Start Date</span>
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`text-sm font-semibold ${consent?.service_start_date ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                    <span className={`text-sm font-semibold ${rawStartDate ? 'text-slate-800' : 'text-slate-400 italic'}`}>
                                                         {startDateFormatted}
                                                     </span>
                                                     <button
                                                         onClick={() => {
                                                             setEditingInspectorConsentField('service_start_date');
-                                                            setInspectorConsentDraft(consent?.service_start_date ? String(consent.service_start_date).slice(0, 10) : '');
+                                                            setInspectorConsentDraft(rawStartDate ? String(rawStartDate).slice(0, 10) : '');
                                                         }}
                                                         className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-200/60 transition-all cursor-pointer opacity-60 group-hover/field:opacity-100"
                                                         title="Edit Start Date"

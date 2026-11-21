@@ -637,14 +637,17 @@ export default function Clients() {
 
                 const clientIdStr = (c.id || '').toLowerCase();
                 const displayIdStr = (c.displayId || '').toLowerCase();
+                const leadDisplayIdStr = ((c as any).leadDisplayId || '').toLowerCase();
                 const cleanClientId = clientIdStr.replace(/[^a-z0-9]/g, '');
                 const cleanDisplayId = displayIdStr.replace(/[^a-z0-9]/g, '');
+                const cleanLeadDisplayId = leadDisplayIdStr.replace(/[^a-z0-9]/g, '');
 
                 const idMatch = clientIdStr.includes(rawQ) ||
                                 displayIdStr.includes(rawQ) ||
-                                (strippedQ.length > 0 && (clientIdStr.includes(strippedQ) || displayIdStr.includes(strippedQ))) ||
-                                (cleanQ.length >= 2 && (cleanClientId.includes(cleanQ) || cleanDisplayId.includes(cleanQ))) ||
-                                (cleanStrippedQ.length >= 2 && (cleanClientId.includes(cleanStrippedQ) || cleanDisplayId.includes(cleanStrippedQ)));
+                                leadDisplayIdStr.includes(rawQ) ||
+                                (strippedQ.length > 0 && (clientIdStr.includes(strippedQ) || displayIdStr.includes(strippedQ) || leadDisplayIdStr.includes(strippedQ))) ||
+                                (cleanQ.length >= 2 && (cleanClientId.includes(cleanQ) || cleanDisplayId.includes(cleanQ) || cleanLeadDisplayId.includes(cleanQ))) ||
+                                (cleanStrippedQ.length >= 2 && (cleanClientId.includes(cleanStrippedQ) || cleanDisplayId.includes(cleanStrippedQ) || cleanLeadDisplayId.includes(cleanStrippedQ)));
 
                 const nameMatch = (c.name || '').toLowerCase().includes(rawQ) ||
                                   (strippedQ.length > 0 && (c.name || '').toLowerCase().includes(strippedQ));
@@ -1465,10 +1468,22 @@ export default function Clients() {
 
             const clientData = [...(allClientsRes.data || [])];
             const existingClientIds = new Set(clientData.map(c => c.id));
+            const existingPhoneSet = new Set(
+                clientData
+                    .map(c => (c.phone_number || '').replace(/\D/g, '').slice(-10))
+                    .filter(p => p.length === 10)
+            );
 
             // Self-heal: If any confirmed active lead in CRM is missing from clients table, include and persist it
+            // DEDUPLICATION SAFEGUARD: Never spawn a duplicate client if their 10-digit phone already exists in clients
             const activeLeads = allLeads.filter(l => ['Active Client', 'Monthly Billing', 'Closed Won'].includes(l.pipeline_stage));
-            const missingLeads = activeLeads.filter(l => !existingClientIds.has(l.id));
+            const missingLeads = activeLeads.filter(l => {
+                if (existingClientIds.has(l.id)) return false;
+                const lPhone = (l.phone || l.whatsapp_number || '').replace(/\D/g, '').slice(-10);
+                if (lPhone && existingPhoneSet.has(lPhone)) return false; // Already represented in Client Master!
+                return true;
+            });
+
             if (missingLeads.length > 0) {
                 missingLeads.forEach(l => {
                     const fallbackClient = {
@@ -1481,6 +1496,10 @@ export default function Clients() {
                         created_at: l.created_at,
                     };
                     clientData.push(fallbackClient);
+                    existingClientIds.add(l.id);
+                    const lPhone = (l.phone || l.whatsapp_number || '').replace(/\D/g, '').slice(-10);
+                    if (lPhone) existingPhoneSet.add(lPhone);
+
                     supabase.from('clients').upsert({
                         id: l.id,
                         client_name: l.name,
@@ -1609,7 +1628,8 @@ export default function Clients() {
             });
 
             // Deterministic chronological ordering for human-readable Client Code (CL-0001 ... CL-XXXX)
-            const sortedChronologically = [...qualifiedClients].sort((a, b) => {
+            // MUST sort across all clientData in DB so codes are strictly immutable and never shift with filters
+            const sortedChronologically = [...clientData].sort((a, b) => {
                 const timeA = new Date(a.created_at || 0).getTime();
                 const timeB = new Date(b.created_at || 0).getTime();
                 if (timeA !== timeB) return timeA - timeB;
@@ -1723,9 +1743,14 @@ export default function Clients() {
                     pastDepositTotal = totalPaidDeposits - depositAmount;
                 }
 
+                const rawLeadId = leadInfo?.id || (clientServices[0] as any)?.lead_id || c.id;
+                const leadDisplayId = rawLeadId ? `LD-${rawLeadId.substring(0, 4).toUpperCase()}` : null;
+
                 return {
                     id: c.id,
                     displayId: clientCodeMap.get(c.id) || `CL-${(c.id || '').substring(0, 4).toUpperCase()}`,
+                    leadId: rawLeadId,
+                    leadDisplayId: leadDisplayId,
                     name: c.client_name,
                     phone: c.phone_number,
                     email: c.email || '-',
@@ -2239,21 +2264,31 @@ export default function Clients() {
                                                         </div>
                                                     </td>
 
-                                                    {/* Client ID (CL-0037 with 1-click copy) */}
+                                                    {/* Client ID (CL-0037 with 1-click copy) + Linked CRM Lead ID */}
                                                     <td className="py-2.5 px-3 whitespace-nowrap">
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
-                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
-                                                            title={`Click to copy ${client.displayId}\nFull UUID: ${client.id}`}
-                                                        >
-                                                            <span>{client.displayId || 'CL-0001'}</span>
-                                                            {copiedClientIdBadge === (client.displayId || client.id) ? (
-                                                                <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                                            ) : (
-                                                                <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => handleCopyClientId(client.displayId || client.id, e)}
+                                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200/80 hover:bg-teal-100 transition-colors cursor-pointer shadow-2xs"
+                                                                title={`Click to copy ${client.displayId}\nFull UUID: ${client.id}`}
+                                                            >
+                                                                <span>{client.displayId || 'CL-0001'}</span>
+                                                                {copiedClientIdBadge === (client.displayId || client.id) ? (
+                                                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                                ) : (
+                                                                    <Copy className="w-2.5 h-2.5 text-teal-500 opacity-60 group-hover:opacity-100" />
+                                                                )}
+                                                            </button>
+                                                            {client.leadDisplayId && (
+                                                                <span
+                                                                    className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200"
+                                                                    title={`Linked CRM Lead: ${client.leadDisplayId}`}
+                                                                >
+                                                                    {client.leadDisplayId}
+                                                                </span>
                                                             )}
-                                                        </button>
+                                                        </div>
                                                     </td>
 
                                                             {/* Name */}
@@ -2569,6 +2604,14 @@ export default function Clients() {
                                                         <Copy className="w-3 h-3 text-teal-500 group-hover:text-teal-700 shrink-0" />
                                                     )}
                                                 </button>
+                                            )}
+                                            {client.leadDisplayId && (
+                                                <span
+                                                    className="font-mono text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200"
+                                                    title={`Linked CRM Lead: ${client.leadDisplayId}`}
+                                                >
+                                                    {client.leadDisplayId}
+                                                </span>
                                             )}
                                             <span className="text-slate-300">•</span>
                                             <span className="text-[11px] text-slate-500 font-medium">
