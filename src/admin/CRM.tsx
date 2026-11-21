@@ -1,7 +1,7 @@
 // v1.0.1 - Tick Confirmation Update
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, ChevronUp, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff, HeartPulse, Sparkles, Table, LayoutList, Kanban, Copy, ArrowUp, ArrowDown, ArrowUpDown, Lock } from 'lucide-react';
+import { Bot, Mail, MessageSquare, Phone, CheckCircle2, FileText, Send, Users, Loader2, Mic, Plus, UserPlus, PhoneOff, Globe, Edit3, Pencil, X, Check, MessageCircle, Trash2, ArrowLeft, ArrowRight, Calendar, AlertCircle, AlertTriangle, Play, Pause, Volume2, ChevronDown, ChevronUp, RotateCcw, RefreshCw, Clock, TrendingUp, Activity, Star, QrCode, ArrowUpRight, CheckSquare, User, UserCheck, ListChecks, Search, XCircle, MapPin, Eye, EyeOff, HeartPulse, Sparkles, Table, LayoutList, Kanban, Copy, ArrowUp, ArrowDown, ArrowUpDown, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -6019,40 +6019,35 @@ export default function CRM() {
                                 </button>
                             </div>
 
-                            {/* Month Navigator */}
                             {/* Month & Year Navigator */}
-                            <div className={`flex items-center bg-white border rounded-lg overflow-hidden transition-all ${
+                            <div className={`flex items-center bg-white border rounded-lg overflow-hidden transition-all shadow-xs ${
                                 !crmViewAllMonths 
-                                    ? 'border-[#1AA6A8] ring-2 ring-[#1AA6A8]/20 shadow-xs' 
-                                    : 'border-slate-200 opacity-80 hover:opacity-100'
+                                    ? 'border-[#1AA6A8] ring-2 ring-[#1AA6A8]/20' 
+                                    : 'border-slate-200 opacity-90 hover:opacity-100 hover:border-slate-300'
                             }`}>
+                                {/* Prev Month Button */}
                                 <button 
+                                    type="button"
                                     onClick={() => {
                                         setCrmViewAllMonths(false);
                                         crmPrevMonth();
                                     }} 
-                                    className="px-2 py-1.5 text-slate-600 hover:bg-slate-100 hover:text-[#1AA6A8] transition-colors font-bold text-sm cursor-pointer"
+                                    className="p-1.5 px-2 text-slate-500 hover:bg-slate-100 hover:text-[#1AA6A8] transition-colors cursor-pointer border-r border-slate-200 flex items-center justify-center"
                                     title="Previous Month"
                                 >
-                                    ‹
+                                    <ChevronLeft className="w-4 h-4" />
                                 </button>
-                                <span 
-                                    onClick={() => setCrmViewAllMonths(false)}
-                                    className={`px-3 py-1.5 text-xs font-bold min-w-[125px] text-center border-x border-slate-200 select-none cursor-pointer transition-colors ${
-                                        !crmViewAllMonths ? 'text-[#1AA6A8] bg-teal-50/50' : 'text-slate-700 hover:bg-slate-50'
-                                    }`}
-                                    title="Click to view by this month"
-                                >
-                                    {crmMonthLabel(crmSelectedMonth)}
-                                </span>
-                                
+
                                 {/* Month Dropdown Selector */}
-                                <div className="relative border-l border-slate-200">
+                                <div className="relative flex items-center">
                                     <select
                                         value={parseInt(crmSelectedMonthNum, 10) - 1}
-                                        onChange={(e) => crmSetMonth(parseInt(e.target.value, 10))}
-                                        className={`px-2.5 py-1.5 text-xs font-bold bg-transparent cursor-pointer focus:outline-none appearance-none pr-5.5 transition-colors ${
-                                            !crmViewAllMonths ? 'text-[#1AA6A8] bg-teal-50/40' : 'text-slate-700 hover:bg-slate-50'
+                                        onChange={(e) => {
+                                            setCrmViewAllMonths(false);
+                                            crmSetMonth(parseInt(e.target.value, 10));
+                                        }}
+                                        className={`py-1.5 pl-3 pr-6 text-xs font-bold bg-transparent cursor-pointer focus:outline-none appearance-none transition-colors ${
+                                            !crmViewAllMonths ? 'text-[#1AA6A8]' : 'text-slate-700'
                                         }`}
                                         title="Select Month"
                                     >
@@ -6068,35 +6063,42 @@ export default function CRM() {
                                     <ChevronDown className="w-3 h-3 text-slate-400 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
                                 </div>
 
-                                <button 
-                                    onClick={() => {
-                                        setCrmViewAllMonths(false);
-                                        crmNextMonth();
-                                    }} 
-                                    className="px-2 py-1.5 text-slate-600 hover:bg-slate-100 hover:text-[#1AA6A8] transition-colors font-bold text-sm cursor-pointer border-r border-slate-200"
-                                    title="Next Month"
-                                >
-                                    ›
-                                </button>
+                                <div className="h-4 w-[1px] bg-slate-200" />
 
-                                {/* Year Filter Dropdown directly beside the month */}
-                                <div className="relative flex items-center bg-slate-50/70 hover:bg-slate-100/80 transition-colors">
+                                {/* Year Filter Dropdown */}
+                                <div className="relative flex items-center">
                                     <select
                                         value={crmSelectedYear}
-                                        onChange={(e) => crmSetYear(e.target.value)}
-                                        className={`py-1.5 pl-2.5 pr-5 text-xs font-extrabold bg-transparent cursor-pointer focus:outline-none appearance-none transition-colors ${
+                                        onChange={(e) => {
+                                            setCrmViewAllMonths(false);
+                                            crmSetYear(e.target.value);
+                                        }}
+                                        className={`py-1.5 pl-2.5 pr-6 text-xs font-bold bg-transparent cursor-pointer focus:outline-none appearance-none transition-colors ${
                                             !crmViewAllMonths ? 'text-[#1AA6A8]' : 'text-slate-700'
                                         }`}
-                                        title="Select Year (e.g. 2025, 2026)"
+                                        title="Select Year"
                                     >
                                         {crmAvailableYears.map((yr) => (
-                                            <option key={yr} value={String(yr)} className="text-slate-800 bg-white font-bold">
+                                            <option key={yr} value={String(yr)} className="text-slate-800 bg-white font-medium">
                                                 {yr}
                                             </option>
                                         ))}
                                     </select>
                                     <ChevronDown className="w-3 h-3 text-slate-400 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
                                 </div>
+
+                                {/* Next Month Button */}
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        setCrmViewAllMonths(false);
+                                        crmNextMonth();
+                                    }} 
+                                    className="p-1.5 px-2 text-slate-500 hover:bg-slate-100 hover:text-[#1AA6A8] transition-colors cursor-pointer border-l border-slate-200 flex items-center justify-center"
+                                    title="Next Month"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
                             </div>
 
                             {/* City Filter Dropdown */}
