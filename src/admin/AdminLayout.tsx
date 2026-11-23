@@ -835,16 +835,15 @@ export default function AdminLayout() {
             <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden lg:flex h-screen shrink-0 select-none">
                 {/* Logo */}
                 <div className="h-20 flex items-center px-6 border-b border-slate-100 shrink-0">
-                    <Link to="/admin" className="flex items-center gap-3" title="Dashboard">
+                    <Link to="/admin" className="flex flex-col items-start justify-center gap-1 group" title="Dashboard">
                         <img 
                             src="/99care-logo.png"
                             alt="99Care Logo" 
-                            className="w-10 h-10 object-contain"
+                            className="h-9 w-auto max-w-[170px] object-contain transition-transform group-hover:scale-[1.02]"
                         />
-                        <div className="flex flex-col">
-                            <span className="font-bold text-xl text-[#1aa6a8] font-['Plus_Jakarta_Sans'] leading-tight">99Care</span>
-                            <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase leading-tight">Operations OS</span>
-                        </div>
+                        <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase leading-tight pl-0.5">
+                            OPERATIONS OS
+                        </span>
                     </Link>
                 </div>
 
@@ -946,14 +945,16 @@ export default function AdminLayout() {
                             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
                             <div className="fixed inset-y-0 left-0 w-[280px] bg-white shadow-2xl flex flex-col animate-in slide-in-from-left duration-300">
                                 <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100">
-                                    <div className="flex items-center gap-3">
+                                    <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="flex flex-col items-start gap-1">
                                         <img 
                                             src="/99care-logo.png"
                                             alt="99Care Logo" 
-                                            className="w-10 h-10 object-contain"
+                                            className="h-9 w-auto max-w-[170px] object-contain"
                                         />
-                                        <span className="font-bold text-xl text-[#1aa6a8] font-['Plus_Jakarta_Sans']">99Care</span>
-                                    </div>
+                                        <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase leading-tight pl-0.5">
+                                            OPERATIONS OS
+                                        </span>
+                                    </Link>
                                     <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
                                         <X className="w-5 h-5" />
                                     </button>
