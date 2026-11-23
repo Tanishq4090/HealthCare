@@ -5942,7 +5942,10 @@ export default function CRM() {
                     {/* Module Tabs */}
                     <div className="flex items-center p-1 sm:p-1.5 bg-slate-200/50 rounded-xl sm:rounded-2xl shrink-0 border border-slate-200 shadow-inner overflow-x-auto hide-scrollbar max-w-full">
                         <button
-                            onClick={() => setActiveTab('pipeline')}
+                            onClick={() => {
+                                setActiveTab('pipeline');
+                                if (crmSortField === 'start_date') setCrmSortField('created_at');
+                            }}
                             className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'pipeline' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
                             <span>Pipeline</span>
@@ -5951,7 +5954,10 @@ export default function CRM() {
                             </span>
                         </button>
                         <button
-                            onClick={() => setActiveTab('clients')}
+                            onClick={() => {
+                                setActiveTab('clients');
+                                if (crmSortField === 'created_at') setCrmSortField('start_date');
+                            }}
                             className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'clients' ? 'bg-white text-primary shadow-lg scale-105' : 'text-slate-500 hover:text-slate-900'}`}
                         >
                             <span>Clients</span>
@@ -6332,10 +6338,10 @@ export default function CRM() {
                                                         {crmSortField === 'rate' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                                                     </div>
                                                 </th>
-                                                <th onClick={() => handleCrmSort('start_date')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title="Sort by Service Start Date">
+                                                <th onClick={() => handleCrmSort(activeTab === 'clients' ? 'start_date' : 'created_at')} className="py-2.5 px-2.5 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap" title={activeTab === 'clients' ? "Sort by Service Start Date" : "Sort by Date Added"}>
                                                     <div className="flex items-center gap-1">
-                                                        <span>Service Start Date</span>
-                                                        {crmSortField === 'start_date' ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                                                        <span>{activeTab === 'clients' ? 'Service Start Date' : 'Date Added'}</span>
+                                                        {(activeTab === 'clients' ? crmSortField === 'start_date' : crmSortField === 'created_at') ? (crmSortAsc ? <ArrowUp className="w-3 h-3 text-[#1AA6A8]" /> : <ArrowDown className="w-3 h-3 text-[#1AA6A8]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                                                     </div>
                                                 </th>
                                                 <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
@@ -6582,7 +6588,7 @@ export default function CRM() {
                                                                 </div>
                                                             </td>
 
-                                                            {/* Service Start Date */}
+                                                            {/* Date Added (Pipeline tab) vs Service Start Date (Clients tab) */}
                                                             <td className="py-2.5 px-2.5 whitespace-nowrap">
                                                                 {(() => {
                                                                     const itemConsent = getLatestByCreatedAt(item.client_consents);
@@ -6593,15 +6599,33 @@ export default function CRM() {
                                                                         return isNaN(d.getTime()) ? String(rawSvcStart) : format(d, 'dd MMM yyyy');
                                                                     })() : null;
 
+                                                                    if (activeTab === 'clients') {
+                                                                        return (
+                                                                            <div className="flex flex-col text-slate-600">
+                                                                                <span className={`font-semibold text-xs ${formattedStart ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                                                                    {formattedStart || 'Not Decided'}
+                                                                                </span>
+                                                                                <span className="text-[10px] text-slate-400">
+                                                                                    {item.created_at ? `Added ${format(new Date(item.created_at), 'dd MMM yyyy')}` : ''}
+                                                                                </span>
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    // Pipeline tab: Show Date Added
                                                                     return (
                                                                         <div className="flex flex-col text-slate-600">
-                                                                            <span className={`font-semibold text-xs ${formattedStart ? 'text-slate-800' : 'text-slate-500'}`}>
-                                                                                {formattedStart || (item.created_at ? format(new Date(item.created_at), 'dd MMM yyyy') : '—')}
+                                                                            <span className="font-semibold text-xs text-slate-800">
+                                                                                {item.created_at ? format(new Date(item.created_at), 'dd MMM yyyy') : '—'}
                                                                             </span>
                                                                             <span className="text-[10px] text-slate-400">
-                                                                                {formattedStart && item.created_at
-                                                                                    ? `Added ${format(new Date(item.created_at), 'dd MMM yyyy')}`
-                                                                                    : (item.created_at ? format(new Date(item.created_at), 'hh:mm a') : '')}
+                                                                                {formattedStart ? (
+                                                                                    <span className="text-teal-600 font-medium">Starts: {formattedStart}</span>
+                                                                                ) : item.created_at ? (
+                                                                                    format(new Date(item.created_at), 'hh:mm a')
+                                                                                ) : (
+                                                                                    ''
+                                                                                )}
                                                                             </span>
                                                                         </div>
                                                                     );
