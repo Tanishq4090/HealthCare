@@ -616,6 +616,21 @@ export default function CRM() {
     const [addClientAbsentDays, setAddClientAbsentDays] = useState<number | ''>(0);
     const [isSubmittingAddClient, setIsSubmittingAddClient] = useState(false);
     const [addClientWorkerSearch, setAddClientWorkerSearch] = useState('');
+    const [isAddClientWorkerDropdownOpen, setIsAddClientWorkerDropdownOpen] = useState(false);
+    const addClientWorkerDropdownRef = useRef<HTMLDivElement | null>(null);
+
+    // Close Add Client worker dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (addClientWorkerDropdownRef.current && !addClientWorkerDropdownRef.current.contains(event.target as Node)) {
+                setIsAddClientWorkerDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
     // Patient Care & Work Form Scope state for Add Client Modal
     const [addClientPatientName, setAddClientPatientName] = useState('');
@@ -4297,12 +4312,11 @@ export default function CRM() {
     // Fetch leads from Supabase and Subscribe to Realtime Updates
     useEffect(() => {
         fetchLeads();
-        // Also load all active available workers for Staff Picker / Add Client Modal
+        // Also load all active workers in directory for Staff Picker / Add Client Modal
         supabase
             .from('employees')
-            .select('id, full_name, job_title, status, rate_10hr, rate_24hr')
+            .select('id, full_name, job_title, status, phone, employee_id, rate_10hr, rate_24hr')
             .is('deleted_at', null)
-            .eq('status', 'available')
             .order('full_name', { ascending: true })
             .then(({ data }) => {
                 if (data && data.length > 0) {
@@ -5477,6 +5491,7 @@ export default function CRM() {
         setAddClientAutoMarkAttendance(true);
         setAddClientAbsentDays(0);
         setAddClientWorkerSearch('');
+        setIsAddClientWorkerDropdownOpen(false);
         // Care Scope & Work Form resets
         setAddClientPatientName('');
         setAddClientAge('');
@@ -5490,6 +5505,21 @@ export default function CRM() {
         setAddClientCareInstructions('');
         setIsAddClientCareExpanded(true);
     };
+
+    // Filtered workers for Add Existing Client Modal interactive search combobox
+    const filteredWorkersForAddClient = useMemo(() => {
+        const query = addClientWorkerSearch.trim().toLowerCase();
+        return allWorkers
+            .filter(w => !addClientSelectedWorkers.some(sw => sw.workerId === w.id))
+            .filter(w => {
+                if (!query) return true;
+                const name = (w.name || w.full_name || '').toLowerCase();
+                const role = (w.role || w.job_title || '').toLowerCase();
+                const phone = (w.phone || '').toLowerCase();
+                const empId = (w.employee_id || '').toLowerCase();
+                return name.includes(query) || role.includes(query) || phone.includes(query) || empId.includes(query);
+            });
+    }, [allWorkers, addClientSelectedWorkers, addClientWorkerSearch]);
 
     const handleAddManualClient = async () => {
         if (!addClientName.trim()) {
@@ -6258,6 +6288,17 @@ export default function CRM() {
                                     onClick={() => {
                                         resetAddClientForm();
                                         setIsAddClientModalOpen(true);
+                                        // Refresh all workers
+                                        supabase
+                                            .from('employees')
+                                            .select('id, full_name, job_title, status, phone, employee_id, rate_10hr, rate_24hr')
+                                            .is('deleted_at', null)
+                                            .order('full_name', { ascending: true })
+                                            .then(({ data }) => {
+                                                if (data && data.length > 0) {
+                                                    setAllWorkers(data.map(w => ({ ...w, name: w.full_name || '', role: w.job_title || 'Staff' })));
+                                                }
+                                            });
                                     }}
                                     className="px-3 sm:px-4 py-2 bg-[#E6F7F7] text-[#1AA6A8] border border-[#1AA6A8]/20 text-xs sm:text-sm font-bold rounded-lg hover:bg-[#EAFBFB] transition-colors flex items-center gap-1.5 sm:gap-2 shadow-sm cursor-pointer"
                                 >
@@ -11335,58 +11376,141 @@ export default function CRM() {
                                     <span className="text-[11px] text-slate-400 font-medium">{addClientSelectedWorkers.length} assigned</span>
                                 </div>
 
-                                {/* Worker Search & Selector */}
-                                <div className="space-y-2 mb-3">
+                                {/* Worker Search & Combobox Selector */}
+                                <div className="space-y-2 mb-3 relative" ref={addClientWorkerDropdownRef}>
                                     <div className="flex items-center justify-between">
                                         <label className="block text-xs font-semibold text-slate-700">Select &amp; Add Staff Member</label>
                                         <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                                            {allWorkers.filter(w => !addClientSelectedWorkers.some(sw => sw.workerId === w.id)).length} available in directory
+                                            {allWorkers.filter(w => !addClientSelectedWorkers.some(sw => sw.workerId === w.id)).length} in directory
                                         </span>
                                     </div>
                                     
-                                    {/* Search Box */}
+                                    {/* Search Box / Combobox Input */}
                                     <div className="relative">
-                                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                         <input
                                             type="text"
                                             value={addClientWorkerSearch}
-                                            onChange={e => setAddClientWorkerSearch(e.target.value)}
-                                            placeholder="Search worker by name or role..."
-                                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-slate-50/50"
+                                            onChange={e => {
+                                                setAddClientWorkerSearch(e.target.value);
+                                                setIsAddClientWorkerDropdownOpen(true);
+                                            }}
+                                            onFocus={() => setIsAddClientWorkerDropdownOpen(true)}
+                                            placeholder="Search worker by name, role, phone, or ID..."
+                                            className="w-full pl-8 pr-16 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white transition-all shadow-sm"
                                         />
-                                    </div>
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                            {addClientWorkerSearch && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAddClientWorkerSearch('')}
+                                                    className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                                                    title="Clear search"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddClientWorkerDropdownOpen(prev => !prev)}
+                                                className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                                                title="Toggle directory list"
+                                            >
+                                                {isAddClientWorkerDropdownOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                            </button>
+                                        </div>
 
-                                    {/* Dropdown with filtered workers */}
-                                    <select
-                                        onChange={(e) => {
-                                            const selectedId = e.target.value;
-                                            if (!selectedId) return;
-                                            const emp = allWorkers.find(w => w.id === selectedId);
-                                            if (emp && !addClientSelectedWorkers.some(w => w.workerId === selectedId)) {
-                                                setAddClientSelectedWorkers(prev => [
-                                                    ...prev,
-                                                    { workerId: emp.id, workerName: emp.name || emp.full_name || 'Worker', startDate: addClientStartDate }
-                                                ]);
-                                            }
-                                            e.target.value = '';
-                                            setAddClientWorkerSearch('');
-                                        }}
-                                        className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1AA6A8]/30 focus:border-[#1AA6A8] bg-white text-sm font-medium"
-                                    >
-                                        <option value="">-- Click to choose from available directory staff --</option>
-                                        {allWorkers
-                                            .filter(w => !addClientSelectedWorkers.some(sw => sw.workerId === w.id))
-                                            .filter(w => {
-                                                if (!addClientWorkerSearch.trim()) return true;
-                                                const q = addClientWorkerSearch.toLowerCase();
-                                                return (w.name || '').toLowerCase().includes(q) || (w.role || '').toLowerCase().includes(q);
-                                            })
-                                            .map(w => (
-                                                <option key={w.id} value={w.id}>
-                                                    {w.name || w.full_name} — {w.role || w.job_title || 'Care Taker'}
-                                                </option>
-                                            ))}
-                                    </select>
+                                        {/* Floating Dropdown Results Menu */}
+                                        {isAddClientWorkerDropdownOpen && (
+                                            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-100 animate-in fade-in-50 zoom-in-95 duration-150">
+                                                {filteredWorkersForAddClient.length === 0 ? (
+                                                    <div className="p-4 text-center">
+                                                        <Users className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                                                        <p className="text-xs font-semibold text-slate-700">No matching staff found</p>
+                                                        <p className="text-[11px] text-slate-400 mt-0.5">
+                                                            {addClientWorkerSearch 
+                                                                ? `No staff member matches "${addClientWorkerSearch}". Try another name, phone, or ID.` 
+                                                                : 'All available staff have already been added.'}
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    filteredWorkersForAddClient.map(worker => {
+                                                        const isAssigned = worker.status === 'assigned';
+                                                        const initials = (worker.name || worker.full_name || 'W')
+                                                            .split(' ')
+                                                            .filter(Boolean)
+                                                            .map((p: string) => p[0])
+                                                            .slice(0, 2)
+                                                            .join('')
+                                                            .toUpperCase();
+
+                                                        return (
+                                                            <div
+                                                                key={worker.id}
+                                                                onClick={() => {
+                                                                    setAddClientSelectedWorkers(prev => [
+                                                                        ...prev,
+                                                                        { 
+                                                                            workerId: worker.id, 
+                                                                            workerName: worker.name || worker.full_name || 'Worker', 
+                                                                            startDate: addClientStartDate 
+                                                                        }
+                                                                    ]);
+                                                                    setAddClientWorkerSearch('');
+                                                                    setIsAddClientWorkerDropdownOpen(false);
+                                                                    toast.success(`Assigned ${worker.name || worker.full_name}`);
+                                                                }}
+                                                                className="p-2.5 px-3 hover:bg-[#E6F7F7]/60 cursor-pointer flex items-center justify-between gap-3 transition-colors group"
+                                                            >
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#1AA6A8]/20 to-[#1AA6A8]/40 text-[#1AA6A8] font-bold text-xs flex items-center justify-center shrink-0 border border-[#1AA6A8]/20">
+                                                                        {initials}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-xs font-bold text-slate-800 truncate group-hover:text-[#1AA6A8]">
+                                                                                {worker.name || worker.full_name}
+                                                                            </span>
+                                                                            {worker.employee_id && (
+                                                                                <span className="text-[10px] text-slate-400 font-mono">
+                                                                                    {worker.employee_id}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                                                            <span className="truncate">{worker.role || worker.job_title || 'Staff'}</span>
+                                                                            {worker.phone && (
+                                                                                <>
+                                                                                    <span className="text-slate-300">•</span>
+                                                                                    <span className="truncate flex items-center gap-0.5">
+                                                                                        <Phone className="w-2.5 h-2.5 text-slate-400" />
+                                                                                        {worker.phone}
+                                                                                    </span>
+                                                                                </>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                                                        isAssigned 
+                                                                            ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                                                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                    }`}>
+                                                                        {isAssigned ? 'Assigned' : 'Available'}
+                                                                    </span>
+                                                                    <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#1AA6A8] opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <Plus className="w-3 h-3" /> Add
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Selected Workers Table / List */}
