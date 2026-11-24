@@ -5725,7 +5725,8 @@ export default function CRM() {
                     .insert([{
                         client_id: targetClientId,
                         employee_id: worker.workerId,
-                        service_type: addClientServiceName,
+                        service_type: 'date_range',
+                        notes: addClientServiceName || 'Home Care Service',
                         hours_per_day: addClientShiftHours,
                         start_date: wStart,
                         end_date: addClientIsOpenEnded ? null : addClientEndDate,
